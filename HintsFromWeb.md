@@ -49,8 +49,8 @@ x <- rbind(a,b,c)[,order(x,y,z,decreasing=c(FALSE,TRUE,FALSE))]
 ### Find a more efficient way to do the following:
 (create frequency by outcome, make it a table, merge with value per outcome, and multiply; probably should use dplyr)
 
-> handDistrib <- as.data.frame(cbind(table(myHandType)))
-> handFinal <- merge(x=handValues,y=handDistrib,by.x="Hand",by.y=0,all.x=TRUE)
-> colnames(handFinal)[3] <- "Number"
-> handFinal$Number[is.na(handFinal$Number)] <- 0
-> handFinal$ExpVal <- handFinal$Value * handFinal$Number
+* handDistrib <- as.data.frame(cbind(table(myHandType)))
+* handFinal <- merge(x=handValues,y=handDistrib,by.x="Hand",by.y=0,all.x=TRUE)
+* colnames(handFinal)[3] <- "Number"
+* handFinal$Number[is.na(handFinal$Number)] <- 0
+* handFinal$ExpVal <- handFinal$Value * handFinal$Number
