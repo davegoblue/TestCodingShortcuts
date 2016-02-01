@@ -54,3 +54,10 @@ x <- rbind(a,b,c)[,order(x,y,z,decreasing=c(FALSE,TRUE,FALSE))]
 * colnames(handFinal)[3] <- "Number"
 * handFinal$Number[is.na(handFinal$Number)] <- 0
 * handFinal$ExpVal <- handFinal$Value * handFinal$Number
+
+
+### Explore the differences in lingo and results for graphing
+
+* base R
+* lattice
+* ggplot2
