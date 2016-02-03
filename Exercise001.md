@@ -1,4 +1,4 @@
-### Combination or sort, VLOOKUP (ineact), and MATCH
+### Combination or sort, VLOOKUP (inexact), and MATCH
 
 
 Suppose that I have a results table with probabilities:
