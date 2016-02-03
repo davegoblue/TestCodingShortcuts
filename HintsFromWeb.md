@@ -10,6 +10,10 @@ find_interval<-function(data,lookup){
 }
 data_interval<-find_interval(data=data_table,lookup_table)
 
+
+Additionally, would be good to understand if quantile() and cut() can help do what I want
+
+
 _This will probably do what I want for a MATCH equivalent also_
 
 
