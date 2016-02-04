@@ -10,7 +10,7 @@ Suppose that I have a results table with probabilities:
 * 0.50 Outcome is -1
 
 
-Suppose also that I run A trials with B random variables, each continuous between 0 and 1.  I want to map every random number to a specific outcome in the table above, and keep a cumulative outcome assuming the starting point was N0 (so N1 = N0 + Outcome 1).  
+Suppose also that I run A trials with B random variables, each continuous between 0 and 1.  I want to map every random number to a specific outcome in the table above, and keep a cumulative outcome assuming the starting point was N0 (so N1 = N0 + Outcome 1). For this given distribution, mu is -0.02 and sigma is 1.54 
 
 
 I am then interested in the first time that cumulative outcome "does something" (becomes zero/negative, doubles, whatever).  I also want to sort the resulting A trials based on a combination of final cumulative outcome and time it took to "does something".
