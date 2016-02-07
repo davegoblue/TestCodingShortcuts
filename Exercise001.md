@@ -27,3 +27,6 @@ For simplicity, I will assume the random numbers mapo to the distribution above 
 
 
 While I will not need to worry about it in the instant case (the random variables will be to many decimal points and never precisely equal to a cut point), it will be good to understand how to treat edge cases (e.g., if I wanted precisely 0.01 to mean +10 rather than +5 and whatnot).
+
+
+The _v003.R extends this to read in a table if available and use the default if not.  I want to find a way to use a string as a condition, for example a <- "<=-2" ; eval(b a) getting back to a boolean that is b <= -2.  No luck yet finding an example on the web, may need to change up search terms.
