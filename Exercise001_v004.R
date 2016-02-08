@@ -37,8 +37,8 @@ for ( intCtr in 1:nrow(baseOutcomes) ) {
 
 
 ## Step B:  Fill a series of outcomes based on random numbers between 0-1
-nTrials <- 1000
-nPerTrial <- 4000
+nTrials <- 1800
+nPerTrial <- 5000
 mtxRands <- matrix(data=runif(nTrials*nPerTrial,0,1),nrow=nPerTrial,ncol=nTrials)
 
 mtxOutcomes <- matrix(baseOutcomes$outcomes[findInterval(mtxRands,myCDF,rightmost.closed=TRUE)],
@@ -94,3 +94,15 @@ for ( intCtr in 1:nTrials ) {
 ## Step E:  Sort by Condition(Y then N) then _N_ at Condition then Cumulative Final
 dfResults <- dfSummary[order(-dfSummary$myCond, dfSummary$myN_Cond, -dfSummary$myLast),]
 print(summary(dfResults))
+
+## Would be good to have the x and y units auto-calculated
+hist(dfSummary$myMin,col=rgb(1,0,0,.25),
+     main="Histogram of Results",xlab="Units",ylab="N Trials",
+     xlim=c(round(-.4*nPerTrial,-3),round(.8*nPerTrial,-3)))
+
+hist(dfSummary$myLast,breaks=40,col=rgb(0,0,1,.25),
+     xlim=c(round(-.4*nPerTrial,-3),round(.8*nPerTrial,-3)),
+     add=TRUE)
+
+legend("topright",col=c(rgb(1,0,0,.25),rgb(0,0,1,.25),rgb(0.5,0,0.5,0.5)),
+       legend=c("Minimum","Final","Overlap"),pch=20,pt.cex=2)
