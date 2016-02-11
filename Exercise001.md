@@ -30,3 +30,7 @@ While I will not need to worry about it in the instant case (the random variable
 
 
 The _v003.R extends this to read in a table if available and use the default if not.  I want to find a way to use a string as a condition, for example a <- "<=-2" ; eval(b a) getting back to a boolean that is b <= -2.  No luck yet finding an example on the web, may need to change up search terms.
+
+
+*Added 2016-FEB-11*
+Clever use of parse and expression and eval allows for passing a condition by way of text.  This is reflected in the v006 code.  Further, parameters are set to automatically calibrate the x-span and the bins for the histogram
