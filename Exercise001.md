@@ -34,3 +34,6 @@ The _v003.R extends this to read in a table if available and use the default if 
 
 *Added 2016-FEB-11*  
 Clever use of parse and expression and eval allows for passing a condition by way of text.  This is reflected in the v006 code.  Further, parameters are set to automatically calibrate the x-span and the bins for the histogram
+  
+*Added 2016-FEB-13*  
+Allowed for adjusting the input vector by way of parameters.  Next step is to convert the full code to functions so that it is easier to read, run, and use for future exercises  
