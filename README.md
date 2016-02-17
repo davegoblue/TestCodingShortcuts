@@ -11,3 +11,7 @@ A few things that I want to learn how to implement in R based on what I have see
 
 
 All simple things to do, but knowing these will advance my capabilities in R
+  
+### Contents as of 17-FEB-2016
+* Exercise001 is for 
+* TaverasRforExcel is for expanding on tips and tricks from Taveras (author of "R for Excel") with some of my explorations
