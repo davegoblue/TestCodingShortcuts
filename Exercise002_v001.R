@@ -37,8 +37,9 @@ getBaseOutcomes <- function(myFileName="BaseOutcomes.csv", myHurdle=NULL) {
     return(baseOutcomes)
 }
 
-baseOutcomes <- getBaseOutcomes(myFileName="BaseOutcomes.csv",myHurdle=">=49")
-stop("This is as far as code changing has gone so far")
+myStart <- proc.time()
+baseOutcomes <- getBaseOutcomes(myFileName="BaseOutcomes.csv",myHurdle=">=399")
+
 
 ## Make the CDF vector
 myCDF <- numeric(nrow(baseOutcomes)+1)
@@ -50,44 +51,55 @@ for ( intCtr in 1:nrow(baseOutcomes) ) {
 
 
 ## Step B:  Fill a series of outcomes based on random numbers between 0-1
-nTrials <- 800
-nPerTrial <- 1500
-mtxRands <- matrix(data=runif(nTrials*nPerTrial,0,1),nrow=nPerTrial,ncol=nTrials)
+nTrials <- 12000
+nPerTrial <- 5000
 
-mtxOutcomes <- matrix(baseOutcomes$outcomes[findInterval(mtxRands,myCDF,rightmost.closed=TRUE)],
-                      nrow=nPerTrial,ncol=nTrials)
+mtxOutcomes <- matrix(baseOutcomes$outcomes[findInterval(matrix(data=runif(nTrials*nPerTrial,0,1),
+                                                                nrow=nPerTrial,
+                                                                ncol=nTrials
+                                                                ),
+                                                         myCDF,rightmost.closed=TRUE
+                                                         )
+                                            ],
+                      nrow=nPerTrial,
+                      ncol=nTrials
+                      )
 
 print(paste0("Ouctomes across ",nTrials*nPerTrial," draws have mean: ",
              format(mean(mtxOutcomes),digits=3)," and variance: ",format(sd(mtxOutcomes)^2,digits=3))
       )
 
 
+print("Through section B")
+print(proc.time() - myStart)
+
+
 ## Step C: Calculate the cumulative total for each column in mtxOutcomes
-## cumsum() works properly on columns of a data frame, but coerces a matrix to a single vector (no good)
-## So, create a data frame for cumulative sums - each row is a trial, each column is an experiment 
+## cumsum() works properly on columns of a data frame, but requires apply to work on a matrix 
 
-dfCumOutcomes <- cumsum(as.data.frame(mtxOutcomes))
+mtxCumOutcomes <- apply(mtxOutcomes,2,FUN=cumsum)
 
-maxPerTrial <- as.numeric(apply(dfCumOutcomes,2,FUN=max))
-minPerTrial <- as.numeric(apply(dfCumOutcomes,2,FUN=min))
-lastPerTrial <- as.numeric(dfCumOutcomes[nrow(dfCumOutcomes),])
+maxPerTrial <- apply(mtxCumOutcomes,2,FUN=max)
+minPerTrial <- apply(mtxCumOutcomes,2,FUN=min)
+lastPerTrial <- as.numeric(mtxCumOutcomes[nrow(mtxCumOutcomes),])
 
-dfSummary <- data.frame(myTrial = NA, myMax = maxPerTrial, myMin = minPerTrial, myLast = lastPerTrial,
+dfSummary <- data.frame(myTrial = 1:nTrials, myMax = maxPerTrial, myMin = minPerTrial, myLast = lastPerTrial,
                               myCond = FALSE, myN_Cond = NA, myVal_Cond = NA)
+
+print("Through section C")
+print(proc.time() - myStart)
 
 
 ## Step D:  Calculate where a specified condition first occurred
-## Can I find a way to do this more efficiently than once each per column?
-## While not considered elegant, parse() followed by eval() seems to do the job
-
 
 myHurdle <- "<=-280"
-myCond <- parse(text=paste0("dfCumOutcomes",myHurdle))
-dfCondOutcomes <- eval(myCond)
+dfSummary$myCond <- eval(parse(text=paste0("dfSummary$myMin",myHurdle)))
 
 
+stop("This is as far as code changing has gone so far")
+
+## Try to make this code more efficient -- perhaps matrix search/processing works better?
 for ( intCtr in 1:nTrials ) {
-    dfSummary$myTrial[intCtr] = intCtr
     dfSummary$myCond[intCtr] <- sum(dfCondOutcomes[,intCtr]) > 0
     myBool <- dfCondOutcomes[,intCtr] & !duplicated(dfCondOutcomes[,intCtr]) ## & works, && does not
     
@@ -101,6 +113,8 @@ for ( intCtr in 1:nTrials ) {
     }
 }
 
+print("Through section D")
+print(proc.time() - myStart)
 
 ## Step E:  Sort by Condition(Y then N) then _N_ at Condition then Cumulative Final
 dfResults <- dfSummary[order(-dfSummary$myCond, dfSummary$myN_Cond, -dfSummary$myLast),]
@@ -131,3 +145,6 @@ hist(dfSummary$myLast,col=rgb(0,0,1,.25),
 
 legend("topright",col=c(rgb(1,0,0,.25),rgb(0,0,1,.25),rgb(0.5,0,0.5,.5)),
        legend=c("Minimum","Final","Overlap"),pch=20,pt.cex=2)
+
+print("Through section E (finished")
+print(proc.time() - myStart)
