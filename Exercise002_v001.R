@@ -95,26 +95,19 @@ print(proc.time() - myStart)
 myHurdle <- "<=-280"
 dfSummary$myCond <- eval(parse(text=paste0("dfSummary$myMin",myHurdle)))
 
+foo <- function(x) { 
+    which(eval(parse(text=paste0("x",myHurdle))))[1]
+}
 
-stop("This is as far as code changing has gone so far")
+dfSummary$myN_Cond <- apply(mtxCumOutcomes,2,FUN=foo)
 
-## Try to make this code more efficient -- perhaps matrix search/processing works better?
 for ( intCtr in 1:nTrials ) {
-    dfSummary$myCond[intCtr] <- sum(dfCondOutcomes[,intCtr]) > 0
-    myBool <- dfCondOutcomes[,intCtr] & !duplicated(dfCondOutcomes[,intCtr]) ## & works, && does not
-    
-    if (sum(myBool) > 1) {
-        stop("Error, 2 or more non-duplicated TRUE may not occur, aborting")
-    } else if (sum(myBool) == 1) {
-        keyBool <- sum(1, cumsum(myBool) == 0)  ## myBool is F F . . . F T F . . . F F F; cumsum(myBool)
-                                                ## will get all the F prior to that first T
-        dfSummary$myN_Cond[intCtr] <- keyBool   ## The single T is where myCond first happened
-        dfSummary$myVal_Cond[intCtr] <- dfCumOutcomes[keyBool,intCtr]
-    }
+    dfSummary$myVal_Cond[intCtr] <- mtxCumOutcomes[dfSummary$myN_Cond[intCtr],dfSummary$myTrial[intCtr]]
 }
 
 print("Through section D")
 print(proc.time() - myStart)
+
 
 ## Step E:  Sort by Condition(Y then N) then _N_ at Condition then Cumulative Final
 dfResults <- dfSummary[order(-dfSummary$myCond, dfSummary$myN_Cond, -dfSummary$myLast),]
@@ -146,5 +139,5 @@ hist(dfSummary$myLast,col=rgb(0,0,1,.25),
 legend("topright",col=c(rgb(1,0,0,.25),rgb(0,0,1,.25),rgb(0.5,0,0.5,.5)),
        legend=c("Minimum","Final","Overlap"),pch=20,pt.cex=2)
 
-print("Through section E (finished")
+print("Through section E (finished)")
 print(proc.time() - myStart)
