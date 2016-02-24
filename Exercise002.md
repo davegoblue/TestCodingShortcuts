@@ -13,3 +13,10 @@ Finished the recoding to use primarily matrices.  For 12,000 trials of 5,000 ran
 * Exercise002_v001.R: 1.4 GB with 12.1 user and 13.6 elapsed  
 * Results (mean/median by metric) substantially the same  
   
+#### *Updated 24-FEB-2016*  
+Reduced storing a database of randoms and a database of converted randoms, and converted the graphing to a function to reduce the number of variables kept in the environment:  
+* Exercise002_v002.R: 0.9 GB with 13.5 user and 15.2 elapsed  
+* Appears that using the same DB as source/output cuts total size by ~35% but takes ~10% longer to run  
+* Results (mean/median by metric) substantially the same  
+  
+  
