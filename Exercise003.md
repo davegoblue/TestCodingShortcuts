@@ -12,3 +12,6 @@ Create a routine to assess the value of a 13x4 matrix representing 5-card hands.
 * Compress it since suits do not matter, so keep the "heaviest" suit in the first column  
 * Suppose you hold N cards of M originally dealt - assess the relative likelihoods of each final outcome based on that specific hold  
 * Calculate the expected value and probability vector for holding a specific N cards of M originally dealt  
+
+##### **_26-FEB-2016_**  
+Simple update to calculate the compression possible when suits do not matter (brings down to 13% of original volume).  Next step will be to create the matrices for 5-0-0-0 and 4-1-0-0 and . . . and 2-1-1-1  
