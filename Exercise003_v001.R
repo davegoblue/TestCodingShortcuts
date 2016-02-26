@@ -71,6 +71,38 @@ simulateDraws <- function(nHands=10000,cumFile) {
 myStart <- proc.time()
 
 
+## Assess number of types of hand (suit independent)
+myHands <- function() {
+    
+    ## Calculate 5-0-0-0 (Royal, Straight Flush, Flush)
+    num5000 <- choose(13,5) ## 4 combinations
+    
+    ## Calculate 4-1-0-0 (Straight, High Pair)
+    num4100 <- choose(13,4)*choose(13,1) ## 12 combinations
+    
+    ## Calculate 3-2-0-0 (Straight, Two Pair, High Pair)
+    num3200 <- choose(13,3)*choose(13,2) ## 12 combinations
+    
+    ## Calculate 3-1-1-0 (Straight, Trips, Two Pair, High Pair)
+    num3110 <- choose(13,3)*choose(13,1)*choose(13,1) ## 12 combinations
+    
+    ## calculate 2-2-1-0 (Full House, Straight, Trips, Two Pair, High Pair)
+    num2210 <- choose(13,2)*choose(13,2)*choose(13,1) ## 12 combinations
+    
+    ## calculate 2-1-1-1 (Quad, Full House, Straight, Trips, Two Pair, High Pair)
+    num2111 <- choose(13,2)*choose(13,1)*choose(13,1)*choose(13,1) ## 4 combinations
+    
+    print(paste0("5-0-0-0 combinations: ",num5000))
+    print(paste0("4-1-0-0 combinations: ",num4100))
+    print(paste0("3-2-0-0 combinations: ",num3200))
+    print(paste0("3-1-1-0 combinations: ",num3110))
+    print(paste0("2-2-1-0 combinations: ",num2210))
+    print(paste0("2-1-1-1 combinations: ",num2111))
+    print(paste0("Total combinations: ",sum(num5000,num4100,num3200,num3110,num2210,num2111)))
+}
+
+myHands()
+
 ## Read in the file of hand values
 handValues <- read.csv("finalHandValues.csv", stringsAsFactors = FALSE)
 handValues$numSeen <- 0
