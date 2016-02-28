@@ -16,5 +16,9 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Exercise001 is for a general algorithm for lookups, aggregation/calculation, and graphing  
 * TaverasRforExcel is for expanding on tips and tricks from Taveras (author of "R for Excel") with some of my explorations  
 
-### Expansion ideas for 22-FEB-2016  
-* Exercise002 is for both simplifying the Exercise001 code and then expanding it to include covariance  
+### Expansions week of 22-FEB-2016  
+* Exercise002 is for simplifying the Exercise001 code  
+* Exercise003 is for adding to the Exercise002 code the ability to calculate all possible outcomes  
+* CheckSDPopSamp is for showing the sample vs. population calculations for variance and standard deviation  
+  
+
