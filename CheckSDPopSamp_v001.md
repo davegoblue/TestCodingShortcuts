@@ -26,6 +26,23 @@ myVarPop <- rep(0,myMax)
   
 Next we loop to pull 1:myMax draws, each taken myDraws number of times, and calculate the resulting standard deviations and variances on a population and sample basis.  
 
+```r
+for (intCtr in 1:myMax) {
+    
+    for (intCtr2 in 1:myDraws) {
+        a <- rnorm(intCtr,mean=0,sd=1)
+        sdSam[intCtr2] <- sd(a)
+        sdPop[intCtr2] <- sd(c(a,mean(a)))
+        varSam[intCtr2] <- var(a)
+        varPop[intCtr2] <- var(c(a,mean(a)))
+    }
+    
+    mySDSam[intCtr] <- mean(sdSam)
+    mySDPop[intCtr] <- mean(sdPop)
+    myVarSam[intCtr] <- mean(varSam)
+    myVarPop[intCtr] <- mean(varPop)    
+}
+```
 
 Then, we graph the variance:  
 
@@ -56,6 +73,23 @@ legend("bottomright",legend=c("True","Sample","Population"),col=c("dark green","
 
 Next, we re-run the code for draws from runif(0,1):  
 
+```r
+for (intCtr in 1:myMax) {
+    
+    for (intCtr2 in 1:myDraws) {
+        a <- runif(intCtr,min=0,max=1)
+        sdSam[intCtr2] <- sd(a)
+        sdPop[intCtr2] <- sd(c(a,mean(a)))
+        varSam[intCtr2] <- var(a)
+        varPop[intCtr2] <- var(c(a,mean(a)))
+    }
+    
+    mySDSam[intCtr] <- mean(sdSam)
+    mySDPop[intCtr] <- mean(sdPop)
+    myVarSam[intCtr] <- mean(varSam)
+    myVarPop[intCtr] <- mean(varPop)    
+}
+```
 
 Then, we graph the variance:  
 
