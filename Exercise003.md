@@ -20,4 +20,4 @@ Simple update to calculate the compression possible when suits do not matter (br
 Cut processing time by about 50%, updated to Exercise003_v002.R.  Also put in some initial coding for creating the hand matrices, but do not yet have the full combinatorics working for combining the suits.  Save as Exercise003_v003.R.  
 
 ##### **_29-FEB-2016_**  
-Fixed the combinatorics issues and validated that hand types for each sub-group match expectations.  Next step will be to save the as a big lookup file and start to calculate against them.  Save latest as Exercise003_v003.R (overwrote non-working version).  
+Fixed the combinatorics issues and validated that hand types for each sub-group match expectations.  Next step will be to save the matrices as a big lookup file and calculate against them.  Save latest as Exercise003_v003.R (overwrote non-working version).  
