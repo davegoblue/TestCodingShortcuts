@@ -44,7 +44,6 @@ assessFinalHand <- function(cardData) {
 
 assessHands <- function(keyMatrix,cumFile) {
 
-    ## Run nHands number of random draws and add the result to cumFile
     for ( intCtr in 1:nrow(keyMatrix) ) {
         
         ## Calculate cardData from each row of keyMatrix
@@ -57,7 +56,7 @@ assessHands <- function(keyMatrix,cumFile) {
         cumFile$numSeen[cumFile$Hand==myHandType] <- cumFile$numSeen[cumFile$Hand==myHandType] + 1
     }
 
-    ## Get the updated cumFile
+    ## Return the updated cumFile
     return(cumFile)    
 }
 
@@ -107,18 +106,43 @@ genHandTypes <- function(numSuits=c(5,0,0,0)) {
     nMax <- choose(13,modSuits[1])*choose(13,modSuits[2])*
             choose(13,modSuits[3])*choose(13,modSuits[4])
     
+    lenVector4 <- choose(13,modSuits[4])
+    lenVector3 <- choose(13,modSuits[3])
+    lenVector2 <- choose(13,modSuits[2])
     ratio1_1 <- nMax / choose(13,modSuits[1])
-    ratio2_1 <- nMax / choose(13,modSuits[2])
-    ratio3_1 <- nMax / choose(13,modSuits[3])
-    ratio4_1 <- nMax / choose(13,modSuits[4])
     
-    ## The below is not quite right since the hands are over-correlated
-    ## That is to say that with 3-1-1-0, you get the same 1-1 vector together - no good!
-    cardVector <- cbind(matrix(rep(t(cardVector1),ratio1_1),nrow=nMax,ncol=13,byrow=TRUE),
-                        matrix(rep(t(cardVector2),ratio2_1),nrow=nMax,ncol=13,byrow=TRUE),
-                        matrix(rep(t(cardVector3),ratio3_1),nrow=nMax,ncol=13,byrow=TRUE),
-                        matrix(rep(t(cardVector4),ratio4_1),nrow=nMax,ncol=13,byrow=TRUE)
-                        )
+    ## Strategy should be to fully permute this - initialize vectors to make that happen:
+    useCardVector1 <- matrix(data=0,nrow=nMax,ncol=13)
+    useCardVector2 <- matrix(data=0,nrow=nMax,ncol=13)
+    useCardVector3 <- matrix(data=0,nrow=nMax,ncol=13)
+    useCardVector4 <- matrix(data=0,nrow=nMax,ncol=13)
+    
+    for (intCtr in 1:nMax) {
+    
+        ## Take cardvector4 and repeat it times as-is (straight remainder division)
+        modUse4 <- 1 + (intCtr-1) %% lenVector4
+        
+        ## Take cardVector3 and repeat each row in blocks of size lenVector4
+        ## So, if lenVector4 is 13, you need row1 repeated 13 times and etc. and repeat until done
+        ## But then modUse3 can only be as big as its own length
+        modUse3 <- 1 + (intCtr-1) %/% lenVector4
+        modUse3 <- 1 + (modUse3-1) %% lenVector3
+        
+        ## Take cardVector2 and repeat each row in blocks of size lenVector4*lenVector3
+        ## But then modUse2 can only be as big as its own length
+        modUse2 <- 1 + (intCtr-1) %/% (lenVector4*lenVector3)
+        modUse2 <- 1 + (modUse2-1) %% lenVector2
+        
+        ## Take cardVector1 and repeat it in blocks of size ratio1_1
+        modUse1 <- 1 + (intCtr-1) %/% ratio1_1
+        
+        useCardVector1[intCtr,] <- cardVector1[modUse1 , ]
+        useCardVector2[intCtr,] <- cardVector2[modUse2 , ]
+        useCardVector3[intCtr,] <- cardVector3[modUse3 , ]
+        useCardVector4[intCtr,] <- cardVector4[modUse4 , ]
+    }
+
+    cardVector <- cbind(useCardVector1 , useCardVector2 , useCardVector3 , useCardVector4)
     
     return(cardVector)
 }
@@ -165,7 +189,7 @@ handValues$numSeen <- 0
 myHands()
 
 ## Pick a hand type and run it through the hand type calculator
-cardVector <- genHandTypes(c(3,1,1,0))
+cardVector <- genHandTypes(c(2,1,1,1))
 if (ncol(cardVector) != 52) {
     stop("cardVector must have exactly 52 columns before adding EV as column 53")
 }
