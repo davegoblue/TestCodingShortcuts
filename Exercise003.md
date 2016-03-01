@@ -23,5 +23,5 @@ Cut processing time by about 50%, updated to Exercise003_v002.R.  Also put in so
 Fixed the combinatorics issues and validated that hand types for each sub-group match expectations.  Next step will be to save the matrices as a big lookup file and calculate against them.  Save latest as Exercise003_v003.R (overwrote non-working version).  
   
 ##### **_01-MAR-2016_**  
-Updated the code so the matrices all have an EV in column 53.  Optimized code so that even with this step it runs 5% faster than before.  Next step will be to aggregate the individual matrices and then learn how to lookup against them.  Saved latest version as Exercise003_v004.R (new working version).  
+Updated the code so the matrices all have an EV in column 53.  Optimized code so that even with this step it runs 5% faster than before.  Code is much less of a memory hog, with the largest output matrix (which should cover ~50% of final rows) and related files needing ~75 MB.  Next step will be to aggregate the individual matrices and then learn how to lookup against them.  Saved latest version as Exercise003_v004.R (new working version).  
   
