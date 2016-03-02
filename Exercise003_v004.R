@@ -64,6 +64,7 @@ assessHands <- function(keyMatrix) {
     return(myHandType)    
 }
 
+
 genHandTypes <- function(numSuits=c(5,0,0,0)) {
     
     modSuits <- as.integer(numSuits[order(-as.integer(numSuits))])
@@ -152,66 +153,90 @@ genHandTypes <- function(numSuits=c(5,0,0,0)) {
 }
 
 
-## Assess number of types of hand (suit independent)
-myHands <- function() {
+## The combinatorics calculator, based on the lists as provdided
+comboCalc <- function(comboList) {
     
-    ## Calculate 5-0-0-0 (Royal, Straight Flush, Flush)
-    num5000 <- choose(13,5) ## 4 combinations
+    totCombo <- 0
     
-    ## Calculate 4-1-0-0 (Straight, High Pair)
-    num4100 <- choose(13,4)*choose(13,1) ## 12 combinations
+    for (listCtr in comboList) {
+        
+        possCombo <- 1
+        for (intCtr in 1:length(listCtr)) {
+            possCombo <- possCombo * choose(13,listCtr[intCtr])
+        }
+        
+        print(paste0(paste(listCtr,collapse="-") , " combinations: " , possCombo ) )
+        totCombo <- totCombo + possCombo
+    }
     
-    ## Calculate 3-2-0-0 (Straight, Two Pair, High Pair)
-    num3200 <- choose(13,3)*choose(13,2) ## 12 combinations
+    return(totCombo)
     
-    ## Calculate 3-1-1-0 (Straight, Trips, Two Pair, High Pair)
-    num3110 <- choose(13,3)*choose(13,1)*choose(13,1) ## 12 combinations
-    
-    ## calculate 2-2-1-0 (Full House, Straight, Trips, Two Pair, High Pair)
-    num2210 <- choose(13,2)*choose(13,2)*choose(13,1) ## 12 combinations
-    
-    ## calculate 2-1-1-1 (Quad, Full House, Straight, Trips, Two Pair, High Pair)
-    num2111 <- choose(13,2)*choose(13,1)*choose(13,1)*choose(13,1) ## 4 combinations
-    
-    print(paste0("5-0-0-0 combinations: ",num5000))
-    print(paste0("4-1-0-0 combinations: ",num4100))
-    print(paste0("3-2-0-0 combinations: ",num3200))
-    print(paste0("3-1-1-0 combinations: ",num3110))
-    print(paste0("2-2-1-0 combinations: ",num2210))
-    print(paste0("2-1-1-1 combinations: ",num2111))
-    print(paste0("Total combinations: ",sum(num5000,num4100,num3200,num3110,num2210,num2111)))
 }
 
 
+## The core processing function that calls everything else
+genMatrices <- function(handDistrib) {
+    
+    ## Run through the hand type creator
+    cardVector <- genHandTypes(numSuits=handDistrib)
+    if (ncol(cardVector) != 52) {
+        stop("cardVector must have exactly 52 columns")
+    }
+    
+    ## Determine the hand type for each row of cardVector
+    ## Throw it to the main envrionment with <<- (I know, I know . . . )
+    myHandTypes <<- assessHands(keyMatrix=cardVector)
+    
+    print(paste0("Finished creating cardVector for: ", paste(handDistrib , collapse = "-") ) )
+    print(proc.time() - myStart)
+    
+    return(cardVector)
+}
+
+
+## The main code is below -- declarations and then calls to the various functions
+## Grab the starting time, read in the handvalues file, and declare the desired matrices
 myStart <- proc.time()
-
-## Read in the file of hand values
 handValues <- read.csv("finalHandValues.csv", stringsAsFactors = FALSE)
-handValues$numSeen <- 0
+totCardVector <- NULL
+runHandDistribs <- list( c(5,0,0,0) , 
+                         c(2,1,1,1) ,                         
+                         c(2,2,1,0) , 
+                         c(4,1,0,0) , 
+                         c(3,2,0,0) , 
+                         c(3,1,1,0) 
 
-## Print statistics for the various types of hands
-myHands()
+                        )
 
-## Pick a hand type and run it through the hand type calculator
-cardVector <- genHandTypes(c(2,1,1,1))
-if (ncol(cardVector) != 52) {
-    stop("cardVector must have exactly 52 columns before adding EV as column 53")
+## Permute the inputs and report on the total amount of data to be generated
+totCombo <- comboCalc(comboList = runHandDistribs)
+print(paste0("Total combinations: " , totCombo) )
+
+
+## Run the algorithm for each entry in runHandDistribs
+
+
+for (listCtr in runHandDistribs) {
+    
+    cardVector <- genMatrices(handDistrib=listCtr)    
+    assocInt <- as.integer(paste(listCtr,collapse=""))
+    
+    ## Update cardVector column 53 with the results (time hog -- try to optimize elsewhere)
+    ## Update cardVector column 54 with the corresponding handType
+    ## Store the whole thing in totCardVector
+    cardVector <- cbind(cardVector , rep(0,nrow(cardVector)) , rep(assocInt,nrow(cardVector)))
+    for (intCtr in 1:nrow(cardVector)) {
+        cardVector[intCtr,53] <- handValues[handValues$Hand==myHandTypes[intCtr],]$Value
+    }
+    totCardVector <- rbind(totCardVector,cardVector)
+    
+    ## Find the associated frequencies and merge in to handValues
+    myFreq <- as.data.frame(table(myHandTypes),stringsAsFactors = FALSE)
+    names(myFreq) <- c("Hand",paste0("num",assocInt))
+    handValues <- merge(x=handValues,y=myFreq,by="Hand",all.x=TRUE)
+    
 }
-cardVector<-cbind(cardVector,rep(0,nrow(cardVector)))
-myHandTypes <- assessHands(keyMatrix=cardVector)
 
-print("Back from assessing hands")
-print(proc.time() - myStart)
-
-## Update handValues with the results
-for (intCtr in 1:nrow(handValues)) {
-    handValues[intCtr,]$numSeen <- sum(myHandTypes==handValues[intCtr,]$Hand)
-}
-
-## Update cardVector with the results
-for (intCtr in 1:nrow(cardVector)) {
-    cardVector[intCtr,53] <- handValues[handValues$Hand==myHandTypes[intCtr],]$Value
-}
 
 print("Through code (finished)")
 print(proc.time() - myStart)
