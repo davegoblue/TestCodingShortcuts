@@ -25,3 +25,6 @@ Fixed the combinatorics issues and validated that hand types for each sub-group 
 ##### **_01-MAR-2016_**  
 Updated the code so the matrices all have an EV in column 53.  Optimized code so that even with this step it runs 5% faster than before.  Code is much less of a memory hog, with the largest output matrix (which should cover ~50% of final rows) and related files needing ~75 MB.  Next step will be to aggregate the individual matrices and then learn how to lookup against them.  Saved latest version as Exercise003_v004.R (new working version).  
   
+##### **_02-MAR-2016_**  
+Updated the code so there is a final combined matrix where each row includes EV (column 53) and hand type (column 54).  Optimized code to be further function-driven for a cleaner work space.  Next step will be to learn how to lookup against an aggregated matrix.  Saved latest version as Exercise003_v004.R (overwrote old version).  
+  
