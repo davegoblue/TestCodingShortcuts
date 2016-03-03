@@ -28,3 +28,6 @@ Updated the code so the matrices all have an EV in column 53.  Optimized code so
 ##### **_02-MAR-2016_**  
 Updated the code so there is a final combined matrix where each row includes EV (column 53) and hand type (column 54).  Optimized code to be further function-driven for a cleaner work space.  Next step will be to learn how to lookup against an aggregated matrix.  Saved latest version as Exercise003_v004.R (overwrote old version).  
   
+##### **_03-MAR-2016_**  
+Cleaned the code and identified the worst of the time problems.  Next step will be to speed some of these up.  Next step after that will be to learn how to lookup against an aggregated matrix.  Saved latest version as Exercise003_v005.R (new working version).  
+  
