@@ -5,6 +5,7 @@
 ## 3-2-0-0 (straight, two pair, pair), 3-1-1-0 (straight, trips, two pair, pair)
 ## 2-2-1-0 (all but quad/flushes), 2-1-1-1 (all but flushes)
 ## Reduction of redundancy produces total matrix volume 13% of 52c5
+## This is not a full reduction of redundancy -- allows both 3-1-1-0 and 2-2-1-0 and all 2-1-1-1
 ## Investigate alternate approach which is to go by amount of pairing?
 
 ## Each possible hand for each of the suit distributions is generated and evaluated
@@ -14,23 +15,25 @@
 ## Function to assess the value of any given 5-card hand
 assessFinalHand <- function(cardData) {
     
+    ## These chew ~25% of the time
     colTotals <- colSums(cardData) ## Number to flush
     rowTotals <- rowSums(cardData) ## Number pairs
     rowCover <- ifelse(rowTotals==0,0,1) ## Number covered
-    
+
+    ## These for loops chew ~50% of the time
     strGapMax <- rep(0,10)
-    
     for ( intCtr in 1:9 ) {
         strGapMax[intCtr] <- sum(rowCover[intCtr:(intCtr+4)])
     }
-    
     for ( intCtr in 10 ) {
         strGapMax[intCtr] <- sum(rowCover[c(1,intCtr:13)])
     }
     
+    ## These take essentially no time
     numPair <- sum(rowTotals==2)
     numHighPair <- sum(rowTotals[1:4]==2)
     
+    ## These if evaluations chew ~15% of the time
     if (strGapMax[1]==5 & max(colTotals)==5) { handType <- "01.  Royal" 
     } else if (max(strGapMax)==5 & max(colTotals)==5) { handType <- "02.  Straight Flush" 
     } else if (max(rowTotals)==4) { handType = "03.  Quad" 
@@ -61,9 +64,7 @@ assessHands <- function(keyMatrix) {
         cardData <- matrix(data=keyMatrix[intCtr,1:52], nrow=13,ncol=4)
         myHandType[intCtr] <- assessFinalHand(cardData)
     }
-    
-    str(myHandType)
-    
+
     ## Return the updated myHandType
     return(myHandType)    
 }
@@ -219,7 +220,7 @@ for (listCtr in runHandDistribs) {
     print(paste0("Starting with: ", paste(listCtr , collapse = "-") ) )
     print(proc.time() - myStart)
     
-    ## Generate the requested cardVector (all valid combinatorivs for listCtr)
+    ## Generate the requested cardVector (all valid combinatorics for listCtr)
     ## Takes ~2.5 seconds for the ~170k hands of 2-1-1-1
     cardVector <- genMatrices(handDistrib=listCtr)    
     print(paste0("Finished creating cardVector for: ", paste(listCtr , collapse = "-") ) )
@@ -231,24 +232,18 @@ for (listCtr in runHandDistribs) {
     print(paste0("Finished creating myHandTypes for: ", paste(listCtr , collapse = "-") ) )
     print(proc.time() - myStart)
     
-    ## Update cardVector column 53 with the results
-    ## Update cardVector column 54 with the corresponding handType
+    ## Update cardVector column 53 with the results and column 54 with handDistrib (as integer)
     ## Store the whole thing in totCardVector
-    ## Takes ~13 seconds for the ~170k hands of 2-1-1-1
+    ## Used to Take ~13 seconds for the ~170k hands of 2-1-1-1 if using for-loop
+    ## Takes ~0.1 seconds for the ~170k hands of 2-1-1-1 using match!  So, match it is
     assocInt <- as.integer(paste(listCtr,collapse=""))
     cardVector <- cbind(cardVector , rep(0,nrow(cardVector)) , rep(assocInt,nrow(cardVector)))
-    
-    for (intCtr in 1:nrow(cardVector)) {
-        cardVector[intCtr,53] <- handValues[handValues$Hand==myHandTypes[intCtr],]$Value
-    }
-    
-    print(paste0("Finished for-loop on: ", paste(listCtr , collapse = "-") ) )
-    print(proc.time() - myStart)
-    
+    cardVector[,53] <- handValues$Value[match(myHandTypes,handValues$Hand)]
+
     totCardVector <- rbind(totCardVector,cardVector)
     
     ## Find the associated frequencies and merge in to handValues
-    ## Takes ~0.5 seconds for the ~170k hands of 2-1-1-1
+    ## Takes ~0.4 seconds for the ~170k hands of 2-1-1-1
     myFreq <- as.data.frame(table(myHandTypes),stringsAsFactors = FALSE)
     names(myFreq) <- c("Hand",paste0("num",assocInt))
     handValues <- merge(x=handValues,y=myFreq,by="Hand",all.x=TRUE)
