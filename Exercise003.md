@@ -31,3 +31,5 @@ Updated the code so there is a final combined matrix where each row includes EV 
 ##### **_03-MAR-2016_**  
 Cleaned the code and identified rough magnitude of time by component.  Significantly reduced this in one area by replacing a for-loop with match(), cutting processing time in this step by >95%.  There are two other locations to investigate for speed improvement.  Next step after that will be to learn how to lookup against an aggregated matrix.  Saved as Exercise003_v005.R (new working version).  
   
+##### **_07-MAR-2016_**  
+First attempt at permuting the data to a full 52c5 from the truncated dataset.  Permutation code runs very fast but is extremely inefficient to write.  Look in to a better algorithm for this next.  Should also start to save some files and have a few different scripts to optimize run time and memory usage.  Saved as Exercise003_v006.R (new working version).  
