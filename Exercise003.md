@@ -33,3 +33,6 @@ Cleaned the code and identified rough magnitude of time by component.  Significa
   
 ##### **_07-MAR-2016_**  
 First attempt at permuting the data to a full 52c5 from the truncated dataset.  Permutation code runs very fast but is extremely inefficient to write.  Look in to a better algorithm for this next.  Should also start to save some files and have a few different scripts to optimize run time and memory usage.  Saved as Exercise003_v006.R (new working version).  
+
+##### **_08-MAR-2016_**  
+Created the full 52c5 with no duplicates and saved the output as an RDS.  Full code takes ~100 seconds and ~1.5 GB, so it is still not particularly efficient.  Next steps will be to lookup against the final file and to explore algorithms to reduce processing time and storage space needs.  Saved as Exercise003_v006.R (overwrote old working version).  
