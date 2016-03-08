@@ -286,89 +286,81 @@ print(proc.time() - myStart)
 
 
 ## Next take the 5000/2111 data and permute spades in to hearts/diamonds/clubs
+## Each suit must be used once per frame, with spades the column that must move
+## Since a full grid was created, order of clubs/diamonds/hearts makes no difference
 mySubset <- subset(suitedFrame,handType %in% c(2111,5000))
-mySub2 <- mySubset
-mySub3 <- mySubset
-mySub4 <- mySubset
+mySub2 <- mySubset[ ,c("hearts","spades","diamonds","clubs","handValue","handType")]
+mySub3 <- mySubset[ ,c("diamonds","hearts","spades","clubs","handValue","handType")]
+mySub4 <- mySubset[ ,c("clubs","hearts","diamonds","spades","handValue","handType")]
 
-mySub2$spades <- mySubset$hearts
-mySub2$hearts <- mySubset$spades
-
-mySub3$spades <- mySubset$diamonds
-mySub3$diamonds <- mySubset$spades
-
-mySub4$spades <- mySubset$clubs
-mySub4$clubs <- mySubset$spades
+## While ugly and inefficient, it sure beats some other things I tried!
+for (dfNames in c("mySub2","mySub3","mySub4")) {
+    a <- get(dfNames)
+    names(a)[1:4] <- c("spades","hearts","diamonds","clubs")
+    assign(dfNames,a)
+}
 
 myPerm04 <- rbind(mySubset,mySub2,mySub3,mySub4)
 
 
 ## Then take the 4100 and 3200 data and permute 4x3
+## Each suit must be used once per frame, with spades/hearts the columns that must move
+## Since a full grid was created, order of clubs/diamonds makes no difference
 mySubset <- subset(suitedFrame,handType %in% c(4100,3200))
 
-# Need to permute to 4100 4010 4001 1400 1040 1004 0410 0401 0140 0104 0041 0014
-mySub2 <- mySubset
-mySub3 <- mySubset
-mySub4 <- mySubset
-mySub5 <- mySubset
-mySub6 <- mySubset
-mySub7 <- mySubset
-mySub8 <- mySubset
-mySub9 <- mySubset
-mySub10 <- mySubset
-mySub11 <- mySubset
-mySub12 <- mySubset
+## Pull in the 3110 data and reorder to spades-clubs-hearts-diamonds
+## This makes the first 2 columns the ones that need to permute 4x3
+myFake01 <- subset(suitedFrame,handType %in% c(3110))
+myFake01 <- myFake01[, c("spades","clubs","hearts","diamonds","handValue","handType")]
+names(myFake01)[1:4] <- c("spades","hearts","diamonds","clubs")
 
-## Match up the spades as appropriate (clubs and diamonds are same)
-mySub4$spades <- mySubset$hearts
-mySub5$spades <- mySubset$hearts
-mySub6$spades <- mySubset$hearts
-mySub7$spades <- mySubset$diamonds
-mySub8$spades <- mySubset$diamonds
-mySub9$spades <- mySubset$diamonds
-mySub10$spades <- mySubset$clubs
-mySub11$spades <- mySubset$clubs
-mySub12$spades <- mySubset$clubs
+## Pull in the 2210 data and reorder to diamonds-clubs-spades-hearts
+## This makes the first 2 columns the ones that need to permute 4x3
+myFake02 <- subset(suitedFrame,handType %in% c(2210))
+myFake02 <- myFake02[, c("diamonds","clubs","spades","hearts","handValue","handType")]
+names(myFake02)[1:4] <- c("spades","hearts","diamonds","clubs")
 
-## Match up the hearts as appropriate (clubs and diamonds are same)
-mySub4$hearts <- mySubset$spades
-mySub7$hearts <- mySubset$spades
-mySub8$hearts <- mySubset$spades
-mySub2$hearts <- mySubset$clubs
-mySub3$hearts <- mySubset$clubs
-mySub5$hearts <- mySubset$clubs
-mySub6$hearts <- mySubset$diamonds
-mySub11$hearts <- mySubset$diamonds
-mySub12$hearts <- mySubset$diamonds
+## Bind all the data that needs to be permutes 4x3 on columns 1 and 2
+mySubset <- rbind(mySubset, myFake01, myFake02)
 
-## Match up the diamonds as appropriate (no need to ever swap them with clubs - same thing)
-mySub5$diamonds <- mySubset$spades
-mySub9$diamonds <- mySubset$spades
-mySub11$diamonds <- mySubset$spades
-mySub2$diamonds <- mySubset$hearts
-mySub7$diamonds <- mySubset$hearts
-mySub12$diamonds <- mySubset$hearts
+mySub2 <- mySubset[ ,c("spades","diamonds","hearts","clubs","handValue","handType")]
+mySub3 <- mySubset[ ,c("spades","diamonds","clubs","hearts","handValue","handType")]
+mySub4 <- mySubset[ ,c("hearts","spades","diamonds","clubs","handValue","handType")]
+mySub5 <- mySubset[ ,c("hearts","diamonds","spades","clubs","handValue","handType")]
+mySub6 <- mySubset[ ,c("hearts","clubs","diamonds","spades","handValue","handType")]
+mySub7 <- mySubset[ ,c("diamonds","spades","hearts","clubs","handValue","handType")]
+mySub8 <- mySubset[ ,c("diamonds","spades","clubs","hearts","handValue","handType")]
+mySub9 <- mySubset[ ,c("diamonds","hearts","spades","clubs","handValue","handType")]
+mySub10 <- mySubset[ ,c("clubs","hearts","diamonds","spades","handValue","handType")]
+mySub11 <- mySubset[ ,c("clubs","diamonds","spades","hearts","handValue","handType")]
+mySub12 <- mySubset[ ,c("clubs","diamonds","hearts","spades","handValue","handType")]
 
-## Match up the clubs as appropriate (no need to ever swap them with diamonds - same thing)
-mySub6$clubs <- mySubset$spades
-mySub10$clubs <- mySubset$spades
-mySub12$clubs <- mySubset$spades
-mySub3$clubs <- mySubset$hearts
-mySub8$clubs <- mySubset$hearts
-mySub11$clubs <- mySubset$hearts
+## While ugly and inefficient, it sure beats some other things I tried!
+for (dfNames in c("mySub2","mySub3","mySub4","mySub5","mySub6","mySub7",
+                  "mySub8","mySub9","mySub10","mySub11","mySub12"
+                  )
+     ) {
+    a <- get(dfNames)
+    names(a)[1:4] <- c("spades","hearts","diamonds","clubs")
+    assign(dfNames,a)
+}
 
-myPerm12a <- rbind(mySubset,mySub2,mySub3,mySub4,mySub5,mySub6,
-                   mySub7,mySub8,mySub9,mySub10,mySub11,mySub12
+myPerm12a <- rbind(mySubset,mySub2,mySub3,mySub4,mySub5,mySub6,mySub7,
+                   mySub8,mySub9,mySub10,mySub11,mySub12
                    )
 
 
-## Then take the 3110 and 2210 data and permute 4x3
-mySubset <- subset(suitedFrame,handType %in% c(3110,2210))
+## Then integrate the permuted data
+myPermFinal <- rbind(myPerm04,myPerm12a)
 
-# Still need to permute to 3110 3101 3011 1310 1301 1130 1103 1031 1013 0311 0131 0113
-# Still need to permute to 2210 2201 2120 2102 2021 2012 1220 1202 1022 0221 0212 0122
-
+foo <- function(stuff) { paste0(stuff,collapse="") }
+myPermFinal$cards <- apply(myPermFinal[,1:4],1,FUN=foo)
 
 print("Through creating the permuted data")
 print(proc.time() - myStart)
 
+## Then write this out as an RDS so that it can be read later
+saveRDS(myPermFinal,file="myPermFinal.rds")
+
+print("Through writing out the RDS (finished with routine")
+print(proc.time() - myStart)
