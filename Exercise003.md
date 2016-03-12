@@ -36,3 +36,6 @@ First attempt at permuting the data to a full 52c5 from the truncated dataset.  
 
 ##### **_08-MAR-2016_**  
 Created the full 52c5 with no duplicates and saved the output as an RDS.  Full code takes ~100 seconds and ~1.5 GB, so it is still not particularly efficient.  Next steps will be to lookup against the final file and to explore algorithms to reduce processing time and storage space needs.  Saved as Exercise003_v006.R (overwrote old working version).  
+
+##### **_12-MAR-2016_**  
+Read the RDS and tun lookup against it.  Painfully slow!  Will need to look in to matrices and a much more clever algorithm.  Attached is an example of one path that does not work.  Saved as Exercise003_v007.R (new working version).  
