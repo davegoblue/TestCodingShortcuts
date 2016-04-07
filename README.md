@@ -21,4 +21,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Exercise003 is for adding to the Exercise002 code the ability to calculate all possible outcomes  
 * CheckSDPopSamp is for showing the sample vs. population calculations for variance and standard deviation  
   
-
+### Expansions week of 04-APR-2016  
+* RiskRuin_v001 uses exponents to calculate risk of ruin for games with integer outcomes  
+  
