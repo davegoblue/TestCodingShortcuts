@@ -1,0 +1,153 @@
+## Simulation for the Risk of Ruin (infinite trials)
+## Inputs - probability of outcomes, random add
+
+getBaseOutcomes <- function(myFileName="BaseOutcomes.csv", myDelete=NULL, forceEQ=FALSE) {
+    
+    if (file.exists(myFileName)) {
+        baseOutcomes <- read.csv(myFileName,stringsAsFactors = FALSE)
+        if (ncol(baseOutcomes) != 2) { stop("Error in CSV file, should have exactly 2 columns") }
+        colnames(baseOutcomes) <- c("probs","outcomes")
+    } else {
+        baseOutcomes <- data.frame(probs=c(0.01,0.02,0.05,0.18,0.24,0.50),outcomes=c(10,5,2,1,0,-1))
+    }
+    
+    baseOutcomes <- baseOutcomes[baseOutcomes$probs != 0,] ## Can have zeroes as inputs -- ignore those
+    
+    if ( forceEQ ) {
+        pDelta <- sum(baseOutcomes$probs) - 1
+        if ( abs(pDelta) < 0.0000001 & 
+             abs(pDelta) / baseOutcomes[nrow(baseOutcomes),]$probs < 0.1
+        ) 
+        {
+            print(paste0("Modifying probablities ",paste0(baseOutcomes[nrow(baseOutcomes),],collapse=" ")))
+            baseOutcomes[nrow(baseOutcomes),]$probs <- baseOutcomes[nrow(baseOutcomes),]$probs - pDelta
+            print(paste0("New probablities ",paste0(baseOutcomes[nrow(baseOutcomes),],collapse=" ")))
+        }
+    }
+    
+    if (sum(baseOutcomes$probs)!=1 | min(baseOutcomes$probs) < 0 | 
+        sum(is.na(baseOutcomes$probs)) > 0 | sum(is.na(baseOutcomes$outcomes)) > 0) { 
+        stop("Please resolve the issue with inputs for probs and outcomes, aborting") 
+    }
+    
+    ## Store the original value read in as outcomes
+    baseOutcomes$oldOutcomes <- baseOutcomes$outcomes
+    
+    baseMean <- sum(baseOutcomes$probs*baseOutcomes$outcomes)
+    baseVar <- sum(baseOutcomes$probs*(baseOutcomes$outcomes-baseMean)^2)
+    
+    print(paste0("Probabilities sum to 1.  Outcomes has mean ",format(baseMean,digits=3),
+                 " and variance ",format(baseVar,digits=3)))
+    
+    return(baseOutcomes)
+}
+
+
+modBaseOutcomes <- function(baseOutcomes=baseOutcomes, nAddOnePer=90) {
+
+    ## Place in the random additions component
+    baseOutcomes$oldProbs <- baseOutcomes$probs
+
+    ## Create a new row that changes the -1 to 0
+    if (nAddOnePer > 0 & baseOutcomes[nrow(baseOutcomes),"probs"] > 1/nAddOnePer) {
+        baseOutcomes <- rbind(baseOutcomes, baseOutcomes[nrow(baseOutcomes),])
+        baseOutcomes[nrow(baseOutcomes)-1,]$outcomes <- baseOutcomes[nrow(baseOutcomes)-1,]$outcomes + 1
+        baseOutcomes[nrow(baseOutcomes)-1,]$probs <- 1/nAddOnePer
+        baseOutcomes[nrow(baseOutcomes)-1,]$oldProbs <- 0
+
+        ## Fix the bottom row accordingly
+        baseOutcomes[nrow(baseOutcomes),]$probs <- baseOutcomes[nrow(baseOutcomes),]$probs - 1/nAddOnePer
+        
+    } else {
+        print(paste0("No modifications due to nAddOnePer=",nAddOnePer,
+                     " and last row prob=",baseOutcomes[nrow(baseOutcomes),"probs"]
+                     )
+              )
+    }
+
+    ## Report on changes in metrics
+    oldMean <- sum(baseOutcomes$oldProbs * baseOutcomes$outcomes)
+    newMean <- sum(baseOutcomes$probs * baseOutcomes$outcomes)
+    oldVar <- sum(baseOutcomes$oldProbs * baseOutcomes$outcomes^2) - oldMean^2
+    newVar <- sum(baseOutcomes$probs * baseOutcomes$outcomes^2) - newMean^2
+
+    print(paste0("Means have shifted from ", round(oldMean,5), " to ", round(newMean,5)))
+    print(paste0("Variance has shifted from ", round(oldVar,2), " to ", round(newVar,2)))
+    
+    return(baseOutcomes)
+    
+}
+
+
+## Step 1: Read in the outcomes file
+baseOutcomes <- getBaseOutcomes(myFileName="Play001Outcomes.csv",forceEQ=TRUE)
+
+## Step 2: Modify the base outcomes file
+baseOutcomes <- modBaseOutcomes(baseOutcomes=baseOutcomes, nAddOnePer=90)
+
+## Step 3: Aggregate and keep only probs and outcomes
+useProbs <- aggregate(probs ~ outcomes, data=baseOutcomes, FUN=sum)
+if (sum(useProbs$outcomes == -1) != 1 | 
+    sum(useProbs$outcomes < 0) != 1 | 
+    sum(useProbs$outcomes == 0) != 1
+    ) {
+        stop("Error: Algorithm will not work given these inputs")    
+    }
+
+## Goal is now to solve for testP where testP is raised to each of the outcomes with prob
+## Function for running the code
+testSeqP <- function(pVec, nMax, nStart=0, nEnd=1) {
+
+    mtxTest <- matrix(data=rep(-9, 2*(nBuckets+1)), nrow=(nBuckets+1))
+    
+    prob0 <- pVec[pVec$outcomes == 0, ]$probs
+    probNeg <- pVec[pVec$outcomes == -1, ]$probs
+    posProbs <- pVec[pVec$outcomes > 0, ]
+
+    for (intCtr in 0:nMax) {
+        testP <- nStart + (intCtr/nMax)*(nEnd - nStart)
+        mtxTest[intCtr+1, 1] <- testP
+        myRuin <- probNeg
+    
+        for (intCtr2 in 1:nrow(posProbs)) {
+            myRuin <- myRuin + posProbs[intCtr2,"probs"] * (testP ^ (posProbs[intCtr2,"outcomes"] + 1) )
+        }
+    
+        mtxTest[intCtr+1, 2] <- myRuin / (1 - prob0) ## Null is like a no trial
+    }
+    
+    return(mtxTest)
+}
+
+## First iteration (defaults to between 0 and 1)
+nBuckets <- 1000
+mtxResults <- testSeqP(pVec=useProbs, nMax=nBuckets)
+
+
+## Find locations of any column1 >= column2 (that is the crossover point)
+posDelta <- which(mtxResults[,1] >= mtxResults[,2])
+
+## Find the appropriate starting point for a second run through the data
+if (length(posDelta)==0 | (length(posDelta)==1 & posDelta[1]==(nBuckets+1) ) ) {
+    ## Failed to find any, search starting with the second last element of mtxResults
+    newStart <- mtxResults[nBuckets, 1] ## Note that there are nBuckets+1 elements; this is second-last
+    newEnd <- mtxResults[nBuckets+1, 1]
+} else {
+    ## Found at least one, take the earliest instance, and start from it minus 1
+    newStart <- mtxResults[posDelta[1], 1]
+    newEnd <- mtxResults[posDelta[1]+1, 1]
+}
+
+
+## Second iteration (defaults to 1000 trials, give it the new end points)
+mtxResults <- testSeqP(pVec=useProbs, nMax=nBuckets, nStart=newStart, nEnd=newEnd)
+posDelta <- which(mtxResults[,1] >= mtxResults[,2])
+
+## Print the best value found
+myBest <- which.min(abs(mtxResults[-(nBuckets+1),1]-mtxResults[-(nBuckets+1),2]))
+mtxResults[myBest,]
+plot(mtxResults[,1], mtxResults[,2]-mtxResults[,1], col="blue", xlab="pRuin Attempt",
+     ylab="Error (simulated minus attempt)", 
+     main=paste0("Risk of Ruin (best p=", round(mtxResults[myBest,1],7), ")")
+     )
+abline(h=0, v=mtxResults[myBest,1], lty=2, lwd=1.5, col="dark green")
