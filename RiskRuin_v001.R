@@ -1,6 +1,7 @@
 ## Simulation for the Risk of Ruin (infinite trials)
 ## Inputs - probability of outcomes, random add
 
+
 getBaseOutcomes <- function(myFileName="BaseOutcomes.csv", myDelete=NULL, forceEQ=FALSE) {
     
     if (file.exists(myFileName)) {
@@ -79,6 +80,62 @@ modBaseOutcomes <- function(baseOutcomes=baseOutcomes, nAddOnePer=90) {
 }
 
 
+testSeqP <- function(pVec, nMax, nStart=0, nEnd=1) {
+    
+    mtxTest <- matrix(data=rep(-9, 2*(nBuckets+1)), nrow=(nBuckets+1))
+    
+    prob0 <- pVec[pVec$outcomes == 0, ]$probs
+    probNeg <- pVec[pVec$outcomes == -1, ]$probs
+    posProbs <- pVec[pVec$outcomes > 0, ]
+    
+    for (intCtr in 0:nMax) {
+        testP <- nStart + (intCtr/nMax)*(nEnd - nStart)
+        mtxTest[intCtr+1, 1] <- testP
+        myRuin <- probNeg
+        
+        for (intCtr2 in 1:nrow(posProbs)) {
+            myRuin <- myRuin + posProbs[intCtr2,"probs"] * (testP ^ (posProbs[intCtr2,"outcomes"] + 1) )
+        }
+        
+        mtxTest[intCtr+1, 2] <- myRuin / (1 - prob0) ## Null is like a no trial
+    }
+    
+    return(mtxTest)
+}
+
+
+calcOutcomes <- function(pdfFrame) {
+    
+    myCDF <- numeric(nrow(pdfFrame)+1)
+    myCDF[1] <- 0
+    
+    for ( intCtr in 1:nrow(pdfFrame) ) {
+        myCDF[intCtr+1] <- myCDF[intCtr] + pdfFrame$probs[intCtr]
+    }
+    
+    print(myCDF)
+    
+    ## nTrials and nPerTrial will be found in global environment
+    mtxCumOutcomes <- matrix(pdfFrame$outcomes[findInterval(matrix(data=runif(nTrials*nPerTrial,0,1),
+                                                                              nrow=nPerTrial,
+                                                                              ncol=nTrials
+                                                                   ), myCDF, rightmost.closed=TRUE
+                                                            )
+                                               ], nrow=nPerTrial, ncol=nTrials
+                             )
+    
+    print(paste0("Ouctomes across ", nTrials*nPerTrial, " draws have mean: ",
+                 format(mean(mtxCumOutcomes), digits=3)," and variance: ",
+                 format(sd(mtxCumOutcomes)^2, digits=3)
+                 )
+          )
+    
+    mtxCumOutcomes <- apply(mtxCumOutcomes, 2, FUN=cumsum)  ## About 2.5 seconds for 12,000 x 5,000
+    
+    return(mtxCumOutcomes)
+}
+
+
 ## Step 1: Read in the outcomes file
 baseOutcomes <- getBaseOutcomes(myFileName="Play001Outcomes.csv",forceEQ=TRUE)
 
@@ -94,40 +151,15 @@ if (sum(useProbs$outcomes == -1) != 1 |
         stop("Error: Algorithm will not work given these inputs")    
     }
 
-## Goal is now to solve for testP where testP is raised to each of the outcomes with prob
-## Function for running the code
-testSeqP <- function(pVec, nMax, nStart=0, nEnd=1) {
-
-    mtxTest <- matrix(data=rep(-9, 2*(nBuckets+1)), nrow=(nBuckets+1))
-    
-    prob0 <- pVec[pVec$outcomes == 0, ]$probs
-    probNeg <- pVec[pVec$outcomes == -1, ]$probs
-    posProbs <- pVec[pVec$outcomes > 0, ]
-
-    for (intCtr in 0:nMax) {
-        testP <- nStart + (intCtr/nMax)*(nEnd - nStart)
-        mtxTest[intCtr+1, 1] <- testP
-        myRuin <- probNeg
-    
-        for (intCtr2 in 1:nrow(posProbs)) {
-            myRuin <- myRuin + posProbs[intCtr2,"probs"] * (testP ^ (posProbs[intCtr2,"outcomes"] + 1) )
-        }
-    
-        mtxTest[intCtr+1, 2] <- myRuin / (1 - prob0) ## Null is like a no trial
-    }
-    
-    return(mtxTest)
-}
-
-## First iteration (defaults to between 0 and 1)
+## Step 4: solve for testP where testP is raised to each of the outcomes with prob
+## Step 4a: First iteration (defaults to between 0 and 1)
 nBuckets <- 1000
 mtxResults <- testSeqP(pVec=useProbs, nMax=nBuckets)
 
-
-## Find locations of any column1 >= column2 (that is the crossover point)
+## Step 4b: Find locations of any column1 >= column2 (that is the crossover point)
 posDelta <- which(mtxResults[,1] >= mtxResults[,2])
 
-## Find the appropriate starting point for a second run through the data
+## Step 4c: Find the appropriate starting point for a second run through the data
 if (length(posDelta)==0 | (length(posDelta)==1 & posDelta[1]==(nBuckets+1) ) ) {
     ## Failed to find any, search starting with the second last element of mtxResults
     newStart <- mtxResults[nBuckets, 1] ## Note that there are nBuckets+1 elements; this is second-last
@@ -139,15 +171,44 @@ if (length(posDelta)==0 | (length(posDelta)==1 & posDelta[1]==(nBuckets+1) ) ) {
 }
 
 
-## Second iteration (defaults to 1000 trials, give it the new end points)
+## Step 4d: Second iteration (defaults to 1000 trials, give it the new end points)
 mtxResults <- testSeqP(pVec=useProbs, nMax=nBuckets, nStart=newStart, nEnd=newEnd)
-posDelta <- which(mtxResults[,1] >= mtxResults[,2])
 
-## Print the best value found
+
+## Step 4e: Print the best value found
 myBest <- which.min(abs(mtxResults[-(nBuckets+1),1]-mtxResults[-(nBuckets+1),2]))
 mtxResults[myBest,]
+rr1 <- mtxResults[myBest, 1]
 plot(mtxResults[,1], mtxResults[,2]-mtxResults[,1], col="blue", xlab="pRuin Attempt",
      ylab="Error (simulated minus attempt)", 
-     main=paste0("Risk of Ruin (best p=", round(mtxResults[myBest,1],7), ")")
+     main=paste0("Risk of Ruin (best p=", round(rr1,7), ")")
      )
 abline(h=0, v=mtxResults[myBest,1], lty=2, lwd=1.5, col="dark green")
+
+
+## Step 5: Simulate with actual random draws (1000 trials of 10000 hands)
+nTrials <- 200 ## Each trial is a column
+nPerTrial <- 500000 ## Each row will be a cumulative outcome
+
+## Step 5a: Run it straight up with the new probabilities
+mtxCumModified <- calcOutcomes(pdfFrame=baseOutcomes[ ,c("probs","outcomes")])
+
+## Step 5b: Run it with the original probabilities and outcomes
+pdfOrig <- data.frame(probs=baseOutcomes$oldProbs, outcomes=baseOutcomes$outcomes)
+pdfOrig <- pdfOrig[pdfOrig$probs > 0, ]
+mtxCumOrig <- calcOutcomes(pdfFrame=pdfOrig)
+
+## Step 5c: Calculate minima for modified vector
+mtxMinModified <- apply(mtxCumModified, 2, FUN=min)
+vecMin <- pmin(mtxMinModified[order(mtxMinModified)], 0) ## No matter what, cannot be better than 0
+xMax <- 100 * (ceiling(max(-vecMin)/100) + 0)
+
+par(mfrow=c(1,2))
+hist(mtxMinModified, col="light blue", 
+     main="Lowest value achieved by trial", xlab="Lowest value"
+     )
+plot(x=-vecMin, y=(1:length(vecMin))/length(vecMin), xlab="Units", xlim=c(0, xMax),
+     ylab="Risk of Ruin", main="Risk of Ruin Curves", col="blue", cex=0.5
+     )
+points(x=0:xMax, y=rr1^(1:(xMax+1)), col="dark green", cex=0.25)
+par(mfrow=c(1,1))
