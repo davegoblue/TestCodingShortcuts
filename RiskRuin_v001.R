@@ -104,7 +104,7 @@ testSeqP <- function(pVec, nMax, nStart=0, nEnd=1) {
 }
 
 
-calcOutcomes <- function(pdfFrame) {
+calcOutcomes <- function(pdfFrame, cb=0) {
     
     myCDF <- numeric(nrow(pdfFrame)+1)
     myCDF[1] <- 0
@@ -132,7 +132,16 @@ calcOutcomes <- function(pdfFrame) {
     
     mtxCumOutcomes <- apply(mtxCumOutcomes, 2, FUN=cumsum)  ## About 2.5 seconds for 12,000 x 5,000
     
-    return(mtxCumOutcomes)
+    if (cb > 0) {
+        for (intCtr in 1:nrow(mtxCumOutcomes)) {
+            mtxCumOutcomes[intCtr, ] <- mtxCumOutcomes[intCtr, ] + floor(cb*intCtr)
+        }
+    }
+    
+    mtxCumOutcomes <- apply(mtxCumOutcomes, 2, FUN=min) ## Convert to single vector
+    vecMin <- pmin(mtxCumOutcomes[order(mtxCumOutcomes)], 0) ## No matter what, cannot be better than 0
+    
+    return(vecMin)
 }
 
 
@@ -187,28 +196,40 @@ abline(h=0, v=mtxResults[myBest,1], lty=2, lwd=1.5, col="dark green")
 
 
 ## Step 5: Simulate with actual random draws (1000 trials of 10000 hands)
-nTrials <- 200 ## Each trial is a column
-nPerTrial <- 500000 ## Each row will be a cumulative outcome
+nTrials <- 800 ## Each trial is a column
+nPerTrial <- 400000 ## Each row will be a cumulative outcome
 
 ## Step 5a: Run it straight up with the new probabilities
-mtxCumModified <- calcOutcomes(pdfFrame=baseOutcomes[ ,c("probs","outcomes")])
+vecMinNew <- calcOutcomes(pdfFrame=baseOutcomes[ ,c("probs","outcomes")])
 
 ## Step 5b: Run it with the original probabilities and outcomes
 pdfOrig <- data.frame(probs=baseOutcomes$oldProbs, outcomes=baseOutcomes$outcomes)
 pdfOrig <- pdfOrig[pdfOrig$probs > 0, ]
-mtxCumOrig <- calcOutcomes(pdfFrame=pdfOrig)
+vecMinOrig <- calcOutcomes(pdfFrame=pdfOrig, cb=0.0111)
 
 ## Step 5c: Calculate minima for modified vector
-mtxMinModified <- apply(mtxCumModified, 2, FUN=min)
-vecMin <- pmin(mtxMinModified[order(mtxMinModified)], 0) ## No matter what, cannot be better than 0
-xMax <- 100 * (ceiling(max(-vecMin)/100) + 0)
+xMax <- 100 * (ceiling(max(-vecMinNew, -vecMinOrig)/100) + 0)
 
 par(mfrow=c(1,2))
-hist(mtxMinModified, col="light blue", 
+
+## Left-hand plot
+hist(vecMinOrig, col=rgb(0.5, 0, 0, 0.25), 
      main="Lowest value achieved by trial", xlab="Lowest value"
      )
-plot(x=-vecMin, y=(1:length(vecMin))/length(vecMin), xlab="Units", xlim=c(0, xMax),
-     ylab="Risk of Ruin", main="Risk of Ruin Curves", col="blue", cex=0.5
+hist(vecMinNew, col=rgb(0, 0, 0.5, 0.25), add=TRUE)
+legend("topleft", legend=c("Direct CB", "Modify Probs", "Overlap"), 
+       col=c(rgb(0.5, 0, 0, 0.25), rgb(0, 0, 0.5, 0.25), rgb(0.5, 0, 0.5, 0.5)), pch=20
+       )
+
+## Right-hand plot
+plot(x=-vecMinNew, y=(1:length(vecMinNew))/length(vecMinNew), xlim=c(0, xMax), 
+     xlab="Units", ylab="Risk of Ruin", main="Risk of Ruin Curves", 
+     col="blue", cex=0.5
      )
+points(x=-vecMinOrig, y=(1:length(vecMinOrig))/length(vecMinOrig), col="purple", cex=0.5)
 points(x=0:xMax, y=rr1^(1:(xMax+1)), col="dark green", cex=0.25)
+legend("topright", legend=c("Sim (Mod Prob)", "Sim (CB)", "Theory"), 
+       col=c("blue", "purple", "dark green"), lwd=c(2, 2, 2))
+
+
 par(mfrow=c(1,1))
