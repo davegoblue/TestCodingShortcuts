@@ -2,7 +2,7 @@
 ## Inputs - probability of outcomes, random add
 
 
-getBaseOutcomes <- function(myFileName="BaseOutcomes.csv", myDelete=NULL, forceEQ=FALSE) {
+getBaseOutcomes <- function(myFileName="BaseOutcomes.csv", forceEQ=FALSE) {
     
     if (file.exists(myFileName)) {
         baseOutcomes <- read.csv(myFileName,stringsAsFactors = FALSE)
@@ -44,7 +44,7 @@ getBaseOutcomes <- function(myFileName="BaseOutcomes.csv", myDelete=NULL, forceE
 }
 
 
-modBaseOutcomes <- function(baseOutcomes=baseOutcomes, nAddOnePer=90) {
+modBaseOutcomes <- function(baseOutcomes=baseOutcomes, nAddOnePer) {
 
     ## Place in the random additions component
     baseOutcomes$oldProbs <- baseOutcomes$probs
@@ -149,7 +149,8 @@ calcOutcomes <- function(pdfFrame, cb=0) {
 baseOutcomes <- getBaseOutcomes(myFileName="Play001Outcomes.csv",forceEQ=TRUE)
 
 ## Step 2: Modify the base outcomes file
-baseOutcomes <- modBaseOutcomes(baseOutcomes=baseOutcomes, nAddOnePer=90)
+nAddOnePer <- 68
+baseOutcomes <- modBaseOutcomes(baseOutcomes=baseOutcomes, nAddOnePer=nAddOnePer)
 
 ## Step 3: Aggregate and keep only probs and outcomes
 useProbs <- aggregate(probs ~ outcomes, data=baseOutcomes, FUN=sum)
@@ -162,7 +163,7 @@ if (sum(useProbs$outcomes == -1) != 1 |
 
 ## Step 4: solve for testP where testP is raised to each of the outcomes with prob
 ## Step 4a: First iteration (defaults to between 0 and 1)
-nBuckets <- 1000
+nBuckets <- 2000
 mtxResults <- testSeqP(pVec=useProbs, nMax=nBuckets)
 
 ## Step 4b: Find locations of any column1 >= column2 (that is the crossover point)
@@ -175,7 +176,7 @@ if (length(posDelta)==0 | (length(posDelta)==1 & posDelta[1]==(nBuckets+1) ) ) {
     newEnd <- mtxResults[nBuckets+1, 1]
 } else {
     ## Found at least one, take the earliest instance, and start from it minus 1
-    newStart <- mtxResults[posDelta[1], 1]
+    newStart <- mtxResults[posDelta[1]-1, 1]
     newEnd <- mtxResults[posDelta[1]+1, 1]
 }
 
@@ -196,8 +197,8 @@ abline(h=0, v=mtxResults[myBest,1], lty=2, lwd=1.5, col="dark green")
 
 
 ## Step 5: Simulate with actual random draws (1000 trials of 10000 hands)
-nTrials <- 800 ## Each trial is a column
-nPerTrial <- 400000 ## Each row will be a cumulative outcome
+nTrials <- 250 ## Each trial is a column
+nPerTrial <- 800000 ## Each row will be a cumulative outcome
 
 ## Step 5a: Run it straight up with the new probabilities
 vecMinNew <- calcOutcomes(pdfFrame=baseOutcomes[ ,c("probs","outcomes")])
@@ -205,7 +206,7 @@ vecMinNew <- calcOutcomes(pdfFrame=baseOutcomes[ ,c("probs","outcomes")])
 ## Step 5b: Run it with the original probabilities and outcomes
 pdfOrig <- data.frame(probs=baseOutcomes$oldProbs, outcomes=baseOutcomes$outcomes)
 pdfOrig <- pdfOrig[pdfOrig$probs > 0, ]
-vecMinOrig <- calcOutcomes(pdfFrame=pdfOrig, cb=0.0111)
+vecMinOrig <- calcOutcomes(pdfFrame=pdfOrig, cb=1/nAddOnePer)
 
 ## Step 5c: Calculate minima for modified vector
 xMax <- 100 * (ceiling(max(-vecMinNew, -vecMinOrig)/100) + 0)
