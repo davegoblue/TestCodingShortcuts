@@ -25,4 +25,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * RiskRuin_v001 uses exponents to calculate risk of ruin for games with integer outcomes  
 * RiskRuin_v001 compares theory with simulation  
 * RiskRuin_v001 compares theory with two forms of simulation (simulations very close, theory somewhat more conservative); next step is to optimize memory so this can be run for a larger number of attempts  
+* RiskRuin_v001 corrected algorithm for finding p to solve polynomial when first run finds an inflection point prior to nBuckets  
   
