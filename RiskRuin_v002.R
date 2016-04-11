@@ -120,7 +120,7 @@ calcOutcomes <- function(pdfFrame, cb=0, roughMaxN=4e+07) {
     ## Determine whether to split the processing
     nSplit <- ceiling(nTrials*nPerTrial/roughMaxN)
     print(paste0("Splitting in to ", nSplit," pieces each of roughly ", 
-                 round(roughMaxN/1000000,1)," million trials"
+                 round(roughMaxN/1000000,1)," million trials with (cb=", round(cb,4),")"
                  )
           )
     nPerSub <- ceiling(nPerTrial / nSplit) ## Allow a very slight round up
@@ -154,10 +154,13 @@ calcOutcomes <- function(pdfFrame, cb=0, roughMaxN=4e+07) {
         vecLast <- mtxTemp[nrow(mtxTemp), ]
         
         ## Find the minimum from this run, keep if worse than previous minima
-        vecMin <- pmin(apply(mtxTemp, 2, FUN=min), vecMin, 0)
+        ## Keep score of where these are occuring
+        vecTemp <- pmin(apply(mtxTemp, 2, FUN=min), vecMin, 0)
+        newMin <- sum(vecTemp < vecMin)
+        vecMin <- vecTemp
         
-        ## Report back on the progress
-        print(paste0("Finished sub-split #", splitCtr))
+        ## Report back on progress
+        print(paste0("Finished sub-split #", splitCtr," with ",newMin," new minima"))
     }
     
     return(vecMin)
@@ -182,7 +185,7 @@ if (sum(useProbs$outcomes == -1) != 1 |
 
 ## Step 4: solve for testP where testP is raised to each of the outcomes with prob
 ## Step 4a: First iteration (defaults to between 0 and 1)
-nBuckets <- 2000
+nBuckets <- 4000
 mtxResults <- testSeqP(pVec=useProbs, nMax=nBuckets)
 
 ## Step 4b: Find locations of any column1 >= column2 (that is the crossover point)
@@ -216,7 +219,7 @@ abline(h=0, v=mtxResults[myBest,1], lty=2, lwd=1.5, col="dark green")
 
 
 ## Step 5: Simulate with actual random draws (1000 trials of 10000 hands)
-nTrials <- 500 ## Each trial is a column
+nTrials <- 2000 ## Each trial is a column
 nPerTrial <- 1000000 ## Each row will be a cumulative outcome
 
 ## Step 5a: Run it straight up with the new probabilities
@@ -229,7 +232,7 @@ pdfOrig <- pdfOrig[pdfOrig$probs > 0, ]
 vecMinOrig <- calcOutcomes(pdfFrame=pdfOrig, cb=1/nAddOnePer)
 vecMinOrig <- vecMinOrig[order(vecMinOrig)]
 
-## Step 5c: Calculate minima for modified vector
+## Step 5c: Plot the simulated results against theory
 xMax <- 100 * (ceiling(max(-vecMinNew, -vecMinOrig)/100) + 0)
 
 par(mfrow=c(1,2))
@@ -244,14 +247,37 @@ legend("topleft", legend=c("Direct CB", "Modify Probs", "Overlap"),
        )
 
 ## Right-hand plot
-plot(x=-vecMinNew, y=(1:length(vecMinNew))/length(vecMinNew), xlim=c(0, xMax), 
-     xlab="Units", ylab="Risk of Ruin", main="Risk of Ruin Curves", 
-     col="blue", cex=0.5
+plot(x=-vecMinNew, y=log10((1:length(vecMinNew))/length(vecMinNew)), xlim=c(0, xMax), 
+     xlab="Units", ylab="Risk of Ruin (Log 10)", main="Risk of Ruin Curves", 
+     col="blue", cex=0.75, pch=20
      )
-points(x=-vecMinOrig, y=(1:length(vecMinOrig))/length(vecMinOrig), col="purple", cex=0.5)
-points(x=0:xMax, y=rr1^(1:(xMax+1)), col="dark green", cex=0.25)
-abline(h=c(1,0), lty=2)
+points(x=-vecMinOrig, y=log10((1:length(vecMinOrig))/length(vecMinOrig)), 
+       col="orange", cex=0.75, pch=20
+       )
+points(x=0:xMax, y=log10(rr1^(1:(xMax+1))), col="dark green", cex=0.25)
+abline(h=0, v=0, lty=2)
 legend("topright", legend=c("Sim (Mod Prob)", "Sim (CB)", "Theory"), 
-       col=c("blue", "purple", "dark green"), lwd=c(2, 2, 2))
+       col=c("blue", "orange", "dark green"), lwd=c(2, 2, 2))
 
 par(mfrow=c(1,1))
+
+
+## Step 5d: Report on the chi-squared goodness of fit
+## Create buckets where we expect ~20 observations per bucket
+numCuts <- floor(nTrials/20)
+cutPts <- numeric(length=numCuts+1)
+numPerCutOrig <- numeric(length=numCuts)
+numPerCutNew <- numeric(length=numCuts)
+
+for (intCtr in 0:numCuts) {
+    cutPts[intCtr+1] <- -log(intCtr/numCuts)/log(rr1)
+}
+
+for (intCtr in 1:numCuts) {
+    numPerCutOrig[intCtr] <- sum(vecMinOrig > cutPts[intCtr] & vecMinOrig <= cutPts[intCtr+1])
+    numPerCutNew[intCtr] <- sum(vecMinNew > cutPts[intCtr] & vecMinNew <= cutPts[intCtr+1])
+}
+
+## Overall test (each bucket should in theory be equal size, so default p is OK)
+print(chisq.test(numPerCutOrig))
+print(chisq.test(numPerCutNew))
