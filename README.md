@@ -28,3 +28,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * RiskRuin_v001 corrected algorithm for finding p to solve polynomial when first run finds an inflection point prior to nBuckets  
 * RiskRuin_v002 created to split processing in to chunks for better memory management; can run for very large N now; next step is to investigate whether speed can be further optimized  
   
+### Expansions week of 11-APR-2016  
+* RiskRuin_v002 converts graph to log10 scale and adds Chi-squared goodness of fit test  
+  
