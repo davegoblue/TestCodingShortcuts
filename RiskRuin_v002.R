@@ -171,7 +171,7 @@ calcOutcomes <- function(pdfFrame, cb=0, roughMaxN=4e+07) {
 baseOutcomes <- getBaseOutcomes(myFileName="Play001Outcomes.csv",forceEQ=TRUE)
 
 ## Step 2: Modify the base outcomes file
-nAddOnePer <- 68
+nAddOnePer <- 100
 baseOutcomes <- modBaseOutcomes(baseOutcomes=baseOutcomes, nAddOnePer=nAddOnePer)
 
 ## Step 3: Aggregate and keep only probs and outcomes
@@ -220,7 +220,7 @@ abline(h=0, v=mtxResults[myBest,1], lty=2, lwd=1.5, col="dark green")
 
 ## Step 5: Simulate with actual random draws (1000 trials of 10000 hands)
 nTrials <- 2000 ## Each trial is a column
-nPerTrial <- 1000000 ## Each row will be a cumulative outcome
+nPerTrial <- 2000000 ## Each row will be a cumulative outcome
 
 ## Step 5a: Run it straight up with the new probabilities
 vecMinNew <- calcOutcomes(pdfFrame=baseOutcomes[ ,c("probs","outcomes")])
