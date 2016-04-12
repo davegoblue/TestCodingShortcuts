@@ -30,4 +30,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 11-APR-2016  
 * RiskRuin_v002 converts graph to log10 scale and adds Chi-squared goodness of fit test  
+* RiskRuin_v002 increases nPerTrial to 2.0 million and uses exactly 1% for cb    
   
