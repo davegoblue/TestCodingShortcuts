@@ -281,3 +281,27 @@ for (intCtr in 1:numCuts) {
 ## Overall test (each bucket should in theory be equal size, so default p is OK)
 print(chisq.test(numPerCutOrig))
 print(chisq.test(numPerCutNew))
+
+
+## Describe mathematics
+## Probability of ruin for a given n is rr1^n
+
+## Mean would then be (sum-over-1-to-Inf-of n*rr1^n) / (sum-over-1-to-Inf-of rr1^n)
+## Peak will be where derivative of n*rr1^n is 0 ; n * rr1^n * ln(rr1) + rr1^n = 0
+## Or, rr1^n * (n * ln(rr1) + 1) = 0 OR n = -1 / ln(rr1)
+
+## And, for [X^2] then (sum-over-1-to-Inf-of n^2*rr1^n) / (sum-over-1-to-Inf-of rr1^n)
+## Peak will be where derivative of n^2 * rr1^n is 0 ; n^2 * rr1^n * ln(rr1) + 2 * n * rr1^n = 0
+## Or, rr1^n * (n^2 * ln(rr1) + 2*n) = 0 OR n = -2 / ln(rr1) [also, trivially, n=0 solves]
+
+par(mfrow=c(1,2))
+
+myX <- 0:16000
+
+plot(myX, myX * rr1^myX, col="blue", xlab="Units", ylab="Contribution to [X]")
+abline(h=0, v=-1/log(rr1), lty=2)
+
+plot(myX, myX^2 * rr1^myX, col="red", xlab="Units", ylab="Contribution to [X^2]")
+abline(h=0, v=-2/log(rr1), lty=2)
+
+par(mfrow=c(1,1))
