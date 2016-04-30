@@ -33,3 +33,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * RiskRuin_v002 increases nPerTrial to 2.0 million and uses exactly 1% for cb    
 * RiskRuin_v002 shows initial details of the some behind n*rr1^n (component of mean) and n^2*rr1^n (component of sd)  
   
+### Expansions week of 25-APR-2016  
+* RiskRuin_v002 adds proc.time() -- total is ~150 seconds for 2 * 2000 * 200000  
+  
