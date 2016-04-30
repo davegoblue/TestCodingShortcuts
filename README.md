@@ -36,5 +36,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 25-APR-2016  
 * RiskRuin_v002 adds proc.time() -- total is ~150 seconds for 2 * 2000 * 200000  
 * RiskRuin_v002 back to 2 * 2000 * 2000000 -- total is ~1600 seconds  
-* Created RiskRuin_v002.Rmd and RiskRuin_v002.html      
+* Created RiskRuin_v002.Rmd and RiskRuin_v002.html  
+* Modified for 2 simulations, each of 2000 trials on 3 million hands - 36 minutes  
   
