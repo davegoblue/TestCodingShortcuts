@@ -225,7 +225,7 @@ print(proc.time() - startTime)
 
 ## Step 5: Simulate with actual random draws (1000 trials of 10000 hands)
 nTrials <- 2000 ## Each trial is a column
-nPerTrial <- 200000 ## Each row will be a cumulative outcome
+nPerTrial <- 2000000 ## Each row will be a cumulative outcome
 
 ## Step 5a: Run it straight up with the new probabilities
 vecMinNew <- calcOutcomes(pdfFrame=baseOutcomes[ ,c("probs","outcomes")])
