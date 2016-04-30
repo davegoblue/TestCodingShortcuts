@@ -166,6 +166,7 @@ calcOutcomes <- function(pdfFrame, cb=0, roughMaxN=4e+07) {
     return(vecMin)
 }
 
+startTime <- proc.time()
 
 ## Step 1: Read in the outcomes file
 baseOutcomes <- getBaseOutcomes(myFileName="Play001Outcomes.csv",forceEQ=TRUE)
@@ -218,19 +219,31 @@ plot(mtxResults[,1], mtxResults[,2]-mtxResults[,1], col="blue", xlab="pRuin Atte
 abline(h=0, v=mtxResults[myBest,1], lty=2, lwd=1.5, col="dark green")
 
 
+print("Calculated theoretical risk of ruin for these inputs:")
+print(proc.time() - startTime)
+
+
 ## Step 5: Simulate with actual random draws (1000 trials of 10000 hands)
 nTrials <- 2000 ## Each trial is a column
-nPerTrial <- 2000000 ## Each row will be a cumulative outcome
+nPerTrial <- 200000 ## Each row will be a cumulative outcome
 
 ## Step 5a: Run it straight up with the new probabilities
 vecMinNew <- calcOutcomes(pdfFrame=baseOutcomes[ ,c("probs","outcomes")])
 vecMinNew <- vecMinNew[order(vecMinNew)]
+
+print("Simulated risk of ruin for the modified probabilities:")
+print(proc.time() - startTime)
+
 
 ## Step 5b: Run it with the original probabilities and outcomes
 pdfOrig <- data.frame(probs=baseOutcomes$oldProbs, outcomes=baseOutcomes$outcomes)
 pdfOrig <- pdfOrig[pdfOrig$probs > 0, ]
 vecMinOrig <- calcOutcomes(pdfFrame=pdfOrig, cb=1/nAddOnePer)
 vecMinOrig <- vecMinOrig[order(vecMinOrig)]
+
+print("Simulated risk of ruin for the raw probabilities with cb:")
+print(proc.time() - startTime)
+
 
 ## Step 5c: Plot the simulated results against theory
 xMax <- 100 * (ceiling(max(-vecMinNew, -vecMinOrig)/100) + 0)
@@ -305,3 +318,7 @@ plot(myX, myX^2 * rr1^myX, col="red", xlab="Units", ylab="Contribution to [X^2]"
 abline(h=0, v=-2/log(rr1), lty=2)
 
 par(mfrow=c(1,1))
+
+
+print("Finished the program:")
+print(proc.time() - startTime)
