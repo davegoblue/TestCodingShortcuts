@@ -38,4 +38,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * RiskRuin_v002 back to 2 * 2000 * 2000000 -- total is ~1600 seconds  
 * Created RiskRuin_v002.Rmd and RiskRuin_v002.html  
 * Modified for 2 simulations, each of 2000 trials on 3 million hands - 36 minutes  
+* Created RiskRuin_v002a.Rmd and RiskRuin_v002a.html to diagnose time by sub-component of calcOutcomes  
   
