@@ -39,4 +39,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Created RiskRuin_v002.Rmd and RiskRuin_v002.html  
 * Modified for 2 simulations, each of 2000 trials on 3 million hands - 36 minutes  
 * Created RiskRuin_v002a.Rmd and RiskRuin_v002a.html to diagnose time by sub-component of calcOutcomes  
-  
+* Created RiskRuin_v002b.Rmd and RiskRuin_v002b.html to pre-process calcOutcomes for parallel attempts  
+    
