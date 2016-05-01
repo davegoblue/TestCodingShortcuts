@@ -178,8 +178,6 @@ calcOutcomes <- function(pdfFrame, cb=0, roughMaxN=4e+07, nCalcTrials=nTrials) {
     
     for (splitCtr in 1:nSplit) {
     
-        calcTime <- proc.time()    
-        
         mtxTemp <- matrix(pdfFrame$outcomes[findInterval(matrix(data=runif(nCalcTrials * nPerSub, 0, 1),
                                                                 nrow=nPerSub, ncol=nCalcTrials
                                                                 ), myCDF, rightmost.closed=TRUE
@@ -187,18 +185,7 @@ calcOutcomes <- function(pdfFrame, cb=0, roughMaxN=4e+07, nCalcTrials=nTrials) {
                                            ], nrow=nPerSub, ncol=nCalcTrials
                           )
         
-        print("Elapsed time for findInterval: ")
-        print(proc.time() - calcTime)
-        calcTime <- proc.time()
-        
-        
         mtxTemp <- apply(mtxTemp, 2, FUN=cumsum)
-        
-        
-        print("Elapsed time for cumsum: ")
-        print(proc.time() - calcTime)
-        calcTime <- proc.time()
-        
         
         if (cb > 0) {
             for (intCtr in 1:nrow(mtxTemp)) {
@@ -208,19 +195,8 @@ calcOutcomes <- function(pdfFrame, cb=0, roughMaxN=4e+07, nCalcTrials=nTrials) {
         }
 
         
-        print("Elapsed time for cb: ")
-        print(proc.time() - calcTime)
-        calcTime <- proc.time()
-        
-        
         ## Add whatever was last to each row of the matrix from this run
         mtxTemp <- mtxTemp + matrix(data=rep(vecLast, nPerSub), nrow=nPerSub, ncol=nCalcTrials, byrow=TRUE) 
-        
-        
-        print("Elapsed time for adding back last element: ")
-        print(proc.time() - calcTime)
-        calcTime <- proc.time()
-        
         
         ## Store the last row (after adjustment above) from this run back to vecLast
         vecLast <- mtxTemp[nrow(mtxTemp), ]
@@ -234,9 +210,6 @@ calcOutcomes <- function(pdfFrame, cb=0, roughMaxN=4e+07, nCalcTrials=nTrials) {
         ## Report back on progress
         print(paste0("Finished sub-split #", splitCtr," with ",newMin," new minima"))
         
-        
-        print("Elapsed time for updating last and minima: ")
-        print(proc.time() - calcTime)
     }
     
     return(vecMin)
@@ -314,10 +287,28 @@ Global parameters are set, then the first simulation is run assuming the directl
 ```{r}
 ## Step 5: Simulate with actual random draws (1000 trials of 10000 hands)
 nTrials <- 3000 ## Each trial is a column
-nPerTrial <- 80000 ## Each row will be a cumulative outcome
+nPerTrial <- 2000000 ## Each row will be a cumulative outcome
 
 ## Step 5a: Run it straight up with the new probabilities
-vecMinNew <- calcOutcomes(pdfFrame=baseOutcomes[ ,c("probs","outcomes")])
+## Try to force parallel - call libraries and create clusters
+library(parallel)
+library(doParallel) ## automatically calls library(foreach)
+
+nCores <- max(1, detectCores() - 1) ## Need to always have a cluster running!
+clCores <- makeCluster(nCores)
+registerDoParallel(clCores)
+
+## Use the foreach capability
+vecMinNew <- foreach(parCtr=1:nCores, .combine=c) %dopar% {
+    calcOutcomes(pdfFrame=baseOutcomes[ ,c("probs","outcomes")], 
+                 nCalcTrials=ceiling(nTrials/(nCores))
+                 )
+}
+
+## Stop the parallel clusters and resume sequential
+stopCluster(clCores)
+registerDoSEQ()
+
 vecMinNew <- vecMinNew[order(vecMinNew)]
 
 print("Simulated risk of ruin for the modified probabilities:")
@@ -329,7 +320,24 @@ Then, the simulation is re-run assuming the original probabilities and a cash ba
 ## Step 5b: Run it with the original probabilities and outcomes
 pdfOrig <- data.frame(probs=baseOutcomes$oldProbs, outcomes=baseOutcomes$outcomes)
 pdfOrig <- pdfOrig[pdfOrig$probs > 0, ]
-vecMinOrig <- calcOutcomes(pdfFrame=pdfOrig, cb=1/nAddOnePer)
+
+## Attempt to run in parallel
+nCores <- max(1, detectCores() - 1) ## Need to always have a cluster running!
+clCores <- makeCluster(nCores)
+registerDoParallel(clCores)
+
+## Use the foreach capability
+vecMinOrig <- foreach(parCtr=1:nCores, .combine=c) %dopar% {
+    calcOutcomes(pdfFrame=pdfOrig, 
+                 nCalcTrials=ceiling(nTrials/(nCores)), cb=1/nAddOnePer
+                 )
+}
+
+## Stop the parallel clusters and resume sequential
+stopCluster(clCores)
+registerDoSEQ()
+
+
 vecMinOrig <- vecMinOrig[order(vecMinOrig)]
 
 print("Simulated risk of ruin for the raw probabilities with cb:")
