@@ -42,3 +42,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Created RiskRuin_v002b.Rmd and RiskRuin_v002b.html to pre-process calcOutcomes for parallel attempts  
 * Modified RiskRuin_v002b.Rmd and RiskRuin_v002b.html to run parallel - using 3 clusters cuts total run time ~50%  
   
+### Expansions week of 02-MAY-2016  
+* RiskRuin_v002b adds user-supplied flag for runParallel and time diagnostics (only if runParallel==FALSE)    
+  
