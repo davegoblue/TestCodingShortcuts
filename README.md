@@ -45,4 +45,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 02-MAY-2016  
 * RiskRuin_v002b adds user-supplied flag for runParallel and time diagnostics (only if runParallel==FALSE)    
 * Paired loops of 40 million (one no cb, and one with cb) take ~16 seconds each if not in parallel    
+* Created TestParallel_v001 to look at the "sunk cost" timing for parallel vs. sequential in a simulation  
   
