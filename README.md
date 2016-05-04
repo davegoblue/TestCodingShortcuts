@@ -47,5 +47,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Paired loops of 40 million (one no cb, and one with cb) take ~16 seconds each if not in parallel    
 * Created TestParallel_v001 to look at the "sunk cost" timing for parallel vs. sequential in a simulation  
 * TestParallel_v001 runs sequential, 3 parallel clusters doing 300% of total sequential work, and 3 parallel clusters doing 100% of total sequential work  
+* TestParallel_v001 expanded to do 300% base work (due vecLen x3) and 900% base work (due vecLen x3 and nRuns x3)  
   
-
