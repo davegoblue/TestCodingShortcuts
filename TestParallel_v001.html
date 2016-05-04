@@ -103,17 +103,17 @@ print(paste0(&quot;This set-up has &quot;,nLogical,&quot; cores, with &quot;,nCo
 
 temp &lt;- timeWaster()
 str(temp)</code></pre>
-<pre><code>##  num [1:40320] 0.00193 -0.0023 -0.01711 -0.00282 -0.01289 ...</code></pre>
+<pre><code>##  num [1:40320] -0.0088 -0.00343 0.009 -0.02664 -0.01828 ...</code></pre>
 <pre class="r"><code>summary(temp)</code></pre>
 <pre><code>##       Min.    1st Qu.     Median       Mean    3rd Qu.       Max. 
-## -0.8638000 -0.0144100 -0.0000237  0.0001634  0.0145000  1.2010000</code></pre>
+## -1.7870000 -0.0144600  0.0001579  0.0001825  0.0145800  1.2950000</code></pre>
 <pre class="r"><code>seqTime &lt;- proc.time() - baseTime
 
 print(&quot;Ran sequentially: Time taken&quot;)</code></pre>
 <pre><code>## [1] &quot;Ran sequentially: Time taken&quot;</code></pre>
 <pre class="r"><code>print(seqTime)</code></pre>
 <pre><code>##    user  system elapsed 
-##  267.89    6.30  275.51</code></pre>
+##  275.41    7.30  286.73</code></pre>
 <p>Next, the parallel processing routine is called with the following parameters:</p>
 <ul>
 <li>The number of clusters will be the number of logical clusters minus 1 (3 total on my machine)<br />
@@ -137,17 +137,17 @@ stopCluster(clCores)
 registerDoSEQ()
 
 str(temp)</code></pre>
-<pre><code>##  num [1:120960] -0.01238 0.00442 -0.01402 0.0013 0.00837 ...</code></pre>
+<pre><code>##  num [1:120960] -0.0024 0.00963 -0.00806 -0.00157 0.00859 ...</code></pre>
 <pre class="r"><code>summary(temp)</code></pre>
 <pre><code>##       Min.    1st Qu.     Median       Mean    3rd Qu.       Max. 
-## -1.1210000 -0.0144000 -0.0000318 -0.0000182  0.0142700  1.1660000</code></pre>
+## -0.9101000 -0.0143200  0.0000471  0.0000285  0.0143300  0.9399000</code></pre>
 <pre class="r"><code>parTime &lt;- proc.time() - baseTime
 
 print(&quot;Ran in parallel: Time taken&quot;)</code></pre>
 <pre><code>## [1] &quot;Ran in parallel: Time taken&quot;</code></pre>
 <pre class="r"><code>print(parTime)</code></pre>
 <pre><code>##    user  system elapsed 
-##    0.11    0.04  390.14</code></pre>
+##    0.10    0.06  409.85</code></pre>
 <p>The parallel run is doing 300% of the work in ~140% of the time, suggestive of just over a 50% decrease in elapsed time per unit of work.</p>
 <p>Next, the parallel process is run more properly, with nRuns divided by the number of clusters. As the same total volume of work will be completed, the time comparison will be more interesting:</p>
 <pre class="r"><code>baseTime &lt;- proc.time()
@@ -165,17 +165,81 @@ stopCluster(clCores)
 registerDoSEQ()
 
 str(temp)</code></pre>
-<pre><code>##  num [1:40320] -0.00112 -0.01159 -0.006 0.01474 0.01025 ...</code></pre>
+<pre><code>##  num [1:40320] -0.00687 0.015809 0.000167 -0.004404 0.005057 ...</code></pre>
 <pre class="r"><code>summary(temp)</code></pre>
 <pre><code>##       Min.    1st Qu.     Median       Mean    3rd Qu.       Max. 
-## -1.0310000 -0.0141100  0.0002434  0.0002075  0.0144400  1.2980000</code></pre>
+## -0.6688000 -0.0145900 -0.0000515  0.0000293  0.0143100  1.1630000</code></pre>
 <pre class="r"><code>parSameTime &lt;- proc.time() - baseTime
 
 print(&quot;Ran in parallel for same workload: Time taken&quot;)</code></pre>
 <pre><code>## [1] &quot;Ran in parallel for same workload: Time taken&quot;</code></pre>
 <pre class="r"><code>print(parSameTime)</code></pre>
 <pre><code>##    user  system elapsed 
-##    0.01    0.00  130.01</code></pre>
+##    0.02    0.05  129.66</code></pre>
+<p>The parallel process is now doing 100% of the sequential workload in ~45% of the sequential time.</p>
+<p>An additional question of interest is whether the parallel process has a “fixed” inefficiency or a scalable inefficiency. This can be assessed by putting the routine to work on jobs of various sizes. For example, we could try the following:</p>
+<ul>
+<li>Parallel has just been run for the defaults of vecLen=factorial(8), nRuns=factorial(8)/3 but 3 times<br />
+</li>
+<li>Suppose we triple vecLen to be 3 * factorial(8) and see how the processing time scales<br />
+</li>
+<li>Suppose we also triple nRuns to be factorial(8) run three times and see how the processing time scales</li>
+</ul>
+<pre class="r"><code>## Run with triple vecLen
+baseTime &lt;- proc.time()
+
+nPars &lt;- nLogical - 1 ## Default is to save 1 logical core for other processing
+clCores &lt;- makeCluster(nPars)
+registerDoParallel(clCores)
+
+## Yes, the below is mathematically a mess if you want timeWaster() to do &quot;real&quot; analysis!
+temp &lt;- foreach(parCtr=1:nPars, .combine=c) %dopar% {
+    timeWaster(vecLen=3*factorial(8), nRuns=ceiling(factorial(8)/3))
+}
+
+stopCluster(clCores)
+registerDoSEQ()
+
+str(temp)</code></pre>
+<pre><code>##  num [1:40320] -0.001198 -0.010706 0.006405 0.000156 0.000935 ...</code></pre>
+<pre class="r"><code>summary(temp)</code></pre>
+<pre><code>##       Min.    1st Qu.     Median       Mean    3rd Qu.       Max. 
+## -0.2879000 -0.0086900 -0.0001502 -0.0000542  0.0085080  0.4258000</code></pre>
+<pre class="r"><code>parTripLenTime &lt;- proc.time() - baseTime
+
+print(&quot;Ran in parallel for triple workload (due vecLen): Time taken&quot;)</code></pre>
+<pre><code>## [1] &quot;Ran in parallel for triple workload (due vecLen): Time taken&quot;</code></pre>
+<pre class="r"><code>print(parTripLenTime)</code></pre>
+<pre><code>##    user  system elapsed 
+##    0.02    0.00  397.08</code></pre>
+<p>And then we run the same routine but for triple vecLen AND triple nRuns:</p>
+<pre class="r"><code>## Run with triple vecLen and triple nRuns (each of three parallel doing full nRuns)
+baseTime &lt;- proc.time()
+
+nPars &lt;- nLogical - 1 ## Default is to save 1 logical core for other processing
+clCores &lt;- makeCluster(nPars)
+registerDoParallel(clCores)
+
+## Yes, the below is mathematically a mess if you want timeWaster() to do &quot;real&quot; analysis!
+temp &lt;- foreach(parCtr=1:nPars, .combine=c) %dopar% {
+    timeWaster(vecLen=3*factorial(8), nRuns=ceiling(factorial(8)))
+}
+
+stopCluster(clCores)
+registerDoSEQ()
+
+str(temp)</code></pre>
+<pre><code>##  num [1:120960] 0.00018 0.00347 -0.01105 0.00649 -0.00104 ...</code></pre>
+<pre class="r"><code>summary(temp)</code></pre>
+<pre><code>##      Min.   1st Qu.    Median      Mean   3rd Qu.      Max. 
+## -4.284000 -0.008627 -0.000011  0.000000  0.008633  2.090000</code></pre>
+<pre class="r"><code>parNineTime &lt;- proc.time() - baseTime
+
+print(&quot;Ran in parallel for 9x workload (due triple vecLen and triple nRuns): Time taken&quot;)</code></pre>
+<pre><code>## [1] &quot;Ran in parallel for 9x workload (due triple vecLen and triple nRuns): Time taken&quot;</code></pre>
+<pre class="r"><code>print(parNineTime)</code></pre>
+<pre><code>##    user  system elapsed 
+##    0.03    0.03 1207.51</code></pre>
 </div>
 
 
