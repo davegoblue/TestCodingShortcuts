@@ -50,4 +50,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TestParallel_v001 expanded to do 300% base work (due vecLen x3) and 900% base work (due vecLen x3 and nRuns x3)  
 * TestParallel_v002 created to set cache=TRUE for all the calculations in TestParallel_v001  
 * TestParallel_v002 invetsigates using 1-4 parallel clusters and comparing run times  
+* TestParallel_v002 invetsigates using 1-5 parallel clusters, caches results, and plots elapsed time vs. # clusters  
   
