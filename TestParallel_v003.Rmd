@@ -1,0 +1,284 @@
+---
+title: "Test Parallel"
+author: "davegoblue"
+date: "May 3, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview and Background  
+The parallel package in R allows for some very nice improvements in run time.  So far, I have been using 3 workers with Windows (number of threads minus 1), but I am curious more generally about the gains driven by parallel.  This program is a first effort to test speed vs. number of clusters.  
+  
+## Analysis  
+First, the parallel and doParalel libraries are called, and information about the specific setup is printed:  
+```{r}
+library(parallel)
+library(doParallel)
+
+nLogical <- detectCores() ## defaults to logical=TRUE
+nCore <- detectCores(logical=FALSE) ## will only find physical cores
+
+print(paste0("This set-up has ",nLogical," cores, with ",nCore," being physical cores."))
+```
+  
+Next, a time-waster function is set-up.  This function is designed to repeatedly do the maths on a vector, then to return the final vector.  It is purely to get the CPU cranking; there is no other purpose to the function:  
+  
+```{r}
+timeWaster <- function(vecLen=factorial(8), nRuns=factorial(8)) {
+    vecTemp <- rep(0, vecLen) ## Create numeric vector
+    vecMeans <- rep(0, nRuns) ## Create the storage vector
+    
+    for (intCtr in 1:nRuns) {
+        vecTemp <- vecTemp * rnorm(vecLen)
+        vecTemp <- vecTemp + rnorm(vecLen)
+        vecMeans[intCtr] <- mean(vecTemp)
+    }
+    
+    return(vecMeans)
+}
+```
+  
+First, the time waster function is called sequentially (normally) for a timing benchmark:  
+```{r, cache=TRUE}
+baseTime <- proc.time()
+
+temp <- timeWaster()
+str(temp)
+summary(temp)
+
+seqTime <- proc.time() - baseTime
+
+print("Ran sequentially: Time taken")
+print(seqTime)
+```
+  
+Next, the parallel processing routine is called with the following parameters:  
+  
+* The number of clusters will be the number of logical clusters minus 1 (3 total on my machine)  
+* Each cluster will run the same timeWaster() function; importantly, there is no splitting up of the workload, so the 3 parallel clusters will do (in aggregate) 3 times as much work  
+* Processing will run by way of foreach() %dopar% with .combine=c (concatenate it all in to one jumbo vector)  
+  
+The intent of the above is to establish a baseline for the inefficiencies introduced by running in parallel.  The machine needs to create its clusters, parse out work to them, and integrate their results.  This is sort of a fixed cost that will (likely) never be overcome.  
+```{r, cache=TRUE}
+baseTime <- proc.time()
+
+nPars <- nLogical - 1 ## Default is to save 1 logical core for other processing
+clCores <- makeCluster(nPars)
+registerDoParallel(clCores)
+
+temp <- foreach(parCtr=1:nPars, .combine=c) %dopar% {
+    timeWaster()
+}
+
+stopCluster(clCores)
+registerDoSEQ()
+
+str(temp)
+summary(temp)
+
+parTime <- proc.time() - baseTime
+
+print("Ran in parallel: Time taken")
+print(parTime)
+```
+  
+The parallel run is doing 300% of the work in ~140% of the time, suggestive of just over a 50% decrease in elapsed time per unit of work.  
+
+Next, the parallel process is run more properly, with nRuns divided by the number of clusters.  As the same total volume of work will be completed, the time comparison will be more interesting:  
+```{r, cache=TRUE}
+baseTime <- proc.time()
+
+nPars <- nLogical - 1 ## Default is to save 1 logical core for other processing
+clCores <- makeCluster(nPars)
+registerDoParallel(clCores)
+
+## Yes, the below is mathematically a mess if you want timeWaster() to do "real" analysis!
+temp <- foreach(parCtr=1:nPars, .combine=c) %dopar% {
+    timeWaster(nRuns=ceiling(factorial(8)/3))
+}
+
+stopCluster(clCores)
+registerDoSEQ()
+
+str(temp)
+summary(temp)
+
+parSameTime <- proc.time() - baseTime
+
+print("Ran in parallel for same workload: Time taken")
+print(parSameTime)
+```
+  
+The parallel process is now doing 100% of the sequential workload in ~45% of the sequential time.  
+  
+An additional question of interest is whether the parallel process has a "fixed" inefficiency or a scalable inefficiency.  This can be assessed by putting the routine to work on jobs of various sizes.  For example, we could try the following:  
+  
+* Parallel has just been run for the defaults of vecLen=factorial(8), nRuns=factorial(8)/3 but 3 times    
+* Suppose we triple vecLen to be 3 * factorial(8) and see how the processing time scales  
+* Suppose we also triple nRuns to be factorial(8) run three times and see how the processing time scales  
+  
+```{r, cache=TRUE}
+## Run with triple vecLen
+baseTime <- proc.time()
+
+nPars <- nLogical - 1 ## Default is to save 1 logical core for other processing
+clCores <- makeCluster(nPars)
+registerDoParallel(clCores)
+
+## Yes, the below is mathematically a mess if you want timeWaster() to do "real" analysis!
+temp <- foreach(parCtr=1:nPars, .combine=c) %dopar% {
+    timeWaster(vecLen=3*factorial(8), nRuns=ceiling(factorial(8)/3))
+}
+
+stopCluster(clCores)
+registerDoSEQ()
+
+str(temp)
+summary(temp)
+
+parTripLenTime <- proc.time() - baseTime
+
+print("Ran in parallel for triple workload (due vecLen): Time taken")
+print(parTripLenTime)
+```
+  
+This routine takes roughly triple the time and does roughly triple the work, suggestive that there is a scalable inefficiency more so than a fixed inefficiency.  
+  
+We then run the same routine but for triple vecLen AND triple nRuns:  
+```{r, cache=TRUE}
+## Run with triple vecLen and triple nRuns (each of three parallel doing full nRuns)
+baseTime <- proc.time()
+
+nPars <- nLogical - 1 ## Default is to save 1 logical core for other processing
+clCores <- makeCluster(nPars)
+registerDoParallel(clCores)
+
+## Yes, the below is mathematically a mess if you want timeWaster() to do "real" analysis!
+temp <- foreach(parCtr=1:nPars, .combine=c) %dopar% {
+    timeWaster(vecLen=3*factorial(8), nRuns=ceiling(factorial(8)))
+}
+
+stopCluster(clCores)
+registerDoSEQ()
+
+str(temp)
+summary(temp)
+
+parNineTime <- proc.time() - baseTime
+
+print("Ran in parallel for 9x workload (due triple vecLen and triple nRuns): Time taken")
+print(parNineTime)
+```
+  
+This routine does ~900% of the base parallel work and take ~900% of the base parallel processing time, again suggestive that (at least for how this function works) there are few economies of scale.  
+  
+The above have all been cached so that we can next explore the impact of changing the number of clusters.  
+
+The next interesting task is to try different numbers of clusters.  This scenario will keep the base level of sequential workload, but using 1-4 clusters.  The attempt to use 4 clusters will likely push my CPU to 100%, so part of the experiment is to see whether the computer bricks during the R run or whether the CPU pushes down what it gives each R cluster during the process.  The job is designed to be fairly short, so hopefully if there is any "brick" impact it will resolve quickly.  
+  
+```{r, cache=TRUE}
+
+parNTestTime <- matrix(rep(proc.time(),8),nrow=8,byrow=TRUE)
+
+for (nPars in 1:8) {
+    baseTime <- proc.time()
+
+    clCores <- makeCluster(nPars)
+    registerDoParallel(clCores)
+
+    ## Yes, the below is mathematically a mess if you want timeWaster() to do "real" analysis!
+    temp <- foreach(parCtr=1:nPars, .combine=c) %dopar% {
+        timeWaster(nRuns=ceiling(factorial(8)/nPars))
+    }
+
+    stopCluster(clCores)
+    registerDoSEQ()
+
+    print(paste0("After running in parallel with ",nPars," clusters"))
+    str(temp)
+    summary(temp)
+
+    parNTestTime[nPars,] <- proc.time() - baseTime
+
+    print(paste0("Ran in parallel for same workload and with ",nPars," parallel clusters: Time taken"))
+    print(parNTestTime[nPars,])
+}
+```
+  
+The outputs are plotted for inspection of the elapsed times vs. number of clusters:  
+```{r}
+plot(x=1:8, y=parNTestTime[,3], xlab="# Parallel Clusters", ylim=c(0,350), pch=19, col="blue",
+     ylab="Elapsed time (same workload)",main="Time Comparisons (sequential was ~280)")
+abline(h=c(140,280), lty=2)
+```
+  
+Parallel processing with a single cluster seems to take roughly the same time as running sequentially.  There is a substantial drop in time when moving to two clusters (this machine has two physicial cores), with much more modest drops in time when moving to 3-4 clusters (this machine has four threads / logical cores).  The computer did not seem to brick when running with 4 clusters.  While I tried to keep all other use of CPU to a minimum, I was able to switch between windows and "use" the computer.  It did not seem to be a true brick like when running very large calculations in Excel or overflowing RAM or the like.  
+  
+As expected, the move to 5 clusters actually slowed down the processing (if only by a few seconds).  Upon inspection of Task Manager, the Rscript were consuming 25/25/25/13/12 of CPU; the 25/25/25 finished at almost the same time, and the 13/12 immediately jumped to 25/25.  
+  
+It may be interesting to further test these findings in an area (caret package) that includes parallel processing as part of the trainControl().  The randomForest is an ideal place to test since 1) it tends to take a long time, and 2) growing many trees using independent mtry/variables is an ideal process to piece out.  
+  
+First, some machine learning data is loaded and prepped for running in the random forest:  
+```{r}
+## Download data if needed
+if (file.exists("pml-training.csv") & file.exists("pml-testing.csv")) {
+    print("Using existing versions of pml-training.csv and pml-testing.csv")
+    print(file.info("pml-training.csv")[c("size","mode","mtime")])
+    print(file.info("pml-testing.csv")[c("size","mode","mtime")])
+} else {
+    print("Downloading versions of pml-training.csv and pml-testing.csv")
+    download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+                  destfile="pml-training.csv"
+                  )
+    download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+                  destfile="pml-testing.csv"
+                  )
+}
+
+## Read in CSV files
+pml_training <- read.csv("pml-training.csv", stringsAsFactors=FALSE, na.strings=c("NA",""))
+pml_testing <- read.csv("pml-testing.csv", stringsAsFactors=FALSE, na.strings=c("NA",""))
+
+dim(pml_training); dim(pml_testing)
+identical(names(pml_training)[1:159], names(pml_testing)[1:159])
+print(paste0("Divergent names in column 160 are ",names(pml_training)[160],
+             " in training and ",names(pml_testing)[160]," in testing"))
+
+## Load caret and randomForest, and create train/validate data
+library(caret, quietly=TRUE, warn.conflicts=FALSE)
+library(randomForest, quietly=TRUE, warn.conflicts=FALSE)
+set.seed(0418161225)
+
+inTrain <- createDataPartition(y=pml_training$classe, p=0.75, list=FALSE)
+dfTrain <- pml_training[inTrain, ]
+dfValidate <- pml_training[-inTrain, ]
+
+dim(dfTrain); dim(dfValidate)
+table(dfTrain$classe)
+
+## Mange the NA columns
+naColSum <- colSums(is.na(dfTrain))
+okCol <- which(naColSum==0) ## Use only the 0 NA columns
+table(naColSum) ## All columns have either 0 NA or 14,409 (~97% of rows) NA
+noNATrain <- dfTrain[,okCol] ; dim(noNATrain) ## 60 variables with no NA
+
+## Create the relevant datasets (leveraged CourseProject_v004.Rmd from folder "DS08Caret"")
+badAll <- c("X", "cvtd_timestamp", "classe") ## Do not use outcome as predictor either
+badStruct <- c("user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "new_window", "num_window")
+smallVars <- c("roll_belt", "pitch_belt", "yaw_belt", 
+               "roll_forearm", "pitch_forearm", "yaw_forearm",
+               "magnet_dumbbell_x", "magnet_dumbbell_y", "magnet_dumbbell_z"
+               )
+
+predictorsLimit <- noNATrain[,!(names(noNATrain) %in% c(badAll, badStruct))]
+predictorsFull <- noNATrain[,!(names(noNATrain) %in% c(badAll))]
+predictorsSmall <- noNATrain[,names(noNATrain) %in% c(smallVars)]
+outcomes <- as.factor(noNATrain$classe) ## Factor will be easier for prediction
+dim(predictorsLimit) ; dim(predictorsFull) ; dim(predictorsSmall); length(outcomes)
+
+```
+  
+To simplify run times, predictorSmall will be used for the benchmarking:  
