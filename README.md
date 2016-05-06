@@ -52,4 +52,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TestParallel_v002 invetsigates using 1-4 parallel clusters and comparing run times  
 * TestParallel_v002 invetsigates using 1-5 parallel clusters, caches results, and plots elapsed time vs. # clusters  
 * TestParallel_v002 invetsigates using 1-8 parallel clusters, caches results, and plots elapsed time vs. # clusters  
+* TestParallel_v003 re-runs using 1-8 parallel clusters and preps for randomForest benchmarking    
   
