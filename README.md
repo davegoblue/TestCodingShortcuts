@@ -54,4 +54,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TestParallel_v002 invetsigates using 1-8 parallel clusters, caches results, and plots elapsed time vs. # clusters  
 * TestParallel_v003 re-runs using 1-8 parallel clusters and preps for randomForest benchmarking    
 * TestParallel_v003 runs randomForest sequentially using both the 10-fold cv and the 10-run bootstrap  
+* TestParallel_v003 runs randomForest with 2 parallel clusters using both the 10-fold cv and the 10-run bootstrap  
   
