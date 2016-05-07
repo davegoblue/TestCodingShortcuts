@@ -56,4 +56,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TestParallel_v003 runs randomForest sequentially using both the 10-fold cv and the 10-run bootstrap  
 * TestParallel_v003 runs randomForest with 2 parallel clusters using both the 10-fold cv and the 10-run bootstrap  
 * TestParallel_v003 runs randomForest with 3 parallel clusters using both the 10-fold cv and the 10-run bootstrap  
+* TestParallel_v003 graphs accuracy impact of cv vs. bootstrap and sequential vs. parallel  
   
