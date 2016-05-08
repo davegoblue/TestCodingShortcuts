@@ -10,9 +10,33 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Overview and Background  
-The parallel package in R allows for some very nice improvements in run time.  So far, I have been using 3 workers with Windows (number of threads minus 1), but I am curious more generally about the gains driven by parallel.  This program is a first effort to test speed vs. number of clusters.  
+The parallel package in R allows for nice improvements in run time.  So far, I have been using 3 workers with Windows (number of threads minus 1), but I am curious more generally about the gains driven by parallel.  This program is a first effort to test speed vs. number of clusters.  
+
+Among the more interesting findings so far, based on an intel i7 with 2 physicial cores and 4 logical cores:  
+  
+* For a function that is primarily computational (very little work to split/integrate the jobs), there is roughly a 50% gain for moving from 1 sequential cluster to 2 parallel clusters, with modest (5%-10% in aggregate) improvements from moving to 3+ clusters  
+* For a function that has significant work to split/integrate the jobs (e.g., randomForest), there appears to be some fixed cost to moving to parallel, and there is a lesser gain when moving to just two clusters, and correspondingly more gain when moving to three clusters  
+* Further study on larger randomForests (or similar) may be interesting to get a better feel for the trade-offs induced by any fixed cost of splitting/integrating  
+  
   
 ## Analysis  
+The analysis includes the following:  
+  
+* Grab some background data about the machine and call the parallel and doParallel libraries  
+* Create a "time waster" function that is almost entirely computational time  
+* Time waster function is run sequentially  
+* Time waster function is run in parallel, with 3 clusters each doing the same work as sequential (3x total work)  
+* Time waster function is run "properly" in parallel, doing in aggregate 100% of the sequential work  
+* Time waster function to investigate parallel by splitting each of the two dimensions passed  
+* Time waster function is run in parallel (aggregate 100% of sequential workload) using 1-8 parallel clusters  
+* Random Forest data is loaded, cleaned, and prepped  
+* Random Forest run on 9 predictors, sequentially  
+* Random Forest run on 9 predictors, with 2 parallel clusters
+* Random Forest run on 9 predictors, with 3 parallel clusters  
+* Accuracy comparisons for all Random Forests on 9 predictors (CV vs. Boot, Sequential vs. 2-3 Parallel)  
+* Random Forest run on ~50 predictors, sequentially and then with 2-3 clusters    
+  
+####_Background and Basic Setup_  
 First, the parallel and doParalel libraries are called, and information about the specific setup is printed:  
 ```{r}
 library(parallel)
@@ -24,6 +48,7 @@ nCore <- detectCores(logical=FALSE) ## will only find physical cores
 print(paste0("This set-up has ",nLogical," cores, with ",nCore," being physical cores."))
 ```
   
+####_Time Waster Function Declaration_  
 Next, a time-waster function is set-up.  This function is designed to repeatedly do the maths on a vector, then to return the final vector.  It is purely to get the CPU cranking; there is no other purpose to the function:  
   
 ```{r}
@@ -41,6 +66,7 @@ timeWaster <- function(vecLen=factorial(8), nRuns=factorial(8)) {
 }
 ```
   
+####_Time Waster (Sequential)_  
 First, the time waster function is called sequentially (normally) for a timing benchmark:  
 ```{r, cache=TRUE}
 baseTime <- proc.time()
@@ -55,6 +81,7 @@ print("Ran sequentially: Time taken")
 print(seqTime)
 ```
   
+####_Time Waster (Parallel Baseline, 3x Work)_  
 Next, the parallel processing routine is called with the following parameters:  
   
 * The number of clusters will be the number of logical clusters minus 1 (3 total on my machine)  
@@ -86,7 +113,8 @@ print(parTime)
 ```
   
 The parallel run is doing 300% of the work in ~140% of the time, suggestive of just over a 50% decrease in elapsed time per unit of work.  
-
+  
+####_Time Waster (Parallel, Same Work as Sequential)_  
 Next, the parallel process is run more properly, with nRuns divided by the number of clusters.  As the same total volume of work will be completed, the time comparison will be more interesting:  
 ```{r, cache=TRUE}
 baseTime <- proc.time()
@@ -114,6 +142,7 @@ print(parSameTime)
   
 The parallel process is now doing 100% of the sequential workload in ~45% of the sequential time.  
   
+####_Time Waster (Parallel, Investigate Fixed Inefficiency)_  
 An additional question of interest is whether the parallel process has a "fixed" inefficiency or a scalable inefficiency.  This can be assessed by putting the routine to work on jobs of various sizes.  For example, we could try the following:  
   
 * Parallel has just been run for the defaults of vecLen=factorial(8), nRuns=factorial(8)/3 but 3 times    
@@ -176,7 +205,8 @@ print(parNineTime)
 This routine does ~900% of the base parallel work and take ~900% of the base parallel processing time, again suggestive that (at least for how this function works) there are few economies of scale.  
   
 The above have all been cached so that we can next explore the impact of changing the number of clusters.  
-
+  
+####_Time Waster (Parallel with 1-8 clusters)_  
 The next interesting task is to try different numbers of clusters.  This scenario will keep the base level of sequential workload, but using 1-4 clusters.  The attempt to use 4 clusters will likely push my CPU to 100%, so part of the experiment is to see whether the computer bricks during the R run or whether the CPU pushes down what it gives each R cluster during the process.  The job is designed to be fairly short, so hopefully if there is any "brick" impact it will resolve quickly.  
   
 ```{r, cache=TRUE}
@@ -219,6 +249,7 @@ Parallel processing with a single cluster seems to take roughly the same time as
   
 As expected, the move to 5 clusters actually slowed down the processing (if only by a few seconds).  Upon inspection of Task Manager, the Rscript were consuming 25/25/25/13/12 of CPU; the 25/25/25 finished at almost the same time, and the 13/12 immediately jumped to 25/25.  
   
+####_Random Forest Setup_  
 It may be interesting to further test these findings in an area (caret package) that includes parallel processing as part of the trainControl().  The randomForest is an ideal place to test since 1) it tends to take a long time, and 2) growing many trees using independent mtry/variables is an ideal process to piece out.  
   
 First, some machine learning data is loaded and prepped for running in the random forest:  
@@ -281,6 +312,7 @@ dim(predictorsLimit) ; dim(predictorsFull) ; dim(predictorsSmall); length(outcom
 
 ```
   
+####_Small Variables (Sequential)_  
 To simplify run times, predictorSmall will be used for the benchmarking.  First, the random forest is run using both the k-fold cv and bootstrap methods, 10 times each:  
 ```{r, cache=TRUE}
 ## Set the relevant random forest controls., explicitly ruling out parallel
@@ -305,7 +337,10 @@ print(cvSeqTime)
 
 ```
 
-The bootstrap and k-fold each took on the order of 4-5 minutes when run individually.  Next, we investigate the performance advantage of running in parallel with 2 clusters (which drove the overwhelming volume of the performance gains in the above timeWaster() simulations).  
+The bootstrap and k-fold each took on the order of 4-5 minutes when run individually.  
+  
+####_Small Variables (Parallel, 2 Clusters)_  
+Next, we investigate the performance advantage of running in parallel with 2 clusters (which drove the overwhelming volume of the performance gains in the above timeWaster() simulations).  
 ```{r, cache=TRUE}
 ## Set the relevant random forest controls., explicitly permitting parallel
 library(parallel)
@@ -350,6 +385,7 @@ print(cvParTime)
   
 In contrast to the timeWaster() function, the train() function has real work to do when calling the parallel clusters.  In each case, parallel run times with 2 clusters are now ~60% as long as sequential run times.  
   
+####_Small Variables (Parallel, 3 Clusters)_  
 Perhaps the third cluster will help in this example?  Let's see!  
 ```{r, cache=TRUE}
 ## Set the relevant random forest controls., explicitly permitting parallel
@@ -395,6 +431,7 @@ print(cvParTime)
   
 There is a modest advantage, with the run times coming down by another 5%.  But, it appears run times for a randomForest of complexity such that it takes 4-5 minutes to run sequentially can only be reduced by ~50% using parallel on a computer with two physical cores and four logical cores (threads).  
   
+####_Small Variables (Accuracy Comparisons)_  
 Next, we compare the accuracy of the models:  
 ```{r}
 ## Sequential
@@ -471,7 +508,8 @@ legend("topleft", legend=c("Confusion Matrix","Model Reported"), lwd=2, col=c("d
 ```
   
 As expected, there is no obvious impact on accuracy when switching to parallel.  
-
+  
+####_Larger Variables (Sequential and 2-3 Parallel Clusters)_  
 Next, run times are compared for a more complicated model with most of the variables.  This time, the model uses only method="cv" and number=10.  
 ```{r, cache=TRUE}
 ## Set the relevant random forest controls., explicitly ruling out parallel
@@ -538,3 +576,4 @@ print(cvParTime)
 ```
   
 The 3-cluster approach runs in ~55% of the time of the sequential approach.  It seems that the third cluster is more valuable here than in the timeWaster() example, partly since the second cluster was less impactful.  
+  
