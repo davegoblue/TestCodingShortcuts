@@ -60,3 +60,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TestParallel_v003 investigates efficiency of parallel for 10-fold cv on a much larger randomForest  
 * TestParallel_v003 summarized for future reference    
   
+### Expansions week of 09-MAY-2016  
+* AssociativeArrays_v001 is an initial exploration of using the hash table to speed up lookups in R      
