@@ -62,3 +62,7 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 09-MAY-2016  
 * AssociativeArrays_v001 is an initial exploration of using the hash table to speed up lookups in R      
+
+### Expansions week of 16-MAY-2016  
+* Wizard001_v001 is an initial exploration of an algorithm displayed on the Wizard of Odds page  
+  
