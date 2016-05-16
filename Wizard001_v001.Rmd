@@ -1,0 +1,85 @@
+---
+title: "Replicate VP Analysis Methodology"
+author: "davegoblue"
+date: "May 16, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Executive Summary  
+The Wizard of Odds published an interesting approach for calculating the strategy for any given video poker pay table in fairly quick order.  See <http://wizardofodds.com/games/video-poker/methodology/>.  
+
+The script attempts to replicate some of these steps using R, with the aim of improving my knowledge of both the algorithm and the efficient implementation in R.  
+  
+## Analysis  
+####_Background_  
+The Wizard has a clever approach for reducing the number of hands in a simulation.  The approach takes advantage of the irrelevance of suits, specifically that AcAsTd9d6c is functionally the same as AhAsTd9d6h.  All that really matters is which ranks have which suits in common.
+  
+Assuming a 52-card (no wildcards) deck with deal/draw of 5 cards, this means:  
+```{r}
+## Actual number of hands
+print(paste0("There are ",choose(52,5)," possible hands for 52 draw 5"))
+```
+  
+However, many of these hands are essentially copies of each other.  The Wizard chooses to consider the ranks of the cards in the player hands.  The possible combinations, ignoring suits at first, are:  
+  
+* Five singletons - 13c5 combinations  
+* One pair - 13c1 * 12c3 combinations  
+* Two Pair - 13c2 * 11c1 combinations  
+* Three of a Kind - 13c1 * 12c2 combinations  
+* Full House - 13c1 * 12c1 combinations  
+* Quads - 13c1 * 12c1 combinations  
+  
+This reduces to:  
+```{r}
+nSingleton <- choose(13, 5)
+nOnePair <- choose(13, 1) * choose(12, 3)
+nTwoPair <- choose(13, 2) * choose(11, 1)
+nThreeKind <- choose(13, 1) * choose(12, 2)
+nFullHouse <- choose(13, 1) * choose(12, 1)
+nQuads <- choose(13, 1) * choose(12, 1)
+
+print("Singleton   One Pair   Two Pair   Three Kind   Full House   Quads")
+print(paste(nSingleton, nOnePair, nTwoPair, nThreeKind, nFullHouse, nQuads, sep="       "))
+```
+  
+There is the additional matter of the potential suits that the cards can take.  Specific to the singletons:  
+```{r}
+# Look at singletons, consider A the most prevalent (may be tied), B the next most prevalent
+# AAAAA - weighting 4 (any of 4 suits)
+# AAAAB - weighting 4*3 (any of 4 A, any of 3 B) * 5c1 (any of 5 ranks could be the suit mismtach)
+# AAABB - weighting 4*3 (any of 4 A, any of 3 B) * 5c2 (any 2 cards could be the suit mismatch)
+# AAABC - weighting 4*3*2 (any of 4 A, any of 3 B, any of 2 C) * 5c3 (any 3 cards could be the suit match)
+# AABBC - weighting of 4*3*2 (any of 4 A, any of 3 B, any of 2 C)
+#                      * 5c1*3c1 (any 1 loner, any of 3 to pair first A)
+# AABCD - weighting of 4*3*2*1 (any of 4 A, 3 B, 2 C, 1 D) * 5c2 (any 2 cards can be together)
+
+mtxCombSingle <- matrix(data=0, nrow=7, ncol=3)
+dimnames(mtxCombSingle) <- list(c("AAAAA", "AAAAB", "AAABB", "AAABC", "AABBC", "AABCD", "Total"),
+                                c("Weighting", "Options", "Total")
+                                )
+
+mtxCombSingle[1, 1] <- 4
+mtxCombSingle[2, 1] <- 4 * 3
+mtxCombSingle[3, 1] <- 4 * 3
+mtxCombSingle[4, 1] <- 4 * 3 * 2
+mtxCombSingle[5, 1] <- 4 * 3 * 2
+mtxCombSingle[6, 1] <- 4 * 3 * 2 * 1
+
+mtxCombSingle[1, 2] <- 1
+mtxCombSingle[2, 2] <- choose(5, 1)
+mtxCombSingle[3, 2] <- choose(5, 2)
+mtxCombSingle[4, 2] <- choose(5, 3)
+mtxCombSingle[5, 2] <- choose(5, 1) * choose(3,1)
+mtxCombSingle[6, 2] <- choose(5, 2)
+
+mtxCombSingle[ ,3] <- mtxCombSingle[ ,1] * mtxCombSingle[ ,2]
+mtxCombSingle[7, 3] <- sum(mtxCombSingle[-7, 3])
+
+print(mtxCombSingle)
+```
+  
+Next, specific to the two pair hands:
