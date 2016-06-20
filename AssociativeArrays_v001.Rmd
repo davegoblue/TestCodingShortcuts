@@ -41,8 +41,10 @@ print(myList[testVals])
 
 ```
   
-Setting up the 20,000 item list takes ~6 seconds, so it is not all that fast.  Now, we pull 20,000 draws at random and measure the time required:
+Setting up the 20,000 item list takes ~10 seconds, so it is not all that fast.  Now, we pull 20,000 draws at random and measure the time required:
 ```{r}
+set.seed(1606200859)
+
 myVals <- sample(1:maxN, maxN, replace=TRUE)  # Make maxN draws, allowing for replacement
 
 ## Initialize timing after deciding which items to draw
@@ -57,7 +59,7 @@ print(proc.time() - baseTime)
 
 ```
 
-This lookup takes ~2.5 seconds for 20,000 items, which is again not stupendously fast for a very modest amount of data.  As the lookup starts to become more complex, run times could be an issue.
+This lookup takes ~5 seconds for 20,000 items, which is again not stupendously fast for a very modest amount of data.  As the lookup starts to become more complex, run times could be an issue.
 
 ###_Hash Function_  
 A hash function is written to roughly match the gavinband article, and run with similar parameters:  
@@ -105,3 +107,92 @@ print(proc.time() - baseTime)
 ```
 
 The lookup time has been reduced to ~0.1 seconds, again showing the hash table to be ~30x faster.  This is very intriguing and merits further exploration and self-learning!  
+
+###_Use R like Python Dictionary?_  
+Python has a nice dictionary feature that runs very quickly.  Below is a test to see whether R can be used in a similar fashion.  First, the "mbox.txt" file is loaded from "../../../PythonDirectory/BasicPython_v001/":  
+```{r}
+library(readr)
+
+pyDir <- "../../../PythonDirectory/BasicPython_v001/"
+pyFile <- "mbox.txt"
+
+emailString <- read_file(paste0(pyDir, pyFile))
+emailList <- strsplit(emailString, split=" ")
+str(emailList)
+
+emailVector <- emailList[[1]]
+str(emailVector)
+
+emailVector <- emailVector[emailVector != ""]
+str(emailVector)
+
+```
+  
+So, emailVector is now a character string containing 445255 elements.  Suppose we want to create the count of each element in the vector using base R without associative arrays:  
+```{r, cache=TRUE}
+
+# First, make a small subset of the emailFile
+emailSmall <- emailVector[sample(length(emailVector), 25000, replace=FALSE)]
+
+# Create a blank data frame of the appropriate maximum length and type
+ctWords <- data.frame(eachWord=character(length(emailSmall)), 
+                      ctWord=integer(length(emailSmall)), stringsAsFactors = FALSE
+                      )
+
+nextBlank <- 1
+
+startTime <- proc.time()
+
+# Loop through each of the words in the emailVector
+for (allWords in emailSmall) {
+    curMatch <- which(ctWords$eachWord == allWords)
+    if (length(curMatch) > 0) {
+        ctWords[curMatch,"ctWord"] = ctWords[curMatch,"ctWord"] + 1
+    } else {
+        ctWords[nextBlank, "eachWord"] <- allWords
+        ctWords[nextBlank, "ctWord"] <- 1
+        nextBlank <- nextBlank + 1
+    }
+}
+
+proc.time() - startTime
+
+```
+  
+Just taking the first 25,000 words and trying to match them to a length 25,000 data frame is a danting exercise taking ~30 seconds.  The process tends to scale as O(N^2), so a full 400k word lookup could take ~2 hours!  Hopefully, hashing can improve on this:  
+```{r}
+
+myWordHash <- new.env(hash=TRUE, parent=emptyenv(), size=length(emailSmall))
+
+startTime <- proc.time()
+
+# Loop through each of the words in the emailVector
+for (allWords in emailSmall) {
+    if (length(myWordHash[[allWords]]) > 0) {
+        myWordHash[[allWords]] <- myWordHash[[allWords]] + 1
+    } else {
+        myWordHash[[allWords]] <- 1
+    }
+
+}
+
+proc.time() - startTime
+
+misMatch <- 0
+
+# Next a check is run to see if we have the same answers as ctWords
+for (intCtr in 1:nrow(ctWords)) {
+    if (ctWords[intCtr, "ctWord"] == 0) { break }
+    
+    if (myWordHash[[ ctWords[intCtr, "eachWord"] ]] != ctWords[intCtr, "ctWord"]) {
+        misMatch <- misMatch + 1
+    }
+}
+
+print(paste0("Total mismatches: ", misMatch, " of ", intCtr))
+
+proc.time() - startTime
+
+```
+  
+So, the hash table creates and then validates the same information in ~0.5 seconds.  The next step is to figure out how to query the new environment so that I can use the hashed data!
