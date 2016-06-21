@@ -224,4 +224,92 @@ sum( ctWords[order(-ctWords$ctWord, ctWords$eachWord), ][ctWords$eachWord != "",
 
 ```
   
-This works at roughly the same speed as Python, or ~0.1 seconds.  The data are identical, suggesting there is good promise in clever use of hashed environments to serve as an R key-value dictionary.
+This works at roughly the same speed as Python, or ~0.1 seconds.  The data are identical, suggesting there is good promise in clever use of hashed environments to serve as an R key-value dictionary.  
+  
+###_Lookups for Character Vectors_  
+Character vectors can be particularly difficult to look-up.  An interesting and related question is what would be the lookup time (data frame vs. hashed environment) for 20^4 drawn from LETTERS[1:20]?  First, the experiment is run with a data frame:  
+```{r}
+
+set.seed(1606211532)
+
+nRuns <- 20^4
+let20 <- LETTERS[1:20]
+
+baseGrid <- expand.grid(let20, let20, let20, let20, stringsAsFactors=FALSE)
+charFrame <- data.frame(frameKey=apply(baseGrid, 1, FUN=paste0, collapse=""), 
+                        frameValue=1:nRuns, 
+                        stringsAsFactors = FALSE
+                        )
+
+nTrials <- 2000
+sampNums <- sample(length(charFrame$frameKey), nTrials, replace=TRUE)
+keysLook <- charFrame$frameKey[sampNums]
+valsFind <- integer(nTrials)
+```
+  
+The below chunk is merely a continuation of the above chunk, split apart so that the random seed and setup need not be cached even while the longer lookup is:  
+```{r, cache=TRUE}
+# Run the process using the data frame lookup
+startTime <- proc.time()
+
+ctCur <- 1
+for (eachKey in keysLook) {
+    valsFind[ctCur] <- charFrame$frameValue[charFrame$frameKey==eachKey]
+    ctCur <- ctCur + 1
+}
+
+proc.time() - startTime
+
+# Run the process using the integer index lookup
+startTime <- proc.time()
+
+ctCur <- 1
+valsFindIdx <- integer(nTrials)
+for (eachIndex in sampNums) {
+    valsFindIdx[ctCur] <- charFrame$frameValue[eachIndex]
+    ctCur <- ctCur + 1
+}
+
+proc.time() - startTime
+
+identical(valsFind, valsFindIdx)
+
+```
+  
+This serves as another example of the power of the relational (index or hash) philosophy.  Running the text lookup 2,000 times against a 160,000 row table takes ~20 seconds, while doing the same work while knowing the index number to find takes ~0.1 seconds.  
+  
+A similar process is then run using a hashed environment in place of the 160,000 x 2 charFrame data frame:  
+```{r}
+
+myCharHash <- new.env(hash=TRUE, parent=emptyenv(), size=nrow(charFrame))
+
+# Set up the hash table
+startTime <- proc.time()
+
+for (intCtr in 1:nrow(charFrame)) {
+    myCharHash[[ charFrame$frameKey[intCtr] ]] <- charFrame$frameValue[intCtr]
+}
+
+proc.time() - startTime
+
+
+# Use the hash table, same as above
+startTime <- proc.time()
+
+ctCur <- 1
+valsFindHash <- integer(nTrials)  # Pulls nTrials from previous chunk
+
+# Will use the same keysLook as previous chunk
+for (eachKey in keysLook) {
+    valsFindHash[ctCur] <- myCharHash[[ eachKey ]]
+    ctCur <- ctCur + 1
+}
+
+proc.time() - startTime
+
+identical(valsFind, valsFindHash)
+
+```
+  
+This example nicely illustrates the trade-offs of the hashing process.  Creating the hash table incurs a one-time cost of 5-10 seconds.  In exchange, the 2,000 lookups take only 0.1 seconds (roughly the same as the relational index method) rather than ~20 seconds.  So, if there will be many lookups, the hash table is a great way to implement the relational concept while still being able to use characters for lookup.  
+  
