@@ -41,7 +41,7 @@ print(myList[testVals])
 
 ```
   
-Setting up the 20,000 item list takes ~10 seconds, so it is not all that fast.  Now, we pull 20,000 draws at random and measure the time required:
+Setting up the 20,000 item list takes 5-10 seconds, so it is not all that fast.  Now, we pull 20,000 draws at random and measure the time required:
 ```{r}
 set.seed(1606200859)
 
@@ -59,7 +59,7 @@ print(proc.time() - baseTime)
 
 ```
 
-This lookup takes ~5 seconds for 20,000 items, which is again not stupendously fast for a very modest amount of data.  As the lookup starts to become more complex, run times could be an issue.
+This lookup takes 2-4 seconds for 20,000 items, which is again not stupendously fast for a very modest amount of data.  As the lookup starts to become more complex, run times could be an issue.
 
 ###_Hash Function_  
 A hash function is written to roughly match the gavinband article, and run with similar parameters:  
@@ -88,7 +88,7 @@ print(as.list(hashList)[testVals])
 
 ```
   
-Note that the setup time has been reduced to ~0.2 seconds.  Building the hash table is ~30x faster.  
+Note that the setup time has been reduced to ~0.1 seconds.  Building the hash table is ~30x faster.  
   
 The proof in the pudding though is the lookup time for the hash table - how well does it perform in this example:  
 ```{r}
@@ -111,28 +111,34 @@ The lookup time has been reduced to ~0.1 seconds, again showing the hash table t
 ###_Use R like Python Dictionary?_  
 Python has a nice dictionary feature that runs very quickly.  Below is a test to see whether R can be used in a similar fashion.  First, the "mbox.txt" file is loaded from "../../../PythonDirectory/BasicPython_v001/":  
 ```{r}
-library(readr)
 
 pyDir <- "../../../PythonDirectory/BasicPython_v001/"
 pyFile <- "mbox.txt"
 
-emailString <- read_file(paste0(pyDir, pyFile))
-emailList <- strsplit(emailString, split=" ")
-str(emailList)
+emailLines <- readLines(paste0(pyDir, pyFile))
+str(emailLines)
 
-emailVector <- emailList[[1]]
-str(emailVector)
+addrLines <- emailLines[grep("[@]",emailLines)]
+str(addrLines)
 
-emailVector <- emailVector[emailVector != ""]
-str(emailVector)
+addrWords <- character(0)
+for (eachLine in addrLines) { 
+    keyWords <- strsplit(eachLine," ")
+    for (eachWord in keyWords[[1]]) { 
+        if(grepl("[@]", eachWord)) { 
+            addrWords <- c(addrWords, eachWord) 
+        } 
+    } 
+}
+str(addrWords)
 
 ```
   
-So, emailVector is now a character string containing 445255 elements.  Suppose we want to create the count of each element in the vector using base R without associative arrays:  
+So, addrWords is now a character string containing 22,019 e-mail addresses, formatted to varying degrees of cleanliness.  Suppose we want to create the count of each clean element in the vector using base R without associative arrays:  
 ```{r, cache=TRUE}
 
-# First, make a small subset of the emailFile
-emailSmall <- emailVector[sample(length(emailVector), 25000, replace=FALSE)]
+# First, make a small subset of the emailFile consisting of just e-mail addresses
+emailSmall <- gsub("[<>();]","",addrWords)
 
 # Create a blank data frame of the appropriate maximum length and type
 ctWords <- data.frame(eachWord=character(length(emailSmall)), 
@@ -159,7 +165,7 @@ proc.time() - startTime
 
 ```
   
-Just taking the first 25,000 words and trying to match them to a length 25,000 data frame is a danting exercise taking ~30 seconds.  The process tends to scale as O(N^2), so a full 400k word lookup could take ~2 hours!  Hopefully, hashing can improve on this:  
+Just taking the 22,000 words and trying to match them to a length 22,000 data frame is a rather time-consuming exercise taking ~20 seconds.  The process tends to scale as O(N^2), so a full 400k word lookup could take ~2 hours!  Hopefully, hashing can improve on this:  
 ```{r}
 
 myWordHash <- new.env(hash=TRUE, parent=emptyenv(), size=length(emailSmall))
@@ -195,4 +201,27 @@ proc.time() - startTime
 
 ```
   
-So, the hash table creates and then validates the same information in ~0.5 seconds.  The next step is to figure out how to query the new environment so that I can use the hashed data!
+So, the hash table creates and then validates the same information in ~0.2 seconds.  The next step is to figure out how to query the new environment so that I can use the hashed data!
+  
+The names() command applied to a hashed environment works in a manner that pulls down the keys, with the hash table containing the values.  So, for example:  
+```{r}
+
+startTime <- proc.time()
+
+eNames <- names(myWordHash)
+eCts <- integer(0)
+
+for (eachName in eNames) { 
+    eCts <- c(eCts, myWordHash[[eachName]]) 
+}
+
+dfOrder <- order(-eCts, eNames)
+
+proc.time() - startTime
+
+sum( ctWords[order(-ctWords$ctWord, ctWords$eachWord), ][ctWords$eachWord != "", ] != 
+     data.frame(eachWord = eNames, ctWord=eCts)[dfOrder, ] )
+
+```
+  
+This works at roughly the same speed as Python, or ~0.1 seconds.  The data are identical, suggesting there is good promise in clever use of hashed environments to serve as an R key-value dictionary.
