@@ -70,4 +70,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AssociativeArrays_v001 creates an associative array of word counts, similar to a dictionary in Python, then puts back together the appropriate key-value paris  
 * AssociativeArrays_v001 shows an example of character lookups in a hashed environment    
 * AssociativeArrays_v001 reproduces the Python word count dictionary on romeo-full.txt  
+* AssociativeArrays_v001 reproduces the Python word count dictionary on tomsawyer_74.txt  
   
