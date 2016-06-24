@@ -71,4 +71,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AssociativeArrays_v001 shows an example of character lookups in a hashed environment    
 * AssociativeArrays_v001 reproduces the Python word count dictionary on romeo-full.txt  
 * AssociativeArrays_v001 reproduces the Python word count dictionary on tomsawyer_74.txt  
-  
+* AssociativeArrays_v001 compares run times by approach on tomsawyer_74.txt  
