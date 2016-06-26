@@ -490,12 +490,14 @@ Next, a version of the dictionary is read from <https://raw.githubusercontent.co
 * Etc.  
   
 As a first step, the file is read, blank lines and lines with less than 1 space (2 words) deleted, and a table created of the second entry:  
-```{r}
+```{r, cache=TRUE}
 oedLines <- readLines("OED_from_Github.txt")
 str(oedLines)
 
+oedTrim <- sapply(oedLines, FUN=trimws)
+
 foo <- function(x) { length(x) > 1 }
-oedContent <- oedLines[sapply(strsplit(oedLines,"\\s+"), FUN=foo)]
+oedContent <- oedTrim[sapply(strsplit(oedTrim,"\\s+"), FUN=foo)]
 
 fooTwo <- function(x) { strsplit(x, "\\s+")[[1]][2] }
 keyTable <- table( sapply(oedContent, FUN=fooTwo) )
@@ -505,10 +507,42 @@ print(sum(keyTable[order(-keyTable)][1:30])/sum(keyTable))
   
 As a first pass, only the entries flagged as "n.", "adj.", "v.", and "adv." will be used.  These will be single words that are flagged as noun, adjective, verb, and adverb.  
 ```{r}
-fooThree <- function(x) { (strsplit(x, "\\s+")[[1]][2] %in% c("n.", "adj.", "v.", "adv.") ) }
+# fooThree <- function(x) { (strsplit(x, "\\s+")[[1]][2] %in% c("n.", "adj.", "v.", "adv.") ) }
+fooThree <- function(x) { length(grepRaw("[vn][\\.]|ad[jv]\\.", strsplit(x, "\\s+")[[1]][2])) > 0 }
 oedSubset <- oedContent[ sapply(oedContent, FUN=fooThree) ]
 str(oedSubset)
 
 ```
   
-And so, there will be ~24k words to explore as a dictionary.
+And so, there will be ~29k words to explore as a dictionary.  As before, the hashed environment is created, with each word added to it:  
+```{r}
+oedDictHash <- new.env(hash=TRUE, parent=emptyenv(), size=round(1.5 * length(oedSubset), 0) )
+
+for (eachLine in oedSubset) {
+    oedWord <- strsplit(trimws(eachLine),"\\s+")[[1]][1]
+    oedDef <- substr(eachLine, grepRaw("\\S*[vn][\\.]|\\S*ad[jv]\\.", eachLine), nchar(eachLine))
+    
+    oedDictHash[[ tolower(oedWord) ]] <- oedDef
+}
+
+length(names(oedDictHash))
+
+```
+  
+The dictionary contains ~28k words, roughly 3% less than was originally read in.  This suggests there are some duplicates in the oed file, and only the LAST definition entered is stored.  
+  
+Next, the words in the sayer dictionary are assessed, to see how many of them have been included:  
+```{r}
+sawyerMatch <- logical(0)
+for (eachKey in sawyerKeys) {
+    sawyerMatch <- c(sawyerMatch, length(oedDictHash[[eachKey]]) > 0)
+}
+sum(sawyerMatch) / length(sawyerMatch)
+sum(sawyerMatch * sawyerVals) / sum(sawyerVals)
+
+print(data.frame(key=sawyerKeys[dfOrder], val=sawyerVals[dfOrder], 
+                 inDict=sawyerMatch[dfOrder]
+                 )[1:19, c(2:1, 3)])
+```
+  
+This initial pass matches ~40% of the words in Tom Sawyer, but misses many of the common words.  It appears types like "conj.", "prep.", "pron.", and the like may need to be added to the search.
