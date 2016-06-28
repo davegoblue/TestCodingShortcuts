@@ -77,3 +77,4 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 27-JUN-2016  
 * AssociativeArrays_v001 updates word searches in tomsawyer_74.txt in OED_from_Github.txt  
+* AssociativeArrays_v001 changes regular expressions to improve word searches in tomsawyer_74.txt in OED_from_Github.txt  
