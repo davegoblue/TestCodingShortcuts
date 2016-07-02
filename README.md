@@ -81,3 +81,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AssociativeArrays_v001 further improves word searches in tomsawyer_74.txt in OED_from_Github.txt  
 * AssociativeArrays_v001 explores word mismatches from tomsawyer_74.txt in OED_from_Github.txt  
 * AssociativeArrays_v001 refines word matching from tomsawyer_74.txt in OED_from_Github.txt  
+* RiskRuin_v003_DDB96_0200cb refines the risk of ruin program to look at 9/6 DDB with 2.00% cb  
