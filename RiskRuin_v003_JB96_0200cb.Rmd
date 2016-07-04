@@ -1,0 +1,507 @@
+---
+title: "Risk of Ruin Theory and Simulation"
+author: "davegoblue"
+date: "April 30, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background and Objective  
+Risk of ruin is a concept derived from playing a game out to infinite trials.  If the lowest point reached in the game exceeds the bankroll, then the player is "ruined" (the game ends).  If not, the bankroll will eventually tend towards infinite as the number of trials tends towards infinite.  
+  
+A simplified game is one in which every outcome is an integer, with the worst possible outcome being -1 (loss of a single unit).  In that case, if rr is the risk of ruin with a single unit, then rr^n is the risk of ruin with n units.  This is because to be ruined with 2 units is really to be ruined with 1 unit twice (the recurison goes out to infinite).
+  
+This program calculates the theoretical risk of ruin for a set of inputs (all integers, worst outcome -1), then runs simulations to compare against the theory.  
+
+The functions and code from RiskRuin_v002b.Rmd are leveraged and then a new input file is applied.  For this specific example, we use:  
+  
+* Standard Jacks or Better 9/6 pay table  
+* Cash back component of 2.0% (in other words, if you assume a permanent 2.0% loss, how many units WORSE than that are you likely to be at your very lowest point)  
+  
+## Analysis  
+####_Function to read in the base outcomes file_  
+The first function creates a base outcomes file.  It will read the outcomes file (probabilities summing to 1 and associated outcomes) provided:  
+```{r}
+getBaseOutcomes <- function(myFileName="BaseOutcomes.csv", forceEQ=FALSE) {
+    
+    if (file.exists(myFileName)) {
+        baseOutcomes <- read.csv(myFileName,stringsAsFactors = FALSE)
+        if (ncol(baseOutcomes) != 2) { stop("Error in CSV file, should have exactly 2 columns") }
+        colnames(baseOutcomes) <- c("probs","outcomes")
+    } else {
+        baseOutcomes <- data.frame(probs=c(0.01,0.02,0.05,0.18,0.24,0.50),outcomes=c(10,5,2,1,0,-1))
+    }
+    
+    baseOutcomes <- baseOutcomes[baseOutcomes$probs != 0,] ## Can have zeroes as inputs -- ignore those
+    
+    if ( forceEQ ) {
+        pDelta <- sum(baseOutcomes$probs) - 1
+        if ( abs(pDelta) < 0.0000001 & 
+             abs(pDelta) / baseOutcomes[nrow(baseOutcomes),]$probs < 0.1
+        ) 
+        {
+            print(paste0("Modifying probablities ",paste0(baseOutcomes[nrow(baseOutcomes),],collapse=" ")))
+            baseOutcomes[nrow(baseOutcomes),]$probs <- baseOutcomes[nrow(baseOutcomes),]$probs - pDelta
+            print(paste0("New probablities ",paste0(baseOutcomes[nrow(baseOutcomes),],collapse=" ")))
+        }
+    }
+    
+    if (sum(baseOutcomes$probs)!=1 | min(baseOutcomes$probs) < 0 | 
+        sum(is.na(baseOutcomes$probs)) > 0 | sum(is.na(baseOutcomes$outcomes)) > 0) { 
+        stop("Please resolve the issue with inputs for probs and outcomes, aborting") 
+    }
+    
+    ## Store the original value read in as outcomes
+    baseOutcomes$oldOutcomes <- baseOutcomes$outcomes
+    
+    baseMean <- sum(baseOutcomes$probs*baseOutcomes$outcomes)
+    baseVar <- sum(baseOutcomes$probs*(baseOutcomes$outcomes-baseMean)^2)
+    
+    print(paste0("Probabilities sum to 1.  Outcomes has mean ",format(baseMean,digits=3),
+                 " and variance ",format(baseVar,digits=3)))
+    
+    return(baseOutcomes)
+}
+```
+  
+####_Function to modify the base outcomes file_  
+The modification function converts the base outcome file to simulate the addition of a "cash back" component.  The idea is that if the player enjoys a 1% cash back, this can be pseudo-simulated by taking 1% probability away from -1 and moving it to 0.  There are some issues with this approach, particularly for small bankrolls, but it vastly simplifies some of the processing.  The simulations will be to test the appropriateness of this simplification.  
+```{r}
+modBaseOutcomes <- function(baseOutcomes=baseOutcomes, nAddOnePer) {
+
+    ## Place in the random additions component
+    baseOutcomes$oldProbs <- baseOutcomes$probs
+
+    ## Create a new row that changes the -1 to 0
+    if (nAddOnePer > 0 & baseOutcomes[nrow(baseOutcomes),"probs"] > 1/nAddOnePer) {
+        baseOutcomes <- rbind(baseOutcomes, baseOutcomes[nrow(baseOutcomes),])
+        baseOutcomes[nrow(baseOutcomes)-1,]$outcomes <- baseOutcomes[nrow(baseOutcomes)-1,]$outcomes + 1
+        baseOutcomes[nrow(baseOutcomes)-1,]$probs <- 1/nAddOnePer
+        baseOutcomes[nrow(baseOutcomes)-1,]$oldProbs <- 0
+
+        ## Fix the bottom row accordingly
+        baseOutcomes[nrow(baseOutcomes),]$probs <- baseOutcomes[nrow(baseOutcomes),]$probs - 1/nAddOnePer
+        
+    } else {
+        print(paste0("No modifications due to nAddOnePer=",nAddOnePer,
+                     " and last row prob=",baseOutcomes[nrow(baseOutcomes),"probs"]
+                     )
+              )
+    }
+
+    ## Report on changes in metrics
+    oldMean <- sum(baseOutcomes$oldProbs * baseOutcomes$outcomes)
+    newMean <- sum(baseOutcomes$probs * baseOutcomes$outcomes)
+    oldVar <- sum(baseOutcomes$oldProbs * baseOutcomes$outcomes^2) - oldMean^2
+    newVar <- sum(baseOutcomes$probs * baseOutcomes$outcomes^2) - newMean^2
+
+    print(paste0("Means have shifted from ", round(oldMean,5), " to ", round(newMean,5)))
+    print(paste0("Variance has shifted from ", round(oldVar,2), " to ", round(newVar,2)))
+    
+    return(baseOutcomes)
+    
+}
+```
+
+####_Function to calculate risk of ruin by way of polynomial_  
+In this simplified scenario, we have only integer outcomes with the worst outcome being -1.  This allows for calculating the risk of ruin by way of a polynomial.  In a simplified example, suppose there is a 30% probabilty of -1, 20% probability of 0, and a 50% probability of +1.  Then:  
+  
+* Ruin on the first hand is 30%  
+* Re-do from the same position is 20%  
+* Move to two units (if rr is ruin with 1 unit, then rr^2 is ruin with 2 units) is 50%  
+  
+Then rr = 30% (lose right away) + 20% * rr (push right away) + 50% * rr^2 (bankroll better by one), which reduces to 50% * rr^2 - 80% * rr + 30% = 0 or rr^2 - 160% * rr + 60% = 0.  By the quadratic equation then:  
+  
+* rr = [160% +/- sqrt(160%^2 - 4 * 1 * 60%)] / (2 * 1)  
+* rr = [160% +/- sqrt(256% - 240%)] / 2  
+* rr = [160% +/- sqrt(16%)] / 2  
+* rr = [160% +/- 40%] / 2  
+* rr = 100% (trivially, rr=1 will solve any polynomial where p sum to 1) or rr = 60% (the more interesting solution)  
+* Checking rr=60%, this means 60% = 30% + 20% * 60% + 50% * 60%^2 = 30% + 12% + 18% = 60% (TRUE)  
+  
+The problem is identical no matter the number of polynomial terms, provided that all outcomes are integers and the worst outcome is -1.  Since it is difficult to solve high-order polynomials, this program uses sequential testing of possible rr to find the non-trivial solution for a set of inputs.  
+```{r}
+testSeqP <- function(pVec, nMax, nStart=0, nEnd=1) {
+    
+    mtxTest <- matrix(data=rep(-9, 2*(nBuckets+1)), nrow=(nBuckets+1))
+    
+    probNeg <- pVec[pVec$outcomes == -1, ]$probs
+    posProbs <- pVec[pVec$outcomes >= 0, ]
+    
+    for (intCtr in 0:nMax) {
+        testP <- nStart + (intCtr/nMax)*(nEnd - nStart)
+        mtxTest[intCtr+1, 1] <- testP
+        myRuin <- probNeg
+        
+        for (intCtr2 in 1:nrow(posProbs)) {
+            myRuin <- myRuin + posProbs[intCtr2,"probs"] * (testP ^ (posProbs[intCtr2,"outcomes"] + 1) )
+        }
+        
+        mtxTest[intCtr+1, 2] <- myRuin
+    }
+    
+    return(mtxTest)
+}
+```
+  
+####_Function to simulate multiple trials of multiple hands given a probability vector_  
+This function is for simulating many hands across many trials and reporting the minimum reached.  Assuming the game is positive EV and the number of hands is high enough, the distribution of minima should be a direct input in to the risk of ruin for any given bankroll.  The function does several things:  
+  
+* Converts the probability vector to a CDF for ease of later findInterval  
+* Splits the number of hands to reduce the memory requirements (trying to have no more than 40 million elements stored in the matrix at any given time)  
+* Initializes two vectors at zero for each trial, one storing the "last" data and one storing the "minimum" data  
+* Loops through each of the splits of data, pulling random numbers, using findInterval to pull out a result, calculates a cumulative sum adding cash-back as appropriate, adds the existing "last" vector to the new cumulative sum, and updates the "last" vector (always) as well as the "minimum" vector (if the new minima is lower than the existing minima based on this split  
+  
+```{r}
+calcOutcomes <- function(pdfFrame, cb=0, roughMaxN=4e+07, nCalcTrials=nTrials) {
+    
+    myCDF <- numeric(nrow(pdfFrame)+1)
+    myCDF[1] <- 0
+    
+    for ( intCtr in 1:nrow(pdfFrame) ) {
+        myCDF[intCtr+1] <- myCDF[intCtr] + pdfFrame$probs[intCtr]
+    }
+    
+    print(myCDF)
+    
+    ## nPerTrial will be found in global environment
+    ## Determine whether to split the processing
+    nSplit <- ceiling(nCalcTrials*nPerTrial/roughMaxN)
+    print(paste0("Splitting in to ", nSplit," pieces each of roughly ", 
+                 round(roughMaxN/1000000,1)," million trials with (cb=", round(cb,4),")"
+                 )
+          )
+    nPerSub <- ceiling(nPerTrial / nSplit) ## Allow a very slight round up
+    print(paste0("Each sub-split will contain ",nPerSub," trials"))
+    
+    ## Initialize two vectors for storing data
+    vecLast <- rep(0, nCalcTrials) ## Will hold the current last value by trial
+    vecMin <- rep(0, nCalcTrials) ## Will hold the current minimum value by trial
+    
+    for (splitCtr in 1:nSplit) {
+    
+        a <- proc.time()
+        
+        mtxTemp <- matrix(pdfFrame$outcomes[findInterval(matrix(data=runif(nCalcTrials * nPerSub, 0, 1),
+                                                                nrow=nPerSub, ncol=nCalcTrials
+                                                                ), myCDF, rightmost.closed=TRUE
+                                                         )
+                                           ], nrow=nPerSub, ncol=nCalcTrials
+                          )
+        
+        if (splitCtr==1) { 
+            print("Elapsed time for findInterval: ")
+            print(proc.time() - a)
+            a <- proc.time()
+            ## Roughly 3.6 seconds each
+        }
+        
+        mtxTemp <- apply(mtxTemp, 2, FUN=cumsum)
+        
+        if (splitCtr==1) { 
+            print("Elapsed time for cumsum: ")
+            print(proc.time() - a)
+            a <- proc.time()
+            ## Roughly 1.5 seconds each
+        }        
+        
+        if (cb > 0) {
+            for (intCtr in 1:nrow(mtxTemp)) {
+                ## Very slightly imperfect (potentially) around the edges of nSplit - ignored
+                mtxTemp[intCtr, ] <- mtxTemp[intCtr, ] + floor(cb*intCtr)
+            }
+        }
+
+        if (splitCtr==1) { 
+            print("Elapsed time for cashback: ")
+            print(proc.time() - a)
+            a <- proc.time()
+            ## Roughly 2.2 seconds each
+        }        
+        
+        ## Add whatever was last to each row of the matrix from this run
+        mtxTemp <- mtxTemp + matrix(data=rep(vecLast, nPerSub), nrow=nPerSub, ncol=nCalcTrials, byrow=TRUE) 
+
+        if (splitCtr==1) { 
+            print("Elapsed time for adding last row: ")
+            print(proc.time() - a)
+            a <- proc.time()
+            ## Roughly 0.7 seconds each
+        }        
+        
+        ## Store the last row (after adjustment above) from this run back to vecLast
+        vecLast <- mtxTemp[nrow(mtxTemp), ]
+
+        if (splitCtr==1) { 
+            print("Elapsed time for storing last row: ")
+            print(proc.time() - a)
+            a <- proc.time()
+            ## Roughly 0.0 seconds each
+        }        
+        
+        ## Find the minimum from this run, keep if worse than previous minima
+        ## Keep score of where these are occuring
+        vecTemp <- pmin(apply(mtxTemp, 2, FUN=min), vecMin, 0)
+        newMin <- sum(vecTemp < vecMin)
+        vecMin <- vecTemp
+        
+        if (splitCtr==1) { 
+            print("Elapsed time for updating minima: ")
+            print(proc.time() - a)
+            a <- proc.time()
+            ## Roughly 0.8 seconds each
+        }        
+        
+        ## Rough time estimates for 40 million hands
+        ## Base (no cashback): ~7 seconds
+        ## Include cash back: ~9 seconds
+        ## Paired runs (one of each): ~16 seconds
+        ## 3,000 x 3,000,000 would be roughly 1 hour
+        
+        ## Report back on progress
+        print(paste0("Finished sub-split #", splitCtr," with ",newMin," new minima"))
+        
+    }
+    
+    return(vecMin)
+}
+```
+  
+####_Calculate the start time and run the function to get an outcomes vector_  
+The start time is calculated to understand overall performance.  The 9/6 Jacks or Better file is read in, using raw data from <http://wizardofodds.com/games/video-poker/tables/jacks-or-better/>.  Further, the cash back component is set to be 2.0%:  
+```{r}
+startTime <- proc.time()
+
+## Step 1: Read in the outcomes file
+baseOutcomes <- getBaseOutcomes(myFileName="JB_96_Probs.csv", forceEQ=TRUE)
+
+## Step 2: Modify the base outcomes file
+nAddOnePer <- 50 ## Cash back is 1/nAddOnePer
+baseOutcomes <- modBaseOutcomes(baseOutcomes=baseOutcomes, nAddOnePer=nAddOnePer)
+
+## Step 3: Aggregate and keep only probs and outcomes
+useProbs <- aggregate(probs ~ outcomes, data=baseOutcomes, FUN=sum)
+if (sum(useProbs$outcomes == -1) != 1 | 
+    sum(useProbs$outcomes < 0) != 1 | 
+    sum(useProbs$outcomes == 0) != 1
+    ) {
+        stop("Error: Algorithm will not work given these inputs")    
+    }
+```
+  
+####_Calculate theoretical risk of ruin using two runs through testSeqP_  
+The theoretical risk of ruin is calculated using the polynomial approximation.  The algorithm takes two passes, first looking across [0, 1] to find the best small interval, then looking only within that tiny interval.  The best solution for risk of ruin is reported, along with a graph showing that this point achieves a polynomial solution (f(x) - x = 0).  
+```{r}
+## Step 4: solve for testP where testP is raised to each of the outcomes with prob
+## Step 4a: First iteration (defaults to between 0 and 1)
+nBuckets <- 4000
+mtxResults <- testSeqP(pVec=useProbs, nMax=nBuckets)
+
+## Step 4b: Find locations of any column1 >= column2 (that is the crossover point)
+posDelta <- which(mtxResults[,1] >= mtxResults[,2])
+
+## Step 4c: Find the appropriate starting point for a second run through the data
+if (length(posDelta)==0 | (length(posDelta)==1 & posDelta[1]==(nBuckets+1) ) ) {
+    ## Failed to find any, search starting with the second last element of mtxResults
+    newStart <- mtxResults[nBuckets, 1] ## Note that there are nBuckets+1 elements; this is second-last
+    newEnd <- mtxResults[nBuckets+1, 1]
+} else {
+    ## Found at least one, take the earliest instance, and start from it minus 1
+    newStart <- mtxResults[posDelta[1]-1, 1]
+    newEnd <- mtxResults[posDelta[1]+1, 1]
+}
+
+
+## Step 4d: Second iteration (give it the new end points)
+mtxResults <- testSeqP(pVec=useProbs, nMax=nBuckets, nStart=newStart, nEnd=newEnd)
+
+
+## Step 4e: Print the best value found
+myBest <- which.min(abs(mtxResults[-(nBuckets+1),1]-mtxResults[-(nBuckets+1),2]))
+mtxResults[myBest,]
+rr1 <- mtxResults[myBest, 1]
+plot(mtxResults[,1], mtxResults[,2]-mtxResults[,1], col="blue", xlab="pRuin Attempt",
+     ylab="Error (simulated minus attempt)", 
+     main=paste0("Risk of Ruin (best p=", round(rr1,7), ")")
+     )
+abline(h=0, v=mtxResults[myBest,1], lty=2, lwd=1.5, col="dark green")
+
+
+print("Calculated theoretical risk of ruin for these inputs:")
+print(proc.time() - startTime)
+```
+  
+So, for a bankroll of n, we estimate risk of ruin to be rr1^n and log10(risk of ruin) to be n * log10(rr1).  
+  
+####_Simulate using two methods_  
+Global parameters are set, then the first simulation is run assuming the directly updated probabilities:  
+```{r}
+## Step 5: Simulate with actual random draws (1000 trials of 10000 hands)
+nTrials <- 480 ## Each trial is a column
+nPerTrial <- 4000000 ## Each row will be a cumulative outcome
+runParallel <- TRUE ## Should the following routines attempt to run in parallel?
+
+## Step 5a: Run it straight up with the new probabilities
+## Force parallel if TRUE - call libraries and create clusters
+if (runParallel) {
+    library(parallel)
+    library(doParallel) ## automatically calls library(foreach)
+
+    nCores <- max(1, detectCores() - 1) ## Need to always have a cluster running!
+    clCores <- makeCluster(nCores)
+    registerDoParallel(clCores)
+
+    ## Use the foreach capability
+    vecMinNew <- foreach(parCtr=1:nCores, .combine=c) %dopar% {
+        calcOutcomes(pdfFrame=baseOutcomes[ ,c("probs","outcomes")], 
+                     nCalcTrials=ceiling(nTrials/(nCores))
+                     )
+    }
+
+    ## Stop the parallel clusters and resume sequential
+    stopCluster(clCores)
+    registerDoSEQ()
+} else {
+    vecMinNew <- calcOutcomes(pdfFrame=baseOutcomes[ ,c("probs","outcomes")])
+}
+
+vecMinNew <- vecMinNew[order(vecMinNew)]
+
+print("Simulated risk of ruin for the modified probabilities:")
+print(proc.time() - startTime)
+```
+  
+Then, the simulation is re-run assuming the original probabilities and a cash back component:  
+```{r}
+## Step 5b: Run it with the original probabilities and outcomes
+pdfOrig <- data.frame(probs=baseOutcomes$oldProbs, outcomes=baseOutcomes$outcomes)
+pdfOrig <- pdfOrig[pdfOrig$probs > 0, ]
+
+## Attempt to run in parallel
+if (runParallel) {
+    nCores <- max(1, detectCores() - 1) ## Need to always have a cluster running!
+    clCores <- makeCluster(nCores)
+    registerDoParallel(clCores)
+
+    ## Use the foreach capability
+    vecMinOrig <- foreach(parCtr=1:nCores, .combine=c) %dopar% {
+        calcOutcomes(pdfFrame=pdfOrig, 
+                     nCalcTrials=ceiling(nTrials/(nCores)), cb=1/nAddOnePer
+                     )
+    }
+
+    ## Stop the parallel clusters and resume sequential
+    stopCluster(clCores)
+    registerDoSEQ()
+} else {
+    vecMinOrig <- calcOutcomes(pdfFrame=pdfOrig, cb=1/nAddOnePer)    
+}
+
+vecMinOrig <- vecMinOrig[order(vecMinOrig)]
+
+print("Simulated risk of ruin for the raw probabilities with cb:")
+print(proc.time() - startTime)
+```
+
+####_Compare simulations against theory_  
+The results of the simulations are plotted against the theory.  The log10 scale is used since it is an easy linear interpretation.  
+```{r}
+## Step 5c: Plot the simulated results against theory
+xMax <- 100 * (ceiling(max(-vecMinNew, -vecMinOrig)/100) + 0)
+unitXMax <- 10^(round(log10(xMax) - 1, 0))
+keyBreak <- (2 * unitXMax) * ceiling(xMax / (2 * unitXMax))
+    
+if (keyBreak/unitXMax < 8) {
+    histBreaks <- seq(-keyBreak, 0, by=unitXMax/2)
+} else if (keyBreak/unitXMax > 16) {
+    histBreaks <- seq(-keyBreak, 0, by=2*unitXMax)
+} else {
+    histBreaks <- seq(-keyBreak, 0, by=unitXMax)
+}
+
+par(mfrow=c(1,2))
+
+## Left-hand plot
+hist(vecMinOrig, col=rgb(0.5, 0, 0, 0.25), breaks=histBreaks, 
+     main="Lowest value achieved by trial", xlab="Lowest value"
+     )
+hist(vecMinNew, col=rgb(0, 0, 0.5, 0.25), breaks=histBreaks, add=TRUE)
+legend("topleft", legend=c("Direct CB", "Modify Probs", "Overlap"), 
+       col=c(rgb(0.5, 0, 0, 0.25), rgb(0, 0, 0.5, 0.25), rgb(0.5, 0, 0.5, 0.5)), pch=20
+       )
+
+## Right-hand plot
+plot(x=-vecMinNew, y=log10((1:length(vecMinNew))/length(vecMinNew)), xlim=c(0, xMax), 
+     xlab="Units", ylab="Risk of Ruin (Log 10)", main="Risk of Ruin Curves", 
+     col="blue", cex=0.75, pch=20
+     )
+points(x=-vecMinOrig, y=log10((1:length(vecMinOrig))/length(vecMinOrig)), 
+       col="orange", cex=0.75, pch=20
+       )
+points(x=0:xMax, y=log10(rr1^(1:(xMax+1))), col="dark green", cex=0.25)
+abline(h=0, v=0, lty=2)
+legend("topright", legend=c("Sim (Mod Prob)", "Sim (CB)", "Theory"), 
+       col=c("blue", "orange", "dark green"), lwd=c(2, 2, 2))
+
+par(mfrow=c(1,1))
+```
+  
+Additionally, a chi-squared goodness of fit test is run to investigate whether the simulated data (bucketed) is reasonably aligned to the theoretical data (bucketed).  
+```{r}
+## Step 5d: Report on the chi-squared goodness of fit
+## Create buckets where we expect ~20 observations per bucket
+numCuts <- floor(nTrials/20)
+cutPts <- numeric(length=numCuts+1)
+numPerCutOrig <- numeric(length=numCuts)
+numPerCutNew <- numeric(length=numCuts)
+
+for (intCtr in 0:numCuts) {
+    cutPts[intCtr+1] <- -log(intCtr/numCuts)/log(rr1)
+}
+
+for (intCtr in 1:numCuts) {
+    numPerCutOrig[intCtr] <- sum(vecMinOrig > cutPts[intCtr] & vecMinOrig <= cutPts[intCtr+1])
+    numPerCutNew[intCtr] <- sum(vecMinNew > cutPts[intCtr] & vecMinNew <= cutPts[intCtr+1])
+}
+
+## Overall test (each bucket should in theory be equal size, so default p is OK)
+print(chisq.test(numPerCutOrig))
+print(chisq.test(numPerCutNew))
+```
+  
+####_Describe the relevant maths_  
+A few additional mathematical features are calculated and plotted:  
+```{r}
+## Describe mathematics
+## Probability of ruin for a given n is rr1^n
+
+## Mean would then be (sum-over-1-to-Inf-of n*rr1^n) / (sum-over-1-to-Inf-of rr1^n)
+## Peak will be where derivative of n*rr1^n is 0 ; n * rr1^n * ln(rr1) + rr1^n = 0
+## Or, rr1^n * (n * ln(rr1) + 1) = 0 OR n = -1 / ln(rr1)
+
+## And, for [X^2] then (sum-over-1-to-Inf-of n^2*rr1^n) / (sum-over-1-to-Inf-of rr1^n)
+## Peak will be where derivative of n^2 * rr1^n is 0 ; n^2 * rr1^n * ln(rr1) + 2 * n * rr1^n = 0
+## Or, rr1^n * (n^2 * ln(rr1) + 2*n) = 0 OR n = -2 / ln(rr1) [also, trivially, n=0 solves]
+
+par(mfrow=c(1,2))
+
+myX <- 0:16000
+
+plot(myX, myX * rr1^myX, col="blue", xlab="Units", ylab="Contribution to [X]")
+abline(h=0, v=-1/log(rr1), lty=2)
+
+plot(myX, myX^2 * rr1^myX, col="red", xlab="Units", ylab="Contribution to [X^2]")
+abline(h=0, v=-2/log(rr1), lty=2)
+
+par(mfrow=c(1,1))
+
+
+print("Finished the program:")
+print(proc.time() - startTime)
+```
+  
+####_Conclusions_  
+The results suggest that assuming a 2.0% loss rate in a 9/6 JB game, it is unlikely that actual results will ever fall more than 1.5k-2.5k units behind that benchmark.  The simulations match up reasonably well with the theory, suggesting that the "fake" cash back as solved by the polynomial is a plausible representation of the real world.  
