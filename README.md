@@ -86,4 +86,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 04-JUL-2016  
 * RiskRuin_v003_DDB96_0250cb slightly adjusted for fixing typos  
+* RiskRuin_v003_JB96_0200cb refines the risk of ruin program to look at 9/6 JB with 2.00% cb  
   
