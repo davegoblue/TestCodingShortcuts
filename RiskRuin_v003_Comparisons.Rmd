@@ -1,0 +1,343 @@
+---
+title: "Risk of Ruin Theory and Simulation"
+author: "davegoblue"
+date: "April 30, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background and Objective  
+Risk of ruin is a concept derived from playing a game out to infinite trials.  If the lowest point reached in the game exceeds the bankroll, then the player is "ruined" (the game ends).  If not, the bankroll will eventually tend towards infinite as the number of trials tends towards infinite.  
+  
+A simplified game is one in which every outcome is an integer, with the worst possible outcome being -1 (loss of a single unit).  In that case, if rr is the risk of ruin with a single unit, then rr^n is the risk of ruin with n units.  This is because to be ruined with 2 units is really to be ruined with 1 unit twice (the recurison goes out to infinite).
+  
+This program calculates the theoretical risk of ruin for a set of inputs (all integers, worst outcome -1), then runs simulations to compare against the theory.  
+
+The functions and code from RiskRuin_v002b.Rmd are leveraged and then a new input file is applied.  For this specific example, we use:  
+  
+* Pay tables for 9/6 JB, 9/5 JB, 8/5 BP, 7/5 BP, 9/6 DDB, and 9/5 DDB  
+* Cash back components including 1.0%, 1.49% (1/67), 2.0%, 2.5%, 3.03% (1/33), 3.57% (1/28), 4.0%, 4.55% (1/22) and 5.0% (in other words, if you assume a permanent X% loss, how many units WORSE than that are you likely to be at your very lowest point)  
+  
+## Analysis  
+####_Function to read in the base outcomes file_  
+The first function creates a base outcomes file.  It will read the outcomes file (probabilities summing to 1 and associated outcomes) provided:  
+```{r}
+getBaseOutcomes <- function(myFileName="BaseOutcomes.csv", forceEQ=FALSE) {
+    
+    if (file.exists(myFileName)) {
+        baseOutcomes <- read.csv(myFileName,stringsAsFactors = FALSE)
+        if (ncol(baseOutcomes) != 2) { stop("Error in CSV file, should have exactly 2 columns") }
+        colnames(baseOutcomes) <- c("probs","outcomes")
+    } else {
+        baseOutcomes <- data.frame(probs=c(0.01,0.02,0.05,0.18,0.24,0.50),outcomes=c(10,5,2,1,0,-1))
+    }
+    
+    baseOutcomes <- baseOutcomes[baseOutcomes$probs != 0,] ## Can have zeroes as inputs -- ignore those
+    
+    if ( forceEQ ) {
+        pDelta <- sum(baseOutcomes$probs) - 1
+        if ( abs(pDelta) < 0.0000001 & 
+             abs(pDelta) / baseOutcomes[nrow(baseOutcomes),]$probs < 0.1
+        ) 
+        {
+            print(paste0("Modifying probablities ",paste0(baseOutcomes[nrow(baseOutcomes),],collapse=" ")))
+            baseOutcomes[nrow(baseOutcomes),]$probs <- baseOutcomes[nrow(baseOutcomes),]$probs - pDelta
+            print(paste0("New probablities ",paste0(baseOutcomes[nrow(baseOutcomes),],collapse=" ")))
+        }
+    }
+    
+    if (sum(baseOutcomes$probs)!=1 | min(baseOutcomes$probs) < 0 | 
+        sum(is.na(baseOutcomes$probs)) > 0 | sum(is.na(baseOutcomes$outcomes)) > 0) { 
+        stop("Please resolve the issue with inputs for probs and outcomes, aborting") 
+    }
+    
+    ## Store the original value read in as outcomes
+    baseOutcomes$oldOutcomes <- baseOutcomes$outcomes
+    
+    baseMean <- sum(baseOutcomes$probs*baseOutcomes$outcomes)
+    baseVar <- sum(baseOutcomes$probs*(baseOutcomes$outcomes-baseMean)^2)
+    
+    print(paste0("Probabilities sum to 1.  Outcomes has mean ",format(baseMean,digits=3),
+                 " and variance ",format(baseVar,digits=3)))
+    
+    return(baseOutcomes)
+}
+```
+  
+####_Function to modify the base outcomes file_  
+The modification function converts the base outcome file to simulate the addition of a "cash back" component.  The idea is that if the player enjoys a 1% cash back, this can be pseudo-simulated by taking 1% probability away from -1 and moving it to 0.  There are some issues with this approach, particularly for small bankrolls, but it vastly simplifies some of the processing.  The simulations will be to test the appropriateness of this simplification.  
+```{r}
+modBaseOutcomes <- function(baseOutcomes=baseOutcomes, nAddOnePer) {
+
+    ## Place in the random additions component
+    baseOutcomes$oldProbs <- baseOutcomes$probs
+
+    ## Create a new row that changes the -1 to 0
+    if (nAddOnePer > 0 & baseOutcomes[nrow(baseOutcomes),"probs"] > 1/nAddOnePer) {
+        baseOutcomes <- rbind(baseOutcomes, baseOutcomes[nrow(baseOutcomes),])
+        baseOutcomes[nrow(baseOutcomes)-1,]$outcomes <- baseOutcomes[nrow(baseOutcomes)-1,]$outcomes + 1
+        baseOutcomes[nrow(baseOutcomes)-1,]$probs <- 1/nAddOnePer
+        baseOutcomes[nrow(baseOutcomes)-1,]$oldProbs <- 0
+
+        ## Fix the bottom row accordingly
+        baseOutcomes[nrow(baseOutcomes),]$probs <- baseOutcomes[nrow(baseOutcomes),]$probs - 1/nAddOnePer
+        
+    } else {
+        print(paste0("No modifications due to nAddOnePer=",nAddOnePer,
+                     " and last row prob=",baseOutcomes[nrow(baseOutcomes),"probs"]
+                     )
+              )
+    }
+
+    ## Report on changes in metrics
+    oldMean <- sum(baseOutcomes$oldProbs * baseOutcomes$outcomes)
+    newMean <- sum(baseOutcomes$probs * baseOutcomes$outcomes)
+    oldVar <- sum(baseOutcomes$oldProbs * baseOutcomes$outcomes^2) - oldMean^2
+    newVar <- sum(baseOutcomes$probs * baseOutcomes$outcomes^2) - newMean^2
+
+    print(paste0("Means have shifted from ", round(oldMean,5), " to ", round(newMean,5)))
+    print(paste0("Variance has shifted from ", round(oldVar,2), " to ", round(newVar,2)))
+    
+    return(baseOutcomes)
+    
+}
+```
+
+####_Function to calculate risk of ruin by way of polynomial_  
+In this simplified scenario, we have only integer outcomes with the worst outcome being -1.  This allows for calculating the risk of ruin by way of a polynomial.  In a simplified example, suppose there is a 30% probabilty of -1, 20% probability of 0, and a 50% probability of +1.  Then:  
+  
+* Ruin on the first hand is 30%  
+* Re-do from the same position is 20%  
+* Move to two units (if rr is ruin with 1 unit, then rr^2 is ruin with 2 units) is 50%  
+  
+Then rr = 30% (lose right away) + 20% * rr (push right away) + 50% * rr^2 (bankroll better by one), which reduces to 50% * rr^2 - 80% * rr + 30% = 0 or rr^2 - 160% * rr + 60% = 0.  By the quadratic equation then:  
+  
+* rr = [160% +/- sqrt(160%^2 - 4 * 1 * 60%)] / (2 * 1)  
+* rr = [160% +/- sqrt(256% - 240%)] / 2  
+* rr = [160% +/- sqrt(16%)] / 2  
+* rr = [160% +/- 40%] / 2  
+* rr = 100% (trivially, rr=1 will solve any polynomial where p sum to 1) or rr = 60% (the more interesting solution)  
+* Checking rr=60%, this means 60% = 30% + 20% * 60% + 50% * 60%^2 = 30% + 12% + 18% = 60% (TRUE)  
+  
+The problem is identical no matter the number of polynomial terms, provided that all outcomes are integers and the worst outcome is -1.  Since it is difficult to solve high-order polynomials, this program uses sequential testing of possible rr to find the non-trivial solution for a set of inputs.  
+```{r}
+testSeqP <- function(pVec, nMax, nStart=0, nEnd=1) {
+    
+    mtxTest <- matrix(data=rep(-9, 2*(nBuckets+1)), nrow=(nBuckets+1))
+    
+    probNeg <- pVec[pVec$outcomes == -1, ]$probs
+    posProbs <- pVec[pVec$outcomes >= 0, ]
+    
+    for (intCtr in 0:nMax) {
+        testP <- nStart + (intCtr/nMax)*(nEnd - nStart)
+        mtxTest[intCtr+1, 1] <- testP
+        myRuin <- probNeg
+        
+        for (intCtr2 in 1:nrow(posProbs)) {
+            myRuin <- myRuin + posProbs[intCtr2,"probs"] * (testP ^ (posProbs[intCtr2,"outcomes"] + 1) )
+        }
+        
+        mtxTest[intCtr+1, 2] <- myRuin
+    }
+    
+    return(mtxTest)
+}
+```
+  
+
+####_Calculate the start time and run the function to get an outcomes vector_  
+The start time is calculated to understand overall performance.  The relevant odds and payout files are read in, using raw data from <http://wizardofodds.com/games/video-poker/strategy/>, payouts modified as needed for the shorter pay games.  In aggregate, there will be 54 situations assessed, the full combination of:  
+  
+* 9/6 JB, 8/5 BP, 9/6 DDB, 9/5 JB, 7/5 BP, 9/5 DDB  
+* Cash back of 1.0%, 1.49% (1/67), 2.0%, 2.5%, 3.03% (1/33), 3.57% (1/28), 4.0%, 4.55% (1/22) and 5.0%  
+  
+```{r}
+startTime <- proc.time()
+
+intCtr <- 1
+myUseList <- vector("list", 54)
+myUseNames <- character(0)
+
+gameTypes <- c("JB_96", "BP_85", "DDB_96", "JB_95", "BP_75", "DDB_95")
+cBackPerTypes <- c(100, 67, 50, 40, 33, 28, 25, 22, 20)
+
+for (thisGame in gameTypes) {
+    
+    ## Step 1: Read in the outcomes file
+    baseOutcomes <- getBaseOutcomes(myFileName=paste0(thisGame, "_Probs.csv"), forceEQ=TRUE)
+
+    for (cBackPer in cBackPerTypes) {
+    
+        ## Step 2: Modify the base outcomes file
+        nAddOnePer <- cBackPer ## Cash back is 1/nAddOnePer
+        modOutcomes <- modBaseOutcomes(baseOutcomes=baseOutcomes, nAddOnePer=nAddOnePer)
+
+        ## Step 3: Aggregate and keep only probs and outcomes
+        useProbs <- aggregate(probs ~ outcomes, data=modOutcomes, FUN=sum)
+        if (sum(useProbs$outcomes == -1) != 1 | 
+            sum(useProbs$outcomes < 0) != 1 | 
+            sum(useProbs$outcomes == 0) != 1
+            ) {
+                stop("Error: Algorithm will not work given these inputs")    
+        }
+        
+        myUseList[[intCtr]] <- useProbs
+        myUseNames <- c(myUseNames, paste0(thisGame, " with cb=", round(1/cBackPer, 3)))
+        intCtr <- intCtr + 1
+
+    }
+    
+}
+
+names(myUseList) <- myUseNames
+str(myUseList)
+print(proc.time() - startTime)
+
+```
+  
+####_Calculate theoretical risk of ruin using two runs through testSeqP_  
+The theoretical risk of ruin is calculated using the polynomial approximation.  The algorithm takes two passes, first looking across [0, 1] to find the best small interval, then looking only within that tiny interval.  The best solution for risk of ruin is reported, along with a graph showing that this point achieves a polynomial solution (f(x) - x = 0).  
+```{r, cache=TRUE}
+rrFindings <- numeric(0)
+
+for (intCtr in 1:length(myUseList)) {
+    
+    if (sum(myUseList[[intCtr]]$probs * myUseList[[intCtr]]$outcomes) <= 0) {
+        rrFindings <- c(rrFindings, 1)
+    } else {
+        ## Step 4: solve for testP where testP is raised to each of the outcomes with prob
+        ## Step 4a: First iteration (defaults to between 0 and 1)
+        nBuckets <- 4000
+        mtxResults <- testSeqP(pVec=myUseList[[intCtr]], nMax=nBuckets)
+
+        ## Step 4b: Find locations of any column1 >= column2 (that is the crossover point)
+        posDelta <- which(mtxResults[,1] >= mtxResults[,2])
+
+        ## Step 4c: Find the appropriate starting point for a second run through the data
+        if (length(posDelta)==0 | (length(posDelta)==1 & posDelta[1]==(nBuckets+1) ) ) {
+            ## Failed to find any, search starting with the second last element of mtxResults
+            ## Note that there are nBuckets+1 elements; this is second-last
+            newStart <- mtxResults[nBuckets, 1] 
+            newEnd <- mtxResults[nBuckets+1, 1]
+        } else {
+            ## Found at least one, take the earliest instance, and start from it minus 1
+            newStart <- mtxResults[posDelta[1]-1, 1]
+            newEnd <- mtxResults[posDelta[1]+1, 1]
+        }
+
+        ## Step 4d: Second iteration (give it the new end points)
+        mtxResults <- testSeqP(pVec=myUseList[[intCtr]], nMax=nBuckets, nStart=newStart, nEnd=newEnd)
+
+        ## Step 4e: Print the best value found
+        myBest <- which.min(abs(mtxResults[-(nBuckets+1),1]-mtxResults[-(nBuckets+1),2]))
+        rrFindings <- c(rrFindings, mtxResults[myBest, 1])
+    
+        # mtxResults[myBest,]
+        # plot(mtxResults[,1], mtxResults[,2]-mtxResults[,1], col="blue", xlab="pRuin Attempt",
+        #     ylab="Error (simulated minus attempt)", 
+        #     main=paste0("Risk of Ruin (best p=", round(rr1,7), ")")
+        #     )
+        # abline(h=0, v=mtxResults[myBest,1], lty=2, lwd=1.5, col="dark green")
+    }
+}
+
+print("Calculated theoretical risk of ruin for these inputs:")
+print(proc.time() - startTime)
+```
+  
+For a bankroll of n, we estimate risk of ruin to be rr1^n and log10(risk of ruin) to be n * log10(rr1).  Graphs are create for the following:  
+  
+* Single-unit risk of ruin  
+* 1000-unit risk of ruin  
+* Units required for risk of ruin = 50%  
+* Units required for risk of ruin = 0.1%  
+  
+```{r}
+
+# Use modulo to make sensible coloring schemes
+myCols <- ((0:(length(rrFindings)-1)) %/% 9) %% 3
+myShapes <- c( rep(19, length(rrFindings)/2) , rep(15, length(rrFindings)/2) )
+
+
+# Single-unit risk of ruin
+plot(rrFindings, pch=myShapes, col= 2 + (myCols+1) %% 3, main="Single-Unit Risk of Ruin", 
+     cex=1.5, xaxt="n", ylab="Risk of Ruin", 
+     xlab=paste("Cash backs:", paste(round(1/cBackPerTypes, 3), collapse=" , "), collapse="")
+     )
+abline(v=c(9.5, 18.5, 27.5, 36.5, 45.5), h=1, lty=2)
+legend("bottomright", legend=gameTypes, pch=c(19, 19, 19, 15, 15, 15), col=c(3, 4, 2, 3, 4, 2))
+
+
+# 1000-unit risk of ruin
+plot(rrFindings^1000, pch=myShapes, col= 2 + (myCols+1) %% 3, main="1000-Unit Risk of Ruin", 
+     cex=1.5, xaxt="n", ylab="Risk of Ruin", 
+     xlab=paste("Cash backs:", paste(round(1/cBackPerTypes, 3), collapse=" , "), collapse="")
+     )
+abline(v=c(9.5, 18.5, 27.5, 36.5, 45.5), h=1, lty=2)
+legend("topleft", legend=gameTypes, pch=c(19, 19, 19, 15, 15, 15), col=c(3, 4, 2, 3, 4, 2))
+
+
+# 50% risk of ruin
+rr500 <- log10(0.5) / log10(rrFindings)
+rrGraph <- pmin(3000, rr500)
+rrGraph[rrGraph == -Inf] <- 3000
+rrShapes <- myShapes
+rrShapes[rrGraph != rr500] <- 4
+
+plot(rrGraph, pch=rrShapes, col= 2 + (myCols+1) %% 3, main="Units for 50% Risk of Ruin", 
+     cex=1.5, xaxt="n", ylab="Units Required", 
+     xlab=paste("Cash backs:", paste(round(1/cBackPerTypes, 3), collapse=" , "), collapse="")
+     )
+abline(v=c(9.5, 18.5, 27.5, 36.5, 45.5), h=c(0, 3000), lty=2)
+legend("topleft", legend=gameTypes, pch=c(19, 19, 19, 15, 15, 15), col=c(3, 4, 2, 3, 4, 2))
+
+
+# 0.1% risk of ruin
+rr001 <- log10(0.001) / log10(rrFindings)
+rrGraph <- pmin(6000, rr001)
+rrGraph[rrGraph == -Inf] <- 6000
+rrShapes <- myShapes
+rrShapes[rrGraph != rr001] <- 4
+
+plot(rrGraph, pch=rrShapes, col= 2 + (myCols+1) %% 3, main="Units for 0.1% Risk of Ruin", 
+     cex=1.5, xaxt="n", ylab="Units Required", 
+     xlab=paste("Cash backs:", paste(round(1/cBackPerTypes, 3), collapse=" , "), collapse="")
+     )
+abline(v=c(9.5, 18.5, 27.5, 36.5, 45.5), h=c(0, 6000), lty=2)
+legend("bottomright", legend=gameTypes, pch=c(19, 19, 19, 15, 15, 15), col=c(3, 4, 2, 3, 4, 2))
+
+
+# 0.1% risk of ruin and 100,000 hands at given cash back
+rr001Tot <- log10(0.001) / log10(rrFindings) + 100000 / rep(cBackPerTypes, 6)
+rrGraph <- pmin(10000, rr001Tot)
+rrGraph[rrGraph == -Inf] <- 10000
+rrShapes <- myShapes
+rrShapes[rrGraph != rr001Tot] <- 4
+
+plot(rrGraph, pch=rrShapes, col= 2 + (myCols+1) %% 3, main="Units for 0.1% Risk of Ruin and 100,000 Hands", 
+     cex=1.5, xaxt="n", ylab="Units Required", ylim=c(0, 10000), 
+     xlab=paste("Cash backs:", paste(round(1/cBackPerTypes, 3), collapse=" , "), collapse="")
+     )
+abline(v=c(9.5, 18.5, 27.5, 36.5, 45.5), h=c(0, 10000), lty=2)
+legend("bottomright", legend=gameTypes, pch=c(19, 19, 19, 15, 15, 15), col=c(3, 4, 2, 3, 4, 2))
+
+
+# 0.1% risk of ruin and 1,000,000 hands at given cash back
+rr001Tot <- log10(0.001) / log10(rrFindings) + 1000000 / rep(cBackPerTypes, 6)
+rrGraph <- pmin(50000, rr001Tot)
+rrGraph[rrGraph == -Inf] <- 50000
+rrShapes <- myShapes
+rrShapes[rrGraph != rr001Tot] <- 4
+
+plot(rrGraph, pch=rrShapes, col= 2 + (myCols+1) %% 3, main="Units for 0.1% Risk of Ruin and 1,000,000 Hands", 
+     cex=1.5, xaxt="n", ylab="Units Required", ylim=c(0, 50000), 
+     xlab=paste("Cash backs:", paste(round(1/cBackPerTypes, 3), collapse=" , "), collapse="")
+     )
+abline(v=c(9.5, 18.5, 27.5, 36.5, 45.5), h=c(0, 50000), lty=2)
+legend("bottomright", legend=gameTypes, pch=c(19, 19, 19, 15, 15, 15), col=c(3, 4, 2, 3, 4, 2))
+
+```
+
