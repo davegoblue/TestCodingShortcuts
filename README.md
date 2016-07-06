@@ -89,3 +89,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * RiskRuin_v003_JB96_0200cb refines the risk of ruin program to look at 9/6 JB with 2.00% cb  
 * RiskRuin_v003_BP85_0200cb refines the risk of ruin program to look at 8/5 BP with 2.00% cb  
 * RiskRuin_v003_JB95_0200cb refines the risk of ruin program to look at 9/5 JB with 2.00% cb  
+* RiskRuin_v003_Comparisons refines the risk of ruin program to compare various base games and cb  
