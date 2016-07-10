@@ -93,3 +93,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures a few key insights from "Introduction to R"  
 * DataCamp_Insights_v001 captures additional insights from "Introduction to R" and "Intermediate R"  
 * DataCamp_Insights_v001 finalizes key insights from "Introduction to R" and "Intermediate R"  
+* DataCamp_Insights_v001 captures initial insights from "Writing Functions in R"  
