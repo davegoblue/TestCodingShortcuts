@@ -98,3 +98,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 11-JUL-2016  
 * DataCamp_Insights_v001 captures additional insights from "Writing Functions in R"  
 * DataCamp_Insights_v001 captures library(purrr) insights from "Writing Functions in R"  
+* DataCamp_Insights_v001 finalizes documenting insights from "Writing Functions in R"  
