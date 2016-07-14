@@ -99,3 +99,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures additional insights from "Writing Functions in R"  
 * DataCamp_Insights_v001 captures library(purrr) insights from "Writing Functions in R"  
 * DataCamp_Insights_v001 finalizes documenting insights from "Writing Functions in R"  
+* DataCamp_Insights_v001 captures initial notes on reading flat files and Excel files from "Reading Data in to R"  
