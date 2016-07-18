@@ -103,3 +103,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures initial notes on reading files from other statistical software in "Reading Data in to R"  
 * DataCamp_Insights_v001 captures initial notes on using relational databases (SQL) in "Reading Data in to R"  
 * DataCamp_Insights_v001 captures initial notes on reading web data in "Reading Data in to R"  
+
+### Expansions week of 18-JUL-2016  
+* DataCamp_Insights_v001 captures initial notes on "Cleaning Data in R"  
