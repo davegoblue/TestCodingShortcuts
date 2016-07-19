@@ -106,3 +106,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 18-JUL-2016  
 * DataCamp_Insights_v001 captures initial notes on "Cleaning Data in R"  
+* DataCamp_Insights_v001 captures library(tidyr) notes from "Cleaning Data in R"  
