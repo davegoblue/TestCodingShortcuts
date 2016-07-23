@@ -110,3 +110,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures remaining notes (lubridate, stringr) from "Cleaning Data in R"  
 * DataCamp_Insights_v001 captures initial notes from "Data Manipulation with dplyr"  
 * DataCamp_Insights_v001 captures additional notes from "Data Manipulation with dplyr"  
+* DataCamp_Insights_v001 captures additional notes (filter, arrange) from "Data Manipulation with dplyr"  
