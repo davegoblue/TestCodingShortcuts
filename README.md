@@ -116,3 +116,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 25-JUL-2016  
 * DataCamp_Insights_v001 captures additional notes (group_by, database connections) from "Data Manipulation with dplyr"  
 * DataCamp_Insights_v001 captures initial notes (basic syntax) from "Data Manipulation with data.table"  
+* DataCamp_Insights_v001 captures additional notes from "Data Manipulation with data.table"  
