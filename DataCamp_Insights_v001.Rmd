@@ -1253,6 +1253,20 @@ Example table creation:
     * DT[3:5, ] is the same as DT[3:5] -- either will return rows 3-5  
     * Note that .N contains the number of rows  
   
+* Select columns in data.table (second argument)  
+    * .(B, C) is the same as list(B, C) and will select the columns named "B" and "C"  
+	* .(mysum = sum(B)) will sum the entirety of column B for the rows requested and call the column mysum  
+	* .(B, C= sum(C)) will recycle sum(C) everywhere and also pull B  
+	* DT[,plot(A, C)] will plot A vs C  
+	* DT[ , B] will return a VECTOR and not a data.table  
+	* DT[ , .(B)] will return a data.table  
+  	
+* Using a by variable allows for sum/mean/etc. by grouping:  
+	* DT[ , .(mysum = sum(B)), by=.(C)] will sum column B BY each C for the rows requested, and call the column mysum  
+	* DT[ , .(mysum = sum(B)), by=.(myMod = C%%2)] will sum column B BY each Cmod2 for the rows requested, and call the column mysum  
+	* Can skip the .() if you have just a single SELECT or a single GROUP BY  
+		* Order depends on what it finds first -- not necessarily sorted, just aggregated BY  
+  
 Some example code includes:  
 ```{r}
 library(data.table)
@@ -1330,6 +1344,166 @@ DT2
 
 # Select from DT2 the last two values from C while you group by A
 DT2[, .(C = tail(C, 2)), by = A]
+
+```
+  
+The chaining operation in data.table is run as [statement][next statement].  
+  
+* The .SD means "Subset of Data"  
+    * By default, .SD means all of the columns other than the columns specified in by (and only accessible in j)  
+	* DT[ , lapply(.SD, median), by = Species]  
+	* Recall that .() is just an alias to a list, so it is not needed for lapply (which always returns a list anyway)  
+  
+* The := operator is for adding by reference  
+	* If it already exists, it is updated as per the call  
+	* If it does not already exist, it is created  
+	* DT[ , c("x", "z") := .(rev(x), 10:6)]  # will reverse x and create z as 10-9-8-7-6]  
+	* Anything with := NULL will remove the columns instantly  
+	* DT[ , MyCols :=NULL] will look for a column called MyCols  
+	* DT[, (MyCols) := NULL] will use whatever MyCols references, allowing for MyCols to be a variable  
+	* DT[2:4, z:=sum(y), by=x]  # Will create z as requested for rows 2:4 and create z=NA everywhere else; interesting (and risky perhaps .)  
+  
+* The set() syntax is another option:  
+	* for (i in 1:5) DT[i, z := i+1]  
+	* for (i in 1:5) set(DT, i, 3L, i+1])  # take DT, act on column 3 (happens to be z in this example) and makes it i+1  
+  
+* The setnames() syntax is yet another option  
+	* setnames(DT, "old", "new")  
+  
+* The setcolorder() syntax is yet another option  
+	* setcolorder(DT, c(new_order))  
+  
+* A wrap up of the set() family:  
+	* set() is a loopable, low overhead version of :=  
+	* You can use setnames() to set or change column names  
+	* setcolorder() lets you reorder the columns of a data.table  
+  
+Example code includes:  
+```{r}
+set.seed(1L)
+DT <- data.table(A = rep(letters[2:1], each = 4L), 
+                 B = rep(1:4, each = 2L), 
+                 C = sample(8)) 
+str(DT)
+DT
+
+
+# Perform operation using chaining
+DT[ , .(C = cumsum(C)), by = .(A, B)][ , .(C = tail(C, 2)), by=.(A)]
+
+
+data(iris)
+DT <- as.data.table(iris)
+str(DT)
+
+
+# Perform chained operations on DT
+DT[ , .(Sepal.Length = median(Sepal.Length), Sepal.Width = median(Sepal.Width), 
+        Petal.Length = median(Petal.Length), Petal.Width = median(Petal.Width)), 
+        by=.(Species)][order(-Species)]
+
+# Mean of columns
+# DT[ , lapply(.SD, FUN=mean), by=.(x)]
+
+# Median of columns
+# DT[ , lapply(.SD, FUN=median), by=.(x)]
+
+# Calculate the sum of the Q columns
+# DT[ , lapply(.SD, FUN=sum), , .SDcols=2:4]
+
+# Calculate the sum of columns H1 and H2 
+# DT[ , lapply(.SD, FUN=sum), , .SDcols=paste0("H", 1:2)]
+
+# Select all but the first row of groups 1 and 2, returning only the grp column and the Q columns
+# foo = function(x) { x[-1] }
+# DT[ , lapply(.SD, FUN=foo), by=.(grp), .SDcols=paste0("Q", 1:3)]
+
+# Sum of all columns and the number of rows
+# DT[, c(lapply(.SD, FUN=sum), .N), by=.(x), .SDcols=names(DT)]
+
+# Cumulative sum of column x and y while grouping by x and z > 8
+# DT[, lapply(.SD, FUN=cumsum), by=.(by1=x, by2=(z>8)), .SDcols=c("x", "y")]
+
+# Chaining
+# DT[, lapply(.SD, FUN=cumsum), by=.(by1=x, by2=(z>8)), .SDcols=c("x", "y")][ , lapply(.SD, FUN=max), by=.(by1), .SDcols=c("x", "y")]
+
+
+# The data.table DT
+DT <- data.table(A = letters[c(1, 1, 1, 2, 2)], B = 1:5)
+str(DT)
+DT
+
+
+# Add column by reference: Total
+DT[ , Total:=sum(B), by=.(A)]
+DT
+
+# Add 1 to column B
+DT[c(2,4) , B:=B+1L, ]
+DT
+
+# Add a new column Total2
+DT[2:4, Total2:=sum(B), by=.(A)]
+DT
+
+# Remove the Total column
+DT[ , Total := NULL, ]
+DT
+
+# Select the third column using `[[`
+DT[[3]]
+
+# A data.table DT has been created for you
+DT <- data.table(A = c(1, 1, 1, 2, 2), B = 1:5)
+str(DT)
+DT
+
+
+# Update B, add C and D
+DT[ , c("B", "C", "D") := .(B + 1, A + B, 2), ]
+DT
+
+# Delete my_cols
+my_cols <- c("B", "C")
+DT[ , (my_cols) := NULL, ]
+DT
+
+# Delete column 2 by number
+DT[[2]] <- NULL
+DT
+
+# Set the seed
+# set.seed(1)
+
+# Check the DT that is made available to you
+# DT
+
+# For loop with set
+# for(i in 2:4) { set(DT, sample(nrow(DT), 3), i, NA) }
+
+# Change the column names to lowercase
+# setnames(DT, letters[1:4])
+
+# Print the resulting DT to the console
+# DT
+
+# Define DT
+DT <- data.table(a = letters[c(1, 1, 1, 2, 2)], b = 1)
+str(DT)
+DT
+
+
+# Add a suffix "_2" to all column names
+setnames(DT, paste0(names(DT), "_2"))
+DT
+
+# Change column name "a_2" to "A2"
+setnames(DT, "a_2", "A2")
+DT
+
+# Reverse the order of the columns
+setcolorder(DT, 2:1)
+DT
 
 ```
   
