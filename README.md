@@ -118,3 +118,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures initial notes (basic syntax) from "Data Manipulation with data.table"  
 * DataCamp_Insights_v001 captures additional notes from "Data Manipulation with data.table"  
 * DataCamp_Insights_v001 captures remaining notes from "Data Manipulation with data.table"  
+* DataCamp_Insights_v001 captures initial notes from "Data Visualization with ggplot (part 1)"  
