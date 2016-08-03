@@ -401,6 +401,7 @@ The library(purrr) takes advantage of this, and in a type-consistent manner.  Th
 The general arguments are .x (a list or an atomic vector) and .f which can be either a function, an anonymous function (formula with ~), or an extractor .x[[.f]].  For example:  
 ```{r}
 library(purrr)
+library(RColorBrewer)  # Need to have in non-cached chunk for later
 
 data(mtcars)
 
@@ -2226,8 +2227,6 @@ ggplot(mtcars, aes(x=mpg, fill=cyl)) +
 Next, a few examples are run from dataset car::Vocab (cached due to plotting size/time):  
 ```{r, cache=TRUE}
 Vocab <- car::Vocab
-
-# Examine the structure of Vocab
 str(Vocab)
 
 # Basic scatter plot of vocabulary (y) against education (x). Use geom_point()
@@ -2249,7 +2248,6 @@ ggplot(Vocab, aes(x = education, fill = vocabulary)) +
   scale_fill_brewer()
 
 # Definition of a set of blue colors
-library(RColorBrewer)
 blues <- brewer.pal(9, "Blues")
 
 # Make a color range using colorRampPalette() and the set of blues
@@ -2406,3 +2404,234 @@ ggplot(titanic, aes(x=factor(Pclass), y=Age, col=factor(Sex))) +
 
 ```
 
+###_Data Visualization (ggplot2 part 2)_  
+The second course expands on the remaining layers of ggplot2:  Statistics, Coordinates, Facets, and Themes.  
+  
+The statistics layer for ggplot2 has two basic components:  
+  
+* Called from within a geom  
+* Called from outside a geom (independently)  
+* The stat functions all start with stat_ meaning that stat_bin() is the binning call for histograms  
+	* stat_bin() and geom_bar() are closely related  
+	* stat_smooth() and geom_smooth() are closely related -- se is by defautl the 95% CI  
+		* The loess function is used for smallish (<1000) bins, with span= available as an option to change the window size  
+		* Can instead specifically call method="lm" and the line will be based on OLS, with 95% CI defaulted in addition  
+		* Can also add the fullrange= call to request that the predictions be made for out-of-range data  
+* The relationships between the stat_ and geom_ help to 1) explain warnings/errors, and 2) provide help pages for best debugging/tuning parameters  
+  
+The statistics can also be called independently (outside the geom):  
+  
+* Note that Hmisc::smean.sdl(x, mult=1) will return mean, mean-1SD, mean+1SD as a vector  
+    * The default is mult=2, so Hmisc::smean() defaults to providing mean +/- 2SD  
+* Within ggplot, this is called as mean_sdl(), with the first argument the vector, and the second argument the mult=  
+* Can be called inside stat_summary(fun.data = mean_sdl, fun.args=list(mult=1))  
+* Alternately, can be called as stat_summary(fun.y = mean, geom="point") + stat_summary(fun.data = mean_sdl, fun.args=list(mult=1), geom="errorbar", width=0.1)  # will make a point mean with errorbars  
+* Note that Hmisc::smean.cl.normal(x) will return mean, then 95% CI  
+    * Within ggplot, this is called as mean_cl_normal(x)  
+* Can use anything inside stat_summary provided that the output is aligned with what the specified geom will require  
+* The most common function calls are stat_summary(), stat_function(), and stat_qq()  
+* Now back to the MASS::mammals dataset for brain vs body  
+    * Can add stat_function(fun = dnorm, color="red", arg=list(mean = mean(mam.new$body), sd = sd(mam.new$body)) and the normal density will plot on top of the graph  
+    * The geom_rug() can be helpful for putting the rug underneath the histogram  
+  
+Example code from mtcars includes:  
+```{r}
+# Explore the mtcars data frame with str()
+data(mtcars)
+str(mtcars)
+
+# A scatter plot with LOESS smooth:
+ggplot(mtcars, aes(x = wt, y = mpg)) +
+  geom_point() +
+  geom_smooth()
+
+# A scatter plot with an ordinary Least Squares linear model:
+ggplot(mtcars, aes(x = wt, y = mpg)) +
+  geom_point() + 
+  geom_smooth(method = "lm")
+
+# The previous plot, without CI ribbon:
+ggplot(mtcars, aes(x = wt, y = mpg)) +
+  geom_point() + 
+  geom_smooth(method = "lm", se=FALSE)
+
+# The previous plot, without points:
+ggplot(mtcars, aes(x = wt, y = mpg)) + 
+    geom_smooth(method = "lm", se=FALSE)
+
+# Define cyl as a factor variable
+ggplot(mtcars, aes(x = wt, y = mpg, col = factor(cyl))) +
+  geom_point() +
+  stat_smooth(method = "lm", se = FALSE)
+
+# Complete the following ggplot command as instructed
+ggplot(mtcars, aes(x = wt, y = mpg, col = factor(cyl))) +
+  geom_point() +
+  stat_smooth(method = "lm", se = FALSE) + 
+  stat_smooth(method = "lm", se = FALSE, aes(group=1))
+
+# Plot 1: change the LOESS span
+ggplot(mtcars, aes(x = wt, y = mpg)) +
+  geom_point() +
+  # Add span below 
+  geom_smooth(se = FALSE, span=0.7)
+
+# Plot 2: Set the overall model to LOESS and use a span of 0.7
+ggplot(mtcars, aes(x = wt, y = mpg, col = factor(cyl))) +
+  geom_point() +
+  stat_smooth(method = "lm", se = FALSE) +
+  # Change method and add span below
+  stat_smooth(method = "loess", aes(group = 1), 
+              se = FALSE, col = "black", span=0.7)
+
+# Plot 3: Set col to "All", inside the aes layer of stat_smooth()
+ggplot(mtcars, aes(x = wt, y = mpg, col = factor(cyl))) +
+  geom_point() +
+  stat_smooth(method = "lm", se = FALSE) +
+  stat_smooth(method = "loess",
+              # Add col inside aes()
+              aes(group = 1, col="All"), 
+              # Remove the col argument below
+              se = FALSE, span = 0.7)
+
+# Plot 4: Add scale_color_manual to change the colors
+myColors <- c(brewer.pal(3, "Dark2"), "black")
+ggplot(mtcars, aes(x = wt, y = mpg, col = factor(cyl))) +
+  geom_point() +
+  stat_smooth(method = "lm", se = FALSE, span = 0.75) +
+  stat_smooth(method = "loess", 
+              aes(group = 1, col="All"), 
+              se = F, span = 0.7) +
+  # Add correct arguments to scale_color_manual
+  scale_color_manual("Cylinders", values=myColors)
+
+
+
+# Display structure of mtcars
+str(mtcars)
+
+# Convert cyl and am to factors:
+mtcars$cyl <- as.factor(mtcars$cyl)
+mtcars$am <- as.factor(mtcars$am)
+
+# Define positions:
+posn.d <- position_dodge(width = 0.1)
+posn.jd <- position_jitterdodge(jitter.width = 0.1, dodge.width = 0.2)
+posn.j <- position_jitter(width = 0.2)
+
+# base layers:
+wt.cyl.am <- ggplot(mtcars, aes(x=cyl, y=wt, col=am, fill=am, group=am))
+
+# Plot 1: Jittered, dodged scatter plot with transparent points
+wt.cyl.am +
+  geom_point(position = posn.jd, alpha = 0.6)
+  
+# Plot 2: Mean and SD - the easy way
+wt.cyl.am +
+  geom_point(position = posn.jd, alpha = 0.6) + 
+  stat_summary(fun.data=mean_sdl, fun.args=list(mult=1), position=posn.d)
+  
+# Plot 3: Mean and 95% CI - the easy way
+wt.cyl.am +
+  geom_point(position = posn.jd, alpha = 0.6) + 
+  stat_summary(fun.data=mean_cl_normal, position=posn.d)
+  
+# Plot 4: Mean and SD - with T-tipped error bars - fill in ___
+wt.cyl.am +
+  stat_summary(geom = "point", fun.y = mean, 
+               position = posn.d) +
+  stat_summary(geom = "errorbar", fun.data = mean_sdl, 
+               position = posn.d, fun.args = list(mult = 1), width = 0.1)
+
+xx <- 1:100
+
+# Function to save range for use in ggplot 
+gg_range <- function(x) {
+  # Change x below to return the instructed values
+  data.frame(ymin = min(x), # Min
+             ymax = max(x)
+             ) # Max
+}
+
+gg_range(xx)
+# Required output:
+#   ymin ymax
+# 1    1  100
+
+# Function to Custom function:
+med_IQR <- function(x) {
+  # Change x below to return the instructed values
+  data.frame(y = median(x), # Median
+             ymin = quantile(x, 0.25), # 1st quartile
+             ymax = quantile(x, 0.75)
+             )  # 3rd quartile
+}
+
+med_IQR(xx)
+# Required output:
+#        y  ymin  ymax
+# 25% 50.5 25.75 75.25
+
+wt.cyl.am <- ggplot(mtcars, aes(x = cyl,y = wt, col = am, fill = am, group = am))
+
+# Add three stat_summary calls to wt.cyl.am
+wt.cyl.am + 
+  stat_summary(geom = "linerange", fun.data = med_IQR, 
+               position = posn.d, size = 3) +
+  stat_summary(geom = "linerange", fun.data = gg_range, 
+               position = posn.d, size = 3, 
+               alpha = 0.4) +
+  stat_summary(geom = "point", fun.y = median, 
+               position = posn.d, size = 3, 
+               col = "black", shape = "X")
+
+```
+  
+Further examples (cached) from car::Vocab include:  
+```{r, cache=TRUE}
+
+Vocab <- car::Vocab
+
+# Plot 1: Jittered scatter plot, add a linear model (lm) smooth:
+ggplot(Vocab, aes(x = education, y = vocabulary)) +
+  geom_jitter(alpha = 0.2) +
+  stat_smooth(method="lm", se=FALSE)
+
+# Plot 2: Only lm, colored by year
+ggplot(Vocab, aes(x = education, y = vocabulary, col=factor(year))) +
+  stat_smooth(method="lm", se=FALSE)
+
+# Plot 3: Set a color brewer palette
+ggplot(Vocab, aes(x = education, y = vocabulary, col=factor(year))) +
+  stat_smooth(method="lm", se=FALSE) + 
+  scale_color_brewer()
+
+# Plot 4: Add the group, specify alpha and size
+ggplot(Vocab, aes(x = education, y = vocabulary, col = year, group=factor(year))) +
+  stat_smooth(method = "lm", se = FALSE, alpha=0.6, size=2) +
+  scale_color_gradientn(colors = brewer.pal(9,"YlOrRd"))
+
+# Use stat_quantile instead of stat_smooth:
+ggplot(Vocab, aes(x = education, y = vocabulary, col = year, group = factor(year))) +
+  stat_quantile(alpha = 0.6, size = 2) +
+  scale_color_gradientn(colors = brewer.pal(9,"YlOrRd"))
+
+# Set quantile to 0.5:
+ggplot(Vocab, aes(x = education, y = vocabulary, col = year, group = factor(year))) +
+  stat_quantile(alpha = 0.6, size = 2, quantiles=c(0.5)) +
+  scale_color_gradientn(colors = brewer.pal(9,"YlOrRd"))
+
+# Plot with linear and loess model
+p <- ggplot(Vocab, aes(x = education, y = vocabulary)) +
+       stat_smooth(method = "loess", aes(col = "red"), se = F) +
+       stat_smooth(method = "lm", aes(col = "blue"), se = F) +
+       scale_color_discrete("Model", labels = c("red" = "LOESS", "blue" = "lm"))
+
+# Add stat_sum
+p + stat_sum()
+
+# Add stat_sum and set size range
+p + stat_sum() + scale_size(range = c(1, 10))
+
+```
+  
