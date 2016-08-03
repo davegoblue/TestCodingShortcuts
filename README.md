@@ -125,3 +125,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 01-AUG-2016  
 * DataCamp_Insights_v001 captures additional notes (geometries) from "Data Visualization with ggplot (part 1)"  
 * DataCamp_Insights_v001 finalizes notes (qplot, wrap-up) from "Data Visualization with ggplot (part 1)"  
+* DataCamp_Insights_v001 initial notes (statistics layer) from "Data Visualization with ggplot (part 2)"  
