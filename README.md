@@ -135,3 +135,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures initial notes (background) from "Data Visualization with ggvis"  
 * DataCamp_Insights_v001 captures additional notes (layers) from "Data Visualization with ggvis"  
 * DataCamp_Insights_v001 captures additional notes (visualizations) from "Data Visualization with ggvis"  
+* DataCamp_Insights_v001 captures additional notes (interactivity) from "Data Visualization with ggvis"  
