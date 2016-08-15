@@ -139,3 +139,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures final notes (axes, scales, etc.) from "Data Visualization with ggvis"  
 * DataCamp_Insights_v001 edited in preparation for additional notes going in to a new file  
 * AdditionalCoding_v001 created to start looking at card games (Three Card Poker)  
+
+### Expansions week of 15-AUG-2016  
+* AdditionalCoding_v001 adapted for baseline of 5-card games  
