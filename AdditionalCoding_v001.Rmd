@@ -10,7 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Background  
-This document is for additional coding examples, using some DataCamp_Insights_v001 materials where applicable.  To start, this program looks at hands that can be made in a game of Three Card Poker (TCP).  Specifically, a TCP hand consists of three cards from a standard 52-card deck.  Suits do not matter (there is no master or trump suit), though three cards of the same suit form a flush.  Further, three cards of consecutive rank (A-K-Q and 3-2-A are both counted) are considered to be a straight.
+This document is for additional examples, using some DataCamp_Insights_v001 materials where applicable.  To start, this program looks at hands that can be made in a game of Three Card Poker (TCP).  Specifically, a TCP hand consists of three cards from a standard 52-card deck.  Suits do not matter (there is no master or trump suit), though three cards of the same suit form a flush.  Further, three cards of consecutive rank (A-K-Q and 3-2-A are both counted) are considered to be a straight.
   
 ## Simulations  
 ### Potential Hand Types  
@@ -90,3 +90,92 @@ round(table(handValues) / length(handValues), 5)  # Probabilities
 ```
   
 These values all match the published literature.  
+  
+Next, a similar process is run for the 52c5 example applicable to a typical poker game.  As before, all of the possible combinations are created and assessed, with caching due to moderate run times:  
+```{r, cache=TRUE}
+jbHands <- matrix(data=0L, nrow=choose(52, 5), ncol=5)
+
+intCtr <- 1
+for (i in 1:48) {
+    for (j in (i+1):49) {
+        for (k in (j+1):50) {
+            for (m in (k+1):51) {
+                for (n in (m+1):52) {
+                               jbHands[intCtr, ] <- c(i, j, k, m, n)
+                               intCtr <- intCtr + 1
+                }
+            }
+
+        }
+    }
+}
+
+
+## Find the flushes
+jbFlush <- apply(jbHands, 1, FUN = function(x) { diff(range( (x-1) %/% 13 )) == 0 })
+
+## Find the number of uniques
+jbUniques <- apply(jbHands, 1, FUN = function(x) { length(unique(x %% 13)) })
+
+## Find the range, specifically is it exactly 5
+foo <- function(x) {
+    min( diff(range( (x-1) %% 13 )) , diff(range( (x-2) %% 13 )) )
+}
+jbRange <- apply(jbHands, 1, FUN = foo)
+
+# Is the maximum number of cards equal to 3 (only for jbUniques %in% c(2, 3))
+foo <- function(x) {
+    max(table(x %% 13))
+}
+jbMax <- apply(jbHands[jbUniques %in% c(2, 3), ], 1, FUN=foo)
+```
+  
+Hand types are then declared, with this portion not cached since 1) it will need further refinement, and 2) it runs quickly (with the exception of the table function, since updated with dplyr/tidyr for speed):  
+```{r}
+jbType <- rep(-1L, nrow(jbHands))  # Default value is -1
+jbType[jbUniques == 4] <- 0  # Treat all pairs as 0 for now
+jbType[jbUniques == 4] <- 0  # Treat all pairs as 0 for now
+jbType[jbFlush == FALSE & jbUniques == 5 & jbRange == 4] <- 3  # Straights
+jbType[jbFlush == TRUE & jbRange > 4] <- 5  # Flushes
+
+# Declare the straight flush and royal flush
+rfVector <- c(1L, 10L, 11L, 12L, 0L)
+foo <- function(x) {
+    if (sum( x %% 13 == rfVector ) ==5 ) { return(799) }
+    else { return(49) }
+}
+jbType[jbFlush == TRUE & jbRange == 4] <- apply(jbHands[jbFlush == TRUE & jbRange == 4, ], 1, FUN=foo)
+
+# Look at the subset that composes Two Pair, Trips, Full House, and Quads
+jbTemp <- jbUniques[jbUniques %in% c(2, 3)]
+jbTempValue <- rep(0L, length(jbTemp))
+
+jbTempValue[jbTemp == 3 & jbMax != 3] <- 1  # Two Pair
+jbTempValue[jbTemp == 3 & jbMax == 3] <- 2  # Trips
+jbTempValue[jbTemp == 2 & jbMax == 3] <- 8  # Full House
+jbTempValue[jbTemp == 2 & jbMax != 3] <- 24  # Quads
+
+jbType[jbUniques %in% c(2, 3)] <- jbTempValue
+
+
+library(dplyr)
+library(tidyr)
+
+# Use dplyr and tidyr since they are MUCH faster than table() for the cross-tabs
+data.frame(jbType=jbType) %>% group_by(jbType) %>% summarize(count=n())
+data.frame(jbType=jbType, jbUniques=jbUniques) %>% 
+    group_by(jbType, jbUniques) %>% 
+    summarize(count=n()) %>%
+    spread(jbUniques, count, fill=0)
+data.frame(jbType=jbType, jbRange=jbRange) %>% 
+    group_by(jbType, jbRange) %>% 
+    summarize(count=n()) %>%
+    spread(jbType, count, fill=0)
+
+```
+
+Potential additional refinements will include:  
+  
+* Only count some of the pairs (e.g., Jacks or Better)  
+* Allow for rank and kickers to impact the value of the quads (e.g., Bonus or Double Double Bonus)  
+  

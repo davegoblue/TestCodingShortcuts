@@ -70,7 +70,7 @@ img {
 
 <div id="background" class="section level2">
 <h2>Background</h2>
-<p>This document is for additional coding examples, using some DataCamp_Insights_v001 materials where applicable. To start, this program looks at hands that can be made in a game of Three Card Poker (TCP). Specifically, a TCP hand consists of three cards from a standard 52-card deck. Suits do not matter (there is no master or trump suit), though three cards of the same suit form a flush. Further, three cards of consecutive rank (A-K-Q and 3-2-A are both counted) are considered to be a straight.</p>
+<p>This document is for additional examples, using some DataCamp_Insights_v001 materials where applicable. To start, this program looks at hands that can be made in a game of Three Card Poker (TCP). Specifically, a TCP hand consists of three cards from a standard 52-card deck. Suits do not matter (there is no master or trump suit), though three cards of the same suit form a flush. Further, three cards of consecutive rank (A-K-Q and 3-2-A are both counted) are considered to be a straight.</p>
 </div>
 <div id="simulations" class="section level2">
 <h2>Simulations</h2>
@@ -153,6 +153,141 @@ sum(handValues)</code></pre>
 ##      -1       1       3       6      30      40 
 ## 0.74389 0.16941 0.04959 0.03258 0.00235 0.00217</code></pre>
 <p>These values all match the published literature.</p>
+<p>Next, a similar process is run for the 52c5 example applicable to a typical poker game. As before, all of the possible combinations are created and assessed, with caching due to moderate run times:</p>
+<pre class="r"><code>jbHands &lt;- matrix(data=0L, nrow=choose(52, 5), ncol=5)
+
+intCtr &lt;- 1
+for (i in 1:48) {
+    for (j in (i+1):49) {
+        for (k in (j+1):50) {
+            for (m in (k+1):51) {
+                for (n in (m+1):52) {
+                               jbHands[intCtr, ] &lt;- c(i, j, k, m, n)
+                               intCtr &lt;- intCtr + 1
+                }
+            }
+
+        }
+    }
+}
+
+
+## Find the flushes
+jbFlush &lt;- apply(jbHands, 1, FUN = function(x) { diff(range( (x-1) %/% 13 )) == 0 })
+
+## Find the number of uniques
+jbUniques &lt;- apply(jbHands, 1, FUN = function(x) { length(unique(x %% 13)) })
+
+## Find the range, specifically is it exactly 5
+foo &lt;- function(x) {
+    min( diff(range( (x-1) %% 13 )) , diff(range( (x-2) %% 13 )) )
+}
+jbRange &lt;- apply(jbHands, 1, FUN = foo)
+
+# Is the maximum number of cards equal to 3 (only for jbUniques %in% c(2, 3))
+foo &lt;- function(x) {
+    max(table(x %% 13))
+}
+jbMax &lt;- apply(jbHands[jbUniques %in% c(2, 3), ], 1, FUN=foo)</code></pre>
+<p>Hand types are then declared, with this portion not cached since 1) it will need further refinement, and 2) it runs quickly (with the exception of the table function, since updated with dplyr/tidyr for speed):</p>
+<pre class="r"><code>jbType &lt;- rep(-1L, nrow(jbHands))  # Default value is -1
+jbType[jbUniques == 4] &lt;- 0  # Treat all pairs as 0 for now
+jbType[jbUniques == 4] &lt;- 0  # Treat all pairs as 0 for now
+jbType[jbFlush == FALSE &amp; jbUniques == 5 &amp; jbRange == 4] &lt;- 3  # Straights
+jbType[jbFlush == TRUE &amp; jbRange &gt; 4] &lt;- 5  # Flushes
+
+# Declare the straight flush and royal flush
+rfVector &lt;- c(1L, 10L, 11L, 12L, 0L)
+foo &lt;- function(x) {
+    if (sum( x %% 13 == rfVector ) ==5 ) { return(799) }
+    else { return(49) }
+}
+jbType[jbFlush == TRUE &amp; jbRange == 4] &lt;- apply(jbHands[jbFlush == TRUE &amp; jbRange == 4, ], 1, FUN=foo)
+
+# Look at the subset that composes Two Pair, Trips, Full House, and Quads
+jbTemp &lt;- jbUniques[jbUniques %in% c(2, 3)]
+jbTempValue &lt;- rep(0L, length(jbTemp))
+
+jbTempValue[jbTemp == 3 &amp; jbMax != 3] &lt;- 1  # Two Pair
+jbTempValue[jbTemp == 3 &amp; jbMax == 3] &lt;- 2  # Trips
+jbTempValue[jbTemp == 2 &amp; jbMax == 3] &lt;- 8  # Full House
+jbTempValue[jbTemp == 2 &amp; jbMax != 3] &lt;- 24  # Quads
+
+jbType[jbUniques %in% c(2, 3)] &lt;- jbTempValue
+
+
+library(dplyr)</code></pre>
+<pre><code>## 
+## Attaching package: 'dplyr'</code></pre>
+<pre><code>## The following objects are masked from 'package:stats':
+## 
+##     filter, lag</code></pre>
+<pre><code>## The following objects are masked from 'package:base':
+## 
+##     intersect, setdiff, setequal, union</code></pre>
+<pre class="r"><code>library(tidyr)
+
+# Use dplyr and tidyr since they are MUCH faster than table() for the cross-tabs
+data.frame(jbType=jbType) %&gt;% group_by(jbType) %&gt;% summarize(count=n())</code></pre>
+<pre><code>## Source: local data frame [10 x 2]
+## 
+##    jbType   count
+##     (dbl)   (int)
+## 1      -1 1302540
+## 2       0 1098240
+## 3       1  123552
+## 4       2   54912
+## 5       3   10200
+## 6       5    5108
+## 7       8    3744
+## 8      24     624
+## 9      49      36
+## 10    799       4</code></pre>
+<pre class="r"><code>data.frame(jbType=jbType, jbUniques=jbUniques) %&gt;% 
+    group_by(jbType, jbUniques) %&gt;% 
+    summarize(count=n()) %&gt;%
+    spread(jbUniques, count, fill=0)</code></pre>
+<pre><code>## Source: local data frame [10 x 5]
+## Groups: jbType [10]
+## 
+##    jbType     2      3       4       5
+##     (dbl) (dbl)  (dbl)   (dbl)   (dbl)
+## 1      -1     0      0       0 1302540
+## 2       0     0      0 1098240       0
+## 3       1     0 123552       0       0
+## 4       2     0  54912       0       0
+## 5       3     0      0       0   10200
+## 6       5     0      0       0    5108
+## 7       8  3744      0       0       0
+## 8      24   624      0       0       0
+## 9      49     0      0       0      36
+## 10    799     0      0       0       4</code></pre>
+<pre class="r"><code>data.frame(jbType=jbType, jbRange=jbRange) %&gt;% 
+    group_by(jbType, jbRange) %&gt;% 
+    summarize(count=n()) %&gt;%
+    spread(jbType, count, fill=0)</code></pre>
+<pre><code>## Source: local data frame [12 x 11]
+## 
+##    jbRange     -1      0     1     2     3     5     8    24    49   799
+##      (dbl)  (dbl)  (dbl) (dbl) (dbl) (dbl) (dbl) (dbl) (dbl) (dbl) (dbl)
+## 1        1      0      0     0     0     0     0   624   104     0     0
+## 2        2      0      0  5184  2304     0     0   576    96     0     0
+## 3        3      0  16896  9504  4224     0     0   528    88     0     0
+## 4        4      0  46080 12960  5760 10200     0   480    80    36     4
+## 5        5  36720  82944 15552  6912     0   144   432    72     0     0
+## 6        6  81600 122880 17280  7680     0   320   384    64     0     0
+## 7        7 142800 161280 17712  7872     0   560   240    40     0     0
+## 8        8 213180 187392 15984  7104     0   836   192    32     0     0
+## 9        9 271320 190464 13392  5952     0  1064   144    24     0     0
+## 10      10 286620 165888  9936  4416     0  1124    96    16     0     0
+## 11      11 224400 109056  5616  2496     0   880    48     8     0     0
+## 12      12  45900  15360   432   192     0   180     0     0     0     0</code></pre>
+<p>Potential additional refinements will include:</p>
+<ul>
+<li>Only count some of the pairs (e.g., Jacks or Better)<br />
+</li>
+<li>Allow for rank and kickers to impact the value of the quads (e.g., Bonus or Double Double Bonus)</li>
+</ul>
 </div>
 </div>
 
