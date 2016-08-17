@@ -143,3 +143,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 15-AUG-2016  
 * AdditionalCoding_v001 adapted for baseline of 5-card games  
 * AdditionalCoding_v001 calculates all baseline 5-card values, and makes a random sample of 100 single-card replacements  
+* AdditionalCoding_v001 experiments with data.table for key lookups  
