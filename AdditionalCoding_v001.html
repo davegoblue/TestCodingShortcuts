@@ -288,23 +288,58 @@ data.frame(jbType=jbType) %&gt;% group_by(jbType) %&gt;% summarize(count=n())</c
 </li>
 <li>Allow for rank and kickers to impact the value of the quads (e.g., Bonus or Double Double Bonus)</li>
 </ul>
-<p>Next, a routine is established to look at the potential outcomes for removing a single card from a single hand and filling it with all replacements:</p>
+<p>Next, a routine is established to look-up the value of a specific hand in the existing tables:</p>
+<pre class="r"><code># Create a function to make the numeric from a matrix with each row being a 5-integer vectors
+handVec2Int &lt;- function(x) {
+    # Matricize an integer vector -- just for QC, should only pass matrices
+    if (class(x) == &quot;integer&quot;) {
+        x &lt;- matrix(data=x, nrow=1)
+    }
+    stopifnot(class(x) == &quot;matrix&quot;)
+    100000000 * x[,1] + 1000000 * x[,2] + 10000 * x[,3] + 100 * x[,4] + x[,5]
+}</code></pre>
+<p>The actual hash table creation is hashed since this is one of the longer elements of the routine:</p>
 <pre class="r"><code>## jbHands is the 2,598,960 x 5 matrix of the cards (sorted ascending) in the hand
 ## jbType is the length 2,598,960 vector associated to the outcomes of those hands
 
-## Grab a sample of 100 hands from jbHands
+# Set up for the looping to populate the hash table
+b &lt;- handVec2Int(jbHands)
+stopifnot(all.equal(b, unique(b)))
+c &lt;- as.character(b)
+intCtr &lt;- 1
+
+## Create a hash table for fast look-ups
+myHandHash &lt;- new.env(hash=TRUE, parent=emptyenv(), size=nrow(jbHands))
+
+startTime &lt;- proc.time()
+for (eachNum in c) {
+    
+    myHandHash[[ eachNum ]] &lt;- jbType[intCtr]
+    intCtr &lt;- intCtr + 1
+}
+proc.time() - startTime</code></pre>
+<pre><code>##    user  system elapsed 
+##  113.59    0.24  114.91</code></pre>
+<p>Next, the hash table is tested by passing example hands to it:</p>
+<pre class="r"><code># Pull only from the hearts and diamonds for speed
+sampHands &lt;- combn(14:39, 5)
+sampHashLookup &lt;- handVec2Int(t(sampHands))
+sampHashChars &lt;- as.character(sampHashLookup)
+
+# Look-up the value for each of these hands
+sampVals &lt;- numeric(0)
+
+startTime &lt;- proc.time()
+for (eachChar in sampHashChars) {
+    sampVals &lt;- c(sampVals, myHandHash[[ eachChar ]])
+}
+proc.time() - startTime</code></pre>
+<pre><code>##    user  system elapsed 
+##   10.39    1.23   11.73</code></pre>
+<p>Then, the beginning of a routine is written to look at the singe-card-draw process:</p>
+<pre class="r"><code>## Grab a sample of 100 hands from jbHands
 set.seed(1608161356)
 myKeys &lt;- sample(1:nrow(jbHands), 100, replace=FALSE)
-
-# Create an indexed data.table containing the hands and their values
-library(data.table)</code></pre>
-<pre><code>## 
-## Attaching package: 'data.table'</code></pre>
-<pre><code>## The following objects are masked from 'package:dplyr':
-## 
-##     between, last</code></pre>
-<pre class="r"><code>jbDT &lt;- as.data.table(cbind(jbHands, jbType))
-setkey(jbDT, V1, V2, V3, V4, V5)
 
 ## For a given hand, replace the first card with each possible card
 for (thisKey in myKeys) {
@@ -312,15 +347,9 @@ for (thisKey in myKeys) {
     startValue &lt;- jbType[thisKey]
     canReplace &lt;- setdiff(1:52, as.vector(keyHand))  # Can only draw cards you do not already have
     
-    newVal &lt;- integer(0)
     for (thisCard in canReplace) {
         # Place it in position one
         thisHand &lt;- sort( c(keyHand[-1], thisCard) )
-        # Next need to find the value -- need a VERY fast lookup for this
-        # Good to practice with DT, but will need to also make the algorithm much more clever
-        newVal &lt;- c(newVal, 
-                    jbDT[.(thisHand[1], thisHand[2], thisHand[3], thisHand[4], thisHand[5]), jbType]
-                    )
     }
 }</code></pre>
 </div>

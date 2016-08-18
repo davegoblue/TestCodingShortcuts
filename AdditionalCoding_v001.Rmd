@@ -179,19 +179,67 @@ Potential additional refinements will include:
 * Only count some of the pairs (e.g., Jacks or Better)  
 * Allow for rank and kickers to impact the value of the quads (e.g., Bonus or Double Double Bonus)  
   
-Next, a routine is established to look at the potential outcomes for removing a single card from a single hand and filling it with all replacements:  
+Next, a routine is established to look-up the value of a specific hand in the existing tables:  
 ```{r}
+# Create a function to make the numeric from a matrix with each row being a 5-integer vectors
+handVec2Int <- function(x) {
+    # Matricize an integer vector -- just for QC, should only pass matrices
+    if (class(x) == "integer") {
+        x <- matrix(data=x, nrow=1)
+    }
+    stopifnot(class(x) == "matrix")
+    100000000 * x[,1] + 1000000 * x[,2] + 10000 * x[,3] + 100 * x[,4] + x[,5]
+}
+```
+  
+The actual hash table creation is hashed since this is one of the longer elements of the routine:  
+```{r, cache=TRUE}
 ## jbHands is the 2,598,960 x 5 matrix of the cards (sorted ascending) in the hand
 ## jbType is the length 2,598,960 vector associated to the outcomes of those hands
 
+# Set up for the looping to populate the hash table
+b <- handVec2Int(jbHands)
+stopifnot(all.equal(b, unique(b)))
+c <- as.character(b)
+intCtr <- 1
+
+## Create a hash table for fast look-ups
+myHandHash <- new.env(hash=TRUE, parent=emptyenv(), size=nrow(jbHands))
+
+startTime <- proc.time()
+for (eachNum in c) {
+    
+    myHandHash[[ eachNum ]] <- jbType[intCtr]
+    intCtr <- intCtr + 1
+}
+proc.time() - startTime
+
+```
+  
+Next, the hash table is tested by passing example hands to it:  
+```{r}
+
+# Pull only from the hearts and diamonds for speed
+sampHands <- combn(14:39, 5)
+sampHashLookup <- handVec2Int(t(sampHands))
+sampHashChars <- as.character(sampHashLookup)
+
+# Look-up the value for each of these hands
+sampVals <- numeric(0)
+
+startTime <- proc.time()
+for (eachChar in sampHashChars) {
+    sampVals <- c(sampVals, myHandHash[[ eachChar ]])
+}
+proc.time() - startTime
+
+```
+  
+Then, the beginning of a routine is written to look at the singe-card-draw process:  
+```{r}
 ## Grab a sample of 100 hands from jbHands
 set.seed(1608161356)
 myKeys <- sample(1:nrow(jbHands), 100, replace=FALSE)
-
-# Create an indexed data.table containing the hands and their values
-library(data.table)
-jbDT <- as.data.table(cbind(jbHands, jbType))
-setkey(jbDT, V1, V2, V3, V4, V5)
 
 ## For a given hand, replace the first card with each possible card
 for (thisKey in myKeys) {
@@ -199,16 +247,10 @@ for (thisKey in myKeys) {
     startValue <- jbType[thisKey]
     canReplace <- setdiff(1:52, as.vector(keyHand))  # Can only draw cards you do not already have
     
-    newVal <- integer(0)
     for (thisCard in canReplace) {
         # Place it in position one
         thisHand <- sort( c(keyHand[-1], thisCard) )
-        # Next need to find the value -- need a VERY fast lookup for this
-        # Good to practice with DT, but will need to also make the algorithm much more clever
-        newVal <- c(newVal, 
-                    jbDT[.(thisHand[1], thisHand[2], thisHand[3], thisHand[4], thisHand[5]), jbType]
-                    )
     }
 }
 ```
-
+  
