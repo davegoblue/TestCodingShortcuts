@@ -145,3 +145,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v001 calculates all baseline 5-card values, and makes a random sample of 100 single-card replacements  
 * AdditionalCoding_v001 experiments with data.table for key lookups  
 * AdditionalCoding_v001 experiments with hash tables for key lookups  
+* AdditionalCoding_v001 adds a few plots (ggplot2) for initial hand types  
