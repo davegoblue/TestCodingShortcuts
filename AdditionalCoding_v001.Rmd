@@ -220,8 +220,8 @@ intCtr
 Next, the hash table is tested by passing example hands to it:  
 ```{r}
 
-# Pull only from the four aces, high hearts (9-K) and low diamonds (2-6) for speed
-sampHands <- combn( sort(c(1, 14, 27, 40, 22:26, 28:32)), 5)
+# Pull only from the four aces, middle spades (5-T), high hearts (9-K) and low diamonds (2-6) for speed
+sampHands <- combn( sort(c(1, 14, 27, 40, 5:10, 22:26, 28:32)), 5)
 sampHashLookup <- handVec2Int(t(sampHands))
 sampHashChars <- as.character(sampHashLookup)
 
@@ -234,11 +234,11 @@ startTime <- proc.time()
 for (eachChar in sampHashChars) {
     sampVals <- c(sampVals, myHandHash[[ eachChar ]])
     
-    if (length(sampVals) != (sampLen + 1)) {
-        print(paste0(eachChar, " maps to ", myHandHash[[ eachChar ]]))
-    } else {
-        sampLen <- length(sampVals)
-    }
+    # if (length(sampVals) != (sampLen + 1)) {
+        # print(paste0(eachChar, " maps to ", myHandHash[[ eachChar ]]))
+    # } else {
+        # sampLen <- length(sampVals)
+    # }
     
     intCtr <- intCtr + 1
 }
@@ -250,10 +250,35 @@ table(sampVals)
   
 Then, the beginning of a routine is written to look at the singe-card-draw process:  
 ```{r}
-## Grab a sample of 10 hands from jbHands
+## Grab a sample of 20 hands from jbHands
 set.seed(1608161356)
-myKeys <- sample(1:nrow(jbHands), 10, replace=FALSE)
+myKeys <- sample(1:nrow(jbHands), 20, replace=FALSE)
+```
+  
+First, the routine is attempted using the hash table lookups:  
+```{r}
 
+startTime <- proc.time()
+for (thisKey in myKeys) {
+    keyHand <- jbHands[thisKey, , drop=TRUE]  # Convert to vector
+    startValue <- jbType[thisKey]
+    canReplace <- setdiff(1:52, as.vector(keyHand))  # Can only draw cards you do not already have
+    
+    possHands <- data.frame(canReplace, keyHand[2], keyHand[3], keyHand[4], keyHand[5])
+    possHands <- matrix(data=apply(possHands, 1, FUN=sort), ncol=5, byrow=TRUE)
+    
+    bHash <- handVec2Int(possHands)
+    stopifnot(all.equal(bHash, unique(bHash)))
+    cHash <- as.character(bHash)
+
+    valHands <- mget(cHash, envir=myHandHash)
+}
+proc.time() - startTime
+
+```
+  
+Then, the routine is attempted using the data.table() library:  
+```{r}
 ## Practice with data.table
 library(data.table)
 jbDT <- data.table(cbind(jbHands, 1:nrow(jbHands)))
@@ -262,6 +287,7 @@ setkey(jbDT, V1, V2, V3, V4, V5)
 ## For a given hand, replace the first card with each possible card
 foo <- function(x, myDT) { myDT[ .(x[1], x[2], x[3], x[4], x[5]) ] }
 
+startTime <- proc.time()
 for (thisKey in myKeys) {
     keyHand <- jbHands[thisKey, , drop=TRUE]  # Convert to vector
     startValue <- jbType[thisKey]
@@ -273,11 +299,12 @@ for (thisKey in myKeys) {
     idxHands <- unlist(purrr::transpose(apply(possHands, 2, FUN=foo, myDT=jbDT))$V6)
     valHands <- jbType[idxHands]
 }
+proc.time() - startTime
 ```
   
-The lookups still take FAR too long; a much-improved method of determining values of the re-draws will be needed.  
+The lookups still take FAR too long, although the hashed lookups run significantly faster for this small sample.  A much-improved algorithm will be needed, perhaps "working in reverse" as per material from the Wizard of Odds website.  
   
-And, sample plots are created using ggplot2 (cached, since they take a while to plot off the large frame):  
+Sample plots are created using ggplot2 (cached, since they take a while to plot off the large frame):  
 ```{r, cache=TRUE}
 library(ggplot2)
 
@@ -305,3 +332,11 @@ ggplot(graphFrame, aes(x=as.factor(jbRange))) +
 ```
   
 As per the tables, the graphs line up with expectations.  
+  
+A table is created to find the minimum row for each of the smallest cards:  
+```{r}
+# Index creation algorithm
+idxTemp <- table(jbHands[, 1])
+
+```
+
