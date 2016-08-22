@@ -148,3 +148,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v001 adds a few plots (ggplot2) for initial hand types  
 * AdditionalCoding_v001 experiments further with data.table for the lookups   
 * AdditionalCoding_v001 compares run times for data.table and hash tables for the lookups     
+
+### Expansions week of 22-AUG-2016  
+* DataCamp_Insights_v001 includes Module 01 practice examples from Intermediate R  
