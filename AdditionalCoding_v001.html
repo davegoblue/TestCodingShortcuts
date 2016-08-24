@@ -342,7 +342,7 @@ for (eachChar in sampHashChars) {
 }
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##  109.30    0.15  109.78</code></pre>
+##  121.04    0.22  122.63</code></pre>
 <pre class="r"><code>intCtr</code></pre>
 <pre><code>## [1] 15504</code></pre>
 <pre class="r"><code>table(sampVals)</code></pre>
@@ -371,7 +371,7 @@ for (thisKey in myKeys) {
 }
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##    0.81    0.00    0.81</code></pre>
+##    1.07    0.00    1.09</code></pre>
 <p>Then, the routine is attempted using the data.table() library:</p>
 <pre class="r"><code>## Practice with data.table
 library(data.table)</code></pre>
@@ -400,7 +400,7 @@ for (thisKey in myKeys) {
 }
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##   13.31    0.11   13.48</code></pre>
+##   14.41    0.03   14.55</code></pre>
 <p>The lookups still take FAR too long, although the hashed lookups run significantly faster for this small sample. A much-improved algorithm will be needed, perhaps “working in reverse” as per material from the Wizard of Odds website.</p>
 <p>Sample plots are created using ggplot2 (cached, since they take a while to plot off the large frame):</p>
 <pre class="r"><code>library(ggplot2)
@@ -448,6 +448,82 @@ as.data.table(jbHands) %&gt;% group_by(V1) %&gt;% summarize(ct=n())</code></pre>
 ## 9      9 123410
 ## 10    10 111930
 ## ..   ...    ...</code></pre>
+<p>Next, the program takes a stab at implementing the algorithm described by the Wizard of Odds at <a href="http://wizardofodds.com/games/video-poker/methodology/" class="uri">http://wizardofodds.com/games/video-poker/methodology/</a> for vastly reducing run times for a program of this type. The Wizard recommends an 11-step process, including:</p>
+<ol style="list-style-type: decimal">
+<li><p>Initialize array 0 (2,598,960) for the result of a single dealt hand with 0 draws, array 1 (270,725 x 16) for a 1-card draw, array 2 (22,100 x 16) for a 2-card draw, array 3 (1,326 x 16) for a 3-card draw, array 4 (52 x 16) for a 4-card draw, and array 5 (1 x 16) for a 5-card draw. The 16 is for the maximum number of outcomes (e.g., -1 or +799) for the hand, and could be expanded if a game had more than 16 paying types.</p></li>
+<li><p>Loop through every possible hand (these are the jbHands and jbType in this algorithm), and populate array0, array1, array2, array3, array4, and array5 based on possible permutations of cards held on the draw</p></li>
+</ol>
+<p>First, the 16-hand condition is tested, and the relevant arrays are set up:</p>
+<pre class="r"><code>nrowArray0 &lt;- data.frame(jbType=jbType) %&gt;% 
+    group_by(jbType) %&gt;% 
+    summarize(ct=n()) %&gt;%
+    arrange(jbType)
+nrowArray0</code></pre>
+<pre><code>## Source: local data frame [10 x 2]
+## 
+##    jbType      ct
+##     (dbl)   (int)
+## 1      -1 1302540
+## 2       0 1098240
+## 3       1  123552
+## 4       2   54912
+## 5       3   10200
+## 6       5    5108
+## 7       8    3744
+## 8      24     624
+## 9      49      36
+## 10    799       4</code></pre>
+<pre class="r"><code>if (nrow(nrowArray0) &gt; 16) { 
+    stop(paste0(&quot;There are too many hand types, cap is 16, this will have: &quot;, nrow(nrowArray0)))
+}
+print(&quot;OK&quot;)</code></pre>
+<pre><code>## [1] &quot;OK&quot;</code></pre>
+<pre class="r"><code># Initialize array1-array5
+array1 &lt;- matrix(data=0L, nrow=choose(52, 4), ncol=16)
+array2 &lt;- matrix(data=0L, nrow=choose(52, 3), ncol=16)
+array3 &lt;- matrix(data=0L, nrow=choose(52, 2), ncol=16)
+array4 &lt;- matrix(data=0L, nrow=choose(52, 1), ncol=16)
+array5 &lt;- matrix(data=0L, nrow=choose(52, 0), ncol=16)
+
+# Create array0 which will have an index number corresponding to the associated jbType
+array0 &lt;- match(jbType, nrowArray0[[1]])
+
+data.frame(array0=array0) %&gt;% 
+    group_by(array0) %&gt;%
+    summarize(ct=n()) %&gt;%
+    arrange(array0)</code></pre>
+<pre><code>## Source: local data frame [10 x 2]
+## 
+##    array0      ct
+##     (int)   (int)
+## 1       1 1302540
+## 2       2 1098240
+## 3       3  123552
+## 4       4   54912
+## 5       5   10200
+## 6       6    5108
+## 7       7    3744
+## 8       8     624
+## 9       9      36
+## 10     10       4</code></pre>
+<p>Begin by populating the easiest arrays, array4 and array5. Basically, this is just looping through each of the jbHands, keeping either 1 or 0 of the cards, and adding 1 to the appropriate column of array4 or array5:</p>
+<pre class="r"><code>startTime &lt;- proc.time()
+for (intCtr in 1:nrow(jbHands)) {
+    thisHand &lt;- jbHands[intCtr, ]
+    thisValue &lt;- array0[intCtr]
+    
+    # Populate array5
+    array5[1, thisValue] &lt;- array5[1, thisValue] + 1
+    
+    # Populate array4
+    for (thisCard in thisHand) {
+        array4[thisCard, thisValue] &lt;- array4[thisCard, thisValue] + 1
+    }
+}
+proc.time() - startTime</code></pre>
+<pre><code>##    user  system elapsed 
+##   34.50    0.01   34.61</code></pre>
+<p>The next step is to vectorize the above; run time is still FAR too long.</p>
 </div>
 </div>
 
