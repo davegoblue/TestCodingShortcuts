@@ -153,3 +153,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 includes Module 01 practice examples from Intermediate R  
 * AdditionalCoding_v001 experiments with additional methods for the hash table  
 * AdditionalCoding_v001 experiments with array0, array4, and array5 from the Wizard of Odds Methodology  
+* AdditionalCoding_v001 experiments with array3 from the Wizard of Odds Methodology  
