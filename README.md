@@ -155,3 +155,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v001 experiments with array0, array4, and array5 from the Wizard of Odds Methodology  
 * AdditionalCoding_v001 experiments with array3 from the Wizard of Odds Methodology  
 * AdditionalCoding_v001 populates array3 by slightly adapting the Wizard of Odds Methodology  
+* AdditionalCoding_v001 populates array2, though the process needs additional optimization for run-time  
