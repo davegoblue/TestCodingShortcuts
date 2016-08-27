@@ -342,7 +342,7 @@ for (eachChar in sampHashChars) {
 }
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##  112.82    0.28  113.68</code></pre>
+##  119.19    0.33  121.03</code></pre>
 <pre class="r"><code>intCtr</code></pre>
 <pre><code>## [1] 15504</code></pre>
 <pre class="r"><code>table(sampVals)</code></pre>
@@ -371,7 +371,7 @@ for (thisKey in myKeys) {
 }
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##    0.89    0.00    0.89</code></pre>
+##    0.77    0.00    0.76</code></pre>
 <p>Then, the routine is attempted using the data.table() library:</p>
 <pre class="r"><code>## Practice with data.table
 library(data.table)</code></pre>
@@ -400,7 +400,7 @@ for (thisKey in myKeys) {
 }
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##   14.13    0.08   14.26</code></pre>
+##   14.04    0.11   14.30</code></pre>
 <p>The lookups still take FAR too long, although the hashed lookups run significantly faster for this small sample. A much-improved algorithm will be needed, perhaps “working in reverse” as per material from the Wizard of Odds website.</p>
 <p>Sample plots are created using ggplot2 (cached, since they take a while to plot off the large frame):</p>
 <pre class="r"><code>library(ggplot2)
@@ -509,18 +509,39 @@ data.frame(array0=array0) %&gt;%
 <p>Begin by populating the easiest arrays: array3, array4, and array5. Basically, this is just looping through each of the jbHands, keeping 2 or 1 or 0 of the cards, and adding 1 to the appropriate column of array3, or array4, or array5:</p>
 <pre class="r"><code>idxKeep2 &lt;- data.frame(card1=1:51, posn=cumsum( c(0, 51:2) ) )
 
+
+curPos &lt;- integer(0)
+card2Keep &lt;- integer(0)
+curSum &lt;- 0L
+for (intCtr in 1:50) {
+    for (intCtr2 in (intCtr+1):51) {
+        # Write out the initial zero first; do not write out the final 22,100
+        curPos &lt;- c(curPos, curSum)
+        curSum &lt;- curSum + 52 - intCtr2
+        card2Keep &lt;- c(card2Keep, intCtr2)
+    }
+}
+idxKeep3 &lt;- data.frame(card1=rep(1:50, times=50:1), card2=card2Keep, posn=curPos)
+
+
 startTime &lt;- proc.time()
 
 # Populate array5
 a &lt;- data.frame(array0=array0) %&gt;% group_by(array0) %&gt;% summarize(ct=n()) %&gt;% arrange(array0)
 array5[1, a$array0] &lt;- a$ct
 
-# Populate array4
+proc.time() - startTime</code></pre>
+<pre><code>##    user  system elapsed 
+##    0.17    0.00    0.18</code></pre>
+<pre class="r"><code># Populate array4
 a &lt;- data.frame(keyCard=as.vector(jbHands), val=rep(array0, 5)) %&gt;%
     group_by(keyCard, val) %&gt;% summarize(ct=n()) %&gt;% arrange(keyCard, val)
 for (intCtr in 1:nrow(a)) { b &lt;- a[intCtr, , drop=FALSE] ; array4[b$keyCard, b$val] &lt;- b$ct }
 
-# Populate array3
+proc.time() - startTime</code></pre>
+<pre><code>##    user  system elapsed 
+##    5.36    0.07    5.48</code></pre>
+<pre class="r"><code># Populate array3
 idx &lt;- integer(0)
 ct &lt;- integer(0)
 val &lt;- integer(0)
@@ -538,14 +559,52 @@ for (c1 in 1:4) {
     }
 }
 
-for (intCtr in 1:length(ct)) {
-    array3[idx[intCtr], val[intCtr]] &lt;- ct[intCtr]
+b &lt;- data.frame(idx=idx, val=val, ct=ct) %&gt;% 
+    group_by(idx, val) %&gt;% 
+    summarize(newSum=sum(ct))
+
+for (intCtr in 1:nrow(b)) {
+    array3[b$idx[intCtr], b$val[intCtr]] &lt;- b$newSum[intCtr]
 }
 
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##   13.34    0.13   13.48</code></pre>
-<p>With array3 run in a more vectorized manner, the program runs fairly quickly. The next steps are to create array2 and array1, each of which have a more complex indexing methodology.</p>
+##   20.43    0.26   21.06</code></pre>
+<pre class="r"><code># Populate array2
+idx &lt;- integer(0)
+ct &lt;- integer(0)
+val &lt;- integer(0)
+
+for (c1 in 1:3) {
+    for (c2 in (c1+1):4) {
+        for (c3 in (c2+1):5) {
+            a &lt;- data.frame(card1=jbHands[, c1], card2=jbHands[, c2], 
+                            card3=jbHands[, c3], val=array0
+                            ) %&gt;% 
+                group_by(card1, card2, card3, val) %&gt;% 
+                summarize(ct=n()) %&gt;% 
+                arrange(card1, card2, card3, val)
+            # Still need to create idx
+            b &lt;- merge(a, idxKeep3)
+            idx &lt;- c(idx, b$posn + b$card3 - b$card2)
+            val &lt;- c(val, a$val)
+            ct &lt;- c(ct, a$ct)
+        }
+    }
+}
+
+c &lt;- data.frame(idx=idx, val=val, ct=ct) %&gt;% 
+    group_by(idx, val) %&gt;% 
+    summarize(newSum=sum(ct))
+
+for (intCtr in 1:nrow(c)) {
+    array2[c$idx[intCtr], c$val[intCtr]] &lt;- c$newSum[intCtr]
+}
+
+proc.time() - startTime</code></pre>
+<pre><code>##    user  system elapsed 
+##   88.22    0.70   90.03</code></pre>
+<p>With array3 run in a more vectorized manner, the program runs fairly quickly. The next steps are to create array2 and array1, each of which have a more complex indexing methodology. The array2 process needs optimization for run-time; this issue will be much exacerbated when running on the larger array1.</p>
 </div>
 </div>
 
