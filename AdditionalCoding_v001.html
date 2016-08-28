@@ -342,7 +342,7 @@ for (eachChar in sampHashChars) {
 }
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##  119.19    0.33  121.03</code></pre>
+##  119.98    0.52  121.46</code></pre>
 <pre class="r"><code>intCtr</code></pre>
 <pre><code>## [1] 15504</code></pre>
 <pre class="r"><code>table(sampVals)</code></pre>
@@ -371,7 +371,7 @@ for (thisKey in myKeys) {
 }
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##    0.77    0.00    0.76</code></pre>
+##    0.98    0.02    1.00</code></pre>
 <p>Then, the routine is attempted using the data.table() library:</p>
 <pre class="r"><code>## Practice with data.table
 library(data.table)</code></pre>
@@ -400,7 +400,7 @@ for (thisKey in myKeys) {
 }
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##   14.04    0.11   14.30</code></pre>
+##   14.27    0.08   14.45</code></pre>
 <p>The lookups still take FAR too long, although the hashed lookups run significantly faster for this small sample. A much-improved algorithm will be needed, perhaps “working in reverse” as per material from the Wizard of Odds website.</p>
 <p>Sample plots are created using ggplot2 (cached, since they take a while to plot off the large frame):</p>
 <pre class="r"><code>library(ggplot2)
@@ -532,7 +532,7 @@ array5[1, a$array0] &lt;- a$ct
 
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##    0.17    0.00    0.18</code></pre>
+##    0.17    0.00    0.17</code></pre>
 <pre class="r"><code># Populate array4
 a &lt;- data.frame(keyCard=as.vector(jbHands), val=rep(array0, 5)) %&gt;%
     group_by(keyCard, val) %&gt;% summarize(ct=n()) %&gt;% arrange(keyCard, val)
@@ -540,7 +540,7 @@ for (intCtr in 1:nrow(a)) { b &lt;- a[intCtr, , drop=FALSE] ; array4[b$keyCard, 
 
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##    5.36    0.07    5.48</code></pre>
+##    5.66    0.07    5.77</code></pre>
 <pre class="r"><code># Populate array3
 idx &lt;- integer(0)
 ct &lt;- integer(0)
@@ -569,7 +569,7 @@ for (intCtr in 1:nrow(b)) {
 
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##   20.43    0.26   21.06</code></pre>
+##   20.43    0.21   20.80</code></pre>
 <pre class="r"><code># Populate array2
 idx &lt;- integer(0)
 ct &lt;- integer(0)
@@ -603,8 +603,144 @@ for (intCtr in 1:nrow(c)) {
 
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##   88.22    0.70   90.03</code></pre>
+##   89.00    0.54   89.98</code></pre>
 <p>With array3 run in a more vectorized manner, the program runs fairly quickly. The next steps are to create array2 and array1, each of which have a more complex indexing methodology. The array2 process needs optimization for run-time; this issue will be much exacerbated when running on the larger array1.</p>
+<p>One area for exploration is to associate indices to each combination of cards, start with an nCm array as per <a href="http://wizardofvegas.com/forum/questions-and-answers/math/13687-my-methodology-for-video-poker-analysis-article-question/" class="uri">http://wizardofvegas.com/forum/questions-and-answers/math/13687-my-methodology-for-video-poker-analysis-article-question/</a>.</p>
+<pre class="r"><code>mtxCombin &lt;- matrix(data=0L, nrow=52, ncol=5)
+for (intCtr in 1:52) {
+    for (intCtr2 in 1:5) {
+        # Note that choose() is a guarded function where choose(n, k) returns 0 for k &gt; n
+        mtxCombin[intCtr, intCtr2] &lt;- choose(intCtr, intCtr2)
+    }
+}</code></pre>
+<p>The array can then be used to convert any 2 cards to an index, as follows:</p>
+<pre class="r"><code>idxCard2 &lt;- function(c1, c2) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    1 + mtxCombin[52, 2] - mtxCombin[53-c1, 2] +
+        mtxCombin[52-c1, 1] - mtxCombin[53-c2, 1]
+}
+
+# Test the index creation process
+mtxA &lt;- matrix(data=0L, nrow=choose(52, 2), ncol=3)
+curRow &lt;- 1
+for (intCtr in 1:51) {
+    for (intCtr2 in (intCtr+1):52) {
+        mtxA[curRow, 1:3] &lt;- c(intCtr, intCtr2, idxCard2(c1=intCtr, c2=intCtr2))
+        curRow &lt;- curRow + 1
+    }
+}
+
+# Make sure it worked OK!
+head(mtxA)</code></pre>
+<pre><code>##      [,1] [,2] [,3]
+## [1,]    1    2    1
+## [2,]    1    3    2
+## [3,]    1    4    3
+## [4,]    1    5    4
+## [5,]    1    6    5
+## [6,]    1    7    6</code></pre>
+<pre class="r"><code>tail(mtxA)</code></pre>
+<pre><code>##         [,1] [,2] [,3]
+## [1321,]   49   50 1321
+## [1322,]   49   51 1322
+## [1323,]   49   52 1323
+## [1324,]   50   51 1324
+## [1325,]   50   52 1325
+## [1326,]   51   52 1326</code></pre>
+<pre class="r"><code>length(mtxA[, 3]) == length(unique(mtxA[, 3]))</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>range(mtxA[, 3]) == c(1, choose(52, 2))</code></pre>
+<pre><code>## [1] TRUE TRUE</code></pre>
+<p>The array can also be used to convert any 3 cards to an index, as follows:</p>
+<pre class="r"><code>idxCard3 &lt;- function(c1, c2, c3) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    1 + mtxCombin[52, 3] - mtxCombin[53-c1, 3] +
+        mtxCombin[52-c1, 2] - mtxCombin[53-c2, 2] +
+        mtxCombin[52-c2, 1] - mtxCombin[53-c3, 1]
+}
+
+# Test the index creation process
+mtxA &lt;- matrix(data=0L, nrow=choose(52, 3), ncol=4)
+curRow &lt;- 1
+for (intCtr in 1:50) {
+    for (intCtr2 in (intCtr+1):51) {
+        for (intCtr3 in (intCtr2+1):52) {
+            mtxA[curRow, 1:4] &lt;- c(intCtr, intCtr2, intCtr3, 
+                                   idxCard3(c1=intCtr, c2=intCtr2, c3=intCtr3)
+                                   )
+            curRow &lt;- curRow + 1
+        }
+    }
+}
+
+# Make sure it worked OK!
+head(mtxA)</code></pre>
+<pre><code>##      [,1] [,2] [,3] [,4]
+## [1,]    1    2    3    1
+## [2,]    1    2    4    2
+## [3,]    1    2    5    3
+## [4,]    1    2    6    4
+## [5,]    1    2    7    5
+## [6,]    1    2    8    6</code></pre>
+<pre class="r"><code>tail(mtxA)</code></pre>
+<pre><code>##          [,1] [,2] [,3]  [,4]
+## [22095,]   48   50   52 22095
+## [22096,]   48   51   52 22096
+## [22097,]   49   50   51 22097
+## [22098,]   49   50   52 22098
+## [22099,]   49   51   52 22099
+## [22100,]   50   51   52 22100</code></pre>
+<pre class="r"><code>length(mtxA[, 4]) == length(unique(mtxA[, 4]))</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>range(mtxA[, 4]) == c(1, choose(52, 3))</code></pre>
+<pre><code>## [1] TRUE TRUE</code></pre>
+<p>And, the same algorithm can be used for 4 cards, an area which should save substantial time:</p>
+<pre class="r"><code>idxCard4 &lt;- function(c1, c2, c3, c4) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    1 + mtxCombin[52, 4] - mtxCombin[53-c1, 4] +
+        mtxCombin[52-c1, 3] - mtxCombin[53-c2, 3] +
+        mtxCombin[52-c2, 2] - mtxCombin[53-c3, 2] + 
+        mtxCombin[52-c3, 1] - mtxCombin[53-c4, 1]
+}
+
+# Test the index creation process
+mtxA &lt;- matrix(data=0L, nrow=choose(52, 4), ncol=5)
+curRow &lt;- 1
+for (intCtr in 1:49) {
+    for (intCtr2 in (intCtr+1):50) {
+        for (intCtr3 in (intCtr2+1):51) {
+            for (intCtr4 in (intCtr3+1):52) {
+                mtxA[curRow, 1:5] &lt;- c(intCtr, intCtr2, intCtr3, intCtr4, 
+                                       idxCard4(c1=intCtr, c2=intCtr2, c3=intCtr3, c4=intCtr4)
+                                       )
+                curRow &lt;- curRow + 1
+            }
+        }
+    }
+}
+
+# Make sure it worked OK!
+head(mtxA)</code></pre>
+<pre><code>##      [,1] [,2] [,3] [,4] [,5]
+## [1,]    1    2    3    4    1
+## [2,]    1    2    3    5    2
+## [3,]    1    2    3    6    3
+## [4,]    1    2    3    7    4
+## [5,]    1    2    3    8    5
+## [6,]    1    2    3    9    6</code></pre>
+<pre class="r"><code>tail(mtxA)</code></pre>
+<pre><code>##           [,1] [,2] [,3] [,4]   [,5]
+## [270720,]   47   50   51   52 270720
+## [270721,]   48   49   50   51 270721
+## [270722,]   48   49   50   52 270722
+## [270723,]   48   49   51   52 270723
+## [270724,]   48   50   51   52 270724
+## [270725,]   49   50   51   52 270725</code></pre>
+<pre class="r"><code>length(mtxA[, 5]) == length(unique(mtxA[, 5]))</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>range(mtxA[, 5]) == c(1, choose(52, 4))</code></pre>
+<pre><code>## [1] TRUE TRUE</code></pre>
+<p>These functions should then simplify and speed-up the conversion of any given 5-card hand to a score if it is instead held as a 0-4 card hand.</p>
 </div>
 </div>
 
