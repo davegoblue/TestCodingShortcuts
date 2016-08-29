@@ -157,3 +157,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v001 populates array3 by slightly adapting the Wizard of Odds Methodology  
 * AdditionalCoding_v001 populates array2, though the process needs additional optimization for run-time  
 * AdditionalCoding_v001 works through the conversion of any given 2-4 cards to an index for future functions    
+
+### Expansions week of 29-AUG-2016  
+* AdditionalCoding_v001 implements the re-draw of 1-4 cards using the key functions    
