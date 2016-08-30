@@ -1,0 +1,400 @@
+---
+title: "Additional Coding Examples"
+author: "davegoblue"
+date: "August 14, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background  
+This document explores video poker hands, using <http://wizardofodds.com/games/video-poker/methodology/> as a template, and applying DataCamp_Insights_v001 materials where applicable.  This document builds on the more salient components of the analysis in AdditionalCoding_v001.Rmd.  
+  
+## Simulations  
+### Potential Hand Types  
+The card deck will be considered to be 1-52, where 1-13, 14-26, 27-39, and 40-52 shall each be the suits.  Further, the lowest number of each suit shall be considered the Ace, and the highest shall be considered the King.  There are 52c5 (2,598,960) hands applicable to a typical poker game with a 52-card deck.  All of the possible combinations are created and assessed, with caching due to moderate run times:  
+```{r, cache=TRUE}
+jbHands <- matrix(data=0L, nrow=choose(52, 5), ncol=5)
+
+startTime <- proc.time()
+intCtr <- 1
+for (i in 1:48) {
+    for (j in (i+1):49) {
+        for (k in (j+1):50) {
+            for (m in (k+1):51) {
+                for (n in (m+1):52) {
+                               jbHands[intCtr, ] <- c(i, j, k, m, n)
+                               intCtr <- intCtr + 1
+                }
+            }
+
+        }
+    }
+}
+proc.time() - startTime
+
+
+## Find the flushes
+jbFlush <- apply(jbHands, 1, FUN = function(x) { diff(range( (x-1) %/% 13 )) == 0 })
+
+## Find the number of uniques
+jbUniques <- apply(jbHands, 1, FUN = function(x) { length(unique(x %% 13)) })
+
+## Find the range, specifically is it exactly 5
+foo <- function(x) {
+    min( diff(range( (x-1) %% 13 )) , diff(range( (x-2) %% 13 )) )
+}
+jbRange <- apply(jbHands, 1, FUN = foo)
+
+# Is the maximum number of cards equal to 3 (only for jbUniques %in% c(2, 3))
+foo <- function(x) {
+    max(table(x %% 13))
+}
+jbMax <- apply(jbHands[jbUniques %in% c(2, 3), ], 1, FUN=foo)
+
+# Get the totals by card rank
+cRank <- matrix(data=0L, nrow=choose(52, 5), ncol=13)
+for (intCtr in 1:13) {
+    cRank[, intCtr] <- as.integer( rowSums( (jbHands %% 13) == (intCtr %% 13) ) )
+}
+
+proc.time() - startTime
+```
+  
+Hand types are then declared, with this portion not cached since 1) it will need further refinement, and 2) it runs quickly (with the exception of the table function, later updated with dplyr/tidyr for speed):  
+```{r}
+jbType <- rep(-1L, nrow(jbHands))  # Default value is -1
+
+# Manage the pairs - only convert if pair is 1 (Ace) or 11-13 (J, Q, K)
+hiPair <- cRank[, 1] == 2 | cRank[, 11] == 2 | cRank[, 12] == 2 | cRank[, 13] == 2
+jbType[jbUniques == 4 & hiPair] <- 0
+
+# Manage the straights and flushes, including SF and RF
+jbType[jbFlush == FALSE & jbUniques == 5 & jbRange == 4] <- 3  # Straights as 3
+jbType[jbFlush == TRUE & jbRange > 4] <- 5  # Flushes as 5
+
+# Declare the straight flush and royal flush
+rfVector <- c(1L, 10L, 11L, 12L, 0L)
+foo <- function(x) {
+    if (sum( x %% 13 == rfVector ) ==5 ) { return(799) }
+    else { return(49) }
+}
+jbType[jbFlush == TRUE & jbRange == 4] <- apply(jbHands[jbFlush == TRUE & jbRange == 4, ], 1, FUN=foo)
+
+# Look at the subset that composes Two Pair, Trips, Full House, and Quads
+jbTemp <- jbUniques[jbUniques %in% c(2, 3)]
+jbTempValue <- rep(0L, length(jbTemp))
+
+jbTempValue[jbTemp == 3 & jbMax != 3] <- 1  # Two Pair
+jbTempValue[jbTemp == 3 & jbMax == 3] <- 2  # Trips
+jbTempValue[jbTemp == 2 & jbMax == 3] <- 8  # Full House
+jbTempValue[jbTemp == 2 & jbMax != 3] <- 24  # Quads
+
+jbType[jbUniques %in% c(2, 3)] <- jbTempValue
+
+
+library(dplyr)
+library(tidyr)
+
+# Use dplyr and tidyr since they are MUCH faster than table() for the cross-tabs
+data.frame(jbType=jbType) %>% group_by(jbType) %>% summarize(count=n())
+data.frame(jbType=jbType, jbUniques=jbUniques) %>% 
+    group_by(jbType, jbUniques) %>% 
+    summarize(count=n()) %>%
+    spread(jbUniques, count, fill=0)
+data.frame(jbType=jbType, jbRange=jbRange) %>% 
+    group_by(jbType, jbRange) %>% 
+    summarize(count=n()) %>%
+    spread(jbType, count, fill=0)
+
+```
+  
+Potential refinements will include allowing rank and kickers to impact value of quads (e.g., Bonus or Double Double Bonus).  
+  
+Sample plots are created using ggplot2 (cached, since they take a while to plot off the large frame):  
+```{r, cache=TRUE}
+# Practice with ggplot2
+library(ggplot2)
+
+graphFrame <- data.frame(jbFlush=as.integer(jbFlush), jbRange=jbRange, 
+                         jbType=jbType, jbUniques=jbUniques
+                         )
+
+# Bar chart for jbRange x jbUniques
+ggplot(graphFrame, aes(x=as.factor(jbRange))) + geom_bar(aes(fill=as.factor(jbUniques)))
+
+# Stacked bar chart for jbRange x jbUniques
+ggplot(graphFrame, aes(x=as.factor(jbRange))) + 
+    geom_bar(aes(fill=as.factor(jbUniques)), position="fill")
+
+# Bar chart for jbRange x jbUniques, faceted by jbType
+ggplot(graphFrame, aes(x=as.factor(jbRange))) + 
+    geom_bar(aes(fill=as.factor(jbUniques))) + 
+    facet_wrap(~ jbType, ncol=5)
+
+# Stacked bar chart for jbRange x jbUniques, faceted by jbType
+ggplot(graphFrame, aes(x=as.factor(jbRange))) + 
+    geom_bar(aes(fill=as.factor(jbUniques)), position="fill") + 
+    facet_wrap(~ jbType, ncol=5)
+
+```
+  
+As per the tables, the graphs line up with expectations.  
+  
+Next, the program takes a stab at implementing the algorithm described by the Wizard of Odds at <http://wizardofodds.com/games/video-poker/methodology/> for vastly reducing run times for a program of this type.  The Wizard recommends an 11-step process, including:  
+  
+1.  Initialize array 0 (2,598,960) for the result of a single dealt hand with 0 draws, array 1 (270,725 x 16) for a 1-card draw, array 2 (22,100 x 16) for a 2-card draw, array 3 (1,326 x 16) for a 3-card draw, array 4 (52 x 16) for a 4-card draw, and array 5 (1 x 16) for a 5-card draw.  The 16 is for the maximum number of outcomes (e.g., -1 or +799) for the hand, and could be expanded if a game had more than 16 paying types.  
+  
+2.  Loop through every possible hand (these are the jbHands and jbType in this algorithm), and populate array0, array1, array2, array3, array4, and array5 based on possible permutations of cards held on the draw  
+  
+First, the 16-hand condition is tested, and the relevant arrays are set up:
+```{r}
+
+nrowArray0 <- data.frame(jbType=jbType) %>% 
+    group_by(jbType) %>% 
+    summarize(ct=n()) %>%
+    arrange(jbType)
+nrowArray0
+
+if (nrow(nrowArray0) > 16) { 
+    stop(paste0("There are too many hand types, cap is 16, this will have: ", nrow(nrowArray0)))
+}
+print("OK")
+
+# Initialize array1-array5
+array1 <- matrix(data=0L, nrow=choose(52, 4), ncol=16)
+array2 <- matrix(data=0L, nrow=choose(52, 3), ncol=16)
+array3 <- matrix(data=0L, nrow=choose(52, 2), ncol=16)
+array4 <- matrix(data=0L, nrow=choose(52, 1), ncol=16)
+array5 <- matrix(data=0L, nrow=choose(52, 0), ncol=16)
+
+# Create array0 which will have an index number corresponding to the associated jbType
+array0 <- match(jbType, nrowArray0[[1]])
+
+data.frame(array0=array0) %>% 
+    group_by(array0) %>%
+    summarize(ct=n()) %>%
+    arrange(array0)
+
+```
+  
+One area for exploration is to associate indices to each combination of cards, start with an nCm array as per <http://wizardofvegas.com/forum/questions-and-answers/math/13687-my-methodology-for-video-poker-analysis-article-question/>.  
+```{r}
+mtxCombin <- matrix(data=0L, nrow=52, ncol=5)
+for (intCtr in 1:52) {
+    for (intCtr2 in 1:5) {
+        # Note that choose() is a guarded function where choose(n, k) returns 0 for k > n
+        mtxCombin[intCtr, intCtr2] <- choose(intCtr, intCtr2)
+    }
+}
+```
+  
+The array can then be used to convert any 2 cards to an index, as follows:  
+```{r}
+idxCard2 <- function(c1, c2) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    1 + mtxCombin[52, 2] - mtxCombin[53-c1, 2] +
+        mtxCombin[52-c1, 1] - mtxCombin[53-c2, 1]
+}
+
+# Test the index creation process
+mtxA <- matrix(data=0L, nrow=choose(52, 2), ncol=3)
+curRow <- 1
+for (intCtr in 1:51) {
+    for (intCtr2 in (intCtr+1):52) {
+        mtxA[curRow, 1:3] <- c(intCtr, intCtr2, idxCard2(c1=intCtr, c2=intCtr2))
+        curRow <- curRow + 1
+    }
+}
+
+# Make sure it worked OK!
+head(mtxA)
+tail(mtxA)
+length(mtxA[, 3]) == length(unique(mtxA[, 3]))
+range(mtxA[, 3]) == c(1, choose(52, 2))
+```
+  
+The array can also be used to convert any 3 cards to an index, as follows:  
+```{r}
+idxCard3 <- function(c1, c2, c3) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    1 + mtxCombin[52, 3] - mtxCombin[53-c1, 3] +
+        mtxCombin[52-c1, 2] - mtxCombin[53-c2, 2] +
+        mtxCombin[52-c2, 1] - mtxCombin[53-c3, 1]
+}
+
+# Test the index creation process
+mtxA <- matrix(data=0L, nrow=choose(52, 3), ncol=4)
+curRow <- 1
+for (intCtr in 1:50) {
+    for (intCtr2 in (intCtr+1):51) {
+        for (intCtr3 in (intCtr2+1):52) {
+            mtxA[curRow, 1:4] <- c(intCtr, intCtr2, intCtr3, 
+                                   idxCard3(c1=intCtr, c2=intCtr2, c3=intCtr3)
+                                   )
+            curRow <- curRow + 1
+        }
+    }
+}
+
+# Make sure it worked OK!
+head(mtxA)
+tail(mtxA)
+length(mtxA[, 4]) == length(unique(mtxA[, 4]))
+range(mtxA[, 4]) == c(1, choose(52, 3))
+```
+  
+And, the same algorithm can be used for 4 cards, an area which should save substantial time:  
+```{r}
+idxCard4 <- function(c1, c2, c3, c4) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    1 + mtxCombin[52, 4] - mtxCombin[53-c1, 4] +
+        mtxCombin[52-c1, 3] - mtxCombin[53-c2, 3] +
+        mtxCombin[52-c2, 2] - mtxCombin[53-c3, 2] + 
+        mtxCombin[52-c3, 1] - mtxCombin[53-c4, 1]
+}
+
+# Test the index creation process
+mtxA <- matrix(data=0L, nrow=choose(52, 4), ncol=5)
+curRow <- 1
+for (intCtr in 1:49) {
+    for (intCtr2 in (intCtr+1):50) {
+        for (intCtr3 in (intCtr2+1):51) {
+            for (intCtr4 in (intCtr3+1):52) {
+                mtxA[curRow, 1:5] <- c(intCtr, intCtr2, intCtr3, intCtr4, 
+                                       idxCard4(c1=intCtr, c2=intCtr2, c3=intCtr3, c4=intCtr4)
+                                       )
+                curRow <- curRow + 1
+            }
+        }
+    }
+}
+
+# Make sure it worked OK!
+head(mtxA)
+tail(mtxA)
+length(mtxA[, 5]) == length(unique(mtxA[, 5]))
+range(mtxA[, 5]) == c(1, choose(52, 4))
+```
+  
+These functions should simplify and speed-up the conversion of any given 5-card hand to a score if it is instead held as a 0-4 card hand.  
+
+The algorithms are then tested against jbHands (the 2,598,960 x 5 data frame representing all possible hands) and its associated array0 (the 2,598,960 x 1 integer vector representing the hand value as a 1-10).  
+```{r}
+
+# Test keeping a single card
+startTime <- proc.time()
+
+idx <- integer(0)
+val <- integer(0)
+ct <- integer(0)
+for (c1 in 1:5) {
+    temp <- data.frame(card1=jbHands[, c1], val=array0) %>% 
+        group_by(card1, val) %>%
+        summarize(ct=n()) %>%
+        arrange(card1, val)
+    
+    temp$idx <- temp$card1
+    
+    idx <- c(idx, temp$idx)
+    val <- c(val, temp$val)
+    ct <- c(ct, temp$ct)
+    
+}
+
+proc.time() - startTime
+
+
+# Test keeping two cards
+startTime <- proc.time()
+
+idx <- integer(0)
+val <- integer(0)
+ct <- integer(0)
+for (c1 in 1:4) {
+    for (c2 in (c1+1):5) {
+        temp <- data.frame(card1=jbHands[, c1], card2=jbHands[, c2], val=array0) %>% 
+            group_by(card1, card2, val) %>%
+            summarize(ct=n()) %>%
+            arrange(card1, card2, val)
+    
+        temp$idx <- idxCard2(c1=temp$card1, c2=temp$card2)
+    
+        idx <- c(idx, temp$idx)
+        val <- c(val, temp$val)
+        ct <- c(ct, temp$ct)
+    
+    }
+}
+
+proc.time() - startTime
+
+
+# Test keeping three cards
+startTime <- proc.time()
+
+idx <- integer(0)
+val <- integer(0)
+ct <- integer(0)
+for (c1 in 1:3) {
+    for (c2 in (c1+1):4) {
+        for (c3 in (c2+1):5) {
+            temp <- data.frame(card1=jbHands[, c1], card2=jbHands[, c2], 
+                               card3=jbHands[, c3], val=array0
+                               ) %>% 
+                group_by(card1, card2, card3, val) %>%
+                summarize(ct=n()) %>%
+                arrange(card1, card2, card3, val)
+    
+            temp$idx <- idxCard3(c1=temp$card1, c2=temp$card2, c3=temp$card3)
+    
+            idx <- c(idx, temp$idx)
+            val <- c(val, temp$val)
+            ct <- c(ct, temp$ct)
+    
+        }
+    }
+}
+
+proc.time() - startTime
+
+
+# Test keeping four cards
+startTime <- proc.time()
+
+idx <- integer(0)
+val <- integer(0)
+ct <- integer(0)
+for (c1 in 1:2) {
+    for (c2 in (c1+1):3) {
+        for (c3 in (c2+1):4) {
+            for (c4 in (c3+1):5) {
+                temp <- data.frame(card1=jbHands[, c1], card2=jbHands[, c2], 
+                                   card3=jbHands[, c3], card4=jbHands[, c4], 
+                                   val=array0
+                                   ) %>% 
+                    group_by(card1, card2, card3, card4, val) %>%
+                    summarize(ct=n()) %>%
+                    arrange(card1, card2, card3, card4, val)
+    
+                temp$idx <- idxCard4(c1=temp$card1, c2=temp$card2, 
+                                     c3=temp$card3, c4=temp$card4
+                                     )
+    
+                idx <- c(idx, temp$idx)
+                val <- c(val, temp$val)
+                ct <- c(ct, temp$ct)
+            
+            }
+        }
+    }
+}
+
+proc.time() - startTime
+
+```
+  
+While this is still running an order of magnitude slower than the Wizard of Odds methodology, it is encouraging that the "order of magnitude" is 30 seconds vs. 3 seconds.  There may be room for further streamlining, but the code appears to be functional and with a reasonable run-time for next steps.
+  
