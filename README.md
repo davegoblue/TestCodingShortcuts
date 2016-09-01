@@ -162,3 +162,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v001 implements the re-draw of 1-4 cards using the key functions    
 * AdditionalCoding_v002 keeps the most salient components of AdditionalCoding_v001 for next steps  
 * AdditionalCoding_v002 populates and control-total checks array1-array5  
+* AdditionalCoding_v002 assesses all hands assuming re-draws can replace the cards thrown away  
