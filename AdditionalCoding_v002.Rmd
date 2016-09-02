@@ -97,6 +97,7 @@ jbType[jbUniques %in% c(2, 3)] <- jbTempValue
 
 library(dplyr)
 library(tidyr)
+library(ggplot2)
 
 # Use dplyr and tidyr since they are MUCH faster than table() for the cross-tabs
 data.frame(jbType=jbType) %>% group_by(jbType) %>% summarize(count=n())
@@ -562,4 +563,61 @@ proc.time() - startTime
 
 ```
   
-While still an order of magnitude slower than the reference code, this runs through all the options in 30 seconds.
+While still an order of magnitude slower than the reference code, this runs through all the options in 30 seconds.  
+  
+Next, the draw-one situation is assessed assuming that you do NOT sample with replacement, which is to say that you will never get back the card you discarded on the redraw:  
+```{r}
+
+# Evaluate all the draw-1 options
+keyData <- integer(0)
+for (intCtr in 1:2) {
+    for (intCtr2 in (intCtr+1):3) {
+        for (intCtr3 in (intCtr2+1):4) {
+            for (intCtr4 in (intCtr3+1):5) {
+                newEV <- expVal1[idxCard4( c1=jbSmall[, intCtr], c2=jbSmall[, intCtr2] ,
+                                               c3=jbSmall[, intCtr3], c4=jbSmall[, intCtr4]
+                                              ), 1, drop=TRUE]
+                newEV <- (48 * newEV - expVal0[, 1, drop=TRUE]) / 47
+                str(newEV)
+                keyData <- c(keyData, newEV)
+            }
+        }
+    }
+}
+newDraw1 <- matrix(data=keyData, ncol=5, byrow=FALSE)
+
+
+# Assess the best option by row
+newBestIdx <- apply(cbind(cmbDraw[, 1, drop=FALSE], newDraw1, cmbDraw[, 7:32]), 1, FUN=which.max)
+hist(newBestIdx, breaks=0:33, col="lightblue")
+
+# Assess the best value by row
+newBestVal <- apply(cbind(cmbDraw[, 1, drop=FALSE], newDraw1, cmbDraw[, 7:32]), 1, FUN=max)
+summary(newBestVal)
+
+# Summarize the changes in index
+sum(newBestIdx != cmbBestIdx)
+data.frame(oldIdx=cmbBestIdx, newIdx=newBestIdx) %>% 
+    group_by(oldIdx, newIdx) %>% summarize(ct=n()) %>% 
+    ggplot(aes(x=oldIdx, y=newIdx)) + geom_point(aes(size=ct), col="blue")
+
+# Summarize the changes in value
+sum(newBestVal != cmbBestVal)
+sum(newBestVal > cmbBestVal)
+sum(newBestVal < cmbBestVal)
+
+hist((newBestVal - cmbBestVal)[newBestVal != cmbBestVal], col="lightblue")
+temp <- data.frame(newIdx=newBestIdx, newVal=newBestVal, oldVal=cmbBestVal) %>%
+        mutate(deltaVal = ((newVal - oldVal) != 0), changeVal=(newVal - oldVal)) %>% 
+        group_by(newIdx) %>% 
+        summarize(nHands=n(), nChg=sum(deltaVal), totChg=sum(changeVal), 
+                  maxChg=max(changeVal), minChg=min(changeVal), meanChg=mean(changeVal)
+                  )
+print(as.data.frame(temp))
+```
+  
+The results are as expected, including:  
+  
+* Some hands that previously had an optimal play other than draw 1 now fall under draw 1  
+* All hands that now optimize as draw1 have a positively changed EV, averaging in the 1%-2% range  
+  
