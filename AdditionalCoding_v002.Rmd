@@ -552,7 +552,9 @@ cmbDraw <- cbind(draw0, draw1, draw2, draw3, draw4, draw5)
 
 # Assess the best option by row
 cmbBestIdx <- apply(cmbDraw, 1, FUN=which.max)
-hist(cmbBestIdx, breaks=0:33, col="lightblue")
+hist(cmbBestIdx, breaks=0:33, col=c( rep("blue", 1), rep("lightblue", 5), rep("orange", 10),
+                                     rep("lightgreen", 10), rep("red", 5), rep("black", 1) ) )
+
 
 # Assess the best value by row
 cmbBestVal <- apply(cmbDraw, 1, FUN=max)
@@ -576,7 +578,7 @@ for (intCtr in 1:2) {
             for (intCtr4 in (intCtr3+1):5) {
                 newEV <- expVal1[idxCard4( c1=jbSmall[, intCtr], c2=jbSmall[, intCtr2] ,
                                                c3=jbSmall[, intCtr3], c4=jbSmall[, intCtr4]
-                                              ), 1, drop=TRUE]
+                                           ), 1, drop=TRUE]
                 newEV <- (48 * newEV - expVal0[, 1, drop=TRUE]) / 47
                 str(newEV)
                 keyData <- c(keyData, newEV)
@@ -589,7 +591,8 @@ newDraw1 <- matrix(data=keyData, ncol=5, byrow=FALSE)
 
 # Assess the best option by row
 newBestIdx <- apply(cbind(cmbDraw[, 1, drop=FALSE], newDraw1, cmbDraw[, 7:32]), 1, FUN=which.max)
-hist(newBestIdx, breaks=0:33, col="lightblue")
+hist(newBestIdx, breaks=0:33, col=c( rep("blue", 1), rep("lightblue", 5), rep("orange", 10),
+                                     rep("lightgreen", 10), rep("red", 5), rep("black", 1) ) )
 
 # Assess the best value by row
 newBestVal <- apply(cbind(cmbDraw[, 1, drop=FALSE], newDraw1, cmbDraw[, 7:32]), 1, FUN=max)
@@ -620,4 +623,78 @@ The results are as expected, including:
   
 * Some hands that previously had an optimal play other than draw 1 now fall under draw 1  
 * All hands that now optimize as draw1 have a positively changed EV, averaging in the 1%-2% range  
+  
+Next, the draw-two situation is assessed assuming that you do NOT sample with replacement, which is to say that you will never get back either of the cards you discarded on the redraw.  Essentially, this requires deleting the EV of each of the 4-card combinations, then adding back the EV of the 5-card combination (which is double-deleted, once in each of the 4-card deletions):  
+```{r}
+keyData <- integer(0)
+for (intCtr in 1:3) {
+    for (intCtr2 in (intCtr+1):4) {
+        for (intCtr3 in (intCtr2+1):5) {
+            
+            basEV <- expVal2[idxCard3( c1=jbSmall[, intCtr], c2=jbSmall[, intCtr2] , 
+                                       c3=jbSmall[, intCtr3]
+                                       ), 1, drop=TRUE]
+            
+            keyA <- (1:5)[-c(intCtr, intCtr2, intCtr3)][1]
+            keyB <- (1:5)[-c(intCtr, intCtr2, intCtr3)][2]
+            
+            sortA <- sort(c(intCtr, intCtr2, intCtr3, keyA))
+            sortB <- sort(c(intCtr, intCtr2, intCtr3, keyB))
+            
+            expA <- expVal1[idxCard4( c1=jbSmall[, sortA[1]], c2=jbSmall[, sortA[2]], 
+                                      c3=jbSmall[, sortA[3]], c4=jbSmall[, sortA[4]]
+                                      ), 1, drop=TRUE]
+            
+            expB <- expVal1[idxCard4( c1=jbSmall[, sortB[1]], c2=jbSmall[, sortB[2]], 
+                                      c3=jbSmall[, sortB[3]], c4=jbSmall[, sortB[4]]
+                                      ), 1, drop=TRUE]
+            
+            str(basEV)
+            str(expA)
+            str(expB)
+            
+            newEV <- (1176 * basEV - 48 * expA - 48 * expB + expVal0[, 1, drop=TRUE]) / 1081
+            str(newEV)
+            
+            keyData <- c(keyData, newEV)
+        }
+    }
+}
+newDraw2 <- matrix(data=keyData, ncol=10, byrow=FALSE)
+
+# Assess the best option by row (adding in only the changed 2-card draws, not the 1-card from above)
+newBestIdx <- apply(cbind(cmbDraw[, 1:6, drop=FALSE], newDraw2, cmbDraw[, 17:32]), 1, FUN=which.max)
+hist(newBestIdx, breaks=0:33, col=c( rep("blue", 1), rep("lightblue", 5), rep("orange", 10),
+                                     rep("lightgreen", 10), rep("red", 5), rep("black", 1) ) )
+
+# Assess the best value by row (adding in only the changed 2-card draws)
+newBestVal <- apply(cbind(cmbDraw[, 1:6, drop=FALSE], newDraw2, cmbDraw[, 17:32]), 1, FUN=max)
+summary(newBestVal)
+
+# Summarize the changes in index
+sum(newBestIdx != cmbBestIdx)
+data.frame(oldIdx=cmbBestIdx, newIdx=newBestIdx) %>% 
+    group_by(oldIdx, newIdx) %>% summarize(ct=n()) %>% 
+    ggplot(aes(x=oldIdx, y=newIdx)) + geom_point(aes(size=ct), col="blue")
+
+# Summarize the changes in value
+sum(newBestVal != cmbBestVal)
+sum(newBestVal > cmbBestVal)
+sum(newBestVal < cmbBestVal)
+
+hist((newBestVal - cmbBestVal)[newBestVal != cmbBestVal], col="lightblue")
+temp <- data.frame(newIdx=newBestIdx, newVal=newBestVal, oldVal=cmbBestVal) %>%
+        mutate(deltaVal = ((newVal - oldVal) != 0), changeVal=(newVal - oldVal)) %>% 
+        group_by(newIdx) %>% 
+        summarize(nHands=n(), nChg=sum(deltaVal), totChg=sum(changeVal), 
+                  maxChg=max(changeVal), minChg=min(changeVal), meanChg=mean(changeVal)
+                  )
+print(as.data.frame(temp))
+
+```
+
+The results are as expected, including:  
+  
+* Some hands that previously had an optimal play other than draw 2 now fall under draw 2  
+* All hands that now optimize as draw-2 have a positively changed EV, averaging a gain of ~3%  
   
