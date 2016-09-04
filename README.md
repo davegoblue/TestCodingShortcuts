@@ -165,3 +165,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v002 assesses all hands assuming re-draws can replace the cards thrown away  
 * AdditionalCoding_v002 assesses the 1-card redraws assuming no replacement  
 * AdditionalCoding_v002 assesses the 2-card redraws assuming no replacement  
+* AdditionalCoding_v002 assesses the combined impact of 1-card draws and 2-card redraws both assuming no replacement  
