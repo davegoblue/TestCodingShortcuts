@@ -171,3 +171,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v002 assesses the 3-card redraws assuming no replacement  
 * AdditionalCoding_v002 assesses the combined impact of 1/2/3-card redraws all assuming no replacement
 * AdditionalCoding_v002 assesses the 4-card redraws assuming no replacement  
+* AdditionalCoding_v002 assesses the combined impact of 1/2/3/4-card redraws all assuming no replacement
