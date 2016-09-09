@@ -1316,3 +1316,72 @@ print(as.data.frame(temp))
 ```
 
 The average 0-card hold improves by ~2.5% with the "no replacement" methodology, and more hands are now optimally a 0-card hold.  
+  
+Next, the combined draw-1, draw-2, draw-3, draw-4, and draw-5 universe is assessed, leaving all hands optimized:  
+```{r}
+# Assess the best option by row (adding the changed 1-5 card draws)
+newBestIdx <- apply(cbind(cmbDraw[, 1, drop=FALSE], newDraw1, newDraw2, 
+                          newDraw3, newDraw4, newDraw5
+                          ), 1, FUN=which.max
+                    )
+hist(newBestIdx, breaks=0:33, col=c( rep("blue", 1), rep("lightblue", 5), rep("orange", 10),
+                                     rep("lightgreen", 10), rep("red", 5), rep("black", 1) ) )
+
+# Assess the best value by row (adding the changed 1-5 card draws)
+newBestVal <- apply(cbind(cmbDraw[, 1, drop=FALSE], newDraw1, newDraw2, 
+                          newDraw3, newDraw4, newDraw5
+                          ), 1, FUN=max
+                    )
+summary(newBestVal)
+
+# Summarize the changes in index
+sum(newBestIdx != cmbBestIdx)
+data.frame(oldIdx=cmbBestIdx, newIdx=newBestIdx) %>% 
+    group_by(oldIdx, newIdx) %>% summarize(ct=n()) %>% 
+    ggplot(aes(x=oldIdx, y=newIdx)) + geom_point(aes(size=ct), col="blue")
+
+# Summarize the changes in value
+sum(newBestVal != cmbBestVal)
+sum(newBestVal > cmbBestVal)
+sum(newBestVal < cmbBestVal)
+
+hist((newBestVal - cmbBestVal)[newBestVal != cmbBestVal], col="lightblue")
+temp <- data.frame(newIdx=newBestIdx, newVal=newBestVal, oldVal=cmbBestVal) %>%
+        mutate(deltaVal = ((newVal - oldVal) != 0), changeVal=(newVal - oldVal)) %>% 
+        group_by(newIdx) %>% 
+        summarize(nHands=n(), nChg=sum(deltaVal), totChg=sum(changeVal), 
+                  maxChg=max(changeVal), minChg=min(changeVal), meanChg=mean(changeVal)
+                  )
+print(as.data.frame(temp))
+
+# Assess changes from/to group
+newCutIdx <- cut(newBestIdx, breaks=c(0.5, 1.5, 6.5, 16.5, 26.5, 31.5, 32.5))
+cmbCutIdx <- cut(cmbBestIdx, breaks=c(0.5, 1.5, 6.5, 16.5, 26.5, 31.5, 32.5))
+data.frame(oldType=cmbCutIdx, newType=newCutIdx) %>% 
+    group_by(oldType, newType) %>% summarize(ct=n())
+
+# Assess sampling of hands
+chkType <- which(newBestIdx %in% c(17:26) & cmbBestIdx %in% c(27:31))
+set.seed(1609081119)
+chkHands <- sort(sample(chkType, 20, replace=FALSE))
+jbHands[chkHands, ]
+cbind(1 + (jbHands[chkHands, ] - 1) %% 13, 
+      1 + (jbHands[chkHands, ] - 1) %/% 13
+      )
+cbind(cmbBestIdx[chkHands], newBestIdx[chkHands], cmbBestVal[chkHands], newBestVal[chkHands])
+
+```
+  
+The results with all hands optimized are very promising.  Several observations include:  
+  
+* The -0.0046 mean EV (equivalent to a 99.54% return) is consistent with the published literature  
+* Every hand other than hold-5 (draw-0) has an increased EV associated with the "no replacement" rule, which is expected since if getting that same card back were favorable to EV, you would keep it before the redraw  
+* There are relatively few changes from draw-X to draw-Y after changing the rule to "no replacement" everywhere.  The only changes are A) 2400 hands move from draw-1 4-FL to draw-2 3-RF, B) 756 hands move from draw-1 AKQJ to draw-3 QJs, and C) 9540 hands move from draw-4 K to draw-3 KTs  
+  
+The next steps will be to further optimize the code for speed and readability:  
+  
+* SPEED - the primary benefit is to take advantage of many initial hands being mathematically identical.  For example, As Ts 9h 8h 6c is exactly the same hand as Ad Td 9s 8s 6h.  If the mathematically identical hands are analyzed only once but then weighted by their probability of occurrence, run time and memory usage should both scale down by ~90%  
+  
+* READABILITY - this program created functioning routines for assessing the combinatorics of a starting hand, a hold, and a requirement for no replacement.  However, the code is highly cut-and-paste which introduces many opportunities for error.  It is also very hard to read.  Converting the copy/paste components to functional programming should offer significant improvements  
+  
+The goal for this first-pass was to accurately assess game EV, broadly using the methodology outlined by the Wizard of Odds.  The outputs suggest this has been successful.  
