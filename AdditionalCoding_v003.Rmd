@@ -1,0 +1,152 @@
+---
+title: 'Additional Coding - Update #3'
+author: "davegoblue"
+date: "September 10, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+This document explores video poker hands, using <http://wizardofodds.com/games/video-poker/methodology/> as a template, and applying DataCamp_Insights_v001 materials where applicable.  This document builds on the more salient components of the analysis in AdditionalCoding_v002.Rmd.  Specifically, while _v002 appears to get to a 100% solution, the objectives of _v003 will include 1) improved speed, and 2) improved readability.  
+
+## Simulations  
+### Potential Hand Types  
+The card deck will be considered to be 1-52, where 1-13, 14-26, 27-39, and 40-52 shall each be the suits.  Further, the lowest number of each suit shall be considered the Ace, and the highest shall be considered the King.  There are 52c5 (2,598,960) hands applicable to a typical poker game with a 52-card deck.  All of the possible combinations are created and assessed, with caching due to moderate run times:  
+```{r, cache=TRUE}
+jbHands <- matrix(data=0L, nrow=choose(52, 5), ncol=5)
+jbFlush <- vector("logical", length=choose(52, 5))
+jbUniques <- vector("integer", length=choose(52, 5))
+jbRange <- vector("integer", length=choose(52, 5))
+
+startTime <- proc.time()
+intCtr <- 1
+for (i in 1:48) {
+    for (j in (i+1):49) {
+        for (k in (j+1):50) {
+            for (m in (k+1):51) {
+                for (n in (m+1):52) {
+                               jbHands[intCtr, ] <- c(i, j, k, m, n)
+                               
+                               # Declare the suits and ranks
+                               suits <- (c(i, j, k, m, n) - 1) %/% 13
+                               ranks <- 1 + (c(i, j, k, m, n) - 1) %% 13
+                               oRanks <- ranks
+                               oRanks[ranks==1] <- 14
+
+                               # Declare the flush vector
+                               jbFlush[intCtr] <- suits[1] == suits[5]
+                               
+                               # Declare the number of uniques
+                               jbUniques[intCtr] <- length(unique(ranks))
+                               
+                               # Declare the range, recalling that rank of 1 could be considered rank of 14
+                               jbRange[intCtr] <- min( max(ranks) - min(ranks) , max(oRanks) - min(oRanks) )
+                               
+                               # Increment the process
+                               intCtr <- intCtr + 1
+                }
+            }
+
+        }
+    }
+}
+proc.time() - startTime
+
+# Is the maximum number of cards equal to 3 (only for jbUniques %in% c(2, 3))
+foo <- function(x) {
+    max(table(x %% 13))
+}
+jbMax <- apply(jbHands[jbUniques %in% c(2, 3), ], 1, FUN=foo)
+
+# Get the totals by card rank
+cRank <- matrix(data=0L, nrow=choose(52, 5), ncol=13)
+for (intCtr in 1:13) {
+    cRank[, intCtr] <- as.integer( rowSums( (jbHands %% 13) == (intCtr %% 13) ) )
+}
+
+proc.time() - startTime
+```
+  
+Hand types are then declared, with this portion not cached since 1) it will need further refinement, and 2) it runs quickly (with the exception of the table function, later updated with dplyr/tidyr for speed):  
+```{r}
+jbType <- rep(-1L, nrow(jbHands))  # Default value is -1
+
+# Manage the pairs - only convert if pair is 1 (Ace) or 11-13 (J, Q, K)
+hiPair <- cRank[, 1] == 2 | cRank[, 11] == 2 | cRank[, 12] == 2 | cRank[, 13] == 2
+jbType[jbUniques == 4 & hiPair] <- 0
+
+# Manage the straights and flushes, including SF and RF
+jbType[jbFlush == FALSE & jbUniques == 5 & jbRange == 4] <- 3  # Straights as 3
+jbType[jbFlush == TRUE & jbRange > 4] <- 5  # Flushes as 5
+
+# Declare the straight flush and royal flush
+rfVector <- c(1L, 10L, 11L, 12L, 0L)
+foo <- function(x) {
+    if (sum( x %% 13 == rfVector ) ==5 ) { return(799) }
+    else { return(49) }
+}
+jbType[jbFlush == TRUE & jbRange == 4] <- apply(jbHands[jbFlush == TRUE & jbRange == 4, ], 1, FUN=foo)
+
+# Look at the subset that composes Two Pair, Trips, Full House, and Quads
+jbTemp <- jbUniques[jbUniques %in% c(2, 3)]
+jbTempValue <- rep(0L, length(jbTemp))
+
+jbTempValue[jbTemp == 3 & jbMax != 3] <- 1  # Two Pair
+jbTempValue[jbTemp == 3 & jbMax == 3] <- 2  # Trips
+jbTempValue[jbTemp == 2 & jbMax == 3] <- 8  # Full House
+jbTempValue[jbTemp == 2 & jbMax != 3] <- 24  # Quads
+
+jbType[jbUniques %in% c(2, 3)] <- jbTempValue
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Use dplyr and tidyr since they are MUCH faster than table() for the cross-tabs
+data.frame(jbType=jbType) %>% group_by(jbType) %>% summarize(count=n())
+data.frame(jbType=jbType, jbUniques=jbUniques) %>% 
+    group_by(jbType, jbUniques) %>% 
+    summarize(count=n()) %>%
+    spread(jbUniques, count, fill=0)
+data.frame(jbType=jbType, jbRange=jbRange) %>% 
+    group_by(jbType, jbRange) %>% 
+    summarize(count=n()) %>%
+    spread(jbType, count, fill=0)
+
+```
+  
+Potential refinements will include allowing rank and kickers to impact value of quads (e.g., Bonus or Double Double Bonus).  
+  
+Sample plots are created using ggplot2 (cached, since they take a while to plot off the large frame):  
+```{r, cache=TRUE}
+# Practice with ggplot2
+library(ggplot2)
+
+graphFrame <- data.frame(jbFlush=as.integer(jbFlush), jbRange=jbRange, 
+                         jbType=jbType, jbUniques=jbUniques
+                         )
+
+# Bar chart for jbRange x jbUniques
+ggplot(graphFrame, aes(x=as.factor(jbRange))) + geom_bar(aes(fill=as.factor(jbUniques)))
+
+# Stacked bar chart for jbRange x jbUniques
+ggplot(graphFrame, aes(x=as.factor(jbRange))) + 
+    geom_bar(aes(fill=as.factor(jbUniques)), position="fill")
+
+# Bar chart for jbRange x jbUniques, faceted by jbType
+ggplot(graphFrame, aes(x=as.factor(jbRange))) + 
+    geom_bar(aes(fill=as.factor(jbUniques))) + 
+    facet_wrap(~ jbType, ncol=5)
+
+# Stacked bar chart for jbRange x jbUniques, faceted by jbType
+ggplot(graphFrame, aes(x=as.factor(jbRange))) + 
+    geom_bar(aes(fill=as.factor(jbUniques)), position="fill") + 
+    facet_wrap(~ jbType, ncol=5)
+
+```
+  
+As per the tables, the graphs line up with expectations.  
