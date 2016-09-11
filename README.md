@@ -175,3 +175,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v002 assesses the 5-card redraws assuming no replacement  
 * AdditionalCoding_v002 assesses the combined impact of 1/2/3/4/5-card redraws all assuming no replacement  
 * AdditionalCoding_v003 initialized to look at improvements to speed and readability  
+* AdditionalCoding_v003 speed increased for initial set-up components  
