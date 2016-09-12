@@ -260,6 +260,379 @@ ggplot(a, aes(x=as.factor(jbRange), y=count)) +
 <pre><code>##    user  system elapsed 
 ##   20.84    0.20   21.40</code></pre>
 <p>As per the tables, the graphs line up with expectations.</p>
+<p>Next, the program takes a stab at implementing the algorithm described by the Wizard of Odds at <a href="http://wizardofodds.com/games/video-poker/methodology/" class="uri">http://wizardofodds.com/games/video-poker/methodology/</a> for vastly reducing run times for a program of this type. The Wizard recommends an 11-step process:</p>
+<p>First, the 16-hand condition is tested, and the relevant arrays are initialized:</p>
+<pre class="r"><code>nrowArray0 &lt;- data.frame(jbType=jbType) %&gt;% 
+    group_by(jbType) %&gt;% 
+    summarize(ct=n()) %&gt;%
+    arrange(jbType)
+nrowArray0</code></pre>
+<pre><code>## Source: local data frame [10 x 2]
+## 
+##    jbType      ct
+##     (dbl)   (int)
+## 1      -1 2062860
+## 2       0  337920
+## 3       1  123552
+## 4       2   54912
+## 5       3   10200
+## 6       5    5108
+## 7       8    3744
+## 8      24     624
+## 9      49      36
+## 10    799       4</code></pre>
+<pre class="r"><code>if (nrow(nrowArray0) &gt; 16) { 
+    stop(paste0(&quot;There are too many hand types, cap is 16, this will have: &quot;, nrow(nrowArray0)))
+}
+print(&quot;OK&quot;)</code></pre>
+<pre><code>## [1] &quot;OK&quot;</code></pre>
+<pre class="r"><code># Initialize array1-array5
+array1 &lt;- matrix(data=0L, nrow=choose(52, 4), ncol=16)
+array2 &lt;- matrix(data=0L, nrow=choose(52, 3), ncol=16)
+array3 &lt;- matrix(data=0L, nrow=choose(52, 2), ncol=16)
+array4 &lt;- matrix(data=0L, nrow=choose(52, 1), ncol=16)
+array5 &lt;- matrix(data=0L, nrow=choose(52, 0), ncol=16)
+
+# Create array0 which will have an index number corresponding to the associated jbType
+array0 &lt;- match(jbType, nrowArray0[[1]])
+
+data.frame(array0=array0) %&gt;% 
+    group_by(array0) %&gt;%
+    summarize(ct=n()) %&gt;%
+    arrange(array0)</code></pre>
+<pre><code>## Source: local data frame [10 x 2]
+## 
+##    array0      ct
+##     (int)   (int)
+## 1       1 2062860
+## 2       2  337920
+## 3       3  123552
+## 4       4   54912
+## 5       5   10200
+## 6       6    5108
+## 7       7    3744
+## 8       8     624
+## 9       9      36
+## 10     10       4</code></pre>
+<p>One area for exploration is to associate indices to each combination of cards, start with an nCm array as per <a href="http://wizardofvegas.com/forum/questions-and-answers/math/13687-my-methodology-for-video-poker-analysis-article-question/" class="uri">http://wizardofvegas.com/forum/questions-and-answers/math/13687-my-methodology-for-video-poker-analysis-article-question/</a>.</p>
+<pre class="r"><code>mtxCombin &lt;- matrix(data=0L, nrow=52, ncol=5)
+for (intCtr in 1:52) {
+    for (intCtr2 in 1:5) {
+        # Note that choose() is a guarded function where choose(n, k) returns 0 for k &gt; n
+        mtxCombin[intCtr, intCtr2] &lt;- choose(intCtr, intCtr2)
+    }
+}</code></pre>
+<p>The array can then be used to convert any 2 cards to an index, as follows:</p>
+<pre class="r"><code>idxCard2 &lt;- function(c1, c2) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    1 + mtxCombin[52, 2] - mtxCombin[53-c1, 2] +
+        mtxCombin[52-c1, 1] - mtxCombin[53-c2, 1]
+}
+
+# Test the index creation process
+mtxA &lt;- matrix(data=0L, nrow=choose(52, 2), ncol=3)
+curRow &lt;- 1
+for (intCtr in 1:51) {
+    for (intCtr2 in (intCtr+1):52) {
+        mtxA[curRow, 1:3] &lt;- c(intCtr, intCtr2, idxCard2(c1=intCtr, c2=intCtr2))
+        curRow &lt;- curRow + 1
+    }
+}
+
+# Make sure it worked OK!
+head(mtxA)</code></pre>
+<pre><code>##      [,1] [,2] [,3]
+## [1,]    1    2    1
+## [2,]    1    3    2
+## [3,]    1    4    3
+## [4,]    1    5    4
+## [5,]    1    6    5
+## [6,]    1    7    6</code></pre>
+<pre class="r"><code>tail(mtxA)</code></pre>
+<pre><code>##         [,1] [,2] [,3]
+## [1321,]   49   50 1321
+## [1322,]   49   51 1322
+## [1323,]   49   52 1323
+## [1324,]   50   51 1324
+## [1325,]   50   52 1325
+## [1326,]   51   52 1326</code></pre>
+<pre class="r"><code>length(mtxA[, 3]) == length(unique(mtxA[, 3]))</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>range(mtxA[, 3]) == c(1, choose(52, 2))</code></pre>
+<pre><code>## [1] TRUE TRUE</code></pre>
+<p>The array can also be used to convert any 3 cards to an index, as follows:</p>
+<pre class="r"><code>idxCard3 &lt;- function(c1, c2, c3) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    1 + mtxCombin[52, 3] - mtxCombin[53-c1, 3] +
+        mtxCombin[52-c1, 2] - mtxCombin[53-c2, 2] +
+        mtxCombin[52-c2, 1] - mtxCombin[53-c3, 1]
+}
+
+# Test the index creation process
+mtxA &lt;- matrix(data=0L, nrow=choose(52, 3), ncol=4)
+curRow &lt;- 1
+for (intCtr in 1:50) {
+    for (intCtr2 in (intCtr+1):51) {
+        for (intCtr3 in (intCtr2+1):52) {
+            mtxA[curRow, 1:4] &lt;- c(intCtr, intCtr2, intCtr3, 
+                                   idxCard3(c1=intCtr, c2=intCtr2, c3=intCtr3)
+                                   )
+            curRow &lt;- curRow + 1
+        }
+    }
+}
+
+# Make sure it worked OK!
+head(mtxA)</code></pre>
+<pre><code>##      [,1] [,2] [,3] [,4]
+## [1,]    1    2    3    1
+## [2,]    1    2    4    2
+## [3,]    1    2    5    3
+## [4,]    1    2    6    4
+## [5,]    1    2    7    5
+## [6,]    1    2    8    6</code></pre>
+<pre class="r"><code>tail(mtxA)</code></pre>
+<pre><code>##          [,1] [,2] [,3]  [,4]
+## [22095,]   48   50   52 22095
+## [22096,]   48   51   52 22096
+## [22097,]   49   50   51 22097
+## [22098,]   49   50   52 22098
+## [22099,]   49   51   52 22099
+## [22100,]   50   51   52 22100</code></pre>
+<pre class="r"><code>length(mtxA[, 4]) == length(unique(mtxA[, 4]))</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>range(mtxA[, 4]) == c(1, choose(52, 3))</code></pre>
+<pre><code>## [1] TRUE TRUE</code></pre>
+<p>And, the same algorithm can be used for 4 cards, an area which should save substantial time:</p>
+<pre class="r"><code>idxCard4 &lt;- function(c1, c2, c3, c4) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    1 + mtxCombin[52, 4] - mtxCombin[53-c1, 4] +
+        mtxCombin[52-c1, 3] - mtxCombin[53-c2, 3] +
+        mtxCombin[52-c2, 2] - mtxCombin[53-c3, 2] + 
+        mtxCombin[52-c3, 1] - mtxCombin[53-c4, 1]
+}
+
+# Test the index creation process
+mtxA &lt;- matrix(data=0L, nrow=choose(52, 4), ncol=5)
+curRow &lt;- 1
+for (intCtr in 1:49) {
+    for (intCtr2 in (intCtr+1):50) {
+        for (intCtr3 in (intCtr2+1):51) {
+            for (intCtr4 in (intCtr3+1):52) {
+                mtxA[curRow, 1:5] &lt;- c(intCtr, intCtr2, intCtr3, intCtr4, 
+                                       idxCard4(c1=intCtr, c2=intCtr2, c3=intCtr3, c4=intCtr4)
+                                       )
+                curRow &lt;- curRow + 1
+            }
+        }
+    }
+}
+
+# Make sure it worked OK!
+head(mtxA)</code></pre>
+<pre><code>##      [,1] [,2] [,3] [,4] [,5]
+## [1,]    1    2    3    4    1
+## [2,]    1    2    3    5    2
+## [3,]    1    2    3    6    3
+## [4,]    1    2    3    7    4
+## [5,]    1    2    3    8    5
+## [6,]    1    2    3    9    6</code></pre>
+<pre class="r"><code>tail(mtxA)</code></pre>
+<pre><code>##           [,1] [,2] [,3] [,4]   [,5]
+## [270720,]   47   50   51   52 270720
+## [270721,]   48   49   50   51 270721
+## [270722,]   48   49   50   52 270722
+## [270723,]   48   49   51   52 270723
+## [270724,]   48   50   51   52 270724
+## [270725,]   49   50   51   52 270725</code></pre>
+<pre class="r"><code>length(mtxA[, 5]) == length(unique(mtxA[, 5]))</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>range(mtxA[, 5]) == c(1, choose(52, 4))</code></pre>
+<pre><code>## [1] TRUE TRUE</code></pre>
+<p>These functions should simplify and speed-up the conversion of any given 5-card hand to a score if it is instead held as a 0-4 card hand.</p>
+<p>The algorithms are then tested against jbHands (the 2,598,960 x 5 data frame representing all possible hands) and its associated array0 (the 2,598,960 x 1 integer vector representing the hand value as a 1-10).</p>
+<pre class="r"><code># The array for keeping everything (jbHands as 2,598,960 x 5 for the cards, 
+# and array0 as 2,598,960 x 1 for the outcomes) is already populated
+startTime &lt;- proc.time()
+
+dim(jbHands)</code></pre>
+<pre><code>## [1] 2598960       5</code></pre>
+<pre class="r"><code>length(array0)</code></pre>
+<pre><code>## [1] 2598960</code></pre>
+<pre class="r"><code>data.frame(array0=array0) %&gt;% 
+    group_by(array0) %&gt;% 
+    summarize(ct=n()) %&gt;% 
+    arrange(-array0)</code></pre>
+<pre><code>## Source: local data frame [10 x 2]
+## 
+##    array0      ct
+##     (int)   (int)
+## 1      10       4
+## 2       9      36
+## 3       8     624
+## 4       7    3744
+## 5       6    5108
+## 6       5   10200
+## 7       4   54912
+## 8       3  123552
+## 9       2  337920
+## 10      1 2062860</code></pre>
+<pre class="r"><code>proc.time() - startTime</code></pre>
+<pre><code>##    user  system elapsed 
+##    0.11    0.01    0.12</code></pre>
+<pre class="r"><code># Fill the array (array5 as 1 x 16) for keeping nothing
+startTime &lt;- proc.time()
+
+a &lt;- data.frame(val=array0) %&gt;% group_by(val) %&gt;% 
+    summarize(ct=n()) %&gt;% arrange(val)
+
+for ( intCtr in seq_along(unique(a$val)) ) {
+    array5[1, intCtr] &lt;- a$ct[a$val == intCtr]
+}
+
+proc.time() - startTime</code></pre>
+<pre><code>##    user  system elapsed 
+##    0.14    0.00    0.14</code></pre>
+<pre class="r"><code># Test keeping a single card, and fill the array (array4 as 52 x 16) for keeping 1
+startTime &lt;- proc.time()
+
+idx &lt;- integer(0)
+val &lt;- integer(0)
+ct &lt;- integer(0)
+for (c1 in 1:5) {
+    temp &lt;- data.frame(card1=jbHands[, c1], val=array0) %&gt;% 
+        group_by(card1, val) %&gt;%
+        summarize(ct=n()) %&gt;%
+        arrange(card1, val)
+    
+    temp$idx &lt;- temp$card1
+    
+    idx &lt;- c(idx, temp$idx)
+    val &lt;- c(val, temp$val)
+    ct &lt;- c(ct, temp$ct)
+    
+}
+
+a &lt;- data.frame(idx=idx, val=val, ct=ct) %&gt;%
+    group_by(idx, val) %&gt;% summarize(ct=sum(ct))
+
+for ( intCtr in seq_along(unique(a$val)) ) {
+    array4[a$idx[a$val == intCtr], intCtr] &lt;- a$ct[a$val == intCtr]
+}
+
+proc.time() - startTime</code></pre>
+<pre><code>##    user  system elapsed 
+##    0.85    0.05    0.92</code></pre>
+<pre class="r"><code># Test keeping two cards, and fill the array (array3 as 1,326 x 16) for keeping two cards
+startTime &lt;- proc.time()
+
+idx &lt;- integer(0)
+val &lt;- integer(0)
+ct &lt;- integer(0)
+for (c1 in 1:4) {
+    for (c2 in (c1+1):5) {
+        temp &lt;- data.frame(card1=jbHands[, c1], card2=jbHands[, c2], val=array0) %&gt;% 
+            group_by(card1, card2, val) %&gt;%
+            summarize(ct=n()) %&gt;%
+            arrange(card1, card2, val)
+    
+        temp$idx &lt;- idxCard2(c1=temp$card1, c2=temp$card2)
+    
+        idx &lt;- c(idx, temp$idx)
+        val &lt;- c(val, temp$val)
+        ct &lt;- c(ct, temp$ct)
+    
+    }
+}
+
+a &lt;- data.frame(idx=idx, val=val, ct=ct) %&gt;%
+    group_by(idx, val) %&gt;% summarize(ct=sum(ct))
+
+for ( intCtr in seq_along(unique(a$val)) ) {
+    array3[a$idx[a$val == intCtr], intCtr] &lt;- a$ct[a$val == intCtr]
+}
+
+proc.time() - startTime</code></pre>
+<pre><code>##    user  system elapsed 
+##    2.41    0.15    2.59</code></pre>
+<pre class="r"><code># Test keeping three cards, and fill the array (array2 as 22,100 x 16) for keeping three cards
+startTime &lt;- proc.time()
+
+idx &lt;- integer(0)
+val &lt;- integer(0)
+ct &lt;- integer(0)
+for (c1 in 1:3) {
+    for (c2 in (c1+1):4) {
+        for (c3 in (c2+1):5) {
+            temp &lt;- data.frame(card1=jbHands[, c1], card2=jbHands[, c2], 
+                               card3=jbHands[, c3], val=array0
+                               ) %&gt;% 
+                group_by(card1, card2, card3, val) %&gt;%
+                summarize(ct=n()) %&gt;%
+                arrange(card1, card2, card3, val)
+    
+            temp$idx &lt;- idxCard3(c1=temp$card1, c2=temp$card2, c3=temp$card3)
+    
+            idx &lt;- c(idx, temp$idx)
+            val &lt;- c(val, temp$val)
+            ct &lt;- c(ct, temp$ct)
+    
+        }
+    }
+}
+
+a &lt;- data.frame(idx=idx, val=val, ct=ct) %&gt;%
+    group_by(idx, val) %&gt;% summarize(ct=sum(ct))
+
+for ( intCtr in seq_along(unique(a$val)) ) {
+    array2[a$idx[a$val == intCtr], intCtr] &lt;- a$ct[a$val == intCtr]
+}
+
+proc.time() - startTime</code></pre>
+<pre><code>##    user  system elapsed 
+##     4.8     0.3     5.2</code></pre>
+<pre class="r"><code># Test keeping four cards, and fill the array (array1 as 270,725 x 16) for keeping four cards
+startTime &lt;- proc.time()
+
+idx &lt;- integer(0)
+val &lt;- integer(0)
+ct &lt;- integer(0)
+for (c1 in 1:2) {
+    for (c2 in (c1+1):3) {
+        for (c3 in (c2+1):4) {
+            for (c4 in (c3+1):5) {
+                temp &lt;- data.frame(card1=jbHands[, c1], card2=jbHands[, c2], 
+                                   card3=jbHands[, c3], card4=jbHands[, c4], 
+                                   val=array0
+                                   ) %&gt;% 
+                    group_by(card1, card2, card3, card4, val) %&gt;%
+                    summarize(ct=n()) %&gt;%
+                    arrange(card1, card2, card3, card4, val)
+    
+                temp$idx &lt;- idxCard4(c1=temp$card1, c2=temp$card2, 
+                                     c3=temp$card3, c4=temp$card4
+                                     )
+    
+                idx &lt;- c(idx, temp$idx)
+                val &lt;- c(val, temp$val)
+                ct &lt;- c(ct, temp$ct)
+            
+            }
+        }
+    }
+}
+
+a &lt;- data.frame(idx=idx, val=val, ct=ct) %&gt;%
+    group_by(idx, val) %&gt;% summarize(ct=sum(ct))
+
+for ( intCtr in seq_along(unique(a$val)) ) {
+    array1[a$idx[a$val == intCtr], intCtr] &lt;- a$ct[a$val == intCtr]
+}
+
+proc.time() - startTime</code></pre>
+<pre><code>##    user  system elapsed 
+##   11.96    0.56   12.64</code></pre>
+<p>While this is still running an order of magnitude slower than the Wizard of Odds methodology, it is encouraging that the “order of magnitude” is 30 seconds vs. 3 seconds. There may be room for further streamlining, but the code appears to be functional and with a reasonable run-time for next steps.</p>
 </div>
 </div>
 
