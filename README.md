@@ -180,3 +180,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 12-SEP-2016  
 * AdditionalCoding_v003 tests the indexing and combinatorics set-up  
 * AdditionalCoding_v003 tests the no replacement hands  
+* AdditionalCoding_v003 creates weighted non-duplicates for Quads, Full Houses, and Trips  
