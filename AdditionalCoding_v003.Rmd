@@ -576,3 +576,77 @@ proc.time() - startTime
 ```
   
 While still an order of magnitude slower than the reference code, this runs through all the options in ~20 seconds.  
+  
+Next, an attempt is made to create a smaller database that combines and weights all the "identical" hands (e.g., As Ts 9h 8h 4c is mathematically identical to Ad Td 9c 8c 4h) so there is a lower processing time.  This is adapted heavily from the clever thinking documented at <http://wizardofodds.com/games/video-poker/methodology/>, using in order:  
+  
+* Four of a Kind (all that matters is what is the rank of the quad/kicker)  
+* Full House (need to know ranks for A full of B, as well as whether B contains the fourth suit or not)  
+* Trips (singletons can be all of fourth suit, one match and one fourth suit, no fourth suit/same, or no fourth suit/different)  
+* Two Pair (suits matter for how much is in common between the two pairs, as well as the singleton)  
+* Pair (many combinations for suits of the singletons)  
+* Nothing (suits matter a great deal!)  
+  
+```{r}
+# Quads are simple - there are 13 possible quads and 12 possible kickers
+# Each hand can be captured once with a weight of 4 since the kicker will always match one suit
+quadSmall <- matrix(data=0L, nrow=13*12, ncol=5)
+quadWeight <- rep(4L, times=13*12)
+curIdx <- 1
+
+for (intCtr in 1:13) {
+    for (intCtr2 in (1:13)[-intCtr]) {
+        quadSmall[curIdx, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr+39, intCtr2))
+        curIdx <- curIdx + 1
+    }
+}
+
+
+# Full Houses are not too much more complex, though there are two suit pairing options for each
+fhSmall <- matrix(data=0L, nrow=13*12*2, ncol=5)
+fhWeight <- rep(12L, times=13*12*2)
+curIdx <- 1
+
+for (intCtr in 1:13) {
+    for (intCtr2 in (1:13)[-intCtr]) {
+        # First option has both pairs matching the suits of the trips
+        fhSmall[curIdx, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr2+13))
+        # Second option has one pair not matching the suits of the trips
+        fhSmall[curIdx+1, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr2+39))
+        curIdx <- curIdx + 2
+    }
+}
+
+
+# Trips become a touch more complicated
+# There is weight 24 for both singletons match different trips suits
+# There is weight 12 for one singleton matches and the other does not
+# There is weight 12 for both singletons match the same trips suit
+# There is weight 4 for both singletons match each other but not any of the trips suits
+tripSmall <- matrix(data=0L, nrow=13*choose(12, 2)*5, ncol=5)
+tripWeight <- rep(c(24, 12, 12, 12, 4), times=13*choose(12,2))
+curIdx <- 1
+
+for (intCtr in 1:13) {
+    intAvail <- (1:13)[-intCtr]
+    for (intCtr2 in intAvail[-length(intAvail)]) {
+        for (intCtr3 in intAvail[intAvail > intCtr2]) {
+            # First option has both singletons matching a different trips suit
+            tripSmall[curIdx, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr3+13))
+            # Second option has singleton one matching a trips suit and singleton two not
+            tripSmall[curIdx+1, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr3+39))
+            # Third option has singleton two matching a trips suit and singleton one not
+            tripSmall[curIdx+2, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2+39, intCtr3))
+            # Fourth option has both singletons matching the same trips suit
+            tripSmall[curIdx+3, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr3))
+            # Fifth option has both singletons failing to match a trips suit
+            tripSmall[curIdx+4, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2+39, intCtr3+39))
+            # Increment the index by 5
+            curIdx <- curIdx + 5
+        }
+    }
+}
+
+
+
+```
+

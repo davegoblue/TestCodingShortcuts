@@ -479,7 +479,7 @@ dim(jbHands)</code></pre>
 ## 10      1 2062860</code></pre>
 <pre class="r"><code>proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##    0.12    0.00    0.12</code></pre>
+##    0.11    0.03    0.14</code></pre>
 <pre class="r"><code># Fill the array (array5 as 1 x 16) for keeping nothing
 startTime &lt;- proc.time()
 
@@ -492,7 +492,7 @@ for ( intCtr in seq_along(unique(a$val)) ) {
 
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##    0.13    0.00    0.13</code></pre>
+##    0.14    0.02    0.16</code></pre>
 <pre class="r"><code># Test keeping a single card, and fill the array (array4 as 52 x 16) for keeping 1
 startTime &lt;- proc.time()
 
@@ -522,7 +522,7 @@ for ( intCtr in seq_along(unique(a$val)) ) {
 
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##    0.81    0.08    0.89</code></pre>
+##    0.92    0.03    1.00</code></pre>
 <pre class="r"><code># Test keeping two cards, and fill the array (array3 as 1,326 x 16) for keeping two cards
 startTime &lt;- proc.time()
 
@@ -554,7 +554,7 @@ for ( intCtr in seq_along(unique(a$val)) ) {
 
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##    2.37    0.12    2.51</code></pre>
+##    2.70    0.12    2.85</code></pre>
 <pre class="r"><code># Test keeping three cards, and fill the array (array2 as 22,100 x 16) for keeping three cards
 startTime &lt;- proc.time()
 
@@ -590,7 +590,7 @@ for ( intCtr in seq_along(unique(a$val)) ) {
 
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##    4.82    0.20    5.18</code></pre>
+##    5.58    0.22    5.87</code></pre>
 <pre class="r"><code># Test keeping four cards, and fill the array (array1 as 270,725 x 16) for keeping four cards
 startTime &lt;- proc.time()
 
@@ -631,7 +631,7 @@ for ( intCtr in seq_along(unique(a$val)) ) {
 
 proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##   12.99    0.46   13.69</code></pre>
+##   13.80    0.48   14.54</code></pre>
 <p>While this is still running an order of magnitude slower than the Wizard of Odds methodology, it is encouraging that the “order of magnitude” is 30 seconds vs. 3 seconds. There may be room for further streamlining, but the code appears to be functional and with a reasonable run-time for next steps.</p>
 <p>The dimensions and counts of the various arrays are then confirmed:</p>
 <pre class="r"><code># The actual arrays (array1-array5)
@@ -733,8 +733,80 @@ hist(cmbBest[1, ], breaks=0:33, col=c( rep(&quot;blue&quot;, 1), rep(&quot;light
 ##  -0.6631  -0.5543  -0.2041  -0.0340   0.1250 799.0000</code></pre>
 <pre class="r"><code>proc.time() - startTime</code></pre>
 <pre><code>##    user  system elapsed 
-##   20.92    3.25   24.27</code></pre>
+##   25.07    3.62   28.96</code></pre>
 <p>While still an order of magnitude slower than the reference code, this runs through all the options in ~20 seconds.</p>
+<p>Next, an attempt is made to create a smaller database that combines and weights all the “identical” hands (e.g., As Ts 9h 8h 4c is mathematically identical to Ad Td 9c 8c 4h) so there is a lower processing time. This is adapted heavily from the clever thinking documented at <a href="http://wizardofodds.com/games/video-poker/methodology/" class="uri">http://wizardofodds.com/games/video-poker/methodology/</a>, using in order:</p>
+<ul>
+<li>Four of a Kind (all that matters is what is the rank of the quad/kicker)<br />
+</li>
+<li>Full House (need to know ranks for A full of B, as well as whether B contains the fourth suit or not)<br />
+</li>
+<li>Trips (singletons can be all of fourth suit, one match and one fourth suit, no fourth suit/same, or no fourth suit/different)<br />
+</li>
+<li>Two Pair (suits matter for how much is in common between the two pairs, as well as the singleton)<br />
+</li>
+<li>Pair (many combinations for suits of the singletons)<br />
+</li>
+<li>Nothing (suits matter a great deal!)</li>
+</ul>
+<pre class="r"><code># Quads are simple - there are 13 possible quads and 12 possible kickers
+# Each hand can be captured once with a weight of 4 since the kicker will always match one suit
+quadSmall &lt;- matrix(data=0L, nrow=13*12, ncol=5)
+quadWeight &lt;- rep(4L, times=13*12)
+curIdx &lt;- 1
+
+for (intCtr in 1:13) {
+    for (intCtr2 in (1:13)[-intCtr]) {
+        quadSmall[curIdx, ] &lt;- sort(c(intCtr, intCtr+13, intCtr+26, intCtr+39, intCtr2))
+        curIdx &lt;- curIdx + 1
+    }
+}
+
+
+# Full Houses are not too much more complex, though there are two suit pairing options for each
+fhSmall &lt;- matrix(data=0L, nrow=13*12*2, ncol=5)
+fhWeight &lt;- rep(12L, times=13*12*2)
+curIdx &lt;- 1
+
+for (intCtr in 1:13) {
+    for (intCtr2 in (1:13)[-intCtr]) {
+        # First option has both pairs matching the suits of the trips
+        fhSmall[curIdx, ] &lt;- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr2+13))
+        # Second option has one pair not matching the suits of the trips
+        fhSmall[curIdx+1, ] &lt;- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr2+39))
+        curIdx &lt;- curIdx + 2
+    }
+}
+
+
+# Trips become a touch more complicated
+# There is weight 24 for both singletons match different trips suits
+# There is weight 12 for one singleton matches and the other does not
+# There is weight 12 for both singletons match the same trips suit
+# There is weight 4 for both singletons match each other but not any of the trips suits
+tripSmall &lt;- matrix(data=0L, nrow=13*choose(12, 2)*5, ncol=5)
+tripWeight &lt;- rep(c(24, 12, 12, 12, 4), times=13*choose(12,2))
+curIdx &lt;- 1
+
+for (intCtr in 1:13) {
+    intAvail &lt;- (1:13)[-intCtr]
+    for (intCtr2 in intAvail[-length(intAvail)]) {
+        for (intCtr3 in intAvail[intAvail &gt; intCtr2]) {
+            # First option has both singletons matching a different trips suit
+            tripSmall[curIdx, ] &lt;- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr3+13))
+            # Second option has singleton one matching a trips suit and singleton two not
+            tripSmall[curIdx+1, ] &lt;- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr3+39))
+            # Third option has singleton two matching a trips suit and singleton one not
+            tripSmall[curIdx+2, ] &lt;- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2+39, intCtr3))
+            # Fourth option has both singletons matching the same trips suit
+            tripSmall[curIdx+3, ] &lt;- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr3))
+            # Fifth option has both singletons failing to match a trips suit
+            tripSmall[curIdx+4, ] &lt;- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2+39, intCtr3+39))
+            # Increment the index by 5
+            curIdx &lt;- curIdx + 5
+        }
+    }
+}</code></pre>
 </div>
 </div>
 
