@@ -181,3 +181,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v003 tests the indexing and combinatorics set-up  
 * AdditionalCoding_v003 tests the no replacement hands  
 * AdditionalCoding_v003 creates weighted non-duplicates for Quads, Full Houses, and Trips  
+* AdditionalCoding_v003 creates weighted non-duplicates for Two Pair  
