@@ -183,3 +183,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v003 creates weighted non-duplicates for Quads, Full Houses, and Trips  
 * AdditionalCoding_v003 creates weighted non-duplicates for Two Pair  
 * AdditionalCoding_v003 creates weighted non-duplicates for One Pair  
+* AdditionalCoding_v003 creates weighted non-duplicates for No Pair  
