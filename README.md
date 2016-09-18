@@ -184,3 +184,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v003 creates weighted non-duplicates for Two Pair  
 * AdditionalCoding_v003 creates weighted non-duplicates for One Pair  
 * AdditionalCoding_v003 creates weighted non-duplicates for No Pair  
+* AdditionalCoding_v003 integrates and summarized weighted non-duplicated hands (flushes not yet working right)  
