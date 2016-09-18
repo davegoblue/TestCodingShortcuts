@@ -842,3 +842,103 @@ for (intCtr in 1:9) {
 
 ```
 
+Next, the hands and weights are integrated to a single hand matrix and a single weighting vector:  
+```{r}
+jbSmall <- rbind(quadSmall, fhSmall, tripSmall, twoSmall, pairSmall, noneSmall)
+jbWeight <- c(quadWeight, fhWeight, tripWeight, twoWeight, pairWeight, noneWeight)
+
+str(jbSmall)
+str(jbWeight)
+
+# Confirm that there are sill 52c5 hands after weighting
+all.equal(sum(jbWeight), choose(52, 5))
+
+# Confirm that dimensions of hands and weight match up
+all.equal(nrow(jbSmall), length(jbWeight))
+all.equal(ncol(jbSmall), 5)
+
+# Report the degree of space savings due to the weighting
+summary(jbWeight)
+```
+  
+The weighting allows for ~19x reduction in duplication which should speed up the processing time by roughly ~19x.  This is a strong improvement in efficiency.  
+  
+Next, the jbSmall database is assessed for hand types, using the same approach as with the full database:  
+```{r}
+ 
+startTime <- proc.time()
+
+
+# Declare flushes
+smallA <- (jbSmall - 1) %/% 13
+smallFlush <- smallA[, 1] == smallA[, 5]
+
+# Get the totals by card rank
+smallRank <- matrix(data=0L, nrow=nrow(jbSmall), ncol=13)
+for (intCtr in 1:13) {
+    smallRank[, intCtr] <- as.integer( rowSums( (jbSmall %% 13) == (intCtr %% 13) ) )
+}
+
+# Get the number of unique cards
+smallUniques <- rowSums(smallRank > 0)
+
+# Check for straights
+smallStraights <- matrix(data=0L, nrow=13, ncol=10)
+for (intCtr in 1:9) { smallStraights[intCtr:(intCtr+4), intCtr] <- 1L }
+smallStraights[c(1, 10:13), 10] <- 1L
+smallCheck <- rowSums( ( (smallRank > 0) %*% smallStraights ) == 5 )
+
+# Is the maximum number of cards equal to 3
+smallMax3 <- rowSums(smallRank == 3) == 1
+
+
+# The basic work has been finished
+proc.time() - startTime
+
+
+# The hand types are declared
+smallType <- rep(-1L, nrow(jbSmall))  # Default value is -1
+
+# Manage the pairs - only convert if pair is 1 (Ace) or 11-13 (J, Q, K)
+smallHiPair <- smallRank[, 1] == 2 | smallRank[, 11] == 2 | smallRank[, 12] == 2 | smallRank[, 13] == 2
+smallType[smallUniques == 4 & smallHiPair] <- 0
+
+# Manage the straights and flushes, including SF and RF
+smallType[smallFlush == FALSE & smallUniques == 5 & smallCheck] <- 3  # Straights as 3
+smallType[smallFlush == TRUE & !smallCheck] <- 5  # Flushes as 5
+
+# Declare the straight flush and royal flush
+rfVector <- c(1L, 10L, 11L, 12L, 0L)
+foo <- function(x) {
+    if (sum( x %% 13 == rfVector ) ==5 ) { return(799) }
+    else { return(49) }
+}
+smallType[smallFlush == TRUE & smallCheck] <- 
+    apply(jbSmall[smallFlush == TRUE & smallCheck, ], 1, FUN=foo)
+
+# Look at the subset that composes Two Pair, Trips, Full House, and Quads
+smallType[smallUniques == 3 & !smallMax3] <- 1  # Two Pair
+smallType[smallUniques == 3 & smallMax3] <- 2  # Trips
+smallType[smallUniques == 2 & smallMax3] <- 8  # Full House
+smallType[smallUniques == 2 & !smallMax3] <- 24  # Quads
+
+
+# The hand declarations have been finished
+proc.time() - startTime
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Need to integrate in the weights!
+# Use dplyr and tidyr since they are MUCH faster than table() for the cross-tabs
+data.frame(jbType=smallType, wt=jbWeight) %>% group_by(jbType) %>% summarize(count=sum(wt))
+data.frame(jbType=smallType, jbUniques=smallUniques, wt=jbWeight) %>% 
+    group_by(jbType, jbUniques) %>% 
+    summarize(count=sum(wt)) %>%
+    spread(jbUniques, count, fill=0)
+
+```
+  
+Plainly, there are far too many flushes!  Eveyrhting else appears to be OK, but something got goofed -- almost certainly the lack of sorting! -- in the 5-unique-card hand creation.
