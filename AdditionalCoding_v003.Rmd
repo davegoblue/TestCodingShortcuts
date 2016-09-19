@@ -943,4 +943,296 @@ data.frame(jbType=smallType, jbUniques=smallUniques, wt=jbWeight) %>%
 
 ```
   
-With the sorting issue for the 5-singleton hands resolved, the weighted hands are now giving the same counts by initial hand types as the calculations based on the full database.  Processing time has been reduced to ~1 second.
+With the sorting issue for the 5-singleton hands resolved, the weighted hands are now giving the same counts by initial hand types as the calculations based on the full database.  Processing time has been reduced to ~1 second.  
+  
+Next, the combinations of holds are assessed with the assumption that cards CAN be replaced, using the same methodology as above:  
+```{r}
+
+smallNrowArray0 <- data.frame(jbType=smallType) %>% 
+    group_by(jbType) %>% 
+    summarize(ct=n()) %>%
+    arrange(jbType)
+smallNrowArray0
+
+if (nrow(smallNrowArray0) > 16) { 
+    stop(paste0("There are too many hand types, cap is 16, this will have: ", nrow(smallNrowArray0)))
+}
+print("OK")
+
+# Initialize smallArray1-smallArray5
+smallArray1 <- matrix(data=0L, nrow=choose(52, 4), ncol=16)
+smallArray2 <- matrix(data=0L, nrow=choose(52, 3), ncol=16)
+smallArray3 <- matrix(data=0L, nrow=choose(52, 2), ncol=16)
+smallArray4 <- matrix(data=0L, nrow=choose(52, 1), ncol=16)
+smallArray5 <- matrix(data=0L, nrow=choose(52, 0), ncol=16)
+
+# Create smallArray0 which will have an index number corresponding to the associated smallType
+smallArray0 <- match(smallType, smallNrowArray0[[1]])
+
+
+startTime <- proc.time()
+
+dim(jbSmall)
+length(smallArray0)
+data.frame(array0=smallArray0, wt=jbWeight) %>% 
+    group_by(array0) %>% 
+    summarize(ct=n(), hands=sum(wt), dup=round(hands/ct, 1)) %>% 
+    arrange(-array0)
+
+proc.time() - startTime
+
+
+# Fill the array (smallArray5 as 1 x 16) for keeping nothing
+startTime <- proc.time()
+
+a <- data.frame(val=smallArray0, wt=jbWeight) %>% group_by(val) %>% 
+    summarize(ct=n(), hands=sum(wt)) %>% arrange(val)
+
+for ( intCtr in seq_along(unique(a$val)) ) {
+    smallArray5[1, intCtr] <- a$hands[a$val == intCtr]
+}
+
+proc.time() - startTime
+
+
+# Test keeping a single card, and fill the array (smallArray4 as 52 x 16) for keeping 1
+startTime <- proc.time()
+
+idx <- integer(0)
+val <- integer(0)
+ct <- integer(0)
+hands <- integer(0)
+for (c1 in 1:5) {
+    temp <- data.frame(card1=jbSmall[, c1], val=smallArray0, wt=jbWeight) %>% 
+        group_by(card1, val) %>%
+        summarize(ct=n(), hands=sum(wt)) %>%
+        arrange(card1, val)
+    
+    temp$idx <- temp$card1
+    
+    idx <- c(idx, temp$idx)
+    val <- c(val, temp$val)
+    ct <- c(ct, temp$ct)
+    hands <- c(hands, temp$hands)
+    
+}
+
+a <- data.frame(idx=idx, val=val, ct=ct, hands=hands) %>%
+    group_by(idx, val) %>% summarize(ct=sum(ct), hands=sum(hands))
+
+for ( intCtr in seq_along(unique(a$val)) ) {
+    smallArray4[a$idx[a$val == intCtr], intCtr] <- a$hands[a$val == intCtr]
+}
+
+proc.time() - startTime
+
+
+# Test keeping two cards, and fill the array (smallArray3 as 1,326 x 16) for keeping two cards
+startTime <- proc.time()
+
+idx <- integer(0)
+val <- integer(0)
+ct <- integer(0)
+hands <- integer(0)
+for (c1 in 1:4) {
+    for (c2 in (c1+1):5) {
+        temp <- data.frame(card1=jbSmall[, c1], card2=jbSmall[, c2], val=smallArray0, wt=jbWeight) %>% 
+            group_by(card1, card2, val) %>%
+            summarize(ct=n(), hands=sum(wt)) %>%
+            arrange(card1, card2, val)
+    
+        temp$idx <- idxCard2(c1=temp$card1, c2=temp$card2)
+    
+        idx <- c(idx, temp$idx)
+        val <- c(val, temp$val)
+        ct <- c(ct, temp$ct)
+        hands <- c(hands, temp$hands)
+    
+    }
+}
+
+a <- data.frame(idx=idx, val=val, ct=ct, hands=hands) %>%
+    group_by(idx, val) %>% summarize(ct=sum(ct), hands=sum(hands))
+
+for ( intCtr in seq_along(unique(a$val)) ) {
+    smallArray3[a$idx[a$val == intCtr], intCtr] <- a$hands[a$val == intCtr]
+}
+
+proc.time() - startTime
+
+
+# Test keeping three cards, and fill the array (smallArray2 as 22,100 x 16) for keeping three cards
+startTime <- proc.time()
+
+idx <- integer(0)
+val <- integer(0)
+ct <- integer(0)
+hands <- integer(0)
+for (c1 in 1:3) {
+    for (c2 in (c1+1):4) {
+        for (c3 in (c2+1):5) {
+            temp <- data.frame(card1=jbSmall[, c1], card2=jbSmall[, c2], 
+                               card3=jbSmall[, c3], val=smallArray0, wt=jbWeight
+                               ) %>% 
+                group_by(card1, card2, card3, val) %>%
+                summarize(ct=n(), hands=sum(wt)) %>%
+                arrange(card1, card2, card3, val)
+    
+            temp$idx <- idxCard3(c1=temp$card1, c2=temp$card2, c3=temp$card3)
+    
+            idx <- c(idx, temp$idx)
+            val <- c(val, temp$val)
+            ct <- c(ct, temp$ct)
+            hands <- c(hands, temp$hands)
+    
+        }
+    }
+}
+
+a <- data.frame(idx=idx, val=val, ct=ct, hands=hands) %>%
+    group_by(idx, val) %>% summarize(ct=sum(ct), hands=sum(hands))
+
+for ( intCtr in seq_along(unique(a$val)) ) {
+    smallArray2[a$idx[a$val == intCtr], intCtr] <- a$hands[a$val == intCtr]
+}
+
+proc.time() - startTime
+
+
+# Test keeping four cards, and fill the array (smallArray1 as 270,725 x 16) for keeping four cards
+startTime <- proc.time()
+
+idx <- integer(0)
+val <- integer(0)
+ct <- integer(0)
+hands <- integer(0)
+for (c1 in 1:2) {
+    for (c2 in (c1+1):3) {
+        for (c3 in (c2+1):4) {
+            for (c4 in (c3+1):5) {
+                temp <- data.frame(card1=jbSmall[, c1], card2=jbSmall[, c2], 
+                                   card3=jbSmall[, c3], card4=jbSmall[, c4], 
+                                   val=smallArray0, wt=jbWeight
+                                   ) %>% 
+                    group_by(card1, card2, card3, card4, val) %>%
+                    summarize(ct=n(), hands=sum(wt)) %>%
+                    arrange(card1, card2, card3, card4, val)
+    
+                temp$idx <- idxCard4(c1=temp$card1, c2=temp$card2, 
+                                     c3=temp$card3, c4=temp$card4
+                                     )
+    
+                idx <- c(idx, temp$idx)
+                val <- c(val, temp$val)
+                ct <- c(ct, temp$ct)
+                hands <- c(hands, temp$hands)
+            
+            }
+        }
+    }
+}
+
+a <- data.frame(idx=idx, val=val, ct=ct, hands=hands) %>%
+    group_by(idx, val) %>% summarize(ct=sum(ct), hands=sum(hands))
+
+for ( intCtr in seq_along(unique(a$val)) ) {
+    smallArray1[a$idx[a$val == intCtr], intCtr] <- a$hands[a$val == intCtr]
+}
+
+proc.time() - startTime
+
+```
+  
+This process takes ~2 seconds, a significant improvement in processing time.  Next, optimal holds are declared and assessed:  
+```{r}
+startTime <- proc.time()
+
+# Convert each of the arrays to a value
+mapArray <- matrix(data=c(-1, 0, 1, 2, 3, 5, 8, 24, 49, 799, 0, 0, 0, 0, 0, 0), ncol=1)
+dim(mapArray)
+
+smallEV5 <- (smallArray5 %*% mapArray) / rowSums(smallArray5)
+smallEV4 <- (smallArray4 %*% mapArray) / rowSums(smallArray4)
+smallEV3 <- (smallArray3 %*% mapArray) / rowSums(smallArray3)
+smallEV2 <- (smallArray2 %*% mapArray) / rowSums(smallArray2)
+smallEV1 <- (smallArray1 %*% mapArray) / rowSums(smallArray1)
+smallEV0 <- matrix(data=mapArray[smallArray0, 1], ncol=1)
+
+# Some indexing combinations do not exist due to the de-dups; make these a straight -2 EV
+smallEV2[is.na(smallEV2)] <- -2
+smallEV1[is.na(smallEV1)] <- -2
+
+# Evaluate all the draw-0 options
+smallDraw0 <- matrix(data=smallEV0, ncol=1)
+
+# Evaluate all the draw-5 options
+smallDraw5 <- matrix(data=smallEV5, nrow=nrow(jbSmall), ncol=1)
+
+# Evaluate all the draw-4 options
+keyData <- integer(0)
+for (intCtr in 1:5) {
+    keyData <- c(keyData, smallEV4[jbSmall[, intCtr], 1, drop=TRUE])
+}
+smallDraw4 <- matrix(data=keyData, ncol=5, byrow=FALSE)
+
+# Evaluate all the draw-3 options
+keyData <- integer(0)
+for (intCtr in 1:4) {
+    for (intCtr2 in (intCtr+1):5) {
+        keyData <- c(keyData, 
+                     smallEV3[idxCard2( c1=jbSmall[ , intCtr], c2=jbSmall[ , intCtr2] ), 
+                             1, drop=TRUE]
+                     )
+    }
+}
+smallDraw3 <- matrix(data=keyData, ncol=10, byrow=FALSE)
+
+# Evaluate all the draw-2 options
+keyData <- integer(0)
+for (intCtr in 1:3) {
+    for (intCtr2 in (intCtr+1):4) {
+        for (intCtr3 in (intCtr2+1):5) {
+            keyData <- c(keyData, 
+                         smallEV2[idxCard3( c1=jbSmall[, intCtr], c2=jbSmall[, intCtr2] ,
+                                           c3=jbSmall[, intCtr3]
+                                          ), 1, drop=TRUE]
+                         )
+        }
+    }
+}
+smallDraw2 <- matrix(data=keyData, ncol=10, byrow=FALSE)
+
+# Evaluate all the draw-1 options
+keyData <- integer(0)
+for (intCtr in 1:2) {
+    for (intCtr2 in (intCtr+1):3) {
+        for (intCtr3 in (intCtr2+1):4) {
+            for (intCtr4 in (intCtr3+1):5) {
+                keyData <- c(keyData, 
+                             smallEV1[idxCard4( c1=jbSmall[, intCtr], c2=jbSmall[, intCtr2] ,
+                                               c3=jbSmall[, intCtr3], c4=jbSmall[, intCtr4]
+                                              ), 1, drop=TRUE]
+                            )
+            }
+        }
+    }
+}
+smallDraw1 <- matrix(data=keyData, ncol=5, byrow=FALSE)
+
+# Integrate the drawing summaries and find the best option by row
+cmbSmallDraw <- cbind(smallDraw0, smallDraw1, smallDraw2, 
+                      smallDraw3, smallDraw4, smallDraw5
+                      )
+
+# Assess the best option by row
+cmbSmallBest <- apply(cmbSmallDraw, 1, FUN=function(x) { c( which.max(x), max(x) ) } )
+hist(cmbSmallBest[1, ], breaks=0:33, col=c( rep("blue", 1), rep("lightblue", 5), rep("orange", 10),
+                                       rep("lightgreen", 10), rep("red", 5), rep("black", 1) ) )
+summary(cmbSmallBest[2, ])
+
+
+proc.time() - startTime
+
+```
+  
+This runs reasonably quickly, though there is still a need to work on the weightings.
