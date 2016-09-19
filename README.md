@@ -186,3 +186,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v003 creates weighted non-duplicates for No Pair  
 * AdditionalCoding_v003 integrates and summarized weighted non-duplicated hands (flushes not yet working right)  
 * AdditionalCoding_v003 integrates and summarizes weighted non-duplicated hands (flushes fixed)  
+
+### Expansions week of 19-SEP-2016  
+* AdditionalCoding_v003 investigates optimal holds based on non-duplicated data  
