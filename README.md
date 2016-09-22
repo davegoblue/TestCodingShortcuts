@@ -191,3 +191,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v003 investigates optimal holds based on non-duplicated data  
 * AdditionalCoding_v003 adjusts hand valuations  
 * AdditionalCoding_v003 explores initial matrix creation  
+* AdditionalCoding_v003 explores initial matrix classification  
