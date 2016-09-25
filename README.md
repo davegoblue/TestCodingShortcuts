@@ -194,3 +194,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v003 explores initial matrix classification  
 * AdditionalCoding_v003 explores initial hand type classification  
 * AdditionalCoding_v003 explores array creation  
+* AdditionalCoding_v003 pre-sets the indices for the arrays  
