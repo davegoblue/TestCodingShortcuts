@@ -195,3 +195,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v003 explores initial hand type classification  
 * AdditionalCoding_v003 explores array creation  
 * AdditionalCoding_v003 pre-sets the indices for the arrays  
+
+### Expansions week of 26-SEP-2016  
+* AdditionalCoding_v004 sets up the 11-step process  
