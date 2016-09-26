@@ -1,0 +1,191 @@
+---
+title: 'Additional Coding: Update #4'
+author: "davegoblue"
+date: "September 26, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview  
+This document explores video poker hands, using <http://wizardofodds.com/games/video-poker/methodology/> as a template, and applying DataCamp_Insights_v001 materials where applicable.  This document builds on the more salient components of the analysis in AdditionalCoding_v003.Rmd.  
+
+## Analysis Approach  
+The Wizard of Odds suggests an 11-step approach to calculating the returns for a video poker pay table:  
+  
+1.  Initialize arrays for discarding 0-5 cards  
+2.  Loop through all 52c5 hands, score them based on their poker value, then place them in the appropriate arrays (each of discard 0 through discard 5)  
+3.  Create the 134,459 non-duplicate starting hands possible (e.g., Ad Kh Tc 9c 3d is the same as As Kh Td 9d 3s), and assign it a weighting based on how much duplication it covers  
+4.  Lookup each of the 134,459 hands and score the discard 0 (hold 5) option  
+5.  Lookup every possible discard 1 (hold 4) option, find the EV in the discard 1 array and then subtract the outcome in the discard 0 array (cannot get back the same hand)  
+6.  Lookup every possible discard 2 (hold 3) option, find the EV in the discard 2 array and then subtract the outcomes in the discard 1 array and then add back the outcome in the discard 0 array (double-subtracted)  
+7.  Lookup every possible discard 3 (hold 2) option, find the EV in the discard 3 array and then subtract the outcomes in the discard 2 array and then add back the outcomes in the discard 1 array and then subtract out the outcome in the discard 0 array (typical set theory add/subtract)  
+8.  Lookup every possible discard 4 (hold 1) option, find the EV in the discard 4 array and then subtract the outcomes in the discard 3 array and then add back the outcomes in the discard 2 array and then subtract out the outcome in the discard 1 array and then add back the outcome in the discard 0 array (typical set theory add/subtract)  
+9.  Lookup every possible discard 5 (hold 0) option, find the EV in the discard 5 array and then subtract the outcomes in the discard 4 array and then add back the outcomes in the discard 3 array and then subtract out the outcome in the discard 2 array and then add back the outcome in the discard 1 array and then subtract out the outcome of the discard 0 array (typical set theory add/subtract)  
+10.  Calculate the EV of every possible decision, and assign the appropriate weightings  
+11.  Determine overall return, or other statistics of interest about the game  
+  
+
+### Step 1:  Initialize Arrays  
+First, the relevant arrays for discard 0 (array0) through discard 5 (array5) are created.  A baseline assumption is made that there are only 16 possible final scores for the hand, and these are declared for the game of interest:  
+```{r}
+
+
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+
+# Declare overall game variables
+nScores <- 10  # Standard JB Outcomes
+scoreVector <- c(-1L,  0L,  1L,  2L,   3L,  
+                  5L,  8L, 24L, 49L, 799L
+                 )  # Standard JB outcomes, sorted low to high
+
+
+# Create the relevant arrays
+array0 <- matrix(data=0L, nrow=choose(52, 5), ncol=nScores)
+array1 <- matrix(data=0L, nrow=choose(52, 4), ncol=nScores)
+array2 <- matrix(data=0L, nrow=choose(52, 3), ncol=nScores)
+array3 <- matrix(data=0L, nrow=choose(52, 2), ncol=nScores)
+array4 <- matrix(data=0L, nrow=choose(52, 1), ncol=nScores)
+array5 <- matrix(data=0L, nrow=choose(52, 0), ncol=nScores)
+
+```
+  
+### Step 2:  Create/Score Hands, Create Indexing, and Place Scores in Appropriate Arrays  
+#### Step 2a:  Create/Score Hands  
+First, the 52c5 possible hands are created and scored.  For this coding, the standard 9-6 Jacks or Better pay table is used, subtracting off the coin that was bet (e.g., "win 1" is really a break-even):  
+```{r}
+
+startTime <- proc.time()
+
+
+# Create the 52c5 hands
+aHands <- t(combn(1:52, 5))
+str(aHands)
+
+
+proc.time() - startTime
+
+
+# Find the ranks and suits
+aRanks <- 1 + (aHands-1) %% 13
+aSuits <- (aHands-1) %/% 13
+    
+
+# Find the flushes
+aFlush <- aSuits[, 1] == aSuits[, 5]
+
+
+# Find the straights
+strMatrix <- matrix(data=0L, nrow=13, ncol=10)
+strMatrix[c(1, 10, 11, 12, 13), 1] <- 1L
+for (intCtr in 1:9) { strMatrix[intCtr:(intCtr+4), intCtr+1] <- 1L }
+
+aRankCount <- matrix(data=-1L, nrow=choose(52, 5), ncol=13)
+for (intCtr in 1:13) { aRankCount[, intCtr] <- rowSums(aRanks == intCtr) }
+
+
+# Find max and count of ranks (sufficient to determine quds, full houses, trips, two pair, and pair)
+aQuads <- rowSums(aRankCount == 4)
+aTrips <- rowSums(aRankCount == 3)
+aPairs <- rowSums(aRankCount == 2)
+aHiPair <- rowSums(aRankCount[, c(1, 11, 12, 13)] == 2)
+aStraight <- rowSums( ((aRankCount == 1) %*% strMatrix) == 5)
+
+aType <- rep(-1L, choose(52, 5))
+
+
+# Declare types
+aType[aFlush == 1 & aStraight == 1 & aRankCount[, 1] == 1 & 
+          aRankCount[, 13] == 1] <- 799  # Royal Flush
+aType[aFlush == 1 & aStraight == 1 & 
+          (aRankCount[, 1] == 0 | aRankCount[, 13] == 0)] <- 49  # Straight Flush
+aType[aQuads == 1] <- 24  # Quads
+aType[aTrips == 1 & aPairs == 1] <- 8  # Full House
+aType[aFlush == 1 & aStraight == 0] <- 5  # Flush
+aType[aFlush == 0 & aStraight == 1] <- 3  # Straight
+aType[aTrips == 1 & aPairs == 0] <- 2  # Trips
+aType[aPairs == 2] <- 1  # Two Pair
+aType[aTrips == 0 & aPairs == 1 & aHiPair == 1] <- 0  # High Pair
+
+
+proc.time() - startTime
+```
+  
+The process takes ~10 seconds, but with the many interim files, it also consumes ~1.5 GB.  
+  
+#### Step 2b:  Create Indexing  
+Next, a methodology is created to index any combination of held cards:  
+```{r}
+
+# Create a matrix to hold results for choose(n, k)
+mtxCombin <- matrix(data=0L, nrow=52, ncol=5)
+for (intCtr in 1:52) {
+    for (intCtr2 in 1:5) {
+        # Note that choose() is a guarded function where choose(n, k) returns 0 for k > n
+        mtxCombin[intCtr, intCtr2] <- choose(intCtr, intCtr2)
+    }
+}
+
+
+idxCard1 <- function(c1) {
+    # Just return yourself
+    c1
+}
+
+idxCard2 <- function(c1, c2) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    1 + mtxCombin[52, 2] - mtxCombin[53-c1, 2] +
+        mtxCombin[52-c1, 1] - mtxCombin[53-c2, 1]
+}
+
+idxCard3 <- function(c1, c2, c3) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    1 + mtxCombin[52, 3] - mtxCombin[53-c1, 3] +
+        mtxCombin[52-c1, 2] - mtxCombin[53-c2, 2] +
+        mtxCombin[52-c2, 1] - mtxCombin[53-c3, 1]
+}
+
+idxCard4 <- function(c1, c2, c3, c4) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    1 + mtxCombin[52, 4] - mtxCombin[53-c1, 4] +
+        mtxCombin[52-c1, 3] - mtxCombin[53-c2, 3] +
+        mtxCombin[52-c2, 2] - mtxCombin[53-c3, 2] + 
+        mtxCombin[52-c3, 1] - mtxCombin[53-c4, 1]
+}
+
+idxCard5 <- function(c1, c2, c3, c4, c5) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    1 + mtxCombin[52, 5] - mtxCombin[53-c1, 5] +
+        mtxCombin[52-c1, 4] - mtxCombin[53-c2, 4] +
+        mtxCombin[52-c2, 3] - mtxCombin[53-c3, 3] + 
+        mtxCombin[52-c3, 2] - mtxCombin[53-c4, 2] +
+        mtxCombin[52-c4, 1] - mtxCombin[53-c5, 1]
+}
+
+```
+  
+This allows any combination of 1-5 cards to be converted to a relevant index.  This will be useful for several further components of the program.  
+  
+#### Step 2c:  Place Scores in Appropriate Arrays  
+```{r}
+
+# Create array5, which is discarding everything
+b <- data.frame(idx=1, val=match(aType, scoreVector)) %>% 
+    group_by(idx, val) %>% 
+    summarize(ct=n()) %>%
+    spread(val, ct, fill=0)
+    
+all.equal( as.integer(colnames(b[, -1])) , 1:nScores )
+nrow(b) == nrow(array5)
+
+array5 <- t(as.matrix(as.integer(b[, -1])))
+
+
+
+```
+  
