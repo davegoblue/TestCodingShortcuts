@@ -199,3 +199,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 26-SEP-2016  
 * AdditionalCoding_v004 sets up the 11-step process  
 * AdditionalCoding_v004 creates indices/arrays for array5 and array4  
+* AdditionalCoding_v004 creates indices/arrays for array3  
