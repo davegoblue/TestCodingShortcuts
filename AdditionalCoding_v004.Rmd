@@ -311,3 +311,294 @@ summary(ev5)
 ```
   
 Encouragingly, the mean EV is the same everywhere.  The max/min gain variance as the number of cards kept increases, meaning there is opportunity to raise the overall EV by picking the best hold of 0-5 cards.
+  
+### Step 3:  Create/Weight non-duplicate hands  
+The next step is to create the 134,459 non-duplicate starting hands possible (e.g., Ad Kh Tc 9c 3d is the same as As Kh Td 9d 3s), and assign each a weighting based on how much duplication it covers.  
+  
+This is adapted heavily from clever thinking at <http://wizardofodds.com/games/video-poker/methodology/>, using in order:  
+  
+* Four of a Kind (all that matters is what is the rank of the quad/kicker)  
+* Full House (need to know ranks for A full of B, as well as whether B contains the fourth suit or not)  
+* Trips (singletons can be all of fourth suit, one match and one fourth suit, no fourth suit/same, or no fourth suit/different)  
+* Two Pair (suits matter for how much is in common between the two pairs, as well as the singleton)  
+* Pair (many combinations for suits of the singletons)  
+* Nothing (suits matter a great deal!)  
+  
+```{r}
+# Quads are simple - there are 13 possible quads and 12 possible kickers
+# Each hand can be captured once with a weight of 4 since the kicker will always match one suit
+quadSmall <- matrix(data=0L, nrow=13*12, ncol=5)
+quadWeight <- rep(4L, times=13*12)
+curIdx <- 1
+
+for (intCtr in 1:13) {
+    for (intCtr2 in (1:13)[-intCtr]) {
+        quadSmall[curIdx, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr+39, intCtr2))
+        curIdx <- curIdx + 1
+    }
+}
+
+
+# Full Houses are not too much more complex, though there are two suit pairing options for each
+fhSmall <- matrix(data=0L, nrow=13*12*2, ncol=5)
+fhWeight <- rep(12L, times=13*12*2)
+curIdx <- 1
+
+for (intCtr in 1:13) {
+    for (intCtr2 in (1:13)[-intCtr]) {
+        # First option has both pairs matching the suits of the trips
+        fhSmall[curIdx, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr2+13))
+        # Second option has one pair not matching the suits of the trips
+        fhSmall[curIdx+1, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr2+39))
+        curIdx <- curIdx + 2
+    }
+}
+
+
+# Trips become a touch more complicated
+# There is weight 24 for both singletons match different trips suits
+# There is weight 12 for one singleton matches and the other does not
+# There is weight 12 for both singletons match the same trips suit
+# There is weight 4 for both singletons match each other but not any of the trips suits
+tripSmall <- matrix(data=0L, nrow=13*choose(12, 2)*5, ncol=5)
+tripWeight <- rep(c(24, 12, 12, 12, 4), times=13*choose(12,2))
+curIdx <- 1
+
+for (intCtr in 1:13) {
+    intAvail <- (1:13)[-intCtr]
+    for (intCtr2 in intAvail[-length(intAvail)]) {
+        for (intCtr3 in intAvail[intAvail > intCtr2]) {
+            # First option has both singletons matching a different trips suit
+            tripSmall[curIdx, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr3+13))
+            # Second option has singleton one matching a trips suit and singleton two not
+            tripSmall[curIdx+1, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr3+39))
+            # Third option has singleton two matching a trips suit and singleton one not
+            tripSmall[curIdx+2, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2+39, intCtr3))
+            # Fourth option has both singletons matching the same trips suit
+            tripSmall[curIdx+3, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr3))
+            # Fifth option has both singletons failing to match a trips suit
+            tripSmall[curIdx+4, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2+39, intCtr3+39))
+            # Increment the index by 5
+            curIdx <- curIdx + 5
+        }
+    }
+}
+
+
+# Two Pair becomes even more complicated
+# There is weight 12 for four suits across the two pair -- singleton matches pair #1 or pair #2
+# There is weight 24 for each of one suit match across the two pair; singleton can be four suits
+# There is weight 12 for the two pair having identical suits; once for the singleton matching, once for not
+twoSmall <- matrix(data=0L, nrow=choose(13, 2)*11*8, ncol=5)
+twoWeight <- rep(c(12, 12, 24, 24, 24, 24, 12, 12), times=choose(13, 2)*11)
+curIdx <- 1
+
+for (intCtr in 1:12) {
+    for (intCtr2 in (intCtr+1):13) {
+        for (intCtr3 in (1:13)[-c(intCtr, intCtr2)]) {
+            
+            # First option has all two pair cards being different suits
+            twoSmall[curIdx, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr2+39, intCtr3))
+            twoSmall[curIdx+1, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr2+39, intCtr3+26))
+            
+            # Second option has one matched suits in the two pair
+            twoSmall[curIdx+2, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr2+26, intCtr3))
+            twoSmall[curIdx+3, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr2+26, intCtr3+13))
+            twoSmall[curIdx+4, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr2+26, intCtr3+26))
+            twoSmall[curIdx+5, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr2+26, intCtr3+39))
+            
+            # Third option has fully matched suits across the two pair
+            twoSmall[curIdx+6, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr2+13, intCtr3))
+            twoSmall[curIdx+7, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr2+13, intCtr3+26))
+            
+            # Increment the index by 8
+            curIdx <- curIdx + 8
+        }
+    }
+}
+
+
+# One Pair becomes even more complicated
+# The pair is (obviously) two-suited; consider them to be 1 and 2; the game is in the singletons
+# Weight 12 (2): Singletons all same suit, once matching to a pair suit, and once not
+# Weight 12 (3): Singletons are suited 2-1, all matching to the pairs - 112, 121, 211
+# Weight 24 (3): Singletons are suited 2-1, two matching to the pairs - 113, 131, 311
+# Weight 24 (3): Singletons are suited 2-1, one matching to the pairs - 133, 313, 331 
+# Weight 12 (3): Singletons are suited 2-1, none matching to the pairs - 344, 434, 443
+# Weight 24 (3): Singletons are suited 1-1-1, two matching to the pairs - 123, 132, 312
+# Weight 24 (3): Singletons are suited 1-1-1, one matching to the pairs - 134, 314, 341
+pairSmall <- matrix(data=0L, nrow=13*choose(12, 3)*20, ncol=5)
+pairWeight <- rep(c(12, 12, 12, 12, 12, 24, 24, 24, 24, 24, 24, 
+                    12, 12, 12, 24, 24, 24, 24, 24, 24), 
+                  times=13*choose(12, 3)
+                  )
+curIdx <- 1
+
+for (intCtr in 1:13) {
+    intAvail <- (1:13)[-intCtr]
+    for (intCtr2 in intAvail[-c(11, 12)]) {
+        nextAvail <- (intCtr2+1):13
+        nextAvail <- nextAvail[!(nextAvail %in% c(intCtr))]
+        for (intCtr3 in nextAvail[-length(nextAvail)]) {
+            lastAvail <- (intCtr3+1):13
+            lastAvail <- lastAvail[!(lastAvail %in% c(intCtr))]
+            for (intCtr4 in lastAvail) {
+                # Weight 12 (2): Singletons all same suit, once matching to a pair suit, and once not
+                pairSmall[curIdx, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3, intCtr4))
+                pairSmall[curIdx+1, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3+26, intCtr4+26))
+            
+                # Weight 12 (3): Singletons are suited 2-1, all matching to the pairs - 112, 121, 211
+                pairSmall[curIdx+2, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3, intCtr4+13))
+                pairSmall[curIdx+3, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3+13, intCtr4))
+                pairSmall[curIdx+4, ] <- sort(c(intCtr, intCtr+13, intCtr2+13, intCtr3, intCtr4))
+                
+                # Weight 24 (3): Singletons are suited 2-1, two matching to the pairs - 113, 131, 311
+                pairSmall[curIdx+5, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3, intCtr4+26))
+                pairSmall[curIdx+6, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3+26, intCtr4))
+                pairSmall[curIdx+7, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3, intCtr4))
+                
+                # Weight 24 (3): Singletons are suited 2-1, one matching to the pairs - 133, 313, 331 
+                pairSmall[curIdx+8, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3+26, intCtr4+26))
+                pairSmall[curIdx+9, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3, intCtr4+26))
+                pairSmall[curIdx+10, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3+26, intCtr4))
+                
+                # Weight 12 (3): Singletons are suited 2-1, none matching to the pairs - 344, 434, 443
+                pairSmall[curIdx+11, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3+39, intCtr4+39))
+                pairSmall[curIdx+12, ] <- sort(c(intCtr, intCtr+13, intCtr2+39, intCtr3+26, intCtr4+39))
+                pairSmall[curIdx+13, ] <- sort(c(intCtr, intCtr+13, intCtr2+39, intCtr3+39, intCtr4+26))
+                
+                # Weight 24 (3): Singletons are suited 1-1-1, two matching to the pairs - 123, 132, 312
+                pairSmall[curIdx+14, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3+13, intCtr4+26))
+                pairSmall[curIdx+15, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3+26, intCtr4+13))
+                pairSmall[curIdx+16, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3, intCtr4+13))
+                
+                # Weight 24 (3): Singletons are suited 1-1-1, one matching to the pairs - 134, 314, 341
+                pairSmall[curIdx+17, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3+26, intCtr4+39))
+                pairSmall[curIdx+18, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3, intCtr4+39))
+                pairSmall[curIdx+19, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3+39, intCtr4))
+
+                # Increment the index by 20
+                curIdx <- curIdx + 20
+            }
+        }
+    }
+}
+
+
+# No Pair becomes even more complicated
+# The entire game is in the suits for the singletons
+# Weight 4 (1): Singletons all same suit - 11111
+# Weight 12 (5): Singletons are suited 4-1 - 11112, 11121, 11211, 12111, 21111
+# Weight 12 (10): Singletons are suited 3-2 - 11122, 11212, 11221, 12112, 12121, 
+#                                             12211, 21112, 21121, 21211, 22111
+# Weight 24 (10): Singletons are suited 3-1-1 - 11123, 11213, 11231, 12113, 12131,
+#                                               12311, 21113, 21131, 21311, 23111
+# Weight 24 (15): Singletons are suited 2-2-1 - 11223, 12123, 12213, 11232, 12132, 
+#                                               12231, 11322, 12312, 12321, 13122, 
+#                                               13212, 13221, 31122, 31212, 31221
+# Weight 24 (10): Singletons are suited 2-1-1-1 - 11234, 12134, 12314, 12341, 21134, 
+#                                                 21314, 21341, 23114, 23141, 23411
+noneSmall <- matrix(data=0L, nrow=choose(13, 5)*51, ncol=5)
+noneWeight <- rep(c(4, 12, 12, 12, 12, 12, 
+                    12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 
+                    24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 
+                    24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 
+                    24, 24, 24, 24, 24, 24, 24, 24, 24, 24
+                    ), times=choose(13, 5)
+                  )
+
+mtxAdd <- matrix(data=c(0, 0, 0, 0, 0, 
+                        0, 0, 0, 0, 1,
+                        0, 0, 0, 1, 0, 
+                        0, 0, 1, 0, 0, 
+                        0, 1, 0, 0, 0, 
+                        1, 0, 0, 0, 0, 
+                        0, 0, 0, 1, 1,
+                        0, 0, 1, 0, 1,
+                        0, 1, 0, 0, 1,
+                        1, 0, 0, 0, 1,
+                        0, 0, 1, 1, 0,
+                        0, 1, 0, 1, 0,
+                        1, 0, 0, 1, 0,
+                        0, 1, 1, 0, 0,
+                        1, 0, 1, 0, 0,
+                        1, 1, 0, 0, 0,
+                        0, 0, 0, 1, 2,
+                        0, 0, 1, 0, 2,
+                        0, 1, 0, 0, 2,
+                        1, 0, 0, 0, 2,
+                        0, 0, 1, 2, 0,
+                        0, 1, 0, 2, 0,
+                        1, 0, 0, 2, 0,
+                        0, 1, 2, 0, 0,
+                        1, 0, 2, 0, 0,
+                        1, 2, 0, 0, 0,
+                        0, 0, 1, 1, 2,
+                        0, 1, 0, 1, 2,
+                        1, 0, 0, 1, 2,
+                        0, 0, 1, 2, 1,
+                        0, 1, 0, 2, 1,
+                        1, 0, 0, 2, 1,
+                        0, 0, 2, 1, 1,
+                        0, 1, 2, 0, 1,
+                        1, 0, 2, 0, 1,
+                        0, 2, 0, 1, 1,
+                        0, 2, 1, 0, 1,
+                        1, 2, 0, 0, 1,
+                        2, 0, 0, 1, 1,
+                        2, 0, 1, 0, 1,
+                        2, 1, 0, 0, 1,
+                        0, 0, 1, 2, 3,
+                        0, 1, 0, 2, 3,
+                        0, 1, 2, 0, 3,
+                        0, 1, 2, 3, 0,
+                        1, 0, 0, 2, 3,
+                        1, 0, 2, 0, 3,
+                        1, 0, 2, 3, 0,
+                        1, 2, 0, 0, 3,
+                        1, 2, 0, 3, 0,
+                        1, 2, 3, 0, 0
+                        ) * 13, ncol=5, byrow=TRUE)
+
+curIdx <- 1
+
+for (intCtr in 1:9) {
+    for (intCtr2 in (intCtr+1):10) {
+        for (intCtr3 in (intCtr2+1):11) {
+            for (intCtr4 in (intCtr3+1):12) {
+                for (intCtr5 in (intCtr4+1):13) {
+                    vecNone <- c(intCtr, intCtr2, intCtr3, intCtr4, intCtr5)
+                    mtxNone <- matrix(data=rep(vecNone, times=51), ncol=5, byrow=TRUE)
+                    # IMPORTANT - future classification relies on low-high sorting in each row
+                    noneSmall[curIdx:(curIdx+50), ] <- 
+                        t(apply(mtxNone + mtxAdd, 1, FUN=sort))
+                    curIdx <- curIdx + 51
+                }
+            }
+        }
+    }
+}
+
+```
+  
+Next, the hands and weights are integrated to a single hand matrix and a single weighting vector:  
+```{r}
+jbSmall <- rbind(quadSmall, fhSmall, tripSmall, twoSmall, pairSmall, noneSmall)
+jbWeight <- c(quadWeight, fhWeight, tripWeight, twoWeight, pairWeight, noneWeight)
+
+str(jbSmall)
+str(jbWeight)
+
+# Confirm that there are sill 52c5 hands after weighting
+all.equal(sum(jbWeight), choose(52, 5))
+
+# Confirm that dimensions of hands and weight match up
+all.equal(nrow(jbSmall), length(jbWeight))
+all.equal(ncol(jbSmall), 5)
+
+# Report the degree of space savings due to the weighting
+summary(jbWeight)
+```
+  
+The weighting allows for ~19x reduction in duplication which should speed up the processing time by roughly ~19x when using "no replacement" for drawing hands.  This is a strong improvement in efficiency.  
+  
