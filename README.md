@@ -203,3 +203,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v004 creates indices/arrays for array2 and array1 and array0  
 * AdditionalCoding_v004 creates ev0-ev5 for expected values by index  
 * AdditionalCoding_v004 creates weighted non-duplicate hands for assessing drawing potential  
+* AdditionalCoding_v004 creates weighted non-duplicate hands for draw-0 and draw-1    
+  
