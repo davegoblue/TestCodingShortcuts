@@ -206,3 +206,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v004 creates weighted non-duplicate hands for draw-0 and draw-1    
 * AdditionalCoding_v004 creates weighted non-duplicate hands for draw-2    
   
+### Expansions week of 03-OCT-2016  
+* AdditionalCoding_v004 creates weighted non-duplicate hands for draw-3    
