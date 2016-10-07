@@ -211,3 +211,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v004 creates weighted non-duplicate hands for draw-4    
 * AdditionalCoding_v004 creates weighted non-duplicate hands for draw-5    
 * AdditionalCoding_v004 calculates the best holds as well as the overall game EV    
+* AdditionalCoding_v004 calculates the best holds and EV for dealt RF/SF/Quad/FH    
