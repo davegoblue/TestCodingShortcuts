@@ -217,3 +217,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 10-OCT-2016  
 * AdditionalCoding_v004 calculates the best holds and EV for dealt Trips/Two Pair   
 * AdditionalCoding_v004 calculates the best holds and EV for dealt Paying Pair   
+* AdditionalCoding_v004 calculates the best holds and EV for dealt Nothing   
