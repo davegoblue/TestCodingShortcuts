@@ -218,3 +218,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v004 calculates the best holds and EV for dealt Trips/Two Pair   
 * AdditionalCoding_v004 calculates the best holds and EV for dealt Paying Pair   
 * AdditionalCoding_v004 calculates the best holds and EV for dealt Nothing   
+* AdditionalCoding_v004 calculates timing by component   
