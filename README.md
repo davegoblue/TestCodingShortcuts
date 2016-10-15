@@ -220,3 +220,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v004 calculates the best holds and EV for dealt Nothing   
 * AdditionalCoding_v004 calculates timing by component   
 * AdditionalCoding_v004 improves creation time for array0 (shaves 25% or ~20 seconds off original run time)   
+* DataCamp_Insights_v001 captures initial notes from "Data Manipulation with xts and zoo"  
