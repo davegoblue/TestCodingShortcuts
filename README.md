@@ -222,3 +222,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v004 improves creation time for array0 (shaves 25% or ~20 seconds off original run time)   
 * DataCamp_Insights_v001 captures initial notes from "Data Manipulation with xts and zoo"  
 * DataCamp_Insights_v001 captures Module 2 notes from "Data Manipulation with xts and zoo"  
+
+### Expansions week of 17-OCT-2016  
+* AdditionalCoding_v004 describes caching plan and next steps   
