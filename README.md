@@ -225,3 +225,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 17-OCT-2016  
 * AdditionalCoding_v004 describes caching plan and next steps   
+* AdditionalCoding_v005 created to attempt better caching for reduced run times   
