@@ -1,0 +1,195 @@
+---
+title: 'Additional Coding: Update #5'
+author: "davegoblue"
+date: "October 18, 2016"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview  
+This document explores video poker hands, using <http://wizardofodds.com/games/video-poker/methodology/> as a template, and applying DataCamp_Insights_v001 materials where applicable.  This document builds on the more salient components of the analysis in AdditionalCoding_v004.Rmd.  
+
+## Analysis Approach  
+The Wizard of Odds suggests an 11-step approach to calculating the returns for a video poker pay table:  
+  
+1.  Initialize arrays for discarding 0-5 cards  
+2.  Loop through all 52c5 hands, score them based on their poker value, then place them in the appropriate arrays (each of discard 0 through discard 5)  
+3.  Create the 134,459 non-duplicate starting hands possible (e.g., Ad Kh Tc 9c 3d is the same as As Kh Td 9d 3s), and assign it a weighting based on how much duplication it covers  
+4.  Lookup each of the 134,459 hands and score the discard 0 (hold 5) option  
+5.  Lookup every possible discard 1 (hold 4) option, find the EV in the discard 1 array and then subtract the outcome in the discard 0 array (cannot get back the same hand)  
+6.  Lookup every possible discard 2 (hold 3) option, find the EV in the discard 2 array and then subtract the outcomes in the discard 1 array and then add back the outcome in the discard 0 array (double-subtracted)  
+7.  Lookup every possible discard 3 (hold 2) option, find the EV in the discard 3 array and then subtract the outcomes in the discard 2 array and then add back the outcomes in the discard 1 array and then subtract out the outcome in the discard 0 array (typical set theory add/subtract)  
+8.  Lookup every possible discard 4 (hold 1) option, find the EV in the discard 4 array and then subtract the outcomes in the discard 3 array and then add back the outcomes in the discard 2 array and then subtract out the outcome in the discard 1 array and then add back the outcome in the discard 0 array (typical set theory add/subtract)  
+9.  Lookup every possible discard 5 (hold 0) option, find the EV in the discard 5 array and then subtract the outcomes in the discard 4 array and then add back the outcomes in the discard 3 array and then subtract out the outcome in the discard 2 array and then add back the outcome in the discard 1 array and then subtract out the outcome of the discard 0 array (typical set theory add/subtract)  
+10.  Calculate the EV of every possible decision, and assign the appropriate weightings  
+11.  Determine overall return, or other statistics of interest about the game  
+  
+Steps 2 and 3 are surprisingly time-consuming, and this analysis will look to cache a number of key outcomes for application of a scoring vector at a later stage.  
+  
+### Step 1:  Initialize Arrays  
+First, the relevant arrays for discard 0 (array0) through discard 5 (array5) are created.  A baseline assumption is made that while there are up to 50 types of interesting hands, there are only 16 possible scores driven by these hands.  Arrays for storing these are declared for the game of interest:  
+```{r}
+
+
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+
+startTime <- proc.time()
+
+
+# Declare overall game variables
+nHandTypes <- 50  # Number of hand types supported
+nScores <- 16  # Number of final scores supported - many hand types may map to the same score
+
+
+# Create the relevant arrays
+array0 <- matrix(data=0L, nrow=choose(52, 5), ncol=nScores)
+array1 <- matrix(data=0L, nrow=choose(52, 4), ncol=nScores)
+array2 <- matrix(data=0L, nrow=choose(52, 3), ncol=nScores)
+array3 <- matrix(data=0L, nrow=choose(52, 2), ncol=nScores)
+array4 <- matrix(data=0L, nrow=choose(52, 1), ncol=nScores)
+array5 <- matrix(data=0L, nrow=choose(52, 0), ncol=nScores)
+
+
+proc.time() - startTime
+
+```
+  
+### Step 2:  Create/Score Hands, Create Indexing, and Place Scores in Appropriate Arrays  
+#### Step 2a:  Create/Score Hands  
+First, the 52c5 possible hands are created, with hand types declared.  Of particular interest will be tracking the following:  
+  
+* Royal Flush (1)   
+* Straight Flush (2)  
+* AAAA with 2-4 (14)  
+* AAAA with J-K (15)  
+* AAAA with 5-T (16)  
+* 2222/3333/4444 with A (17)  
+* 2222/3333/4444 with 2-4 (18)  
+* 2222/3333/4444 with J-K (19)  
+* 2222/3333/4444 with 5-T (20)  
+* JJJJ/QQQQ/KKKK with A (21)  
+* JJJJ/QQQQ/KKKK with 2-4 (22)  
+* JJJJ/QQQQ/KKKK with J-K (23)  
+* JJJJ/QQQQ/KKKK with 5-T (24)  
+* 5555-TTTT (25)  
+* Full House (3)  
+* Flush (4)  
+* Straight (5)  
+* Trips (6)  
+* Two Pair (7)  
+* Pair AA (8)  
+* Pair KK (9)  
+* Pair QQ (10)  
+* Pair JJ (11)  
+* Pair TT (12)  
+* Pair 22-99 (13)  
+  
+```{r}
+
+startTime <- proc.time()
+
+
+# Create the 52c5 hands
+aHands <- t(combn(1:52, 5))
+str(aHands)
+
+
+proc.time() - startTime
+
+
+# Find the ranks and suits
+aRanks <- 1 + (aHands-1) %% 13
+aSuits <- (aHands-1) %/% 13
+    
+
+# Find the flushes
+aFlush <- aSuits[, 1] == aSuits[, 5]
+
+
+# Find the straights
+strMatrix <- matrix(data=0L, nrow=13, ncol=10)
+strMatrix[c(1, 10, 11, 12, 13), 1] <- 1L
+for (intCtr in 1:9) { strMatrix[intCtr:(intCtr+4), intCtr+1] <- 1L }
+
+aRankCount <- matrix(data=-1L, nrow=choose(52, 5), ncol=13)
+for (intCtr in 1:13) { aRankCount[, intCtr] <- rowSums(aRanks == intCtr) }
+
+
+# Find max and count of ranks (sufficient to determine quads, full houses, trips, two pair, and pair)
+aQuads <- rowSums(aRankCount == 4)
+aTrips <- rowSums(aRankCount == 3)
+aPairs <- rowSums(aRankCount == 2)
+aStraight <- rowSums( ((aRankCount == 1) %*% strMatrix) == 5)
+
+
+# Default is that a hand has nothing
+aType <- rep(0L, choose(52, 5))
+
+
+# Declare types for mainline (RF, SF, FH, FL, ST, 3K, 2P)
+aType[aFlush == 1 & aStraight == 1 & aRankCount[, 1] == 1 & 
+          aRankCount[, 13] == 1] <- 1  # Royal Flush
+aType[aFlush == 1 & aStraight == 1 & 
+          (aRankCount[, 1] == 0 | aRankCount[, 13] == 0)] <- 2  # Straight Flush
+aType[aTrips == 1 & aPairs == 1] <- 3  # Full House
+aType[aFlush == 1 & aStraight == 0] <- 4  # Flush
+aType[aFlush == 0 & aStraight == 1] <- 5  # Straight
+aType[aTrips == 1 & aPairs == 0] <- 6  # Trips
+aType[aPairs == 2] <- 7  # Two Pair
+
+
+# Declare types for pairs
+aType[aTrips == 0 & aPairs == 1 & aRankCount[, 1] == 1] <- 8  # Pair Aces
+aType[aTrips == 0 & aPairs == 1 & aRankCount[, 13] == 1] <- 9  # Pair Kings
+aType[aTrips == 0 & aPairs == 1 & aRankCount[, 12] == 1] <- 10  # Pair Queens
+aType[aTrips == 0 & aPairs == 1 & aRankCount[, 11] == 1] <- 11  # Pair Jacks
+aType[aTrips == 0 & aPairs == 1 & aRankCount[, 10] == 1] <- 12  # Pair Tens
+aType[aTrips == 0 & aPairs == 1 & !(aType %in% c(1, 10, 11, 12, 13))] <- 13  # Pair 22-99
+
+
+# Declare types for quads
+quadSubset <- aRankCount[aQuads == 1, ]
+quadType <- apply(quadSubset, 1, FUN=function(x) { c(which(x == 4), which(x == 1)) } )
+quadScore <- rep(-1L, ncol(quadType))
+
+quadScore[quadType[1, ] == 1 & quadType[2, ] %in% c(2, 3, 4)] <- 14  ## AAAA with 2-4
+quadScore[quadType[1, ] == 1 & quadType[2, ] %in% c(11, 12, 13)] <- 15  ## AAAA with J-K
+quadScore[quadType[1, ] == 1 & quadType[2, ] %in% c(5, 6, 7, 8, 9, 10)] <- 16  ## AAAA with 5-T
+
+quadScore[quadType[1, ] %in% c(2, 3, 4) & 
+              quadType[2, ] %in% c(1)] <- 17  ## 2222/3333/4444 with A
+quadScore[quadType[1, ] %in% c(2, 3, 4) & 
+              quadType[2, ] %in% c(2, 3, 4)] <- 18  ## 2222/3333/4444 with 2-4
+quadScore[quadType[1, ] %in% c(2, 3, 4) & 
+              quadType[2, ] %in% c(11, 12, 13)] <- 19  ## 2222/3333/4444 with J-K
+quadScore[quadType[1, ] %in% c(2, 3, 4) & 
+              quadType[2, ] %in% c(5, 6, 7, 8, 9, 10)] <- 20  ## 2222/3333/4444 with 5-T
+
+quadScore[quadType[1, ] %in% c(11, 12, 13) & 
+              quadType[2, ] %in% c(1)] <- 21  ## JJJJ/QQQQ/KKKK with A
+quadScore[quadType[1, ] %in% c(11, 12, 13) & 
+              quadType[2, ] %in% c(2, 3, 4)] <- 22  ## JJJJ/QQQQ/KKKK with 2-4
+quadScore[quadType[1, ] %in% c(11, 12, 13) & 
+              quadType[2, ] %in% c(11, 12, 13)] <- 23  ## JJJJ/QQQQ/KKKK with J-K
+quadScore[quadType[1, ] %in% c(11, 12, 13) & 
+              quadType[2, ] %in% c(5, 6, 7, 8, 9, 10)] <- 24  ## JJJJ/QQQQ/KKKK with 5-T
+
+quadScore[quadType[1, ] %in% c(5, 6, 7, 8, 9, 10)] <- 25  ## 5555/6666/7777/8888/9999/TTTT with any
+
+
+# Populate quad results in to aType
+aType[aQuads == 1] <- quadScore
+data.frame(type=aType) %>% group_by(type) %>% summarize(ct=n()) %>% print.data.frame()
+
+
+proc.time() - startTime
+```
+  
+The process takes ~10 seconds, but with the many interim files, it also consumes ~2.0 GB.  
