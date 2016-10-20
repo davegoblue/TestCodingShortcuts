@@ -227,3 +227,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v004 describes caching plan and next steps   
 * AdditionalCoding_v005 created to attempt better caching for reduced run times   
 * AdditionalCoding_v005 creates indices for the draw2/keep3 hands   
+* AdditionalCoding_v005 creates function for the draw-x hands, stores indices, and applies hand-to-scores     
