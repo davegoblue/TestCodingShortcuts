@@ -230,3 +230,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v005 creates function for the draw-x hands, stores indices, and applies hand-to-scores     
 * AdditionalCoding_v005 creates EV for all possible holds assuming the redraw can return the discards     
 * AdditionalCoding_v005 creates EV for hold-4 assuming the redraw canNOT return the discards     
+* AdditionalCoding_v005 creates EV for hold-3 assuming the redraw canNOT return the discards     
