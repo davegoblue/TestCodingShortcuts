@@ -231,3 +231,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v005 creates EV for all possible holds assuming the redraw can return the discards     
 * AdditionalCoding_v005 creates EV for hold-4 assuming the redraw canNOT return the discards     
 * AdditionalCoding_v005 creates EV for hold-3 assuming the redraw canNOT return the discards     
+
+### Expansions week of 24-OCT-2016  
+* AdditionalCoding_v005 creates EV for hold-2 assuming the redraw canNOT return the discards  
