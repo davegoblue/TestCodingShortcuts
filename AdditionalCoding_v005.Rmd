@@ -321,12 +321,17 @@ proc.time() - startTime
 
 # Populate the keep-zero
 mtxIndices[, 32] <- 0L
+
+
 proc.time() - startTime
 
 ```
 
 The hands to scores vectors is created and applied to aHands:  
 ```{r}
+startTime <- proc.time()
+
+
 gameIndex <- 0:25
 
 # Jacks or Better Vector
@@ -344,6 +349,9 @@ aScores <- hnd2Score$val[match(aType, gameIndex)]
 summary(aScores)
 
 data.frame(aScores=aScores) %>% group_by(aScores) %>% summarize(ct=n())
+
+
+proc.time() - startTime
 
 ```
   
@@ -397,15 +405,26 @@ The summary statistics and control totals are "as expected", and the process tak
   
 Next, the keep4 and keep3 are adjusted to assume you cannot re-draw discards, then integrated with the keep5:  
 ```{r}
+startTime <- proc.time()
+
+
 evNoReplace <- matrix(data=0.0, nrow=choose(52, 5), ncol=32)
 
 # Keep 5
 evNoReplace[, 1] <- aScores
 
+
+proc.time() - startTime
+
+
 # Keep 4 (intCtr: 2 is 1234, 3 is 1235, 4 is 1245, 5 is 1345, 6 is 2345)
 for (intCtr in 2:6) {
     evNoReplace[, intCtr] <- (48 * tmpEVkeep4$ev[mtxIndices[, intCtr]] - evNoReplace[, 1]) / 47
 }
+
+
+proc.time() - startTime
+
 
 # Keep 3 (intCtr: 7 is 123, 8 is 124, 9 is 125, 10 is 134, 11 is 135)
 # Keep 3 (intCtr: 12 is 145, 13 is 234, 14 is 235, 15 is 245, 16 is 345)
@@ -425,6 +444,9 @@ for (intCtr in 7:16) {
                                   evNoReplace[, 1]
                               ) / choose(47, 2)
 }
+
+
+proc.time() - startTime
 
 
 # Keep 2 (intCtr: 17 is 12, 18 is 13, 19 is 14, 20 is 15, 21 is 23)
@@ -461,6 +483,9 @@ for (intCtr in 17:26) {
                                   evNoReplace[, 1]
                               ) / choose(47, 3)
 }
+
+
+proc.time() - startTime
 
 
 # Keep 1 (intCtr: 27 is 1, 28 is 2, 29 is 3, 30 is 4, 31 is 5)
@@ -524,6 +549,9 @@ for (intCtr in 27:31) {
 }
 
 
+proc.time() - startTime
+
+
 # Keep 0 (column 32)
 # Take the EV of the 0 card assuming stand-alone
 # Subtract the EV of each 1 card (0 + 1 discard) assuming stand-alone
@@ -566,6 +594,16 @@ evNoReplace[, 32] <- (choose(52, 5) * mean(aScores) -
                           evNoReplace[, 1]
                       ) / choose(47, 5)
 
+
+proc.time() - startTime
+```
+  
+Creating the full selection EV matrix takes XX seconds when run over YY hands.  Next, the optimal holds are calculated:  
+```{r}
+
+startTime <- proc.time()
+
+
 tempMax <- apply(evNoReplace, 1, FUN=function(x) { c(max(x), which.max(x)) } )
 
 # Calculate descriptive statistics
@@ -586,7 +624,30 @@ newCutIdx <- cut(tempMax[2, ],
 data.frame(newType=newCutIdx) %>% 
     group_by(newType) %>% summarize(ct=n())
 
+
+proc.time() - startTime
+
+
 ```
   
 The summary statistics are all as expected.  Next, the run times can be significantly curtailed through 1) caching, and 2) weighting and eliminating duplicate starting hands.  
+  
+Timing is as follows:  
+  
+* Step 1 (Initialize): ~0.6 seconds  
+* Step 2a (Create/Classify Hands): ~12 seconds  
+* Step 2b (Create Indexing): ~0.0 seconds  
+* Step 2c (Place Hands in Arrays): ~15 seconds  
+* Step tbd (Convert Outcomes to Scores): ~0.4 seconds  
+* Step tbd (Run Outcomes assuming Redraw with Replacement): ~5.5 seconds  
+* Steps 4-9 (Calculate EV of hold-5 through hold-0): ~14 seconds  
+* Steps 10-11 (Optimal Holds, Descriptive Statistics): ~11 seconds  
+  
+A shorter version would be:  
+  
+* Preparation (Steps 1, 2a, 2b, 2c): ~28 seconds  
+* Convert to EV for each of 32 holds (Steps tbd, tbd, 4-9): ~20 seconds  
+* Descriptive Statistics (Steps 10-11): ~11 seconds  
+  
+Options for speeding the process include 1) caching the preparation work (should save ~28 seconds), and 2) eliminating weighting/duplicate hands (should reduce ~31 seconds by 90%-95%).  So, is it possible to drive the run-time down to the ~5 seconds range?  
   
