@@ -236,3 +236,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v005 creates EV for hold-2 assuming the redraw canNOT return the discards  
 * AdditionalCoding_v005 creates EV for hold-1/hold-0 assuming the redraw canNOT return the discards  
 * AdditionalCoding_v005 calculates timing implications and opportunities to optimize  
+* AdditionalCoding_v005 creates non-duplication and weighting  
