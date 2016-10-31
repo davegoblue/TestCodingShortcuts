@@ -240,3 +240,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v005 runs optimal holds and game summary statistics for the non-duplicated and weighted hands  
 * DataCamp_Insights_v001 captures Module 3 notes from "Data Manipulation with xts and zoo"  
 * DataCamp_Insights_v001 captures Module 4 notes from "Data Manipulation with xts and zoo"  
+
+### Expansions week of 31-OCT-2016  
+* AdditionalCoding_v005 creates index-match to help with lookup readability  
