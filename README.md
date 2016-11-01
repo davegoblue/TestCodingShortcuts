@@ -243,3 +243,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 31-OCT-2016  
 * AdditionalCoding_v005 creates index-match to help with lookup readability  
+* DataCamp_Insights_v001 captures Module 5 notes from "Data Manipulation with xts and zoo"  
