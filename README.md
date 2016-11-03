@@ -245,3 +245,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v005 creates index-match to help with lookup readability  
 * DataCamp_Insights_v001 captures Module 5 notes from "Data Manipulation with xts and zoo"  
 * DataCamp_Insights_v001 captures ggplot2 part3 Refresher and Box Plots  
+* DataCamp_Insights_v001 captures ggplot2 part3 Density Plots  
