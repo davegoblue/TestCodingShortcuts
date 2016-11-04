@@ -246,3 +246,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures Module 5 notes from "Data Manipulation with xts and zoo"  
 * DataCamp_Insights_v001 captures ggplot2 part3 Refresher and Box Plots  
 * DataCamp_Insights_v001 captures ggplot2 part3 Density Plots  
+* DataCamp_Insights_v001 captures ggplot2 part3 Multiple Groups/Variables  
