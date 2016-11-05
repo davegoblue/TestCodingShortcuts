@@ -247,3 +247,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures ggplot2 part3 Refresher and Box Plots  
 * DataCamp_Insights_v001 captures ggplot2 part3 Density Plots  
 * DataCamp_Insights_v001 captures ggplot2 part3 Multiple Groups/Variables  
+* AdditionalCoding_v005 caches preparation and simulates only the small data (new run time ~10 seconds)  
