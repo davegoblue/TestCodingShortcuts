@@ -1,0 +1,931 @@
+---
+title: "Additional Coding: Update #6"
+author: "davegoblue"
+date: "November 6, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview  
+This document explores video poker hands, using <http://wizardofodds.com/games/video-poker/methodology/> as a template, and applying DataCamp_Insights_v001 materials where applicable.  This document builds on the more salient components of the analysis in AdditionalCoding_v005.Rmd.  In particular, the preparatory components are cached and saved, with a functional approach taken for assessing pay tables.  
+
+## Analysis Approach  
+The Wizard of Odds suggests an 11-step approach to calculating the returns for a video poker pay table:  
+  
+1.  Initialize arrays for discarding 0-5 cards  
+2.  Loop through all 52c5 hands, score them based on their poker value, then place them in the appropriate arrays (each of discard 0 through discard 5)  
+3.  Create the 134,459 non-duplicate starting hands possible (e.g., Ad Kh Tc 9c 3d is the same as As Kh Td 9d 3s), and assign it a weighting based on how much duplication it covers  
+4.  Lookup each of the 134,459 hands and score the discard 0 (hold 5) option  
+5.  Lookup every possible discard 1 (hold 4) option, find the EV in the discard 1 array and then subtract the outcome in the discard 0 array (cannot get back the same hand)  
+6.  Lookup every possible discard 2 (hold 3) option, find the EV in the discard 2 array and then subtract the outcomes in the discard 1 array and then add back the outcome in the discard 0 array (double-subtracted)  
+7.  Lookup every possible discard 3 (hold 2) option, find the EV in the discard 3 array and then subtract the outcomes in the discard 2 array and then add back the outcomes in the discard 1 array and then subtract out the outcome in the discard 0 array (typical set theory add/subtract)  
+8.  Lookup every possible discard 4 (hold 1) option, find the EV in the discard 4 array and then subtract the outcomes in the discard 3 array and then add back the outcomes in the discard 2 array and then subtract out the outcome in the discard 1 array and then add back the outcome in the discard 0 array (typical set theory add/subtract)  
+9.  Lookup every possible discard 5 (hold 0) option, find the EV in the discard 5 array and then subtract the outcomes in the discard 4 array and then add back the outcomes in the discard 3 array and then subtract out the outcome in the discard 2 array and then add back the outcome in the discard 1 array and then subtract out the outcome of the discard 0 array (typical set theory add/subtract)  
+10.  Calculate the EV of every possible decision, and assign the appropriate weightings  
+11.  Determine overall return, or other statistics of interest about the game  
+  
+This program adapts the approach as follows:  
+  
+* Preparatory work (cached) - create full matrices of hand types, and de-duplicated (weighted) matrix of unique starting hands  
+* Scoring - apply pay table to cached preparatory work  
+* Analysis - simulate pay table  
+  
+### Preparatory Work  
+Key libraries are sourced and global parameters set.  In addition, all possible combinatorics are stored in an array, with functions declared to convert any given cards to an index.  This component is not cached:  
+```{r}
+
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+
+startTime <- proc.time()
+totStart <- startTime
+
+# Declare overall game variables
+nHandTypes <- 50  # Number of hand types supported
+nScores <- 16  # Number of final scores supported - many hand types may map to the same score
+
+
+proc.time() - startTime
+
+
+# Create a matrix to hold results for choose(n, k)
+mtxCombin <- matrix(data=0L, nrow=52, ncol=5)
+for (intCtr in 1:52) {
+    for (intCtr2 in 1:5) {
+        # Note that choose() is a guarded function where choose(n, k) returns 0 for k > n
+        mtxCombin[intCtr, intCtr2] <- as.integer(choose(intCtr, intCtr2))
+    }
+}
+
+
+idxCard1 <- function(c1) {
+    # Just return yourself
+    c1
+}
+
+idxCard2 <- function(c1, c2) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    as.integer(  1 + mtxCombin[52, 2] - mtxCombin[53-c1, 2] + 
+                     mtxCombin[52-c1, 1] - mtxCombin[53-c2, 1]
+              ) 
+}
+
+idxCard3 <- function(c1, c2, c3) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    as.integer(
+        1 + mtxCombin[52, 3] - mtxCombin[53-c1, 3] +
+            mtxCombin[52-c1, 2] - mtxCombin[53-c2, 2] +
+            mtxCombin[52-c2, 1] - mtxCombin[53-c3, 1]
+              )
+}
+
+idxCard4 <- function(c1, c2, c3, c4) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    as.integer(
+        1 + mtxCombin[52, 4] - mtxCombin[53-c1, 4] +
+            mtxCombin[52-c1, 3] - mtxCombin[53-c2, 3] +
+            mtxCombin[52-c2, 2] - mtxCombin[53-c3, 2] + 
+            mtxCombin[52-c3, 1] - mtxCombin[53-c4, 1]
+              )
+}
+
+idxCard5 <- function(c1, c2, c3, c4, c5) {
+    # Need to convert the C++ algorithm which is 0:51 to R which wants 1:52
+    as.integer(
+        1 + mtxCombin[52, 5] - mtxCombin[53-c1, 5] +
+            mtxCombin[52-c1, 4] - mtxCombin[53-c2, 4] +
+            mtxCombin[52-c2, 3] - mtxCombin[53-c3, 3] + 
+            mtxCombin[52-c3, 2] - mtxCombin[53-c4, 2] +
+            mtxCombin[52-c4, 1] - mtxCombin[53-c5, 1]
+             )
+}
+
+proc.time() - startTime
+
+```
+  
+Each of the 52c5 possible starting hands are created, with hand types declared.  Of particular interest will be tracking the following, with results cached for time considerations:  
+  
+* Nothing (0)  
+* Royal Flush (1)   
+* Straight Flush (2)  
+* Full House (3)  
+* Flush (4)  
+* Straight (5)  
+* Trips (6)  
+* Two Pair (7)  
+* Pair AA (8)  
+* Pair KK (9)  
+* Pair QQ (10)  
+* Pair JJ (11)  
+* Pair TT (12)  
+* Pair 22-99 (13)  
+* AAAA with 2-4 (14)  
+* AAAA with J-K (15)  
+* AAAA with 5-T (16)  
+* 2222/3333/4444 with A (17)  
+* 2222/3333/4444 with 2-4 (18)  
+* 2222/3333/4444 with J-K (19)  
+* 2222/3333/4444 with 5-T (20)  
+* JJJJ/QQQQ/KKKK with A (21)  
+* JJJJ/QQQQ/KKKK with 2-4 (22)  
+* JJJJ/QQQQ/KKKK with J-K (23)  
+* JJJJ/QQQQ/KKKK with 5-T (24)  
+* 5555-TTTT (25)  
+  
+```{r, cache=TRUE}
+
+startTime <- proc.time()
+
+
+# Create the 52c5 hands
+aHands <- t(combn(1:52, 5))
+str(aHands)
+
+
+proc.time() - startTime
+
+
+# Find the ranks and suits
+aRanks <- 1 + (aHands-1) %% 13
+aSuits <- (aHands-1) %/% 13
+    
+
+# Find the flushes
+aFlush <- aSuits[, 1] == aSuits[, 5]
+
+
+# Find the straights
+strMatrix <- matrix(data=0L, nrow=13, ncol=10)
+strMatrix[c(1, 10, 11, 12, 13), 1] <- 1L
+for (intCtr in 1:9) { strMatrix[intCtr:(intCtr+4), intCtr+1] <- 1L }
+
+aRankCount <- matrix(data=-1L, nrow=choose(52, 5), ncol=13)
+for (intCtr in 1:13) { aRankCount[, intCtr] <- rowSums(aRanks == intCtr) }
+
+
+# Find max and count of ranks (sufficient to determine quads, full houses, trips, two pair, and pair)
+aQuads <- rowSums(aRankCount == 4)
+aTrips <- rowSums(aRankCount == 3)
+aPairs <- rowSums(aRankCount == 2)
+aStraight <- rowSums( ((aRankCount == 1) %*% strMatrix) == 5)
+
+
+# Default is that a hand has nothing
+aType <- rep(0L, choose(52, 5))
+
+
+# Declare types for mainline (RF, SF, FH, FL, ST, 3K, 2P)
+aType[aFlush == 1 & aStraight == 1 & aRankCount[, 1] == 1 & 
+          aRankCount[, 13] == 1] <- 1  # Royal Flush
+aType[aFlush == 1 & aStraight == 1 & 
+          (aRankCount[, 1] == 0 | aRankCount[, 13] == 0)] <- 2  # Straight Flush
+aType[aTrips == 1 & aPairs == 1] <- 3  # Full House
+aType[aFlush == 1 & aStraight == 0] <- 4  # Flush
+aType[aFlush == 0 & aStraight == 1] <- 5  # Straight
+aType[aTrips == 1 & aPairs == 0] <- 6  # Trips
+aType[aPairs == 2] <- 7  # Two Pair
+
+
+# Declare types for pairs
+aType[aTrips == 0 & aPairs == 1 & aRankCount[, 1] == 2] <- 8  # Pair Aces
+aType[aTrips == 0 & aPairs == 1 & aRankCount[, 13] == 2] <- 9  # Pair Kings
+aType[aTrips == 0 & aPairs == 1 & aRankCount[, 12] == 2] <- 10  # Pair Queens
+aType[aTrips == 0 & aPairs == 1 & aRankCount[, 11] == 2] <- 11  # Pair Jacks
+aType[aTrips == 0 & aPairs == 1 & aRankCount[, 10] == 2] <- 12  # Pair Tens
+aType[aTrips == 0 & aPairs == 1 & !(aType %in% c(8, 9, 10, 11, 12))] <- 13  # Pair 22-99
+
+
+# Declare types for quads
+quadSubset <- aRankCount[aQuads == 1, ]
+quadType <- apply(quadSubset, 1, FUN=function(x) { c(which(x == 4), which(x == 1)) } )
+quadScore <- rep(-1L, ncol(quadType))
+
+quadScore[quadType[1, ] == 1 & quadType[2, ] %in% c(2, 3, 4)] <- 14  ## AAAA with 2-4
+quadScore[quadType[1, ] == 1 & quadType[2, ] %in% c(11, 12, 13)] <- 15  ## AAAA with J-K
+quadScore[quadType[1, ] == 1 & quadType[2, ] %in% c(5, 6, 7, 8, 9, 10)] <- 16  ## AAAA with 5-T
+
+quadScore[quadType[1, ] %in% c(2, 3, 4) & 
+              quadType[2, ] %in% c(1)] <- 17  ## 2222/3333/4444 with A
+quadScore[quadType[1, ] %in% c(2, 3, 4) & 
+              quadType[2, ] %in% c(2, 3, 4)] <- 18  ## 2222/3333/4444 with 2-4
+quadScore[quadType[1, ] %in% c(2, 3, 4) & 
+              quadType[2, ] %in% c(11, 12, 13)] <- 19  ## 2222/3333/4444 with J-K
+quadScore[quadType[1, ] %in% c(2, 3, 4) & 
+              quadType[2, ] %in% c(5, 6, 7, 8, 9, 10)] <- 20  ## 2222/3333/4444 with 5-T
+
+quadScore[quadType[1, ] %in% c(11, 12, 13) & 
+              quadType[2, ] %in% c(1)] <- 21  ## JJJJ/QQQQ/KKKK with A
+quadScore[quadType[1, ] %in% c(11, 12, 13) & 
+              quadType[2, ] %in% c(2, 3, 4)] <- 22  ## JJJJ/QQQQ/KKKK with 2-4
+quadScore[quadType[1, ] %in% c(11, 12, 13) & 
+              quadType[2, ] %in% c(11, 12, 13)] <- 23  ## JJJJ/QQQQ/KKKK with J-K
+quadScore[quadType[1, ] %in% c(11, 12, 13) & 
+              quadType[2, ] %in% c(5, 6, 7, 8, 9, 10)] <- 24  ## JJJJ/QQQQ/KKKK with 5-T
+
+quadScore[quadType[1, ] %in% c(5, 6, 7, 8, 9, 10)] <- 25  ## 5555/6666/7777/8888/9999/TTTT with any
+
+
+# Populate quad results in to aType
+aType[aQuads == 1] <- quadScore
+data.frame(type=aType) %>% group_by(type) %>% summarize(ct=n()) %>% print.data.frame()
+
+
+proc.time() - startTime
+
+```
+  
+Further, each starting hand is assigned indices for keep0/discard5 down to keep5/discard0 .  Note that hand types have not yet been converted to scores; this is simply the step for finding the relevant indices (cached for run-time optimization):  
+```{r, cache=TRUE}
+
+startTime <- proc.time()
+
+
+getIndices <- function(nKeep, keyFun) {
+
+    mtxKeep <- combn(1:5, nKeep)
+    retResults <- matrix(data=-1L, nrow=nrow(aHands), ncol=ncol(mtxKeep))
+
+    for (intCtr in 1:ncol(mtxKeep)) {
+        thisKey <- mtxKeep[, intCtr, drop=TRUE]
+        thisList <- lapply(seq_along(thisKey), FUN=function(x) { aHands[, thisKey[x]] } )
+        if (length(thisList) == 5) {
+            retResults[, intCtr] <- keyFun(thisList[[1]], thisList[[2]], thisList[[3]], 
+                                           thisList[[4]], thisList[[5]]
+                                           )
+        } else if (length(thisList) == 4) {
+            retResults[, intCtr] <- keyFun(thisList[[1]], thisList[[2]], 
+                                           thisList[[3]], thisList[[4]]
+                                           )
+        } else if (length(thisList) == 3) {
+            retResults[, intCtr] <- keyFun(thisList[[1]], thisList[[2]], thisList[[3]])
+        } else if (length(thisList) == 2) {
+            retResults[, intCtr] <- keyFun(thisList[[1]], thisList[[2]])
+        } else if (length(thisList) == 1) {
+            retResults[, intCtr] <- keyFun(thisList[[1]])
+        } else { stop(paste0("Incorrect list length: ", length(thisList))) }
+    }
+
+    # Pass back the outcome
+    retResults
+    
+}
+
+
+mtxIndices <- matrix(data=-1L, nrow=nrow(aHands), ncol=32)
+
+# Populate the keep-all
+mtxIndices[, 1] <- getIndices(nKeep=5, keyFun=idxCard5)
+proc.time() - startTime
+
+# Populate the keep-four
+mtxIndices[, 2:6] <- getIndices(nKeep=4, keyFun=idxCard4)
+proc.time() - startTime
+
+# Populate the keep-three
+mtxIndices[, 7:16] <- getIndices(nKeep=3, keyFun=idxCard3)
+proc.time() - startTime
+
+# Populate the keep-two
+mtxIndices[, 17:26] <- getIndices(nKeep=2, keyFun=idxCard2)
+proc.time() - startTime
+
+# Populate the keep-one
+mtxIndices[, 27:31] <- getIndices(nKeep=1, keyFun=idxCard1)
+proc.time() - startTime
+
+# Populate the keep-zero
+mtxIndices[, 32] <- 0L
+
+
+proc.time() - startTime
+
+```
+  
+The next step creates the 134,459 non-duplicate starting hands possible (e.g., Ad Kh Tc 9c 3d is the same as As Kh Td 9d 3s), and assigns each a weighting based on how much duplication it covers.  
+  
+This is copied from v004/v005 which was adapted heavily from clever thinking at <http://wizardofodds.com/games/video-poker/methodology/>, using in order:  
+  
+* Four of a Kind (all that matters is what is the rank of the quad/kicker)  
+* Full House (need to know ranks for A full of B, as well as whether B contains the fourth suit or not)  
+* Trips (singletons can be all of fourth suit, one match and one fourth suit, no fourth suit/same, or no fourth suit/different)  
+* Two Pair (suits matter for how much is in common between the two pairs, as well as the singleton)  
+* Pair (many combinations for suits of the singletons)  
+* Nothing (suits matter a great deal!)  
+  
+This component is cached for run-time performance:  
+```{r, cache=TRUE}
+
+startTime <- proc.time()
+
+
+# Quads are simple - there are 13 possible quads and 12 possible kickers
+# Each hand can be captured once with a weight of 4 since the kicker will always match one suit
+quadSmall <- matrix(data=0L, nrow=13*12, ncol=5)
+quadWeight <- rep(4L, times=13*12)
+curIdx <- 1
+
+for (intCtr in 1:13) {
+    for (intCtr2 in (1:13)[-intCtr]) {
+        quadSmall[curIdx, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr+39, intCtr2))
+        curIdx <- curIdx + 1
+    }
+}
+
+
+# Full Houses are not too much more complex, though there are two suit pairing options for each
+fhSmall <- matrix(data=0L, nrow=13*12*2, ncol=5)
+fhWeight <- rep(12L, times=13*12*2)
+curIdx <- 1
+
+for (intCtr in 1:13) {
+    for (intCtr2 in (1:13)[-intCtr]) {
+        # First option has both pairs matching the suits of the trips
+        fhSmall[curIdx, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr2+13))
+        # Second option has one pair not matching the suits of the trips
+        fhSmall[curIdx+1, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr2+39))
+        curIdx <- curIdx + 2
+    }
+}
+
+
+# Trips become a touch more complicated
+# There is weight 24 for both singletons match different trips suits
+# There is weight 12 for one singleton matches and the other does not
+# There is weight 12 for both singletons match the same trips suit
+# There is weight 4 for both singletons match each other but not any of the trips suits
+tripSmall <- matrix(data=0L, nrow=13*choose(12, 2)*5, ncol=5)
+tripWeight <- rep(c(24, 12, 12, 12, 4), times=13*choose(12,2))
+curIdx <- 1
+
+for (intCtr in 1:13) {
+    intAvail <- (1:13)[-intCtr]
+    for (intCtr2 in intAvail[-length(intAvail)]) {
+        for (intCtr3 in intAvail[intAvail > intCtr2]) {
+            # First option has both singletons matching a different trips suit
+            tripSmall[curIdx, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr3+13))
+            # Second option has singleton one matching a trips suit and singleton two not
+            tripSmall[curIdx+1, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr3+39))
+            # Third option has singleton two matching a trips suit and singleton one not
+            tripSmall[curIdx+2, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2+39, intCtr3))
+            # Fourth option has both singletons matching the same trips suit
+            tripSmall[curIdx+3, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2, intCtr3))
+            # Fifth option has both singletons failing to match a trips suit
+            tripSmall[curIdx+4, ] <- sort(c(intCtr, intCtr+13, intCtr+26, intCtr2+39, intCtr3+39))
+            # Increment the index by 5
+            curIdx <- curIdx + 5
+        }
+    }
+}
+
+
+# Two Pair becomes even more complicated
+# There is weight 12 for four suits across the two pair -- singleton matches pair #1 or pair #2
+# There is weight 24 for each of one suit match across the two pair; singleton can be four suits
+# There is weight 12 for the two pair having identical suits; once for the singleton matching, once for not
+twoSmall <- matrix(data=0L, nrow=choose(13, 2)*11*8, ncol=5)
+twoWeight <- rep(c(12, 12, 24, 24, 24, 24, 12, 12), times=choose(13, 2)*11)
+curIdx <- 1
+
+for (intCtr in 1:12) {
+    for (intCtr2 in (intCtr+1):13) {
+        for (intCtr3 in (1:13)[-c(intCtr, intCtr2)]) {
+            
+            # First option has all two pair cards being different suits
+            twoSmall[curIdx, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr2+39, intCtr3))
+            twoSmall[curIdx+1, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr2+39, intCtr3+26))
+            
+            # Second option has one matched suits in the two pair
+            twoSmall[curIdx+2, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr2+26, intCtr3))
+            twoSmall[curIdx+3, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr2+26, intCtr3+13))
+            twoSmall[curIdx+4, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr2+26, intCtr3+26))
+            twoSmall[curIdx+5, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr2+26, intCtr3+39))
+            
+            # Third option has fully matched suits across the two pair
+            twoSmall[curIdx+6, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr2+13, intCtr3))
+            twoSmall[curIdx+7, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr2+13, intCtr3+26))
+            
+            # Increment the index by 8
+            curIdx <- curIdx + 8
+        }
+    }
+}
+
+
+# One Pair becomes even more complicated
+# The pair is (obviously) two-suited; consider them to be 1 and 2; the game is in the singletons
+# Weight 12 (2): Singletons all same suit, once matching to a pair suit, and once not
+# Weight 12 (3): Singletons are suited 2-1, all matching to the pairs - 112, 121, 211
+# Weight 24 (3): Singletons are suited 2-1, two matching to the pairs - 113, 131, 311
+# Weight 24 (3): Singletons are suited 2-1, one matching to the pairs - 133, 313, 331 
+# Weight 12 (3): Singletons are suited 2-1, none matching to the pairs - 344, 434, 443
+# Weight 24 (3): Singletons are suited 1-1-1, two matching to the pairs - 123, 132, 312
+# Weight 24 (3): Singletons are suited 1-1-1, one matching to the pairs - 134, 314, 341
+pairSmall <- matrix(data=0L, nrow=13*choose(12, 3)*20, ncol=5)
+pairWeight <- rep(c(12, 12, 12, 12, 12, 24, 24, 24, 24, 24, 24, 
+                    12, 12, 12, 24, 24, 24, 24, 24, 24), 
+                  times=13*choose(12, 3)
+                  )
+curIdx <- 1
+
+for (intCtr in 1:13) {
+    intAvail <- (1:13)[-intCtr]
+    for (intCtr2 in intAvail[-c(11, 12)]) {
+        nextAvail <- (intCtr2+1):13
+        nextAvail <- nextAvail[!(nextAvail %in% c(intCtr))]
+        for (intCtr3 in nextAvail[-length(nextAvail)]) {
+            lastAvail <- (intCtr3+1):13
+            lastAvail <- lastAvail[!(lastAvail %in% c(intCtr))]
+            for (intCtr4 in lastAvail) {
+                # Weight 12 (2): Singletons all same suit, once matching to a pair suit, and once not
+                pairSmall[curIdx, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3, intCtr4))
+                pairSmall[curIdx+1, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3+26, intCtr4+26))
+            
+                # Weight 12 (3): Singletons are suited 2-1, all matching to the pairs - 112, 121, 211
+                pairSmall[curIdx+2, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3, intCtr4+13))
+                pairSmall[curIdx+3, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3+13, intCtr4))
+                pairSmall[curIdx+4, ] <- sort(c(intCtr, intCtr+13, intCtr2+13, intCtr3, intCtr4))
+                
+                # Weight 24 (3): Singletons are suited 2-1, two matching to the pairs - 113, 131, 311
+                pairSmall[curIdx+5, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3, intCtr4+26))
+                pairSmall[curIdx+6, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3+26, intCtr4))
+                pairSmall[curIdx+7, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3, intCtr4))
+                
+                # Weight 24 (3): Singletons are suited 2-1, one matching to the pairs - 133, 313, 331 
+                pairSmall[curIdx+8, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3+26, intCtr4+26))
+                pairSmall[curIdx+9, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3, intCtr4+26))
+                pairSmall[curIdx+10, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3+26, intCtr4))
+                
+                # Weight 12 (3): Singletons are suited 2-1, none matching to the pairs - 344, 434, 443
+                pairSmall[curIdx+11, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3+39, intCtr4+39))
+                pairSmall[curIdx+12, ] <- sort(c(intCtr, intCtr+13, intCtr2+39, intCtr3+26, intCtr4+39))
+                pairSmall[curIdx+13, ] <- sort(c(intCtr, intCtr+13, intCtr2+39, intCtr3+39, intCtr4+26))
+                
+                # Weight 24 (3): Singletons are suited 1-1-1, two matching to the pairs - 123, 132, 312
+                pairSmall[curIdx+14, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3+13, intCtr4+26))
+                pairSmall[curIdx+15, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3+26, intCtr4+13))
+                pairSmall[curIdx+16, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3, intCtr4+13))
+                
+                # Weight 24 (3): Singletons are suited 1-1-1, one matching to the pairs - 134, 314, 341
+                pairSmall[curIdx+17, ] <- sort(c(intCtr, intCtr+13, intCtr2, intCtr3+26, intCtr4+39))
+                pairSmall[curIdx+18, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3, intCtr4+39))
+                pairSmall[curIdx+19, ] <- sort(c(intCtr, intCtr+13, intCtr2+26, intCtr3+39, intCtr4))
+
+                # Increment the index by 20
+                curIdx <- curIdx + 20
+            }
+        }
+    }
+}
+
+
+# No Pair becomes even more complicated
+# The entire game is in the suits for the singletons
+# Weight 4 (1): Singletons all same suit - 11111
+# Weight 12 (5): Singletons are suited 4-1 - 11112, 11121, 11211, 12111, 21111
+# Weight 12 (10): Singletons are suited 3-2 - 11122, 11212, 11221, 12112, 12121, 
+#                                             12211, 21112, 21121, 21211, 22111
+# Weight 24 (10): Singletons are suited 3-1-1 - 11123, 11213, 11231, 12113, 12131,
+#                                               12311, 21113, 21131, 21311, 23111
+# Weight 24 (15): Singletons are suited 2-2-1 - 11223, 12123, 12213, 11232, 12132, 
+#                                               12231, 11322, 12312, 12321, 13122, 
+#                                               13212, 13221, 31122, 31212, 31221
+# Weight 24 (10): Singletons are suited 2-1-1-1 - 11234, 12134, 12314, 12341, 21134, 
+#                                                 21314, 21341, 23114, 23141, 23411
+noneSmall <- matrix(data=0L, nrow=choose(13, 5)*51, ncol=5)
+noneWeight <- rep(c(4, 12, 12, 12, 12, 12, 
+                    12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 
+                    24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 
+                    24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 
+                    24, 24, 24, 24, 24, 24, 24, 24, 24, 24
+                    ), times=choose(13, 5)
+                  )
+
+mtxAdd <- matrix(data=c(0, 0, 0, 0, 0, 
+                        0, 0, 0, 0, 1,
+                        0, 0, 0, 1, 0, 
+                        0, 0, 1, 0, 0, 
+                        0, 1, 0, 0, 0, 
+                        1, 0, 0, 0, 0, 
+                        0, 0, 0, 1, 1,
+                        0, 0, 1, 0, 1,
+                        0, 1, 0, 0, 1,
+                        1, 0, 0, 0, 1,
+                        0, 0, 1, 1, 0,
+                        0, 1, 0, 1, 0,
+                        1, 0, 0, 1, 0,
+                        0, 1, 1, 0, 0,
+                        1, 0, 1, 0, 0,
+                        1, 1, 0, 0, 0,
+                        0, 0, 0, 1, 2,
+                        0, 0, 1, 0, 2,
+                        0, 1, 0, 0, 2,
+                        1, 0, 0, 0, 2,
+                        0, 0, 1, 2, 0,
+                        0, 1, 0, 2, 0,
+                        1, 0, 0, 2, 0,
+                        0, 1, 2, 0, 0,
+                        1, 0, 2, 0, 0,
+                        1, 2, 0, 0, 0,
+                        0, 0, 1, 1, 2,
+                        0, 1, 0, 1, 2,
+                        1, 0, 0, 1, 2,
+                        0, 0, 1, 2, 1,
+                        0, 1, 0, 2, 1,
+                        1, 0, 0, 2, 1,
+                        0, 0, 2, 1, 1,
+                        0, 1, 2, 0, 1,
+                        1, 0, 2, 0, 1,
+                        0, 2, 0, 1, 1,
+                        0, 2, 1, 0, 1,
+                        1, 2, 0, 0, 1,
+                        2, 0, 0, 1, 1,
+                        2, 0, 1, 0, 1,
+                        2, 1, 0, 0, 1,
+                        0, 0, 1, 2, 3,
+                        0, 1, 0, 2, 3,
+                        0, 1, 2, 0, 3,
+                        0, 1, 2, 3, 0,
+                        1, 0, 0, 2, 3,
+                        1, 0, 2, 0, 3,
+                        1, 0, 2, 3, 0,
+                        1, 2, 0, 0, 3,
+                        1, 2, 0, 3, 0,
+                        1, 2, 3, 0, 0
+                        ) * 13, ncol=5, byrow=TRUE)
+
+curIdx <- 1
+
+for (intCtr in 1:9) {
+    for (intCtr2 in (intCtr+1):10) {
+        for (intCtr3 in (intCtr2+1):11) {
+            for (intCtr4 in (intCtr3+1):12) {
+                for (intCtr5 in (intCtr4+1):13) {
+                    vecNone <- c(intCtr, intCtr2, intCtr3, intCtr4, intCtr5)
+                    mtxNone <- matrix(data=rep(vecNone, times=51), ncol=5, byrow=TRUE)
+                    # IMPORTANT - future classification relies on low-high sorting in each row
+                    noneSmall[curIdx:(curIdx+50), ] <- 
+                        t(apply(mtxNone + mtxAdd, 1, FUN=sort))
+                    curIdx <- curIdx + 51
+                }
+            }
+        }
+    }
+}
+
+
+proc.time() - startTime
+
+```
+  
+Further, the hands and weights are integrated to a single hand matrix and a single weighting vector:  
+```{r}
+startTime <- proc.time()
+
+
+cardSmall <- rbind(quadSmall, fhSmall, tripSmall, twoSmall, pairSmall, noneSmall)
+cardWeight <- c(quadWeight, fhWeight, tripWeight, twoWeight, pairWeight, noneWeight)
+
+str(cardSmall)
+str(cardWeight)
+
+# Confirm that there are sill 52c5 hands after weighting
+all.equal(sum(cardWeight), choose(52, 5))
+
+# Confirm that dimensions of hands and weight match up
+all.equal(nrow(cardSmall), length(cardWeight))
+all.equal(ncol(cardSmall), 5)
+
+# Report the degree of space savings due to the weighting
+summary(cardWeight)
+
+
+# Assign the index for each cardSmall
+cardIndex <- idxCard5(cardSmall[, 1], cardSmall[, 2], cardSmall[, 3], 
+                      cardSmall[, 4], cardSmall[, 5]
+                      )
+str(cardIndex)
+summary(cardIndex)
+all.equal(cardIndex, unique(cardIndex))
+
+proc.time() - startTime
+
+```
+  
+The weighting allows for ~19x reduction in duplication which speeds processing time by roughly ~19x when using "no replacement" for drawing hands.  This is a strong improvement in efficiency.  
+  
+### Scoring (apply pay table)  
+A hands to scores vectors is created and applied to aHands:  
+```{r}
+
+startTime <- proc.time()
+
+
+gameIndex <- 0:25
+
+# Jacks or Better Vector
+hnd2Score <- data.frame(idx=gameIndex, val=c(-1, 
+                                            799, 49,  8,  5,  3, 
+                                              2,  1,  0,  0,  0, 
+                                              0, -1, -1, 24, 24, 
+                                             24, 24, 24, 24, 24, 
+                                             24, 24, 24, 24, 24
+                                            )
+                        )
+
+aScores <- hnd2Score$val[match(aType, gameIndex)]
+
+summary(aScores)
+
+data.frame(aScores=aScores) %>% group_by(aScores) %>% summarize(ct=n())
+
+
+proc.time() - startTime
+
+```
+  
+Next, a function is written to calculate each of the following, assuming that you can get back the original card(s) on the re-draw:  
+  
+* Keep 4  
+* Keep 3  
+* Keep 2  
+* Keep 1  
+  
+There is no need to calculate Keep 5 (it is already aScores) or Keep 0 (it defaults to mean(aScores) everywhere):  
+```{r}
+
+startTime <- proc.time()
+
+
+findEV_YesRedraw <- function(useIdx) {
+    # Assuming re-draw of thrown cards
+    tmpScores <- data.frame(idx=as.vector(mtxIndices[, useIdx]), 
+                            val=rep(aScores, times=length(useIdx))
+                            )
+    
+    # This is what will be returned - mean by Index
+    tmpScores %>% group_by(idx) %>% summarize(ev=mean(val))
+}
+
+
+tmpEVkeep4 <- findEV_YesRedraw(useIdx=2:6)
+tmpEVkeep3 <- findEV_YesRedraw(useIdx=7:16)
+tmpEVkeep2 <- findEV_YesRedraw(useIdx=17:26)
+tmpEVkeep1 <- findEV_YesRedraw(useIdx=27:31)
+
+summary(tmpEVkeep4$ev)
+summary(tmpEVkeep3$ev)
+summary(tmpEVkeep2$ev)
+summary(tmpEVkeep1$ev)
+
+sum(tmpEVkeep4$idx != 1:choose(52,4))
+sum(tmpEVkeep3$idx != 1:choose(52,3))
+sum(tmpEVkeep2$idx != 1:choose(52,2))
+sum(tmpEVkeep1$idx != 1:choose(52,1))
+
+
+proc.time() - startTime
+
+```
+  
+The summary statistics and control totals are "as expected", and the process takes ~8 seconds.  This could be reduced to ~0.5 seconds by using a weighting that avoids redundancy.  However, further effort is needed to make sure that 1) discards are never returned, and 2) optimal holds for each starting hand can be calculated.  
+  
+### Analysis (simulate pay table)  
+Next, all of the holds are run assuming you cannot re-draw discards, using the smaller database.  The key elements are 1) cardSmall (actual hands), 2) cardWeight (weightings for cardSmall), and 3) cardIndex (the mapping of each hand in cardSmall to the corresponding index of aScores:  
+```{r}
+startTime <- proc.time()
+
+
+evSmallNoReplace <- matrix(data=0.0, nrow=nrow(cardSmall), ncol=32)
+
+# Keep 5
+evSmallNoReplace[, 1] <- aScores[cardIndex]
+
+
+proc.time() - startTime
+
+
+# Keep 4 (intCtr: 2 is 1234, 3 is 1235, 4 is 1245, 5 is 1345, 6 is 2345)
+for (intCtr in 2:6) {
+    evSmallNoReplace[, intCtr] <- (48 * tmpEVkeep4$ev[mtxIndices[cardIndex, intCtr]] - 
+                                       evSmallNoReplace[, 1]) / 47
+}
+
+
+proc.time() - startTime
+
+
+# Keep 3 (intCtr: 7 is 123, 8 is 124, 9 is 125, 10 is 134, 11 is 135)
+# Keep 3 (intCtr: 12 is 145, 13 is 234, 14 is 235, 15 is 245, 16 is 345)
+# Take the EV of the 3 cards assuming stand-alone
+# Subtract the EV of each of the 4 cards (3 + 1 discard) assuming stand-alone
+# Add back the EV of the 5 cards assuming stand-alone
+mapKeep3 <- data.frame(idx=7:16, 
+                       keep1=c(2, 2, 3, 2, 3, 4, 2, 3, 4, 5), 
+                       keep2=c(3, 4, 4, 5, 5, 5, 6, 6, 6, 6)
+                       )
+for (intCtr in 7:16) {
+    c1 <- mapKeep3$keep1[mapKeep3$idx == intCtr]
+    c2 <- mapKeep3$keep2[mapKeep3$idx == intCtr]
+    evSmallNoReplace[, intCtr] <- (choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, intCtr]] - 
+                                  48 * tmpEVkeep4$ev[mtxIndices[cardIndex, c1]] -
+                                  48 * tmpEVkeep4$ev[mtxIndices[cardIndex, c2]] + 
+                                  evSmallNoReplace[, 1]
+                              ) / choose(47, 2)
+}
+
+
+proc.time() - startTime
+
+
+# Keep 2 (intCtr: 17 is 12, 18 is 13, 19 is 14, 20 is 15, 21 is 23)
+# Keep 2 (intCtr: 22 is 24, 23 is 25, 24 is 34, 25 is 35, 26 is 45)
+# Take the EV of the 2 cards assuming stand-alone
+# Subtract the EV of each of the 3 cards (2 + 1 discard) assuming stand-alone
+# add back the EV of each of the 4 cards (2 + 2 discard) assuming stand-alone
+# Subtract the EV of the 5 cards assuming stand-alone
+mapKeep2 <- data.frame(idx=17:26, 
+                       keep3_1=c(7,  7,  8,  9,  7,  8,  9, 10, 11, 12), 
+                       keep3_2=c(8, 10, 10, 11, 13, 13, 14, 13, 14, 15),
+                       keep3_3=c(9, 11, 12, 12, 14, 15, 15, 16, 16, 16),
+                       keep4_1=c(2, 2, 2, 3, 2, 2, 3, 2, 3, 4),
+                       keep4_2=c(3, 3, 4, 4, 3, 4, 4, 5, 5, 5),
+                       keep4_3=c(4, 5, 5, 5, 6, 6, 6, 6, 6, 6)
+                       )
+
+for (intCtr in 17:26) {
+    c31 <- mapKeep2$keep3_1[mapKeep2$idx == intCtr]
+    c32 <- mapKeep2$keep3_2[mapKeep2$idx == intCtr]
+    c33 <- mapKeep2$keep3_3[mapKeep2$idx == intCtr]
+    
+    c41 <- mapKeep2$keep4_1[mapKeep2$idx == intCtr]
+    c42 <- mapKeep2$keep4_2[mapKeep2$idx == intCtr]
+    c43 <- mapKeep2$keep4_3[mapKeep2$idx == intCtr]
+    
+    evSmallNoReplace[, intCtr] <- (choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, intCtr]] - 
+                                  choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, c31]] -
+                                  choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, c32]] -
+                                  choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, c33]] +
+                                  choose(48, 1) * tmpEVkeep4$ev[mtxIndices[cardIndex, c41]] +
+                                  choose(48, 1) * tmpEVkeep4$ev[mtxIndices[cardIndex, c42]] +
+                                  choose(48, 1) * tmpEVkeep4$ev[mtxIndices[cardIndex, c43]] -
+                                  evSmallNoReplace[, 1]
+                              ) / choose(47, 3)
+}
+
+
+proc.time() - startTime
+
+
+# Keep 1 (intCtr: 27 is 1, 28 is 2, 29 is 3, 30 is 4, 31 is 5)
+# Take the EV of the 1 card assuming stand-alone
+# Subtract the EV of the 2 cards (1 + 1 discard) assuming stand-alone
+# Add back the EV of each of the 3 cards (1 + 2 discard) assuming stand-alone
+# Subtract the EV of each of the 4 cards (1 + 3 discard) assuming stand-alone
+# Add back the EV of the 5 cards assuming stand-alone
+mapKeep1 <- data.frame(idx=27:31,
+                       keep2_1=c(17, 17, 18, 19, 20),
+                       keep2_2=c(18, 21, 21, 22, 23),
+                       keep2_3=c(19, 22, 24, 24, 25),
+                       keep2_4=c(20, 23, 25, 26, 26),
+                       keep3_1=c(7,   7,  7,  8,  9), 
+                       keep3_2=c(8,   8, 10, 10, 11),
+                       keep3_3=c(9,   9, 11, 12, 12),
+                       keep3_4=c(10, 13, 13, 13, 14),
+                       keep3_5=c(11, 14, 14, 15, 15),
+                       keep3_6=c(12, 15, 16, 16, 16),
+                       keep4_1=c(2, 2, 2, 2, 3),
+                       keep4_2=c(3, 3, 3, 4, 4),
+                       keep4_3=c(4, 4, 5, 5, 5),
+                       keep4_4=c(5, 6, 6, 6, 6)
+                       )
+
+for (intCtr in 27:31) {
+    c21 <- mapKeep1$keep2_1[mapKeep1$idx == intCtr]
+    c22 <- mapKeep1$keep2_2[mapKeep1$idx == intCtr]
+    c23 <- mapKeep1$keep2_3[mapKeep1$idx == intCtr]
+    c24 <- mapKeep1$keep2_4[mapKeep1$idx == intCtr]
+    
+    c31 <- mapKeep1$keep3_1[mapKeep1$idx == intCtr]
+    c32 <- mapKeep1$keep3_2[mapKeep1$idx == intCtr]
+    c33 <- mapKeep1$keep3_3[mapKeep1$idx == intCtr]
+    c34 <- mapKeep1$keep3_4[mapKeep1$idx == intCtr]
+    c35 <- mapKeep1$keep3_5[mapKeep1$idx == intCtr]
+    c36 <- mapKeep1$keep3_6[mapKeep1$idx == intCtr]
+    
+    c41 <- mapKeep1$keep4_1[mapKeep1$idx == intCtr]
+    c42 <- mapKeep1$keep4_2[mapKeep1$idx == intCtr]
+    c43 <- mapKeep1$keep4_3[mapKeep1$idx == intCtr]
+    c44 <- mapKeep1$keep4_4[mapKeep1$idx == intCtr]
+    
+    evSmallNoReplace[, intCtr] <- (choose(51, 4) * tmpEVkeep1$ev[mtxIndices[cardIndex, intCtr]] - 
+                                  choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, c21]] -
+                                  choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, c22]] - 
+                                  choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, c23]] - 
+                                  choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, c24]] + 
+                                  choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, c31]] +
+                                  choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, c32]] +
+                                  choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, c33]] +
+                                  choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, c34]] +
+                                  choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, c35]] +
+                                  choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, c36]] -
+                                  choose(48, 1) * tmpEVkeep4$ev[mtxIndices[cardIndex, c41]] -
+                                  choose(48, 1) * tmpEVkeep4$ev[mtxIndices[cardIndex, c42]] -
+                                  choose(48, 1) * tmpEVkeep4$ev[mtxIndices[cardIndex, c43]] -
+                                  choose(48, 1) * tmpEVkeep4$ev[mtxIndices[cardIndex, c44]] +
+                                  evSmallNoReplace[, 1]
+                              ) / choose(47, 4)
+}
+
+
+proc.time() - startTime
+
+
+# Keep 0 (column 32)
+# Take the EV of the 0 card assuming stand-alone
+# Subtract the EV of each 1 card (0 + 1 discard) assuming stand-alone
+# Add back the EV of each of the 2 cards (0 + 2 discard) assuming stand-alone
+# Subtract the EV of each of the 3 cards (0 + 3 discard) assuming stand-alone
+# Add back the EV of each of the 4 cards (0 + 4 discard) assuming stand-alone
+# Subtract the EV of the 5 cards assuming stand-alone
+
+evSmallNoReplace[, 32] <- (choose(52, 5) * mean(aScores) - 
+                          choose(51, 4) * tmpEVkeep1$ev[mtxIndices[cardIndex, 31]] -
+                          choose(51, 4) * tmpEVkeep1$ev[mtxIndices[cardIndex, 30]] - 
+                          choose(51, 4) * tmpEVkeep1$ev[mtxIndices[cardIndex, 29]] - 
+                          choose(51, 4) * tmpEVkeep1$ev[mtxIndices[cardIndex, 28]] - 
+                          choose(51, 4) * tmpEVkeep1$ev[mtxIndices[cardIndex, 27]] +
+                          choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, 26]] +
+                          choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, 25]] + 
+                          choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, 24]] + 
+                          choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, 23]] + 
+                          choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, 22]] + 
+                          choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, 21]] + 
+                          choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, 20]] + 
+                          choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, 19]] + 
+                          choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, 18]] + 
+                          choose(50, 3) * tmpEVkeep2$ev[mtxIndices[cardIndex, 17]] -
+                          choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, 16]] -
+                          choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, 15]] -
+                          choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, 14]] -
+                          choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, 13]] -
+                          choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, 12]] -
+                          choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, 11]] -
+                          choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, 10]] -
+                          choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, 9]] -
+                          choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, 8]] -
+                          choose(49, 2) * tmpEVkeep3$ev[mtxIndices[cardIndex, 7]] +
+                          choose(48, 1) * tmpEVkeep4$ev[mtxIndices[cardIndex, 6]] +
+                          choose(48, 1) * tmpEVkeep4$ev[mtxIndices[cardIndex, 5]] +
+                          choose(48, 1) * tmpEVkeep4$ev[mtxIndices[cardIndex, 4]] +
+                          choose(48, 1) * tmpEVkeep4$ev[mtxIndices[cardIndex, 3]] +
+                          choose(48, 1) * tmpEVkeep4$ev[mtxIndices[cardIndex, 2]] -
+                          evSmallNoReplace[, 1]
+                      ) / choose(47, 5)
+
+
+proc.time() - startTime
+
+```
+  
+The optimal holds and aggregate EV are the assessed:  
+```{r}
+
+startTime <- proc.time()
+
+
+tempSmallMax <- apply(evSmallNoReplace, 1, FUN=function(x) { c(max(x), which.max(x)) } )
+
+# Calculate descriptive statistics
+summary(rep(tempSmallMax[1, ], times=cardWeight))
+1 + mean(rep(tempSmallMax[1, ], times=cardWeight))
+
+hist(rep(tempSmallMax[2, ], times=cardWeight), breaks=0:33, main="Index for Cards Held", 
+     xlab="1 (hold 5) --- 2-6 (hold 4: 1234, 1235, 1245, 1345, 2345) -- etc. -- 32 (hold 0)",
+     col=c( rep("blue", 1), rep("lightblue", 5), rep("orange", 10),
+            rep("lightgreen", 10), rep("red", 5), rep("black", 1) 
+           ) 
+     )
+
+newSmallCutIdx <- cut(tempSmallMax[2, ], 
+                 breaks=c(0.5, 1.5, 6.5, 16.5, 26.5, 31.5, 32.5)
+                 )
+
+data.frame(newType=rep(newSmallCutIdx, times=cardWeight)) %>% 
+    group_by(newType) %>% summarize(ct=n())
+
+
+proc.time() - startTime
+
+
+# Full run time
+proc.time() - totStart
+
+```
+  
+The control totals and expected values are as expected, and the program runs in ~10 seconds!  
