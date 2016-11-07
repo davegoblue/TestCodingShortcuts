@@ -249,3 +249,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures ggplot2 part3 Multiple Groups/Variables  
 * AdditionalCoding_v005 caches preparation and simulates only the small data (new run time ~10 seconds)  
 * AdditionalCoding_v006 created to include only relevant components of "small data" runs  
+
+### Expansions week of 07-NOV-2016  
+* AdditionalCoding_v006 converts scoring and analysis to functional form  
