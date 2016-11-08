@@ -252,3 +252,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 07-NOV-2016  
 * AdditionalCoding_v006 converts scoring and analysis to functional form  
+* AdditionalCoding_v006 simulates using several input tables  
