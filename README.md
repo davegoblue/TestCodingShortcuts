@@ -254,3 +254,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 converts scoring and analysis to functional form  
 * AdditionalCoding_v006 simulates using several input tables  
 * AdditionalCoding_v006 adds function to apply one set of holds against another set of EV  
+* AdditionalCoding_v006 reduces temporary file memory storage through additional functions  
