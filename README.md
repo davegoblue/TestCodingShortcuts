@@ -258,3 +258,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 assesses JB 96, BP 85, and DDB 96  
 * AdditionalCoding_v006 assesses TDB 97 and TDB 96  
 * AdditionalCoding_v006 assesses using DDB 96 strategy on JB and TDB  
+
+### Expansions week of 14-NOV-2016  
+* AdditionalCoding_v006 assesses BPD 96 using JB 96 strategy  
