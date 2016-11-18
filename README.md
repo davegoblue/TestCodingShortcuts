@@ -264,3 +264,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 assesses variances on the deal for JB 96, JB 85, BP 85, DDB 96, TDB 97, TDB 96, and BPD 96    
 * DataCamp_Insights_v001 captures ggplot2 part3 Large Data (Observations, Variables)  
 * AdditionalCoding_v006 compares holds across games and displays differences    
+* AdditionalCoding_v006 compares holds across JB 96, JB 85, and BP 85    
