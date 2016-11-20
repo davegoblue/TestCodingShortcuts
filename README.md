@@ -266,3 +266,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 compares holds across games and displays differences    
 * AdditionalCoding_v006 compares holds across JB 96, JB 85, and BP 85    
 * AdditionalCoding_v006 compares holds across JB 96, DDB 96, and BPD 96    
+* AdditionalCoding_v006 compares holds across DDB 96 and TDB 96    
