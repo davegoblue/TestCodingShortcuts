@@ -270,3 +270,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 21-NOV-2016  
 * AdditionalCoding_v006 simulates deal-only EV for JB 96 and BP 85    
+* AdditionalCoding_v006 reports percentile deal-only outcomes at 10,000 hands    
