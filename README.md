@@ -272,3 +272,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 simulates deal-only EV for JB 96 and BP 85    
 * AdditionalCoding_v006 reports percentile deal-only outcomes at 10,000 hands    
 * AdditionalCoding_v006 adds flexibility to change number of deals simulated    
+* AdditionalCoding_v006 reports DDB 96 percentiles (EV of deal-only) vs. number of hands    
