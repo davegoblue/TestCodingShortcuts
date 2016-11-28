@@ -276,3 +276,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 allows functional coding for calculating EV of deal-only percentiles    
 * AdditionalCoding_v006 caches a few longer-running components and sets several random seeds    
 * AdditionalCoding_v006 assesses distributions for JB 96, BP 85, DDB 96, BPD 96, and TDB 96    
+
+### Expansions week of 28-NOV-2016  
+* AdditionalCoding_v006 fixes duplicate simGame functions  
