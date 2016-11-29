@@ -279,3 +279,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 28-NOV-2016  
 * AdditionalCoding_v006 fixes duplicate simGame functions  
+* AdditionalCoding_v006 begins exploring variance of the draw  
