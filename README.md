@@ -282,3 +282,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 begins exploring variance of the draw  
 * AdditionalCoding_v006 continues exploring variance of the draw  
 * AdditionalCoding_v006 continues exploring variance of the draw (4-card holds)  
+* AdditionalCoding_v006 continues exploring variance of the draw (3/2/1-card holds)  
