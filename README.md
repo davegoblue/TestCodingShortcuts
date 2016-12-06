@@ -288,5 +288,6 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 05-DEC-2016  
 * AdditionalCoding_v006 explores mean and variance for JB 96, BP 85, BPD 96, DDB 96, TDB 96    
+* AdditionalCoding_v006 explores mean and variance for starting hands of JB 96    
 
   
