@@ -2096,96 +2096,127 @@ So, the overall mean (99.544%) and variance on the deal (17.55) for JB 96 match 
   
 All else equal, the variance of TDB 96 is ~5x the variance of JB 96 / BP 85, and with a lower starting return.  Further, the "average" variance is itself very spiky, comprised of starting hands that vary as much as ~1000x greater than the average!
 
-Next, the individual means and variances for the starting hands of JB 96 are explored:  
+Next, the individual means and variances for the starting hands of a given game are explored:  
 ```{r}
 
-# Get the vector of outcomes for each starting hand (no longer concerned with all 25)
-possOutcomes <- unique(jb96hnd2Score$val)
-jb96Outcomes <- matrix(data=0L, nrow=length(cardIndex), ncol=length(possOutcomes)+1)
+indMeanVar <- function(hnd2Score, listDraws, cIndex=cardIndex, useName) {
 
-# Probably should have created the unique key in the functions; will want it here, so add it
-jb96Outcomes[, 1] <- cardIndex
+    # Get the vector of outcomes for each starting hand (no longer concerned with all 25)
+    possOutcomes <- unique(hnd2Score$val)
+    mtxOutcomes <- matrix(data=0L, nrow=length(cIndex), ncol=length(possOutcomes)+1)
 
-# Next, work through each possible outcome for the draws
-for (intCtr in seq_along(possOutcomes)) {
-    keyCol <- jb96hnd2Score$idx[jb96hnd2Score$val == possOutcomes[intCtr]] + 2
-    cat(intCtr, possOutcomes[intCtr], keyCol, "\n")
-    jb96Outcomes[, intCtr + 1] <- rowSums(jb96Draws$drawSmallNoReplace[, keyCol, drop=FALSE])
+    # Probably should have created the unique key in the functions; will want it here, so add it
+    mtxOutcomes[, 1] <- cIndex
+
+    cat("\n\nThis will assess the", useName, "means and variances\n\n")
+    # Next, work through each possible outcome for the draws
+    for (intCtr in seq_along(possOutcomes)) {
+        keyCol <- hnd2Score$idx[hnd2Score$val == possOutcomes[intCtr]] + 2
+        cat(intCtr, possOutcomes[intCtr], keyCol, "\n")
+        mtxOutcomes[, intCtr + 1] <- rowSums(listDraws$drawSmallNoReplace[, keyCol, drop=FALSE])
+    }
+
+    # Next, see how many starting hand types there are, considering any starting hands
+    # that generate the identical outcomes vector to be indetical for these purposes
+    print(nrow(unique(mtxOutcomes[, -1])))
+
+    # Next, create histograms by the row sums (which is analogous to number of cards held)
+    mtxUnique <- unique(mtxOutcomes[, -1])
+    data.frame(rSum=rowSums(mtxUnique)) %>% 
+        group_by(rSum) %>% 
+        summarize(ct=n()) %>%
+        print.data.frame()
+
+    # Next, create the mean and variance (of the draw) for each of the unique hands
+    # Further, summarize these split by hand type
+    myUniqueFrame <- data.frame(rSum=rowSums(mtxUnique), 
+                                possSum=mtxUnique %*% possOutcomes,
+                                possSum2=mtxUnique %*% possOutcomes^2
+                                )
+
+    myUniqueFrame$uqMean <- myUniqueFrame$possSum / myUniqueFrame$rSum
+    myUniqueFrame$uqVar <- (myUniqueFrame$possSum2 / myUniqueFrame$rSum) - myUniqueFrame$uqMean^2
+
+    # Send back the unique frame
+    myUniqueFrame
+    
 }
 
-# Next, see how many starting hand types there are, considering any starting hands
-# that generate the identical outcomes vector to be indetical for these purposes
-nrow(unique(jb96Outcomes[, -1]))
-
-# Next, create histograms by the row sums (which is analogous to number of cards held)
-jb96Unique <- unique(jb96Outcomes[, -1])
-data.frame(rSum=rowSums(jb96Unique)) %>% 
-    group_by(rSum) %>% 
-    summarize(ct=n())
-
-# Next, create the mean and variance (of the draw) for each of the unique hands
-# Further, summarize these split by hand type
-jb96UniqueFrame <- data.frame(rSum=rowSums(jb96Unique), 
-                              possSum=jb96Unique %*% possOutcomes,
-                              possSum2=jb96Unique %*% possOutcomes^2
-                              )
-
-jb96UniqueFrame$uqMean <- jb96UniqueFrame$possSum / jb96UniqueFrame$rSum
-jb96UniqueFrame$uqVar <- (jb96UniqueFrame$possSum2 / jb96UniqueFrame$rSum) - jb96UniqueFrame$uqMean^2
-
 ```
   
-Interestingly, the JB 96 game has only 1,279 "flavors" of starting hands.  Specifically, there are:  
+Then, the function is run for JB 96 and TDB 96:  
+```{r}
+jb96UniqueFrame <- indMeanVar(hnd2Score=jb96hnd2Score, listDraws=jb96Draws, useName="JB 96")
+tdb96UniqueFrame <- indMeanVar(hnd2Score=tdb96hnd2Score, listDraws=tdb96Draws, useName="TDB 96")
+
+```
+
   
-* 6 flavors of hold 5  
-* 34 flavors of hold 4  
-* 105 flavors of hold 3  
-* 104 flavors of hold 2  
-* 155 flavors of hold 1  
-* 875 flavors of hold 0  
+Interestingly, the JB 96 game has only 1,279 "flavors" of starting hands while the TDB 96 game has even fewer "flavors" of starting hands with 945.  Specifically, there are:  
   
-While hold 0 is the rarest of the starting hands, it contains the most "flavors" since there are many different quantities of straights and flushes that may have been discarded.  
+* 6 flavors of hold 5 in JB 96 (6 in TDB 96)  
+* 34 flavors of hold 4 in JB 96 (43 in TDB 96)  
+* 105 flavors of hold 3 in JB 96 (140 in TDB 96)  
+* 104 flavors of hold 2 in JB 96 (83 in TDB 96)  
+* 155 flavors of hold 1 in JB 96 (369 in TDB 96)  
+* 875 flavors of hold 0 in JB 96 (304 in TDB 96)  
   
+While hold 0 is the rarest of the starting hands, it contains the most "flavors" of JB 96 since there are many different quantities of straights and flushes that may have been discarded.  On the other hand, since TDB 96 will frequently go for long-shots (inside straight draws), there are even fewer flavors of hold 0, but more flavors of hold 4, hold 3, and (especially) hold 1.  
+  
+Next, a function is created for graphing the various outcomes:  
 ```{r}
 
-# Hold all 5
-dummy <- jb96UniqueFrame[jb96UniqueFrame$rSum == choose(47, 0), ]
-plot(x=log10(1+sqrt(dummy$uqVar)), y=log10(2+dummy$uqMean), col="dark green", pch=19, 
-     xlab="Log10 of [1+SD] (SQRT of Variance)", ylab="Log 10 of [2+Mean]", 
-     main="Outcomes of Starting Flavors", 
-     xlim=c(0, log10(100 * max(ceiling(sqrt(jb96UniqueFrame$uqVar)/100)))), ylim=c(0, 3)
-     )
+graphMeanVar <- function(useFrame, useName) {
+    
+    # Hold all 5
+    dummy <- useFrame[useFrame$rSum == choose(47, 0), ]
+    plot(x=log10(1+sqrt(dummy$uqVar)), y=log10(2+dummy$uqMean), col="dark green", pch=19, 
+         xlab="Log10 of [1+SD] (SQRT of Variance)", ylab="Log 10 of [2+Mean]", 
+         main=paste("Outcomes of Starting Flavors for", useName), 
+         xlim=c(0, log10(100 * max(ceiling(sqrt(useFrame$uqVar)/100)))), ylim=c(0, 3)
+         )
 
-# Hold 4 of 5
-dummy <- jb96UniqueFrame[jb96UniqueFrame$rSum == choose(47, 1), ]
-points(x=log10(1+sqrt(dummy$uqVar)), y=log10(2+dummy$uqMean), col="light green", pch=19)
+    # Hold 4 of 5
+    dummy <- useFrame[useFrame$rSum == choose(47, 1), ]
+    points(x=log10(1+sqrt(dummy$uqVar)), y=log10(2+dummy$uqMean), col="light green", pch=19)
 
-# Hold 3 of 5
-dummy <- jb96UniqueFrame[jb96UniqueFrame$rSum == choose(47, 2), ]
-points(x=log10(1+sqrt(dummy$uqVar)), y=log10(2+dummy$uqMean), col="purple", pch=19)
+    # Hold 3 of 5
+    dummy <- useFrame[useFrame$rSum == choose(47, 2), ]
+    points(x=log10(1+sqrt(dummy$uqVar)), y=log10(2+dummy$uqMean), col="purple", pch=19)
 
-# Hold 2 of 5
-dummy <- jb96UniqueFrame[jb96UniqueFrame$rSum == choose(47, 3), ]
-points(x=log10(1+sqrt(dummy$uqVar)), y=log10(2+dummy$uqMean), col="blue", pch=19)
+    # Hold 2 of 5
+    dummy <- useFrame[useFrame$rSum == choose(47, 3), ]
+    points(x=log10(1+sqrt(dummy$uqVar)), y=log10(2+dummy$uqMean), col="blue", pch=19)
 
-# Hold 1 of 5
-dummy <- jb96UniqueFrame[jb96UniqueFrame$rSum == choose(47, 4), ]
-points(x=log10(1+sqrt(dummy$uqVar)), y=log10(2+dummy$uqMean), col="orange", pch=19)
+    # Hold 1 of 5
+    dummy <- useFrame[useFrame$rSum == choose(47, 4), ]
+    points(x=log10(1+sqrt(dummy$uqVar)), y=log10(2+dummy$uqMean), col="orange", pch=19)
 
-# Hold 0 of 5
-dummy <- jb96UniqueFrame[jb96UniqueFrame$rSum == choose(47, 5), ]
-points(x=log10(1+sqrt(dummy$uqVar)), y=log10(2+dummy$uqMean), col=rgb(1, 0, 0, 0.25), pch=19)
+    # Hold 0 of 5
+    dummy <- useFrame[useFrame$rSum == choose(47, 5), ]
+    points(x=log10(1+sqrt(dummy$uqVar)), y=log10(2+dummy$uqMean), col=rgb(1, 0, 0, 0.25), pch=19)
 
-legend("top", legend=paste("Hold", 5:0), pch=19, ncol=3,
-       col=c("dark green", "light green", "purple", "blue", "orange", "red")
-       )
+    legend("top", legend=paste("Hold", 5:0), pch=19, ncol=3,
+           col=c("dark green", "light green", "purple", "blue", "orange", "red")
+           )
 
-abline(h=log10(2+c(-1, 0, 2)), lty=2)
-abline(v=log10(1+c(1, 2, 4)), lty=2)
+    abline(h=log10(2+c(-1, 0, 2)), lty=2)
+    abline(v=log10(1+c(1.5, 4)), lty=2)
+
+}
 
 ```
   
-The draws can then be assessed as in several classes:  
+The function is then run for both JB 96 and TDB 96:  
+```{r}
+
+graphMeanVar(useFrame=jb96UniqueFrame, useName="JB 96")
+graphMeanVar(useFrame=tdb96UniqueFrame, useName="TDB 96")
+
+```
+
+  
+The draws can then be assessed as in several classes for JB 96:  
   
 * High mean, zero variance - all hold 5  
 * High-medium mean, very high variance - handful of hold 3/4  
@@ -2195,7 +2226,7 @@ The draws can then be assessed as in several classes:
 * Low mean, medium variance - handful of hold 2/3/4, and all hold 5  
 * Low mean, low variance - handful of hold 1/2  
   
-Categorized differently:  
+Categorized differently (still for JB 96):  
   
 * Hold 5 - always high mean and zero variance  
 * Hold 4 - mean and variance range from low to very high, with mean and variance correlated  
@@ -2204,3 +2235,4 @@ Categorized differently:
 * Hold 1 - generally low-medium variance and low mean  
 * Hold 0 - low mean, medium variance  
   
+Notably, the TDB 96 game has many higher variance holds, consistent with its overall high variance.  
