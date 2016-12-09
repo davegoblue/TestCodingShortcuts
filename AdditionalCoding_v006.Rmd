@@ -2099,29 +2099,33 @@ All else equal, the variance of TDB 96 is ~5x the variance of JB 96 / BP 85, and
 Next, the individual means and variances for the starting hands of a given game are explored:  
 ```{r}
 
-indMeanVar <- function(hnd2Score, listDraws, cIndex=cardIndex, useName) {
+indMeanVar <- function(hnd2Score, listDraws, useName, 
+                       cIndex=cardIndex, cWeight=cardWeight, allOut=FALSE
+                       ) {
 
     # Get the vector of outcomes for each starting hand (no longer concerned with all 25)
     possOutcomes <- unique(hnd2Score$val)
-    mtxOutcomes <- matrix(data=0L, nrow=length(cIndex), ncol=length(possOutcomes)+1)
+    mtxOutcomes <- matrix(data=0L, nrow=length(cIndex), ncol=length(possOutcomes)+2)
 
     # Probably should have created the unique key in the functions; will want it here, so add it
     mtxOutcomes[, 1] <- cIndex
+    mtxOutcomes[, 2] <- cWeight
 
     cat("\n\nThis will assess the", useName, "means and variances\n\n")
     # Next, work through each possible outcome for the draws
     for (intCtr in seq_along(possOutcomes)) {
         keyCol <- hnd2Score$idx[hnd2Score$val == possOutcomes[intCtr]] + 2
         cat(intCtr, possOutcomes[intCtr], keyCol, "\n")
-        mtxOutcomes[, intCtr + 1] <- rowSums(listDraws$drawSmallNoReplace[, keyCol, drop=FALSE])
+        mtxOutcomes[, intCtr + 2] <- rowSums(listDraws$drawSmallNoReplace[, keyCol, drop=FALSE])
     }
 
     # Next, see how many starting hand types there are, considering any starting hands
     # that generate the identical outcomes vector to be indetical for these purposes
-    print(nrow(unique(mtxOutcomes[, -1])))
+    print(nrow(unique(mtxOutcomes[, -(1:2)])))
 
     # Next, create histograms by the row sums (which is analogous to number of cards held)
-    mtxUnique <- unique(mtxOutcomes[, -1])
+    mtxUnique <- unique(mtxOutcomes[, -(1:2)])
+    str(mtxUnique)
     data.frame(rSum=rowSums(mtxUnique)) %>% 
         group_by(rSum) %>% 
         summarize(ct=n()) %>%
@@ -2137,8 +2141,16 @@ indMeanVar <- function(hnd2Score, listDraws, cIndex=cardIndex, useName) {
     myUniqueFrame$uqMean <- myUniqueFrame$possSum / myUniqueFrame$rSum
     myUniqueFrame$uqVar <- (myUniqueFrame$possSum2 / myUniqueFrame$rSum) - myUniqueFrame$uqMean^2
 
-    # Send back the unique frame
-    myUniqueFrame
+    # Send back the unique frame to whoever called the function
+    # STILL NEED TO GET THIS TO ADD THE WEIGHTS by Hand Types!!!
+    
+    if (!isTRUE(allOut)) {
+        list(uqFrame=myUniqueFrame)
+    } else {
+        list(uqFrame=myUniqueFrame,
+             uqCards=myUniqueCards
+             )
+    }
     
 }
 
@@ -2146,11 +2158,11 @@ indMeanVar <- function(hnd2Score, listDraws, cIndex=cardIndex, useName) {
   
 Then, the function is run for JB 96, BP 85, BPD 96, DDB 96, and TDB 96:  
 ```{r}
-jb96UniqueFrame <- indMeanVar(hnd2Score=jb96hnd2Score, listDraws=jb96Draws, useName="JB 96")
-bp85UniqueFrame <- indMeanVar(hnd2Score=bp85hnd2Score, listDraws=bp85Draws, useName="BP 85")
-bpd96UniqueFrame <- indMeanVar(hnd2Score=bpd96hnd2Score, listDraws=bpd96Draws, useName="BPD 96")
-ddb96UniqueFrame <- indMeanVar(hnd2Score=ddb96hnd2Score, listDraws=ddb96Draws, useName="DDB 96")
-tdb96UniqueFrame <- indMeanVar(hnd2Score=tdb96hnd2Score, listDraws=tdb96Draws, useName="TDB 96")
+jb96UniqueList <- indMeanVar(hnd2Score=jb96hnd2Score, listDraws=jb96Draws, useName="JB 96")
+bp85UniqueList <- indMeanVar(hnd2Score=bp85hnd2Score, listDraws=bp85Draws, useName="BP 85")
+bpd96UniqueList <- indMeanVar(hnd2Score=bpd96hnd2Score, listDraws=bpd96Draws, useName="BPD 96")
+ddb96UniqueList <- indMeanVar(hnd2Score=ddb96hnd2Score, listDraws=ddb96Draws, useName="DDB 96")
+tdb96UniqueList <- indMeanVar(hnd2Score=tdb96hnd2Score, listDraws=tdb96Draws, useName="TDB 96")
 
 ```
 
@@ -2218,11 +2230,11 @@ graphMeanVar <- function(useFrame, useName) {
 The function is then run for JB 96, BP 85, BPD 96, DDB 96, and TDB 96:  
 ```{r}
 
-graphMeanVar(useFrame=jb96UniqueFrame, useName="JB 96")
-graphMeanVar(useFrame=bp85UniqueFrame, useName="BP 85")
-graphMeanVar(useFrame=bpd96UniqueFrame, useName="BPD 96")
-graphMeanVar(useFrame=ddb96UniqueFrame, useName="DDB 96")
-graphMeanVar(useFrame=tdb96UniqueFrame, useName="TDB 96")
+graphMeanVar(useFrame=jb96UniqueList$uqFrame, useName="JB 96")
+graphMeanVar(useFrame=bp85UniqueList$uqFrame, useName="BP 85")
+graphMeanVar(useFrame=bpd96UniqueList$uqFrame, useName="BPD 96")
+graphMeanVar(useFrame=ddb96UniqueList$uqFrame, useName="DDB 96")
+graphMeanVar(useFrame=tdb96UniqueList$uqFrame, useName="TDB 96")
 
 ```
 
@@ -2247,3 +2259,13 @@ Categorized differently (still for JB 96):
 * Hold 0 - low mean, medium variance  
   
 Notably, the DDB 96 and TDB 96 games have many higher variance holds, consistent with overall high variance.  
+
+Next, pre-processing is run to begin assessing the impact of N-play (1 deal, 1 hold, N iid draws).  The impact of N-play can be calculated only once for each "flavor" of hands, then weighted by the likelihood of being dealt that flavor:  
+```{r}
+
+## Assess BPD 96 which has the fewest "flavors" (851)
+
+
+
+```
+  
