@@ -292,5 +292,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 adds functional form for mean and variance for starting hands  
 * AdditionalCoding_v006 further explores JB 96, BP 85, BPD 96, DDB 96, TDB 96   
 * AdditionalCoding_v006 begins to assess hand "flavors" for N-play   
+* AdditionalCoding_v006 continues to assess hand "flavors" for N-play   
 
   
