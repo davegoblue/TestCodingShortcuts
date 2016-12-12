@@ -295,4 +295,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 continues to assess hand "flavors" for N-play   
 * AdditionalCoding_v006 creates summary tables for JB 96, BP 85, BPD 96, DDB 96, and TDB 96   
 
-  
+### Expansions week of 12-DEC-2016  
+* AdditionalCoding_v006 begins to assess 3-play    
