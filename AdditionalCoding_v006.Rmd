@@ -2370,63 +2370,108 @@ totOutcomes(keyList=tdb96UniqueList, useName="TDB 96")
 
 ```
   
-Next, a function is written to look at 3-play:  
+Next, a function is written to look at N-play (defaulted to 3-play and limited to 1-5 play):  
 ```{r}
 
-assess3Play <- function(keyList) {
+assessNPlay <- function(keyList, nPlay=3L) {
     
     hnd2Value <- keyList$mapOuts
     uqCol <- ncol(keyList$uqCards)
     cWeight <- keyList$uqCards[, uqCol]
     uqHands <- keyList$uqCards[, -uqCol]
     
-    mtx3Play <- matrix(data=0, nrow=(uqCol-1)^3, ncol=5, 
-                       dimnames=list(NULL, c("Value", "Freq", "C1", "C2", "C3"))
+    # Only allow nPlay of 1-5 for now (need to improve algorithm otherwise)
+    if (nPlay > 5) {
+        print("Cannot have nPlay > 5, will be re-set to 5")
+        nPlay <- 5L
+    } else if (nPlay < 1) {
+        print("Cannot have nPlay < 1, will be re-set to 1")
+        nPlay <- 1L
+    } else if (!all.equal(as.integer(nPlay), nPlay)) {
+        print("nPlay will be coerced to an integer")
+        nPlay <- as.integer(nPlay)
+    }
+    
+    mtxNPlay <- matrix(data=0, nrow=(uqCol-1)^nPlay, ncol=(2+nPlay), 
+                       dimnames=list(NULL, c("Value", "Freq", paste0("C", 1:nPlay)))
                        )
     
-    # Find the key positions
-    c1 <- rep(rep(1:(uqCol-1), each=(uqCol-1)^2), times=(uqCol-1)^0)
-    c2 <- rep(rep(1:(uqCol-1), each=(uqCol-1)^1), times=(uqCol-1)^1)
-    c3 <- rep(rep(1:(uqCol-1), each=(uqCol-1)^0), times=(uqCol-1)^2)
+    # Find and store the key positions
+    cNum <- vector("list", length=nPlay)
+    for (intCtr in 1:nPlay) {
+        cNum[[intCtr]] <- rep(rep(1:(uqCol-1), each=(uqCol-1)^(nPlay-intCtr)
+                                  ), times=(uqCol-1)^(intCtr-1)
+                              )
+    }
+
+    print(str(cNum))
+    
     
     # Populate the value of the key positions
-    mtx3Play[, 3] <- hnd2Value[c1]
-    mtx3Play[, 4] <- hnd2Value[c2]
-    mtx3Play[, 5] <- hnd2Value[c3]
+    for (intCtr in 1:nPlay) {
+        mtxNPlay[, (intCtr+2)] <- hnd2Value[cNum[[intCtr]]]
+    }
     
     # Populate the overall value of the outcome
-    mtx3Play[, 1] <- rowSums(mtx3Play[, -(1:2)])
+    mtxNPlay[, 1] <- rowSums(mtxNPlay[, -(1:2), drop=FALSE])
 
     # Populate the overall frequencies of the outcome
+    # Horribly inefficient outer loop - need to vectorize!
     for (intCtr in 1:nrow(uqHands)) {
         keyFreqs <- uqHands[intCtr, ] / sum(uqHands[intCtr, ])
         
-        # Horribly inefficient - need to vectorize
-        for (intCtr2 in 1:nrow(mtx3Play)) {
-            sumThis <- cWeight[intCtr] * keyFreqs[c1[intCtr2]] * 
-                keyFreqs[c2[intCtr2]] * keyFreqs[c3[intCtr2]]
-            mtx3Play[intCtr2, 2] <- mtx3Play[intCtr2, 2] + sumThis
-        }
+        tmpSapply <- sapply(cNum, FUN=function(x) { keyFreqs[as.vector(x)] } )
+        tmpProd <- cWeight[intCtr] * apply(tmpSapply, 1, FUN=prod)
+        mtxNPlay[, 2] <- mtxNPlay[, 2] + tmpProd
+        
+        # Horribly inefficient inner loop - need to vectorize (see attempt above)        
+        # for (intCtr2 in 1:nrow(mtxNPlay)) {
+            
+            # Find the relevant product and then sum
+            # keyProd <- prod(keyFreqs[sapply(cNum, FUN="[", intCtr2)])
+            # sumThis <- cWeight[intCtr] * keyProd
+            
+            # sumThis <- sumThis + cWeight[intCtr] * keyFreqs[c1[intCtr2]] * 
+            #     keyFreqs[c2[intCtr2]] * keyFreqs[c3[intCtr2]]
+            
+            # Add this to the second column
+            # mtxNPlay[intCtr2, 2] <- mtxNPlay[intCtr2, 2] + sumThis
+        # }
+        
     }
     
-    str(mtx3Play)
-    head(mtx3Play)
-    length(table(mtx3Play[, 1]))
+    # See the number of unique outcomes
+    print(length(table(mtxNPlay[, 1])))
     
-    mtx3Play
+    # Mean expressed on a percentage basis
+    keyMean <- sum(mtxNPlay[, 2] * mtxNPlay[, 1]) / sum(mtxNPlay[, 2])
+    cat("\n\nMean:", 1 + keyMean/nPlay)  # To move this back to a "per full bet" basis
 
-    # Mean
-    keyMean <- sum(mtx3Play[, 2] * mtx3Play[, 1]) / sum(mtx3Play[, 2])
-    cat("\n\nMean:", 1 + keyMean/3)  # To move this back to a "per full bet" basis
-
-    # Variance 
-    keyVar <- sum(mtx3Play[, 2] * mtx3Play[, 1]^2) / sum(mtx3Play[, 2]) - keyMean^2
-    cat("\t\tVariance:", keyVar/3)  # To move this back to a "per full bet" basis
+    # Variance expressed as the overall variance per "base unit"
+    keyVar <- sum(mtxNPlay[, 2] * mtxNPlay[, 1]^2) / sum(mtxNPlay[, 2]) - keyMean^2
+    cat("\t\tVariance:", keyVar)  # Leave this "as is"; it is the full variance amount
+    
+    mtxNPlay
     
 }
 
-jb96_3Play <- assess3Play(keyList=jb96UniqueList)
-tdb96_3Play <- assess3Play(keyList=tdb96UniqueList)
+
+# Run as 1/3-play for JB 96, BP 85, BPD 96, DDB 96, and TDB 96
+jb96_1Play <- assessNPlay(keyList=jb96UniqueList, nPlay=1L)
+jb96_3Play <- assessNPlay(keyList=jb96UniqueList, nPlay=3L)
+
+bp85_1Play <- assessNPlay(keyList=bp85UniqueList, nPlay=1L)
+bp85_3Play <- assessNPlay(keyList=bp85UniqueList, nPlay=3L)
+
+bpd96_1Play <- assessNPlay(keyList=bpd96UniqueList, nPlay=1L)
+bpd96_3Play <- assessNPlay(keyList=bpd96UniqueList, nPlay=3L)
+
+ddb96_1Play <- assessNPlay(keyList=ddb96UniqueList, nPlay=1L)
+ddb96_3Play <- assessNPlay(keyList=ddb96UniqueList, nPlay=3L)
+
+tdb96_1Play <- assessNPlay(keyList=tdb96UniqueList, nPlay=1L)
+tdb96_3Play <- assessNPlay(keyList=tdb96UniqueList, nPlay=3L)
+
 
 ```
-  
+    
