@@ -298,3 +298,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 12-DEC-2016  
 * AdditionalCoding_v006 begins to assess 3-play    
 * AdditionalCoding_v006 vectorizes inner loop for N-play and assesses all games for n=1, 3    
+* AdditionalCoding_v006 partially vectorizes outer loop for N-play and assesses all games for n=1, 3    
