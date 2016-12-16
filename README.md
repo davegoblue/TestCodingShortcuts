@@ -300,3 +300,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 vectorizes inner loop for N-play and assesses all games for n=1, 3    
 * AdditionalCoding_v006 partially vectorizes outer loop for N-play and assesses all games for n=1, 3    
 * AdditionalCoding_v006 further adapts methodology for N-play outcomes for n=1, 3    
+* AdditionalCoding_v006 attempts arrays for assessing N-play outcomes for n=5    
