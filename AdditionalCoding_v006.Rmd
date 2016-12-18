@@ -2380,35 +2380,47 @@ assessNPlay <- function(keyList, nPlay=3L) {
     cWeight <- keyList$uqCards[, uqCol]
     uqHands <- keyList$uqCards[, -uqCol]
     
-    # Only allow nPlay of 1-5 for now (need to improve algorithm otherwise)
-    if (nPlay > 5) {
-        print("Cannot have nPlay > 5, will be re-set to 5")
+    # Only allow nPlay of 1-5 or 10 for now (need to improve algorithm otherwise)
+    if (nPlay > 10) {
+        print("Cannot have nPlay > 10, will be re-set to 10")
+        nPlay <- 10L
+        nBase <- 5L  # Run it as a 5-play draw multiplied due to vector sizes/memory
+    } else if (nPlay == 10) {
+        print("nPlay 10 assessed using nPlay 5 frequencies appropriately multiplied/summed")
+        nBase <- 5L  # Run it as a 5-play draw multiplied due to vector sizes/memory
+    } else if (nPlay > 5) {
+        print("Only nPlay of 1-5 or 10 may be used, will be re-set to 5")
         nPlay <- 5L
+        nBase <- 5L  
     } else if (nPlay < 1) {
         print("Cannot have nPlay < 1, will be re-set to 1")
         nPlay <- 1L
+        nBase <- 1L
     } else if (!all.equal(as.integer(nPlay), nPlay)) {
         print("nPlay will be coerced to an integer")
         nPlay <- as.integer(nPlay)
+        nBase <- nPlay
+    } else {
+        nBase <- nPlay
     }
     
-    mtxNPlay <- matrix(data=0, nrow=(uqCol-1)^nPlay, ncol=(2+nPlay), 
-                       dimnames=list(NULL, c("Value", "Freq", paste0("C", 1:nPlay)))
+    mtxNPlay <- matrix(data=0, nrow=(uqCol-1)^nBase, ncol=(2+nBase), 
+                       dimnames=list(NULL, c("Value", "Freq", paste0("C", 1:nBase)))
                        )
     
     # Find and store the key positions
-    cNum <- vector("list", length=nPlay)
-    for (intCtr in 1:nPlay) {
-        cNum[[intCtr]] <- rep(rep(1:(uqCol-1), each=(uqCol-1)^(nPlay-intCtr)
+    cNum <- vector("list", length=nBase)
+    for (intCtr in 1:nBase) {
+        cNum[[intCtr]] <- rep(rep(1:(uqCol-1), each=(uqCol-1)^(nBase-intCtr)
                                   ), times=(uqCol-1)^(intCtr-1)
                               )
     }
 
-    print(str(cNum))
+    str(cNum)
     
     
     # Populate the value of the key positions
-    for (intCtr in 1:nPlay) {
+    for (intCtr in 1:nBase) {
         mtxNPlay[, (intCtr+2)] <- hnd2Value[cNum[[intCtr]]]
     }
     
@@ -2421,7 +2433,7 @@ assessNPlay <- function(keyList, nPlay=3L) {
     print(table(rowSums(mtxFreqs)))
     
     cVec <- sapply(cNum, FUN=function(x) { as.vector(x) })
-    print(str(cVec))
+    str(cVec)
     print(head(cVec))
 
     # See the number of unique outcomes
@@ -2459,8 +2471,10 @@ assessNPlay <- function(keyList, nPlay=3L) {
     
     cat("\nMoving to assess the:", nrow(dfOutcome), "rows of outcomes\n")
     
-    # Use a work-around specific to the 5-play game (expand and generalize the logic later)
-    if (nPlay == 5) {
+    # Use a work-around specific to 5/10-play (expand and generalize the logic later)
+    if (nPlay %in% c(5, 10)) {
+        
+        storeOutcomes <- matrix(data=NA, nrow=nrow(mtxFreqs), ncol=length(dfOutcome$nOutcome))
         
         for (intCtr in 1:nrow(dfOutcome)) {
             # Find the key outcome
@@ -2486,9 +2500,12 @@ assessNPlay <- function(keyList, nPlay=3L) {
             }
         
             dfOutcome$wts[intCtr] <- dfOutcome$wts[intCtr] + sum(cWeight * rowSums(mtxApply))
+            storeOutcomes[, intCtr] <- rowSums(mtxApply)    
         }
         
     } else {
+        
+        storeOutcomes <- NULL  # Not needed for these hands (nPlay of 1-4)
         
         for (intCtr in 1:nrow(dfOutcome)) {
         
@@ -2517,22 +2534,54 @@ assessNPlay <- function(keyList, nPlay=3L) {
     
     }
     
-    # Mean expressed on a percentage basis
-    # keyMean <- sum(mtxNPlay[, 2] * mtxNPlay[, 1]) / sum(mtxNPlay[, 2])
-    keyMean <- sum(dfOutcome$wts * dfOutcome$nOutcome) / sum(dfOutcome$wts)
-    cat("\n\nMean:", 1 + keyMean/nPlay)  # To move this back to a "per full bet" basis
+    if (nPlay %in% c(1, 2, 3, 4, 5)) {
+        
+        # Mean expressed on a percentage basis
+        # keyMean <- sum(mtxNPlay[, 2] * mtxNPlay[, 1]) / sum(mtxNPlay[, 2])
+        keyMean <- sum(dfOutcome$wts * dfOutcome$nOutcome) / sum(dfOutcome$wts)
+        cat("\n\nMean:", 1 + keyMean/nPlay)  # To move this back to a "per full bet" basis
 
-    # Variance expressed as the overall variance per "base unit"
-    # keyVar <- sum(mtxNPlay[, 2] * mtxNPlay[, 1]^2) / sum(mtxNPlay[, 2]) - keyMean^2
-    keyVar <- sum(dfOutcome$wts * dfOutcome$nOutcome^2) / sum(dfOutcome$wts) - keyMean^2
-    cat("\t\tVariance:", keyVar, "\n")  # Leave this "as is"; it is the full variance amount
+        # Variance expressed as the overall variance per "base unit"
+        # keyVar <- sum(mtxNPlay[, 2] * mtxNPlay[, 1]^2) / sum(mtxNPlay[, 2]) - keyMean^2
+        keyVar <- sum(dfOutcome$wts * dfOutcome$nOutcome^2) / sum(dfOutcome$wts) - keyMean^2
+        cat("\t\tVariance:", keyVar, "\n")  # Leave this "as is"; it is the full variance amount
+        
+        out10Play <- NULL
+        
+    } else if (nPlay %in% c(10)) {
+        
+        # Need to expand the 5-play to behave like the 10-play
+        grid10 <- expand.grid(1:length(dfOutcome$nOutcome), 1:length(dfOutcome$nOutcome))
+        grid10$sumRes <- dfOutcome$nOutcome[grid10$Var1] + dfOutcome$nOutcome[grid10$Var2]
+        
+        # Find the potential results (perhaps matricize . . .)
+        out10Play <- data.frame(nOutcome=sort(unique(grid10$sumRes)), wts=0)
+        for (intCtr in 1:nrow(grid10)) {
+            keyVal <- storeOutcomes[, grid10$Var1[intCtr]] * storeOutcomes[, grid10$Var2[intCtr]]
+            out10Spot <- which(out10Play$nOutcome == grid10$sumRes[intCtr])
+            out10Play$wts[out10Spot] <- out10Play$wts[out10Spot] + sum(cWeight * keyVal)
+        }
+        
+        # Report back on the mean and the variance
+
+        # Mean expressed on a percentage basis
+        keyMean <- sum(out10Play$wts * out10Play$nOutcome) / sum(out10Play$wts)
+        cat("\n\nMean:", 1 + keyMean/nPlay)  # To move this back to a "per full bet" basis
+
+        # Variance expressed as the overall variance per "base unit"
+        keyVar <- sum(out10Play$wts * out10Play$nOutcome^2) / sum(out10Play$wts) - keyMean^2
+        cat("\t\tVariance:", keyVar, "\n")  # Leave this "as is"; it is the full variance amount
+        
+    }
     
-    list(dfOutcome=dfOutcome, mtxNPlay=mtxNPlay)
+    list(dfOutcome=dfOutcome, mtxNPlay=mtxNPlay, 
+         storeOutcomes=storeOutcomes, out10Play=out10Play
+         )
     
 }
 
 
-# Run as 1/3-play for JB 96, BP 85, BPD 96, DDB 96, and TDB 96
+# Run as 1/3/5-play for JB 96, BP 85, BPD 96, DDB 96, and TDB 96
 jb96_1Play <- assessNPlay(keyList=jb96UniqueList, nPlay=1L)
 jb96_3Play <- assessNPlay(keyList=jb96UniqueList, nPlay=3L)
 jb96_5Play <- assessNPlay(keyList=jb96UniqueList, nPlay=5L)
@@ -2553,6 +2602,17 @@ tdb96_1Play <- assessNPlay(keyList=tdb96UniqueList, nPlay=1L)
 tdb96_3Play <- assessNPlay(keyList=tdb96UniqueList, nPlay=3L)
 tdb96_5Play <- assessNPlay(keyList=tdb96UniqueList, nPlay=5L)
 
-
 ```
   
+The 10-play variant is cached due to long run times; will need to kill the cache if changing the 10-play algorithm:  
+```{r, cache=TRUE}
+
+# Run as 10-play for JB 96, BP 85, BPD 96, DDB 96, and TDB 96
+jb96_10Play <- assessNPlay(keyList=jb96UniqueList, nPlay=10L)
+bp85_10Play <- assessNPlay(keyList=bp85UniqueList, nPlay=10L)
+bpd96_10Play <- assessNPlay(keyList=bpd96UniqueList, nPlay=10L)
+ddb96_10Play <- assessNPlay(keyList=ddb96UniqueList, nPlay=10L)
+tdb96_10Play <- assessNPlay(keyList=tdb96UniqueList, nPlay=10L)
+
+```
+
