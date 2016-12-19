@@ -303,3 +303,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 attempts arrays for assessing N-play outcomes for n=5    
 * AdditionalCoding_v006 pre-multiplies frequencies to significantly speed up N-play outcome assessments for n=5    
 * AdditionalCoding_v006 creates initial N-play outcome assessments for n=10    
+
+### Expansions week of 19-DEC-2016  
+* AdditionalCoding_v006 vectorizes solution for driving 5-play to 10-play  
