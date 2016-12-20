@@ -976,10 +976,12 @@ simPayTable <- function(useEV, useHold, useWeights) {
     return(newEV)
 }
 
-
+```
+  
+The simulations take ~10 seconds each, and the results are cached for quicker run times:  
+```{r, cache=TRUE}
 
 startTime <- proc.time()
-
 
 
 # Run the game for JB 96
@@ -1099,6 +1101,12 @@ bpd96hnd2Score <- data.frame(idx=gameIndex, val=c( -1,
 bpd96List <- simGame(h2S=bpd96hnd2Score)
 proc.time() - startTime
 
+```
+  
+The various games are then assessed, including implications on EV when using strategy A on game B:  
+```{r}
+
+startTime <- proc.time()
 
 
 # Find the EV for using the JB 96 strategy on the JB 85 game
@@ -2370,7 +2378,7 @@ totOutcomes(keyList=tdb96UniqueList, useName="TDB 96")
 
 ```
   
-Next, a function is written to look at N-play (defaulted to 3-play and limited to 1-5 play):  
+Next, a function is written to look at N-play (defaulted to 3-play and limited to 1-5 or 10 play):  
 ```{r}
 
 assessNPlay <- function(keyList, nPlay=3L) {
@@ -2625,6 +2633,88 @@ bp85_10Play <- assessNPlay(keyList=bp85UniqueList, nPlay=10L)
 bpd96_10Play <- assessNPlay(keyList=bpd96UniqueList, nPlay=10L)
 ddb96_10Play <- assessNPlay(keyList=ddb96UniqueList, nPlay=10L)
 tdb96_10Play <- assessNPlay(keyList=tdb96UniqueList, nPlay=10L)
+
+```
+
+Next, 2,000 simulations are run for up to 16,000 hands, with the percentiles assessed:  
+```{r}
+
+sim_NPlay <- function(keyFrame, useName, nPlay, nHands, nSims) {
+    
+    # Extract outcomes and associated odds from the N-play list
+    oddsNPlay <- round(100 * keyFrame$wts, 0)
+    resNPlay <- keyFrame$nOutcome
+    
+    # Validate that the rouding of odds has not adversely impacted mean/variance
+    meanNPlay <- sum(oddsNPlay * resNPlay) / sum(oddsNPlay)
+    varNPlay <- sum(oddsNPlay * resNPlay^2) / sum(oddsNPlay) - meanNPlay^2
+    cat("\nMean return per hand:", 1+meanNPlay/nPlay, "with total variance:", varNPlay)
+    
+    # Take an appropriately sized sample from the resNPlay
+    holdNPlay <- base::sample(rep(resNPlay, times=oddsNPlay), 
+                              nSims*nHands, replace=TRUE
+                              )
+    
+    # Convert to the overall outcomes (each column is a simulation)
+    sumsNPlay <- colSums(matrix(holdNPlay, ncol=nSims))
+    
+    # Report on the overall mean and variance/standard deviation
+    meanOverall <- mean(sumsNPlay) / nHands
+    varOverall <- var(sumsNPlay)
+    sdOverall <- sd(sumsNPlay)
+    cat("\nMean return per hand:", 
+        paste0(round(100 * (1 + meanOverall/nPlay), 3), "%"), 
+        "with total variance (sd as % of total bet):", 
+        prettyNum(round(varOverall, 0), big.mark=","), "(", 
+        paste0(round(100*sdOverall/nHands/nPlay, 2), "%"), ")\n"
+        )
+    print(round(quantile(sumsNPlay/nHands/nPlay, 
+                         c(0.01, 0.05, 0.10, 0.25, 0.5, 0.75, 0.90, 0.95, 0.99)
+                         )
+                , 4)
+          )
+    
+    # Report on the percentage distributions
+    par(mfrow=c(1, 2))
+    hist(sumsNPlay/nHands/nPlay, col="light blue", 
+         main=paste0("% Ret: ", nPlay, "-play (", nHands, " ", useName," deals)")
+         )
+    plot(x=(1:nSims)/nSims, y=sort(sumsNPlay/nHands/nPlay), pch=19, col="navy blue", 
+         main=paste0("% Ret: ", nPlay, "-play (", nHands, " ", useName," deals)"), 
+         xlab="Percentile", ylab="% Returns"
+         )
+    abline(h=0, v=0.5, lty=2)
+    par(mfrow=c(1, 1))
+
+    sumsNPlay
+    
+}
+
+# Run for 10-play with 2,000 simulations of 16,000 hands
+set.seed(1612200748)
+jb96_10Sim <- sim_NPlay(keyFrame=jb96_10Play$out10Play, useName="JB 96", 
+                        nPlay=10, nHands=16000, nSim=2000
+                        )
+
+set.seed(1612201348)
+bp85_10Sim <- sim_NPlay(keyFrame=bp85_10Play$out10Play, useName="BP 85", 
+                        nPlay=10, nHands=16000, nSim=2000
+                        )
+
+set.seed(2016122008)
+bpd96_10Sim <- sim_NPlay(keyFrame=bpd96_10Play$out10Play, useName="BPD 96", 
+                         nPlay=10, nHands=16000, nSim=2000
+                         )
+
+set.seed(1220160749)
+ddb96_10Sim <- sim_NPlay(keyFrame=ddb96_10Play$out10Play, useName="DDB 96", 
+                         nPlay=10, nHands=16000, nSim=2000
+                         )
+
+set.seed(1220201608)
+tdb96_10Sim <- sim_NPlay(keyFrame=tdb96_10Play$out10Play, useName="TDB 96", 
+                         nPlay=10, nHands=16000, nSim=2000
+                         )
 
 ```
 
