@@ -308,3 +308,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 vectorizes solution for driving 5-play to 10-play  
 * AdditionalCoding_v006 assesses 10-play percentiles for 16,000 hands  
 * AdditionalCoding_v006 assesses 5-play percentiles for 16,000 hands  
+* AdditionalCoding_v006 vectorizes solution for doubling hands (creating 2-play and 4-play)  
+  
