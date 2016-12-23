@@ -2747,79 +2747,142 @@ tdb96_5Sim <- sim_NPlay(keyFrame=tdb96_5Play$dfOutcome, useName="TDB 96",
 A second attempt is made to further vectorize the n-play process, with results compared to the previous results:  
 ```{r}
 
+# Function to create the 1-play data
+get_uq1Play <- function(keyList) {
+
+    # Get the basic parameters
+    uq_1PlayRes <- keyList$mapOuts
+    uqCol <- ncol(keyList$uqCards)
+    cWeight <- keyList$uqCards[, uqCol]
+    uqHands <- keyList$uqCards[, -uqCol]
+
+    # Convert uqHands to percentage outcomes by hand
+    uq_1Play <- diag(1/rowSums(uqHands)) %*% uqHands
+    str(uq_1Play)
+    table(rowSums(uq_1Play))
+    
+    list(uq_Play=uq_1Play, uq_Res=uq_1PlayRes, cWeight=cWeight)
+    
+}
+
+
+# Get the 1-play data for JB 96, BP 85, and TDB 96
 startTime <- proc.time()
 
+jb96_uq001 <- get_uq1Play(keyList=jb96UniqueList)
+str(jb96_uq001)
 
-# Get the basic parameters
-hnd2Value <- jb96UniqueList$mapOuts
-uqCol <- ncol(jb96UniqueList$uqCards)
-cWeight <- jb96UniqueList$uqCards[, uqCol]
-uqHands <- jb96UniqueList$uqCards[, -uqCol]
+bp85_uq001 <- get_uq1Play(keyList=bp85UniqueList)
+str(bp85_uq001)
 
-# Convert uqHands to percentage outcomes by hand
-uq_1Play <- diag(1/rowSums(uqHands)) %*% uqHands
-str(uq_1Play)
-table(rowSums(uq_1Play))
+tdb96_uq001 <- get_uq1Play(keyList=tdb96UniqueList)
+str(tdb96_uq001)
 
-
-# Take the jb96UniqueList and expand from 1-play to 2-play
-# Expand the 1279x10 to 1279x100, representing the probabilities squared
-full_2Play <- t(apply(uq_1Play, 1, FUN=function(x) { outer(x, x) } ))
-str(full_2Play)
-table(rowSums(full_2Play))
-
-# Associate the outcomes to each of these probabilities squared
-res_2Play <- as.vector(outer(hnd2Value, hnd2Value, FUN="+"))
-
-# Convert the full_2Play in to a unique hand with values by column
-uqRes_2Play <- sort(unique(res_2Play))
-map_2Play <- matrix(data=0L, nrow=ncol(full_2Play), ncol=length(uqRes_2Play))
-map_2mtx <- matrix(data=c(1:length(res_2Play), match(res_2Play, uqRes_2Play)), 
-                   nrow=length(res_2Play)
-                   ) 
-map_2Play[ map_2mtx ] <- 1L
-uq_2Play <- full_2Play %*% map_2Play
-
-
-# Take the jb96UniqueList and expand from 2-play to 4-play
-# Expand the 1279x46 to 1279x2116, representing the probabilities squared
-full_4Play <- t(apply(uq_2Play, 1, FUN=function(x) { outer(x, x) } ))
-str(full_4Play)
-table(rowSums(full_4Play))
-
-# Associate the outcomes to each of these probabilities squared
-res_4Play <- as.vector(outer(uqRes_2Play, uqRes_2Play, FUN="+"))
-
-# Convert the full_4Play in to a unique hand with values by column
-uqRes_4Play <- sort(unique(res_4Play))
-map_4Play <- matrix(data=0L, nrow=ncol(full_4Play), ncol=length(uqRes_4Play))
-map_4mtx <- matrix(data=c(1:length(res_4Play), match(res_4Play, uqRes_4Play)), 
-                   nrow=length(res_4Play)
-                   ) 
-map_4Play[ map_4mtx ] <- 1L
-uq_4Play <- full_4Play %*% map_4Play
-
-
-# Compare with the former algorithm
-new_2dfOutcome <- data.frame(nOutcome=uqRes_2Play, 
-                             wts=colSums(diag(cWeight) %*% uq_2Play)
-                             )
-new_4dfOutcome <- data.frame(nOutcome=uqRes_4Play, 
-                             wts=colSums(diag(cWeight) %*% uq_4Play)
-                             )
 proc.time() - startTime
 
 
+# Function to cross-product n-play and m-play
+create_mnPlay <- function(keyN, keyM) {
+    
+    aTest <- matrix(data=0, nrow=nrow(keyN$uq_Play), 
+                    ncol=ncol(keyM$uq_Play)*ncol(keyN$uq_Play)
+                    )
+    
+    # Matrix multiply by "flavor" (unique rows)
+    for (intCtr in 1:nrow(keyN$uq_Play)) {
+        aTest[intCtr, ] <- as.vector( outer( keyN$uq_Play[intCtr, ], keyM$uq_Play[intCtr, ] ) )
+    }
+ 
+    # Sum outcomes for matrix cross product (column values for aTest)
+    aScore <- as.vector(outer(keyN$uq_Res, keyM$uq_Res, FUN="+"))
+    
+    # Find and sort the unique scores
+    uqRes <- sort(unique(aScore))
+
+    # Convert the full aTest in to unique hands with values by column
+    map_Play <- matrix(data=0L, nrow=ncol(aTest), ncol=length(uqRes))
+    map_Mtx <- matrix(data=c(1:length(aScore), match(aScore, uqRes)), 
+                      nrow=length(aScore)
+                      ) 
+    map_Play[ map_Mtx ] <- 1L
+    uq_Play <- aTest %*% map_Play
+    
+    list(uq_Play=uq_Play, uq_Res=uqRes, cWeight=keyN$cWeight)
+        
+}
+
+
+# Take JB 96, BP 85, and TDB 96 and expand from 1-play to 2-5 play
 startTime <- proc.time()
+
+jb96_uq002 <- create_mnPlay(keyN=jb96_uq001, keyM=jb96_uq001)
+jb96_uq003 <- create_mnPlay(keyN=jb96_uq002, keyM=jb96_uq001)
+jb96_uq004 <- create_mnPlay(keyN=jb96_uq003, keyM=jb96_uq001)
+jb96_uq005 <- create_mnPlay(keyN=jb96_uq004, keyM=jb96_uq001)
+
+proc.time() - startTime
+
+bp85_uq002 <- create_mnPlay(keyN=bp85_uq001, keyM=bp85_uq001)
+bp85_uq003 <- create_mnPlay(keyN=bp85_uq002, keyM=bp85_uq001)
+bp85_uq004 <- create_mnPlay(keyN=bp85_uq003, keyM=bp85_uq001)
+bp85_uq005 <- create_mnPlay(keyN=bp85_uq004, keyM=bp85_uq001)
+
+proc.time() - startTime
+
+tdb96_uq002 <- create_mnPlay(keyN=tdb96_uq001, keyM=tdb96_uq001)
+tdb96_uq003 <- create_mnPlay(keyN=tdb96_uq002, keyM=tdb96_uq001)
+tdb96_uq004 <- create_mnPlay(keyN=tdb96_uq003, keyM=tdb96_uq001)
+tdb96_uq005 <- create_mnPlay(keyN=tdb96_uq004, keyM=tdb96_uq001)
+
+proc.time() - startTime
+
+
+# Compare with the former algorithm (JB 96)
+new_2dfOutcome <- data.frame(nOutcome=jb96_uq002$uq_Res, 
+                             wts=colSums(diag(jb96_uq002$cWeight) %*% jb96_uq002$uq_Play)
+                             )
+new_5dfOutcome <- data.frame(nOutcome=jb96_uq005$uq_Res, 
+                             wts=colSums(diag(jb96_uq005$cWeight) %*% jb96_uq005$uq_Play)
+                             )
+
 jb96_2Play <- assessNPlay(keyList=jb96UniqueList, nPlay=2L)
-jb96_4Play <- assessNPlay(keyList=jb96UniqueList, nPlay=4L)
-proc.time() - startTime
-
+jb96_5Play <- assessNPlay(keyList=jb96UniqueList, nPlay=5L)
 
 all.equal(as.data.frame(jb96_2Play$dfOutcome[, -2]), new_2dfOutcome)
-all.equal(as.data.frame(jb96_4Play$dfOutcome[, -2]), new_4dfOutcome)
+all.equal(as.data.frame(jb96_5Play$dfOutcome[, -2]), new_5dfOutcome)
+
+
+# Compare with the former algorithm (BP 85)
+new_2dfOutcome <- data.frame(nOutcome=bp85_uq002$uq_Res, 
+                             wts=colSums(diag(bp85_uq002$cWeight) %*% bp85_uq002$uq_Play)
+                             )
+new_5dfOutcome <- data.frame(nOutcome=bp85_uq005$uq_Res, 
+                             wts=colSums(diag(bp85_uq005$cWeight) %*% bp85_uq005$uq_Play)
+                             )
+
+bp85_2Play <- assessNPlay(keyList=bp85UniqueList, nPlay=2L)
+bp85_5Play <- assessNPlay(keyList=bp85UniqueList, nPlay=5L)
+
+all.equal(as.data.frame(bp85_2Play$dfOutcome[, -2]), new_2dfOutcome)
+all.equal(as.data.frame(bp85_5Play$dfOutcome[, -2]), new_5dfOutcome)
+
+
+# Compare with the former algorithm (TDB 96)
+new_2dfOutcome <- data.frame(nOutcome=tdb96_uq002$uq_Res, 
+                             wts=colSums(diag(tdb96_uq002$cWeight) %*% tdb96_uq002$uq_Play)
+                             )
+new_5dfOutcome <- data.frame(nOutcome=tdb96_uq005$uq_Res, 
+                             wts=colSums(diag(tdb96_uq005$cWeight) %*% tdb96_uq005$uq_Play)
+                             )
+
+tdb96_2Play <- assessNPlay(keyList=tdb96UniqueList, nPlay=2L)
+tdb96_5Play <- assessNPlay(keyList=tdb96UniqueList, nPlay=5L)
+
+all.equal(as.data.frame(tdb96_2Play$dfOutcome[, -2]), new_2dfOutcome)
+all.equal(as.data.frame(tdb96_5Play$dfOutcome[, -2]), new_5dfOutcome)
+
 
 ```
-    
-So, the algorithm is a quicker way for doubling (1 -> 2 and 2 -> 4), though it will eventually run in to memory problems.  The next step is to find non-doubling approaches (2 -> 3 and 4 -> 5 and the like) that preserve the "by outcome flavor" nature of the matrix.
+  
+So, the algorithm is a quicker way for expanding n-Play for reasonably small values of n (in the ~5 range) that preserve the "by outcome flavor" nature of the matrix.
   
