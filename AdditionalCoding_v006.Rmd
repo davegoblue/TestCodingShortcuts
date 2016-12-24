@@ -2886,3 +2886,100 @@ all.equal(as.data.frame(tdb96_5Play$dfOutcome[, -2]), new_5dfOutcome)
   
 So, the algorithm is a quicker way for expanding n-Play for reasonably small values of n (in the ~5 range) that preserve the "by outcome flavor" nature of the matrix.
   
+Additionally, an algorithm is written to simplify away flavors that have a very low probability of occuring.  For example, while it is theoretically possible to get 4 RF and 1 4 AwaK by holding a naked Ace, the probabilities of this occuring are vanishingly small.  Because the matrices propagate forward, this very improbable outcome can then be combined with getting an A-5 SF, 4 2/3/4wA, and the like.  The upshot is a lot of clutter in the matrices (straining memory and run-time) with no pragmatic impact on mean and variance.
+
+As a default, an outcome (N-play flavor) is considered to be extremely unlikely if it would be observed less that once ever 25 billion dealt hands (10,000 cycles), though this tolerance can be adjusted.  These probabilities can either be ignored (all other probabilities scaled up accordingly), placed in their own column with the appropriate mean, or allocated to existing columns nearest to them.  
+```{r}
+
+clean_NPlay <- function(nPlayInput, nTol=0.0001, reAlloc=TRUE, makeOwn=FALSE) {
+    
+    cWeight <- nPlayInput$cWeight
+    uq_Play <- nPlayInput$uq_Play
+    uq_Res <- nPlayInput$uq_Res
+    
+    colWts <- colSums( cWeight * uq_Play )
+    tooSmall <- (colWts < nTol)
+    
+    # Grab the contributions tomean and variance for tooSmall, !tooSmall, and all
+    fullSum <- sum(colWts * uq_Res)
+    lrgSum <- sum(colWts[!tooSmall] * uq_Res[!tooSmall])
+    smlSum <- sum(colWts[tooSmall] * uq_Res[tooSmall])
+    
+    fullSum2 <- sum(colWts * uq_Res^2)
+    lrgSum2 <- sum(colWts[!tooSmall] * uq_Res[!tooSmall]^2)
+    smlSum2 <- sum(colWts[tooSmall] * uq_Res[tooSmall]^2)    
+    
+    
+    cat("\n\nContributions to SUM:", 
+        prettyNum(round(fullSum, 1), big.mark=","), 
+        prettyNum(round(lrgSum, 1), big.mark=","), 
+        paste0("(", round(100*lrgSum/fullSum, 2), "%)"), 
+        prettyNum(round(smlSum, 1), big.mark=","), 
+        paste0("(", round(100*smlSum/fullSum, 2), "%)")
+        )
+
+    cat("\nContributions to SUM-SQUARED:", 
+        prettyNum(round(fullSum2, 0), big.mark=","), 
+        prettyNum(round(lrgSum2, 0), big.mark=","), 
+        paste0("(", round(100*lrgSum2/fullSum2, 2), "%)"), 
+        prettyNum(round(smlSum2, 0), big.mark=","), 
+        paste0("(", round(100*smlSum2/fullSum2, 2), "%)")
+        )
+    
+    cat("\n\nMeans Assuming All, Large, Small:", 
+        round(fullSum/sum(colWts), 6),
+        round(lrgSum/sum(colWts[!tooSmall]), 6), 
+        round(smlSum/sum(colWts[!tooSmall]), 6)
+        )
+    
+    cat("\nVariances Assuming All, Large, Small:", 
+        prettyNum(fullSum2/sum(colWts) - (fullSum/sum(colWts))^2, big.mark=","),
+        prettyNum(lrgSum2/sum(colWts[!tooSmall]) - (lrgSum/sum(colWts[!tooSmall]))^2, big.mark=","), 
+        prettyNum(smlSum2/sum(colWts[tooSmall]) - (fullSum/sum(colWts[tooSmall]))^2, big.mark=","), 
+        "\n"
+        )
+
+    if (isTRUE(reAlloc)) {
+        cleanNList <- list(uq_Play=(uq_Play[, !tooSmall] / rowSums(uq_Play[, !tooSmall])), 
+                           uq_Res=uq_Res[!tooSmall], 
+                           cWeight=cWeight
+                           )
+    } else {
+        stop("Still need to implement other return modes")
+    }
+    
+    newCSum <- colSums(cleanNList$cWeight * cleanNList$uq_Play)
+    cat("\nMeans shifted from/to:", 
+        round(fullSum/sum(colWts), 6), 
+        round(sum(newCSum * cleanNList$uq_Res)/sum(newCSum), 6)
+        )
+    cat("\nE[X^2] shifted from/to:", 
+        round(fullSum2/sum(colWts), 3), 
+        round(sum(newCSum * cleanNList$uq_Res^2)/sum(newCSum), 3),
+        "\n\n"
+        )
+    
+    cleanNList
+        
+}
+
+# Expand BP 85 (carefully) to 10-play
+bp85_cl005 <- clean_NPlay(nPlayInput=bp85_uq005)
+bp85_uqcl006 <- create_mnPlay(keyN=bp85_cl005, keyM=bp85_uq001)
+
+bp85_cl006 <- clean_NPlay(nPlayInput=bp85_uqcl006)
+bp85_uqcl007 <- create_mnPlay(keyN=bp85_cl006, keyM=bp85_uq001)
+
+bp85_cl007 <- clean_NPlay(nPlayInput=bp85_uqcl007)
+bp85_uqcl008 <- create_mnPlay(keyN=bp85_cl007, keyM=bp85_uq001)
+
+bp85_cl008 <- clean_NPlay(nPlayInput=bp85_uqcl008)
+bp85_uqcl009 <- create_mnPlay(keyN=bp85_cl008, keyM=bp85_uq001)
+
+bp85_cl009 <- clean_NPlay(nPlayInput=bp85_uqcl009)
+bp85_uqcl010 <- create_mnPlay(keyN=bp85_cl009, keyM=bp85_uq001)
+
+bp85_cl010 <- clean_NPlay(nPlayInput=bp85_uqcl010)
+
+```
+
