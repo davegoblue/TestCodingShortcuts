@@ -310,4 +310,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 assesses 5-play percentiles for 16,000 hands  
 * AdditionalCoding_v006 vectorizes solution for doubling hands (creating 2-play and 4-play)  
 * AdditionalCoding_v006 vectorizes combining n-play and m-play while maintaining "by flavor" (up through 5-play)  
+* AdditionalCoding_v006 cleans rare hands from matrices and then propagates "pseudo-complete" 6-10 play hands  
   
