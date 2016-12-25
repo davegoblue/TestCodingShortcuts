@@ -2891,7 +2891,12 @@ Additionally, an algorithm is written to simplify away flavors that have a very 
 As a default, an outcome (N-play flavor) is considered to be extremely unlikely if it would be observed less that once ever 25 billion dealt hands (10,000 cycles), though this tolerance can be adjusted.  These probabilities can either be ignored (all other probabilities scaled up accordingly), placed in their own column with the appropriate mean, or allocated to existing columns nearest to them.  
 ```{r}
 
-clean_NPlay <- function(nPlayInput, nTol=0.0001, reAlloc=TRUE, makeOwn=FALSE) {
+clean_NPlay <- function(nPlayInput, nTol=0.0001, reAlloc=TRUE, makeOwn=TRUE) {
+    
+    # Anything with occurence less than nTol per choose(52, 5) will be excluded from the output
+    # If reAlloc==TRUE then all other elements are scaled up to get total back to choose(52, 5)
+    # If reAlloc==FALSE and makeOwn==TRUE, all exclusions are aggregated a single "new" column
+    # If reAlloc==FALSE and makeOwn==FALSE, all exclusions are re-assigned to the closest column
     
     cWeight <- nPlayInput$cWeight
     uq_Play <- nPlayInput$uq_Play
@@ -2929,13 +2934,13 @@ clean_NPlay <- function(nPlayInput, nTol=0.0001, reAlloc=TRUE, makeOwn=FALSE) {
     cat("\n\nMeans Assuming All, Large, Small:", 
         round(fullSum/sum(colWts), 6),
         round(lrgSum/sum(colWts[!tooSmall]), 6), 
-        round(smlSum/sum(colWts[!tooSmall]), 6)
+        round(smlSum/sum(colWts[tooSmall]), 6)
         )
     
     cat("\nVariances Assuming All, Large, Small:", 
         prettyNum(fullSum2/sum(colWts) - (fullSum/sum(colWts))^2, big.mark=","),
         prettyNum(lrgSum2/sum(colWts[!tooSmall]) - (lrgSum/sum(colWts[!tooSmall]))^2, big.mark=","), 
-        prettyNum(smlSum2/sum(colWts[tooSmall]) - (fullSum/sum(colWts[tooSmall]))^2, big.mark=","), 
+        prettyNum(smlSum2/sum(colWts[tooSmall]) - (smlSum/sum(colWts[tooSmall]))^2, big.mark=","), 
         "\n"
         )
 
@@ -2944,6 +2949,14 @@ clean_NPlay <- function(nPlayInput, nTol=0.0001, reAlloc=TRUE, makeOwn=FALSE) {
                            uq_Res=uq_Res[!tooSmall], 
                            cWeight=cWeight
                            )
+    } else if (isTRUE(makeOwn)) {
+        uqOwnMean <- round(smlSum/sum(colWts[tooSmall]), 4)
+        uqOwnOdds <- 1 - rowSums(uq_Play[, !tooSmall])
+        
+        cleanNList <- list(uq_Play=cbind(uq_Play[, !tooSmall], uqOwnOdds), 
+                           uq_Res=c(uq_Res[!tooSmall], uqOwnMean), 
+                           cWeight=cWeight
+                           )        
     } else {
         stop("Still need to implement other return modes")
     }
@@ -2963,7 +2976,8 @@ clean_NPlay <- function(nPlayInput, nTol=0.0001, reAlloc=TRUE, makeOwn=FALSE) {
         
 }
 
-# Expand BP 85 (carefully) to 10-play
+
+# Expand BP 85 (carefully) to 10-play (using default re-allocations)
 bp85_cl005 <- clean_NPlay(nPlayInput=bp85_uq005)
 bp85_uqcl006 <- create_mnPlay(keyN=bp85_cl005, keyM=bp85_uq001)
 
@@ -2977,9 +2991,48 @@ bp85_cl008 <- clean_NPlay(nPlayInput=bp85_uqcl008)
 bp85_uqcl009 <- create_mnPlay(keyN=bp85_cl008, keyM=bp85_uq001)
 
 bp85_cl009 <- clean_NPlay(nPlayInput=bp85_uqcl009)
-bp85_uqcl010 <- create_mnPlay(keyN=bp85_cl009, keyM=bp85_uq001)
+bp85_uqcl010_reAlloc <- create_mnPlay(keyN=bp85_cl009, keyM=bp85_uq001)
 
-bp85_cl010 <- clean_NPlay(nPlayInput=bp85_uqcl010)
+bp85_cl010_reAlloc <- clean_NPlay(nPlayInput=bp85_uqcl010_reAlloc)
+
+
+# Expand BP 85 (carefully) to 10-play (using own means)
+bp85_cl005 <- clean_NPlay(nPlayInput=bp85_uq005, reAlloc=FALSE, makeOwn=TRUE)
+bp85_uqcl006 <- create_mnPlay(keyN=bp85_cl005, keyM=bp85_uq001)
+
+bp85_cl006 <- clean_NPlay(nPlayInput=bp85_uqcl006, reAlloc=FALSE, makeOwn=TRUE)
+bp85_uqcl007 <- create_mnPlay(keyN=bp85_cl006, keyM=bp85_uq001)
+
+bp85_cl007 <- clean_NPlay(nPlayInput=bp85_uqcl007, reAlloc=FALSE, makeOwn=TRUE)
+bp85_uqcl008 <- create_mnPlay(keyN=bp85_cl007, keyM=bp85_uq001)
+
+bp85_cl008 <- clean_NPlay(nPlayInput=bp85_uqcl008, reAlloc=FALSE, makeOwn=TRUE)
+bp85_uqcl009 <- create_mnPlay(keyN=bp85_cl008, keyM=bp85_uq001)
+
+bp85_cl009 <- clean_NPlay(nPlayInput=bp85_uqcl009, reAlloc=FALSE, makeOwn=TRUE)
+bp85_uqcl010_makeOwn <- create_mnPlay(keyN=bp85_cl009, keyM=bp85_uq001)
+
+bp85_cl010_makeOwn <- clean_NPlay(nPlayInput=bp85_uqcl010_makeOwn, 
+                                  reAlloc=FALSE, makeOwn=TRUE
+                                  )
+
+
+# Comparisons of results
+bp85_cl010_reAlloc <- clean_NPlay(nPlayInput=bp85_uqcl010_reAlloc)
+
+bp85_cl010_makeOwn <- clean_NPlay(nPlayInput=bp85_uqcl010_makeOwn, 
+                                  reAlloc=FALSE, makeOwn=TRUE
+                                  )
+
+useWeight <- bp85UniqueList$uqCards[, ncol(bp85UniqueList$uqCards)]
+theoMean <- weighted.mean(bp85UniqueList$uqFrame$uqMean, w=useWeight)
+theoDealVar <- var(rep(bp85List$tempSmallMax[1, ], times=cardWeight))
+theoDrawVar <- mean(rep(bp85UniqueList$uqFrame$uqVar, times=useWeight))
+
+cat("\n\n10-play BP 85 should have mean:", round(10*theoMean, 6), "with variance:", 
+    10 * (10 * theoDealVar + theoDrawVar), "\n"
+    )
 
 ```
-
+  
+At least for projecting BP 85 to 10-play, the "make own" methodology is extremely closely tied to theoretical outcomes.
