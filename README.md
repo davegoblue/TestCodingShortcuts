@@ -313,3 +313,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 cleans rare hands from matrices and then propagates "pseudo-complete" 6-10 play hands  
 * AdditionalCoding_v006 implements the "make own" mean approach for very-low-odds hands  
   
+### Expansions week of 26-DEC-2016  
+* AdditionalCoding_v006 allows for mxn propagation in a much more memory-friendly manner  
