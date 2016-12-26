@@ -3036,3 +3036,88 @@ cat("\n\n10-play BP 85 should have mean:", round(10*theoMean, 6), "with variance
 ```
   
 At least for projecting BP 85 to 10-play, the "make own" methodology is extremely closely tied to theoretical outcomes.
+
+The next step is to significantly optimize the core of the propagation algorithm so that it does not need to maintain so many zeroes.  A simplified function is attempted to use "for" loops to sum columns (potentially much faster for larger matrices since there is no need to keep a large "multiplying" matrix):  
+```{r}
+
+# Function to cross-product n-play and m-play
+forCreate_mnPlay <- function(keyN, keyM) {
+ 
+    # Sum outcomes for matrix cross product (column values for aTest)
+    aScore <- outer(keyN$uq_Res, keyM$uq_Res, FUN="+")
+    
+    # Find and sort the unique scores
+    uqScores <- sort(unique(as.vector(aScore)))
+
+    # Test this using the for loop instead
+    uq_Play <- matrix(data=0, nrow=nrow(keyN$uq_Play), ncol=length(uqScores))
+    for (intCtr in seq_along(uqScores)) {
+        # Find elements to be cross-multiplied
+        multN <- row(aScore)[aScore == uqScores[intCtr]]
+        multM <- col(aScore)[aScore == uqScores[intCtr]]
+        
+        uq_Play[, intCtr] <- rowSums(keyN$uq_Play[, multN, drop=FALSE] * 
+                                         keyM$uq_Play[, multM, drop=FALSE]
+                                     )
+        
+    }
+
+    list(uq_Play=uq_Play, uq_Res=uqScores, cWeight=keyN$cWeight)
+        
+}
+
+```
+  
+The algorithm is then attempted for expansions to 2-play through 5-play:  
+```{r}
+
+# Take JB 96, BP 85, and TDB 96 and expand from 1-play to 2/5 play
+startTime <- proc.time()
+
+jb96_uq002_for <- forCreate_mnPlay(keyN=jb96_uq001, keyM=jb96_uq001)
+jb96_uq005_for <- forCreate_mnPlay(keyN=jb96_uq004, keyM=jb96_uq001)
+
+proc.time() - startTime
+
+bp85_uq002_for <- forCreate_mnPlay(keyN=bp85_uq001, keyM=bp85_uq001)
+bp85_uq005_for <- forCreate_mnPlay(keyN=bp85_uq004, keyM=bp85_uq001)
+
+proc.time() - startTime
+
+tdb96_uq002_for <- forCreate_mnPlay(keyN=tdb96_uq001, keyM=tdb96_uq001)
+tdb96_uq005_for <- forCreate_mnPlay(keyN=tdb96_uq004, keyM=tdb96_uq001)
+
+proc.time() - startTime
+
+
+# Compare with the former algorithm
+all.equal(jb96_uq002, jb96_uq002_for)
+all.equal(jb96_uq005, jb96_uq005_for)
+all.equal(bp85_uq002, bp85_uq002_for)
+all.equal(bp85_uq005, bp85_uq005_for)
+all.equal(tdb96_uq002, tdb96_uq002_for)
+all.equal(tdb96_uq005, tdb96_uq005_for)
+
+
+# Expansion to 10-play
+startTime <- proc.time()
+jb96_uq010 <- forCreate_mnPlay(keyN=jb96_uq005, keyM=jb96_uq005)
+nEX <- sum( colSums( jb96_uq010$cWeight * jb96_uq010$uq_Play ) * 
+                jb96_uq010$uq_Res ) / sum(jb96_uq010$cWeight)
+nEX2 <- sum( colSums( jb96_uq010$cWeight * jb96_uq010$uq_Play ) * 
+                jb96_uq010$uq_Res^2 ) / sum(jb96_uq010$cWeight)
+cat("\nJB 96 10-play has return:", nEX, "and variance:", nEX2-nEX^2)
+proc.time() - startTime
+
+bp85_uq010 <- forCreate_mnPlay(keyN=bp85_uq005, keyM=bp85_uq005)
+nEX <- sum( colSums( bp85_uq010$cWeight * bp85_uq010$uq_Play ) * 
+                bp85_uq010$uq_Res ) / sum(bp85_uq010$cWeight)
+nEX2 <- sum( colSums( bp85_uq010$cWeight * bp85_uq010$uq_Play ) * 
+                bp85_uq010$uq_Res^2 ) / sum(bp85_uq010$cWeight)
+cat("\nBP 85 10-play has return:", nEX, "and variance:", nEX2-nEX^2)
+proc.time() - startTime
+
+
+
+```
+
