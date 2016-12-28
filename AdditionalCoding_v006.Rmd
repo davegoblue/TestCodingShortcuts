@@ -3073,20 +3073,18 @@ The algorithm is then attempted for expansions to 2-play through 5-play:
 
 # Take JB 96, BP 85, and TDB 96 and expand from 1-play to 2/5 play
 startTime <- proc.time()
-
 jb96_uq002_for <- forCreate_mnPlay(keyN=jb96_uq001, keyM=jb96_uq001)
 jb96_uq005_for <- forCreate_mnPlay(keyN=jb96_uq004, keyM=jb96_uq001)
-
 proc.time() - startTime
 
+startTime <- proc.time()
 bp85_uq002_for <- forCreate_mnPlay(keyN=bp85_uq001, keyM=bp85_uq001)
 bp85_uq005_for <- forCreate_mnPlay(keyN=bp85_uq004, keyM=bp85_uq001)
-
 proc.time() - startTime
 
+startTime <- proc.time()
 tdb96_uq002_for <- forCreate_mnPlay(keyN=tdb96_uq001, keyM=tdb96_uq001)
 tdb96_uq005_for <- forCreate_mnPlay(keyN=tdb96_uq004, keyM=tdb96_uq001)
-
 proc.time() - startTime
 
 
@@ -3210,3 +3208,71 @@ cat("\n\n15-play TDB 96 should have mean:", round(15*theoMean, 6), "with varianc
 
 ```
   
+One other attempt is made to run the matrix multiplications, this time going row-by-row rather than column-by-column:  
+```{r}
+
+# Function to cross-product n-play and m-play
+forRowCreate_mnPlay <- function(keyN, keyM) {
+ 
+    # Sum outcomes for matrix cross product (column values for aTest)
+    aScore <- as.vector(outer(keyN$uq_Res, keyM$uq_Res, FUN="+"))
+    
+    # Find and sort the unique scores
+    uqScores <- sort(unique(as.vector(aScore)))
+
+    # Create the unique play matrix
+    uq_Play <- matrix(data=0, nrow=nrow(keyN$uq_Play), ncol=length(uqScores))
+
+    # Get the multipliers
+    mapScores <- match(aScore, uqScores)
+    
+    # Test this using the for loop instead
+    for (intCtr in seq_len(nrow(keyN$uq_Play))) {
+        
+        # Get the outer product of the key row
+        tmpOuter <- as.vector(outer(keyN$uq_Play[intCtr, ], keyM$uq_Play[intCtr, ], FUN="*"))
+        
+        tmpVector <- data.frame(colNum=mapScores, pctVal=tmpOuter) %>% 
+            group_by(colNum) %>% 
+            summarize(totPct=sum(pctVal))
+        
+        uq_Play[intCtr, ] <- as.data.frame(tmpVector)[, 2]
+
+        if (intCtr %% 100 == 0) { cat("\nProcessed row", intCtr) }
+        
+    }
+
+    list(uq_Play=uq_Play, uq_Res=uqScores, cWeight=keyN$cWeight)
+        
+}
+
+
+# Compare timing
+
+startTime <- proc.time()
+tdb96_cl005 <- clean_NPlay(nPlayInput=tdb96_uq005)
+tdb96_uq010_cl <- forRowCreate_mnPlay(keyN=tdb96_cl005, keyM=tdb96_cl005)
+thisList <- tdb96_uq010_cl
+nEX <- sum( colSums( thisList$cWeight * thisList$uq_Play ) * 
+                thisList$uq_Res ) / sum(thisList$cWeight)
+nEX2 <- sum( colSums( thisList$cWeight * thisList$uq_Play ) * 
+                thisList$uq_Res^2 ) / sum(thisList$cWeight)
+cat("\nTDB 96 10-play has return:", round(nEX, 6), "and variance:", round(nEX2-nEX^2, 2))
+proc.time() - startTime
+
+
+startTime <- proc.time()
+tdb96_cl005 <- clean_NPlay(nPlayInput=tdb96_uq005)
+tdb96_uq010_cl <- forCreate_mnPlay(keyN=tdb96_cl005, keyM=tdb96_cl005)
+thisList <- tdb96_uq010_cl
+nEX <- sum( colSums( thisList$cWeight * thisList$uq_Play ) * 
+                thisList$uq_Res ) / sum(thisList$cWeight)
+nEX2 <- sum( colSums( thisList$cWeight * thisList$uq_Play ) * 
+                thisList$uq_Res^2 ) / sum(thisList$cWeight)
+cat("\nTDB 96 10-play has return:", round(nEX, 6), "and variance:", round(nEX2-nEX^2, 2))
+proc.time() - startTime
+
+
+```
+  
+The timing is nearly identical; the processing by row does not seem to save any substantial amounts of time.
