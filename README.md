@@ -317,3 +317,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 allows for mxn propagation in a much more memory-friendly manner  
 * AdditionalCoding_v006 expands to 10/15 play for JB 96, BP 85, and TDB 96  
 * AdditionalCoding_v006 experiments with propagation methodology  
+* AdditionalCoding_v006 experiments with the microbenchmark library  
