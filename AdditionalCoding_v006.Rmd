@@ -3276,3 +3276,93 @@ proc.time() - startTime
 ```
   
 The timing is nearly identical; the processing by row does not seem to save any substantial amounts of time.
+
+Next, the microbenchmark library is explored on some sample data to better understand the timing implications of various matrix approaches.  Each row of the matrices is an independent instanciation that should be preserved, with columns multiplied in an "outer product" manner, then summarized back:  
+```{r}
+
+library(microbenchmark)
+
+
+# Approach one is to multiply out all columns corresponding to a key result
+testByRes <- function(dOne=dataOne, dTwo=dataTwo, dOut=dataOut, 
+                      cUq=colRes_uq, cTot=colRes) {
+    
+    for (intCtr in seq_along(cUq)) { 
+        keyColN <- row(cTot)[cTot == cUq[intCtr]]
+        keyColM <- col(cTot)[cTot == cUq[intCtr]] 
+        dOut[, intCtr] <- rowSums( dOne$uq_Play[, keyColN, drop=FALSE] * 
+                                       dTwo$uq_Play[, keyColM, drop=FALSE] 
+                                   ) 
+    }
+    
+    dOut
+    
+}
+
+# Approach two is to run the process one row at a time
+testByRow <- function(dOne=dataOne, dTwo=dataTwo, dOut=dataOut, 
+                      cUq=colRes_uq, cTot=colRes) {
+    
+    mapScores <- match(as.vector(cTot), cUq)
+    
+    for (intCtr in seq_len(nrow(dOne$uq_Play))) { 
+        outMult <- outer(dOne$uq_Play[intCtr, ], dTwo$uq_Play[intCtr, ])
+        outGroup <- data.frame(keyRow=mapScores, keyVal=as.vector(outMult)) %>%
+            group_by(keyRow) %>%
+            summarize(keyVal=sum(keyVal))
+        dOut[intCtr, ] <- as.data.frame(outGroup)[, 2]
+    }
+    
+    dOut
+    
+}
+
+
+# Matrix one will be the JB 96 2-play data, and matrix two will be the JB 96 2-play data
+dataOne <- jb96_uq002
+str(dataOne)
+dataTwo <- jb96_uq002
+str(dataTwo)
+
+# The column addition results are calculated
+colRes <- outer(dataOne$uq_Res, dataTwo$uq_Res, FUN="+")
+str(colRes)
+colRes_uq <- sort(unique(as.vector(colRes)))
+str(colRes_uq)
+
+# The objective is then to matrix multiply the uqPlay data
+dataOut <- matrix(data=0L, nrow=nrow(dataOne$uq_Play), ncol=length(colRes_uq))
+str(dataOut)
+
+microbenchmark(tRes=(tempRes <- testByRes()), 
+               tRow=(tempRow <- testByRow()),
+               times=5L
+               )
+
+
+# Matrix one will be the JB 96 4-play data, and matrix two will be the JB 96 3-play data
+dataOne <- jb96_uq004
+str(dataOne)
+dataTwo <- jb96_uq003
+str(dataTwo)
+
+# The column addition results are calculated
+colRes <- outer(dataOne$uq_Res, dataTwo$uq_Res, FUN="+")
+str(colRes)
+colRes_uq <- sort(unique(as.vector(colRes)))
+str(colRes_uq)
+
+# The objective is then to matrix multiply the uqPlay data
+dataOut <- matrix(data=0L, nrow=nrow(dataOne$uq_Play), ncol=length(colRes_uq))
+str(dataOut)
+
+
+microbenchmark(tRes=(tempRes <- testByRes()), 
+               tRow=(tempRow <- testByRow()),
+               times=5L
+               )
+
+
+```
+  
+Running the results by unique outcome seems substantially faster than running results by hand flavor, at least for the 2x2 and 4x3 examples above.
