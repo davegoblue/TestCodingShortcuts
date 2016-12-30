@@ -3365,4 +3365,100 @@ microbenchmark(tRes=(tempRes <- testByRes()),
 
 ```
   
-Running the results by unique outcome seems substantially faster than running results by hand flavor, at least for the 2x2 and 4x3 examples above.
+Running the results by unique outcome seems substantially faster than running results by hand flavor, at least for the 2x2 and 4x3 examples above.  
+
+Next, exploration of column sums by means of sapply is explored:  
+```{r}
+
+# Create and use aTest
+create_Sapply01_mnPlay <- function(keyN, keyM) {
+    
+    aTest <- matrix(data=0, nrow=nrow(keyN$uq_Play), 
+                    ncol=ncol(keyM$uq_Play)*ncol(keyN$uq_Play)
+                    )
+    
+    # Matrix multiply by "flavor" (unique rows)
+    for (intCtr in 1:nrow(keyN$uq_Play)) {
+        aTest[intCtr, ] <- as.vector( outer( keyN$uq_Play[intCtr, ], keyM$uq_Play[intCtr, ] ) )
+    }
+ 
+    # Sum outcomes for matrix cross product (column values for aTest)
+    aScore <- as.vector(outer(keyN$uq_Res, keyM$uq_Res, FUN="+"))
+    
+    # Find and sort the unique scores
+    uqRes <- sort(unique(aScore))
+
+    # Convert the full aTest in to unique hands with values by column
+    keyRow <- 1:length(aScore)
+    keyCol <- match(aScore, uqRes)
+    uq_Play <- sapply(unique(sort(keyCol)), 
+                      FUN=function(x) { rowSums(aTest[, keyRow[keyCol==x], drop=FALSE]) } 
+                      )
+    
+    list(uq_Play=uq_Play, uq_Res=uqRes, cWeight=keyN$cWeight)
+        
+}
+
+
+# Run the aTest process on the line-by-line
+create_Sapply02_mnPlay <- function(keyN, keyM) {
+ 
+    # Sum outcomes for matrix cross product (column values for aTest)
+    aScore <- as.vector(outer(keyN$uq_Res, keyM$uq_Res, FUN="+"))
+    
+    # Find and sort the unique scores
+    uqRes <- sort(unique(aScore))
+    uq_Sapply <- matrix(data=0, nrow=nrow(keyN$uq_Play), ncol=length(uqRes))
+    
+    # Find the key rows and columns, as well as who maps to who
+    keyRow <- 1:length(aScore)
+    keyCol <- match(aScore, uqRes)
+    keyMap <- lapply(unique(sort(keyCol)), FUN=function(x) { keyRow[keyCol==x] } )
+    
+    # Matrix multiply by "flavor" (unique rows)
+    for (intCtr in 1:nrow(keyN$uq_Play)) {
+        keyVec <- as.vector( outer( keyN$uq_Play[intCtr, ], keyM$uq_Play[intCtr, ] ) )
+        uq_Sapply[intCtr, ] <- 
+            sapply( keyMap, FUN=function(x) { sum(keyVec[x]) } )
+    }
+ 
+    list(uq_Play=uq_Sapply, uq_Res=uqRes, cWeight=keyN$cWeight)
+        
+}
+
+
+# Create JB96_uq007 for reference
+startTime <- proc.time()
+jb96_uq007 <- create_mnPlay(keyN=jb96_uq004, keyM=jb96_uq003)
+proc.time() - startTime
+
+
+# Explore the JB 96 2x2 case
+microbenchmark(sap01=(jb96_test01_uq004 <- create_Sapply01_mnPlay(keyN=jb96_uq002, keyM=jb96_uq002)),
+               sap02=(jb96_test02_uq004 <- create_Sapply02_mnPlay(keyN=jb96_uq002, keyM=jb96_uq002)),
+               times=10L
+               )
+all.equal(jb96_uq004, jb96_test01_uq004)
+all.equal(jb96_uq004, jb96_test02_uq004)
+
+
+# Explore the JB 96 4x3 case
+microbenchmark(tRes=(tempRes <- testByRes()), 
+               sap01=(jb96_test01_uq007 <- create_Sapply01_mnPlay(keyN=jb96_uq004, keyM=jb96_uq003)),
+               sap02=(jb96_test02_uq007 <- create_Sapply02_mnPlay(keyN=jb96_uq004, keyM=jb96_uq003)),
+               times=5L
+               )
+all.equal(jb96_uq007, jb96_test01_uq007)
+all.equal(jb96_uq007, jb96_test02_uq007)
+all.equal(jb96_uq007$uq_Play, tempRes)
+
+
+```
+  
+The tRes and sap02 approaches are especially attractive since they do not need hog memory (running either one result at a time or one row at a time) regardless of the underlying matrix sizes.  An especially attractive approachs seems to be:  
+  
+* Understand the potential outcomes, based on the unique outer products (FUN="+") of the outcome vectors that are provided as inputs  
+* Approach 1 (testByRes) cycles over each of the unique potential outcomes, finds the column combinations that produce that unique potential outcome, and runs the full sum-product of the column multiplication  
+* Approach 2 (create_Sapply02_mnPlay) cycles over each of the flavors (rows), runs the full outer product, and then sums subsets to the appropriate unique potential outcomes for that flavor  
+  
+For the modest sized m/n, testByRes appears to be faster, though there may be benefits to running by row as the m/n become larger.  Combined with the cleaning approach for very rare hands, this shows significant promise for expanding the n-play outcome vectors without overly taxing memory and/or CPU.  
