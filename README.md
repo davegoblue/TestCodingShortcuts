@@ -318,3 +318,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 expands to 10/15 play for JB 96, BP 85, and TDB 96  
 * AdditionalCoding_v006 experiments with propagation methodology  
 * AdditionalCoding_v006 experiments with the microbenchmark library  
+* AdditionalCoding_v006 experiments with two sapply approaches for propagation  
