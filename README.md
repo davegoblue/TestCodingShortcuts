@@ -319,3 +319,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 experiments with propagation methodology  
 * AdditionalCoding_v006 experiments with the microbenchmark library  
 * AdditionalCoding_v006 experiments with two sapply approaches for propagation  
+* AdditionalCoding_v006 caches for run-time improvement  
