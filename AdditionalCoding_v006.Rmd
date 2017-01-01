@@ -3539,3 +3539,88 @@ In particular, timing for expanding out to larger N-Play is so far manageable.  
 * Find the outer-product (FUN="+") of the potential outcomes  
 * Gather the resulting probabilities either "by result" or "by row"  
   
+### Analysis of Individual Games  
+Next, an individual game is defined and then run through the key components of the process to get the N-play data:  
+```{r}
+
+# Define the paytable and simulate the holds (JB 95)
+startTime <- proc.time()
+gameIndex <- 0:25
+jb95hnd2Score <- data.frame(idx=gameIndex, val=c( -1, 
+                                                 799, 49,  8,  4,  3, 
+                                                   2,  1,  0,  0,  0, 
+                                                   0, -1, -1, 24, 24, 
+                                                  24, 24, 24, 24, 24, 
+                                                  24, 24, 24, 24, 24
+                                            )
+                        )
+
+jb95List <- simGame(h2S=jb95hnd2Score)
+findMeanVar(useList=jb95List, useName="JB 95")  # Mean and variance on deal
+jb95Holds <- findHolds(idxKeep=jb95List$tempSmallMax[2, ])  # Cards held
+proc.time() - startTime
+
+# Compare JB 96 and JB 95 Holds
+jb96_vs_jb95Holds <- diffHolds(jb96Holds, jb95Holds)
+sum(jb96_vs_jb95Holds)
+
+if (sum(jb96_vs_jb95Holds) > 0) { 
+    cbind(cardSmall[jb96_vs_jb95Holds, ], 
+          jb96Holds[jb96_vs_jb95Holds, ], 
+          jb95Holds[jb96_vs_jb95Holds, ]
+          )[sort(sample(1:sum(jb96_vs_jb95Holds), 20)), ]
+}
+
+# Simulate for percentiles
+set.seed(2017010108)
+jb95Sim <- simPercentile(keyList=jb95List, useName="JB 95")
+
+# Investigate the pattern of initial deal EV
+data.frame(rndScore=round(rep(jb95List$tempSmallMax[1, ], times=cardWeight), 0)) %>%
+    group_by(rndScore) %>%
+    summarize(ct=n(), per=round(choose(52, 5)/ct, 1)) %>%
+    print.data.frame()
+
+# Assess JB 95 game for variance on the deal
+jb95Draws <- simDrawVar(aT=aType, mtxI=mtxIndices, useHolds=jb95List$tempSmallMax[2, ],
+                        cardI=cardIndex, cardW=cardWeight, startT=startTime, 
+                        grTitle="EV Draw Simulation Results", allOut=FALSE
+                        )
+calcMeanVar(tempDraws=jb95Draws, hnd2Score=jb95hnd2Score, mainName="JB 95")
+
+# Find the unique lists associated to the game, with key statistics
+jb95UniqueList <- indMeanVar(hnd2Score=jb95hnd2Score, listDraws=jb95Draws, 
+                             useName="JB 95", allOut=TRUE
+                             )
+graphMeanVar(useFrame=jb95UniqueList$uqFrame, useName="JB 95")  # EV/variance graphed by hold
+assessFlavor(uqList=jb95UniqueList)  # Table of EV/variance by "hold-N"
+totOutcomes(keyList=jb95UniqueList, useName="JB 95")  # Overall game return table
+
+# Create straight-up as 1/3/5/10-play
+jb95_01Play <- assessNPlay(keyList=jb95UniqueList, nPlay=1L)
+jb95_03Play <- assessNPlay(keyList=jb95UniqueList, nPlay=3L)
+jb95_05Play <- assessNPlay(keyList=jb95UniqueList, nPlay=5L)
+jb95_10Play <- assessNPlay(keyList=jb95UniqueList, nPlay=10L)
+
+# Simulate 16,000 hands of 10-play and 5-play
+set.seed(1701010756)
+jb95_10Sim <- sim_NPlay(keyFrame=jb95_10Play$out10Play, useName="JB 95", 
+                        nPlay=10, nHands=16000, nSim=2000
+                        )
+set.seed(101201708)
+jb95_05Sim <- sim_NPlay(keyFrame=jb95_05Play$dfOutcome, useName="JB 95", 
+                        nPlay=5, nHands=16000, nSim=2000
+                        )
+
+# Try the more efficient N-play approach, extended with sapply02
+jb95_uq001 <- get_uq1Play(keyList=jb95UniqueList)
+jb95_uq002 <- create_Sapply02_mnPlay(keyN=jb95_uq001, keyM=jb95_uq001)
+jb95_uq003 <- create_Sapply02_mnPlay(keyN=jb95_uq002, keyM=jb95_uq001)
+jb95_uq005 <- create_Sapply02_mnPlay(keyN=jb95_uq003, keyM=jb95_uq002)
+jb95_uq010 <- create_Sapply02_mnPlay(keyN=jb95_uq005, keyM=jb95_uq005)
+
+all.equal(jb95_10Play$out10Play$nOutcome, jb95_uq010$uq_Res)
+all.equal(jb95_10Play$out10Play$wts, colSums(jb95_uq010$cWeight * jb95_uq010$uq_Play))
+
+```
+  
