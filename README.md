@@ -320,3 +320,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 experiments with the microbenchmark library  
 * AdditionalCoding_v006 experiments with two sapply approaches for propagation  
 * AdditionalCoding_v006 caches for run-time improvement  
+* AdditionalCoding_v006 runs the JB 95 pay table to generate all key N-play data (1/3/5/10)  
