@@ -324,3 +324,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 02-JAN-2017  
 * AdditionalCoding_v006 includes function genGame() to convert pay tables to key files and statistics; run for JB 95 and BP 75  
+* AdditionalCoding_v006 assesses combinations of nPlay and nDeal for JB 95  
