@@ -2643,7 +2643,7 @@ tdb96_10Play <- assessNPlay(keyList=tdb96UniqueList, nPlay=10L)
 Next, 2,000 simulations are run for up to 16,000 hands, with the percentiles assessed:  
 ```{r}
 
-sim_NPlay <- function(keyFrame, useName, nPlay, nHands, nSims) {
+sim_NPlay <- function(keyFrame, useName, nPlay, nHands, nSims, genCumMin=FALSE) {
     
     # Extract outcomes and associated odds from the N-play list
     oddsNPlay <- round(100 * keyFrame$wts, 0)
@@ -2661,6 +2661,9 @@ sim_NPlay <- function(keyFrame, useName, nPlay, nHands, nSims) {
     
     # Convert to the overall outcomes (each column is a simulation)
     sumsNPlay <- colSums(matrix(holdNPlay, ncol=nSims))
+    if (isTRUE(genCumMin)) {
+        cumminNPlay <- apply( apply(matrix(holdNPlay, ncol=nSims), 2, FUN=cumsum) , 2, FUN=min)
+    }
     
     # Report on the overall mean and variance/standard deviation
     meanOverall <- mean(sumsNPlay) / nHands
@@ -2690,7 +2693,11 @@ sim_NPlay <- function(keyFrame, useName, nPlay, nHands, nSims) {
     abline(h=0, v=0.5, lty=2)
     par(mfrow=c(1, 1))
 
-    sumsNPlay
+    if (isTRUE(genCumMin)) {
+        list(sumsNPlay=sumsNPlay, cumminNPlay=cumminNPlay)
+    } else {
+        sumsNPlay
+    }
     
 }
 
@@ -3701,8 +3708,11 @@ proc.time() - startTime
 Next, a function is written to explore 1/3/5/10 data for a game of choice:  
 ```{r}
 
-graphGameFull <- function(nSims, simPct, simGraph, nDealGraph, gName) {
+graphGameFull <- function(simPct, simGraph, gName) {
 
+    nSims <- nrow(simPct) - 2
+    nDealGraph <- simPct[2, simGraph]
+    
     par(mfcol=c(1, 2))
 
     plot(x=(1:nSims)/nSims, y=simPct[-(1:2), simGraph[1]], col="red", cex=0.4,
@@ -3789,9 +3799,7 @@ simGameFull <- function(useList, gameName, nSims=2000,
     simPct <- apply(simOut, 1, FUN=function(x) { c(x[1], x[2], sort(x[-(1:2)]/x[1]/x[2])) } )
 
     # Graph the game outputs
-    graphGameFull(nSims=nSims, simPct=simPct, simGraph=simGraph, 
-                  nDealGraph=nDealGraph, gName=gameName
-                  )
+    graphGameFull(simPct=simPct, simGraph=simGraph, gName=gameName)
     
     # Return the simOut and simPct object
     list(simOut=simOut, simPct=simPct)
@@ -3803,18 +3811,114 @@ simGameFull <- function(useList, gameName, nSims=2000,
 The function is run for JB 95, BP 75, and DDB 96 (1/3/5/10 play), each using 2,000 trials of 1k, 2k, 4k, 8k, 16k, 24k, 32k, 40k deals:  
 ```{r, cache=TRUE}
 
+# Run for JB 95
 startTime <- proc.time()
 jb95SimGameFull <- simGameFull(useList=jb95GameData, gameName="JB 95")
 proc.time() - startTime
 
+# Run for BP 75
 startTime <- proc.time()
 bp75SimGameFull <- simGameFull(useList=bp75GameData, gameName="BP 75")
 proc.time() - startTime
 
+# Run for DDB 96
 startTime <- proc.time()
 ddb96SimGameFull <- simGameFull(useList=ddb96GameData, gameName="DDB 96")
 proc.time() - startTime
 
 ```
   
-Next, the graphing function can be applied to varying subsets of these game simulations:  
+Next, find the minimum achieved in 8,000 5-play deals (4,000 simulations each) for JB 95, BP 75, and DDB 96:  
+```{r}
+
+jb95_05p_08k <- sim_NPlay(keyFrame=jb95GameData$game_05Play$dfOutcome, useName="JB 95", 
+                          nPlay=5, nHands=8000, nSims=4000, genCumMin=TRUE
+                          )
+bp75_05p_08k <- sim_NPlay(keyFrame=bp75GameData$game_05Play$dfOutcome, useName="BP 75", 
+                          nPlay=5, nHands=8000, nSims=4000, genCumMin=TRUE
+                          )
+ddb96_05p_08k <- sim_NPlay(keyFrame=ddb96GameData$game_05Play$dfOutcome, useName="DDB 96", 
+                           nPlay=5, nHands=8000, nSims=4000, genCumMin=TRUE
+                           )
+
+# Plot the minima and final for JB 95 and DDB 96, ordered by lowest minimum
+par(mfcol=c(1, 2))
+
+plot(x=(1:length(jb95_05p_08k$cumminNPlay))/length(jb95_05p_08k$cumminNPlay), 
+     y=jb95_05p_08k$sumsNPlay[order(jb95_05p_08k$cumminNPlay)],
+     xlab="Percentile", ylab="Base Per-Hand Units", main="Units for JB 95 5-play (8k deals)",
+     col="green", pch=19, cex=0.25, 
+     ylim=round(range(c(jb95_05p_08k$sumsNPlay, jb95_05p_08k$cumminNPlay)), -3) + c(-500, 500)
+     )
+points(x=(1:length(jb95_05p_08k$cumminNPlay))/length(jb95_05p_08k$cumminNPlay), 
+       y=jb95_05p_08k$cumminNPlay[order(jb95_05p_08k$cumminNPlay)], 
+       col="orange", pch=19, cex=0.5
+       )
+abline(h=0, v=c(0.01, 0.05, 0.1, 0.25, 0.5), lty=2)
+keyQuant <- quantile(jb95_05p_08k$cumminNPlay, c(0.01, 0.05, 0.1, 0.25, 0.5))
+legend("topleft", col=c("green", "orange"), pch=19, cex=0.65,
+       legend=c("Final", paste0("Min ( ", paste(round(keyQuant,0), collapse=" "), " )")) 
+       )
+
+plot(x=(1:length(ddb96_05p_08k$cumminNPlay))/length(ddb96_05p_08k$cumminNPlay), 
+     y=ddb96_05p_08k$sumsNPlay[order(ddb96_05p_08k$cumminNPlay)],
+     xlab="Percentile", ylab="Base Per-Hand Units", main="Units for DDB 96 5-play (8k deals)",
+     col="green", pch=19, cex=0.25, 
+     ylim=round(range(c(ddb96_05p_08k$sumsNPlay, ddb96_05p_08k$cumminNPlay)), -3) + c(-500, 500)
+     )
+points(x=(1:length(ddb96_05p_08k$cumminNPlay))/length(ddb96_05p_08k$cumminNPlay), 
+       y=ddb96_05p_08k$cumminNPlay[order(ddb96_05p_08k$cumminNPlay)], 
+       col="orange", pch=19, cex=0.5
+       )
+abline(h=0, v=c(0.01, 0.05, 0.1, 0.25, 0.5), lty=2)
+keyQuant <- quantile(ddb96_05p_08k$cumminNPlay, c(0.01, 0.05, 0.1, 0.25, 0.5))
+legend("topleft", col=c("green", "orange"), pch=19, cex=0.65,
+       legend=c("Final", paste0("Min ( ", paste(round(keyQuant,0), collapse=" "), " )")) 
+       )
+
+par(mfcol=c(1, 1))
+
+
+# Plot the minima and final for JB 95 5-play at 4k and 8k, ordered by lowest minimum
+jb95_05p_04k <- sim_NPlay(keyFrame=jb95GameData$game_05Play$dfOutcome, useName="JB 95", 
+                          nPlay=5, nHands=4000, nSims=4000, genCumMin=TRUE
+                          )
+
+par(mfcol=c(1, 2))
+
+plot(x=(1:length(jb95_05p_08k$cumminNPlay))/length(jb95_05p_08k$cumminNPlay), 
+     y=jb95_05p_08k$sumsNPlay[order(jb95_05p_08k$cumminNPlay)],
+     xlab="Percentile", ylab="Base Per-Hand Units", main="Units for JB 95 5-play (8k deals)",
+     col="green", pch=19, cex=0.25, 
+     ylim=round(range(c(jb95_05p_08k$sumsNPlay, jb95_05p_08k$cumminNPlay)), -3) + c(-500, 500)
+     )
+points(x=(1:length(jb95_05p_08k$cumminNPlay))/length(jb95_05p_08k$cumminNPlay), 
+       y=jb95_05p_08k$cumminNPlay[order(jb95_05p_08k$cumminNPlay)], 
+       col="orange", pch=19, cex=0.5
+       )
+abline(h=0, v=c(0.01, 0.05, 0.1, 0.25, 0.5), lty=2)
+keyQuant <- quantile(jb95_05p_08k$cumminNPlay, c(0.01, 0.05, 0.1, 0.25, 0.5))
+legend("topleft", col=c("green", "orange"), pch=19, cex=0.65,
+       legend=c("Final", paste0("Min ( ", paste(round(keyQuant,0), collapse=" "), " )")) 
+       )
+
+plot(x=(1:length(jb95_05p_04k$cumminNPlay))/length(jb95_05p_04k$cumminNPlay), 
+     y=jb95_05p_04k$sumsNPlay[order(jb95_05p_04k$cumminNPlay)],
+     xlab="Percentile", ylab="Base Per-Hand Units", main="Units for JB 95 5-play (4k deals)",
+     col="green", pch=19, cex=0.25, 
+     ylim=round(range(c(jb95_05p_04k$sumsNPlay, jb95_05p_04k$cumminNPlay)), -3) + c(-500, 500)
+     )
+points(x=(1:length(jb95_05p_04k$cumminNPlay))/length(jb95_05p_04k$cumminNPlay), 
+       y=jb95_05p_04k$cumminNPlay[order(jb95_05p_04k$cumminNPlay)], 
+       col="orange", pch=19, cex=0.5
+       )
+abline(h=0, v=c(0.01, 0.05, 0.1, 0.25, 0.5), lty=2)
+keyQuant <- quantile(jb95_05p_04k$cumminNPlay, c(0.01, 0.05, 0.1, 0.25, 0.5))
+legend("topleft", col=c("green", "orange"), pch=19, cex=0.65,
+       legend=c("Final", paste0("Min ( ", paste(round(keyQuant,0), collapse=" "), " )")) 
+       )
+
+par(mfcol=c(1, 1))
+
+```
+
