@@ -326,3 +326,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 includes function genGame() to convert pay tables to key files and statistics; run for JB 95 and BP 75  
 * AdditionalCoding_v006 assesses combinations of nPlay and nDeal for JB 95  
 * AdditionalCoding_v006 creates functional form for game simulation and applies to JB 95, BP 75, and DDB 96  
+* AdditionalCoding_v006 assesses all-time minima for 5-play at 8k hands (JB 95, DDB 96)  
