@@ -328,3 +328,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 creates functional form for game simulation and applies to JB 95, BP 75, and DDB 96  
 * AdditionalCoding_v006 assesses all-time minima for 5-play at 8k hands (JB 95, DDB 96)  
 * AdditionalCoding_v006 assesses risk-of-ruin for 5-play JB 95 (8k, 2k deals)  
+* AdditionalCoding_v006 assesses risk-of-ruin for 10-play JB 95 (8k, 2k deals)  
