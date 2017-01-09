@@ -2643,7 +2643,9 @@ tdb96_10Play <- assessNPlay(keyList=tdb96UniqueList, nPlay=10L)
 Next, 2,000 simulations are run for up to 16,000 hands, with the percentiles assessed:  
 ```{r}
 
-sim_NPlay <- function(keyFrame, useName, nPlay, nHands, nSims, genCumMin=FALSE) {
+sim_NPlay <- function(keyFrame, useName, nPlay, nHands, nSims, 
+                      genCumMin=FALSE, genFullMin=FALSE, smpFullMin=100
+                      ) {
     
     # Extract outcomes and associated odds from the N-play list
     oddsNPlay <- round(100 * keyFrame$wts, 0)
@@ -2661,8 +2663,14 @@ sim_NPlay <- function(keyFrame, useName, nPlay, nHands, nSims, genCumMin=FALSE) 
     
     # Convert to the overall outcomes (each column is a simulation)
     sumsNPlay <- colSums(matrix(holdNPlay, ncol=nSims))
-    if (isTRUE(genCumMin)) {
-        cumminNPlay <- apply( apply(matrix(holdNPlay, ncol=nSims), 2, FUN=cumsum) , 2, FUN=min)
+    if (isTRUE(genCumMin) | isTRUE(genFullMin)) {
+        cumSumNPlay <- apply(matrix(holdNPlay, ncol=nSims), 2, FUN=cumsum)
+        if (isTRUE(genCumMin)) { cumminNPlay <- apply(cumSumNPlay , 2, FUN=min) }
+        if (isTRUE(genFullMin)) { 
+            fullminNPlay <- apply(cumSumNPlay, 2, FUN=cummin)
+            rownames(fullminNPlay) <- 1:nrow(fullminNPlay)
+            smlminNPlay <- fullminNPlay[seq(smpFullMin, nrow(fullminNPlay), by=smpFullMin), ]
+        }
     }
     
     # Report on the overall mean and variance/standard deviation
@@ -2693,8 +2701,12 @@ sim_NPlay <- function(keyFrame, useName, nPlay, nHands, nSims, genCumMin=FALSE) 
     abline(h=0, v=0.5, lty=2)
     par(mfrow=c(1, 1))
 
-    if (isTRUE(genCumMin)) {
+    if (isTRUE(genCumMin) & isTRUE(genFullMin)) {
+        list(sumsNPlay=sumsNPlay, cumminNPlay=cumminNPlay, fullminNPlay=smlminNPlay)
+    } else if (isTRUE(genCumMin) & !isTRUE(genFullMin)) {
         list(sumsNPlay=sumsNPlay, cumminNPlay=cumminNPlay)
+    } else if (!isTRUE(genCumMin) & isTRUE(genFullMin)) {
+        list(sumsNPlay=sumsNPlay, fullminNPlay=smlminNPlay)
     } else {
         sumsNPlay
     }
@@ -4074,6 +4086,66 @@ rrMinFinal(gMin=jb95_10p_08k$cumminNPlay, gSum=jb95_10p_08k$sumsNPlay,
            g2Min=jb95_10p_02k$cumminNPlay, g2Sum=jb95_10p_02k$sumsNPlay, 
            g2Name="2k deals of 10-play JB 95"
            )
+
+```
+  
+Next, the sim_NPlay function is adapted to explore the minimum results by number of hands, for example by simulating 24,000 deals and assessing the percentiles for total results at each of 1-24,000 hands.  To keep file sizes reasonable, results are stored only once every 100 hands by default.  The routine is run for the 5-play games for JB 95, BP 75, and DDB 96 at 24,000 hands.  Results are cached:  
+```{r, cache=TRUE}
+
+jb95_05p_24k_fullmin <- sim_NPlay(keyFrame=jb95GameData$game_05Play$dfOutcome, 
+                                  useName="JB 95", nPlay=5, nHands=24000, nSims=4000, 
+                                  genCumMin=TRUE, genFullMin=TRUE
+                                  )
+bp75_05p_24k_fullmin <- sim_NPlay(keyFrame=bp75GameData$game_05Play$dfOutcome, 
+                                  useName="BP 75", nPlay=5, nHands=24000, nSims=4000, 
+                                  genCumMin=TRUE, genFullMin=TRUE
+                                  )
+ddb96_05p_24k_fullmin <- sim_NPlay(keyFrame=ddb96GameData$game_05Play$dfOutcome, 
+                                   useName="DDB 96", nPlay=5, nHands=24000, nSims=4000, 
+                                   genCumMin=TRUE, genFullMin=TRUE
+                                   )
+
+```
+  
+Next, the "risk of ruin" is assessed for varying starting amounts, with the results graphed.  The JB 95 game is assessed for starting amounts from 800-7,200 (increments of 800):  
+```{r}
+
+# Survival Curves for JB 95
+handNum <- 1
+keyCol <- c("red", "orange", "purple", "blue", "grey", "green")
+keyPct <- c(1, 0.95, 0.8, 0.5)
+keyData <- matrix(data=NA, nrow=length(keyCol), ncol=length(keyPct))
+for (nBank in seq(1000, 6000, by=1000)) {
+    mtxSurv <- rowMeans(jb95_05p_24k_fullmin$fullminNPlay > -nBank)
+    if (handNum == 1) {
+        plot(x=as.numeric(names(mtxSurv)), y=unname(mtxSurv), 
+             main="Survival Curves (JB 95 5-play)", xlab="# Hands", ylab="Survival", 
+             pch=19, col=keyCol[handNum], cex=0.5, ylim=c(0, 1)
+             )
+    } else {
+        points(x=as.numeric(names(mtxSurv)), y=unname(mtxSurv), 
+               pch=19, col=keyCol[handNum], cex=0.5
+               )
+    }
+    for (intCtr in seq_along(keyPct)) {
+        keyData[handNum, intCtr] <- 
+            as.numeric(names(mtxSurv)[sum(mtxSurv >= keyPct[intCtr])])
+    }
+    handNum <- handNum + 1
+}
+
+abline(h=keyPct, lty=2)
+legend("bottomleft", 
+       legend=c(paste("Units ( ", paste(paste0(round(100*keyPct, 1), "%"), collapse="  |  "), " )"), 
+                paste0(1:6, "k      ( ", 
+                       apply(keyData, 1, 
+                             FUN=function(x) { paste(round(x/1000, 1), collapse="k   |   ") } 
+                             ), "k )"
+                       )
+                ), 
+       col=c("white", keyCol), 
+       cex=0.8, pch=19, pt.cex=1.2
+       )
 
 ```
   
