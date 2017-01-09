@@ -331,3 +331,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 assesses risk-of-ruin for 10-play JB 95 (8k, 2k deals)  
 * AdditionalCoding_v006 converts to functional form for assessing minima, risk-of-ruin, and final results  
   
+### Expansions week of 09-JAN-2017  
+* AdditionalCoding_v006 assesses survival curves for JB 95 5-play by starting units  
+  
