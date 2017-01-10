@@ -333,4 +333,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 09-JAN-2017  
 * AdditionalCoding_v006 assesses survival curves for JB 95 5-play by starting units  
+* AdditionalCoding_v006 creates functional form for survival curves and assesses JB 95 10/5/3/1-play  
   
