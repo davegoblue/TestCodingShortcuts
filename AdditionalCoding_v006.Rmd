@@ -2645,7 +2645,7 @@ Next, 2,000 simulations are run for up to 16,000 hands, with the percentiles ass
 ```{r}
 
 sim_NPlay <- function(keyFrame, useName, nPlay, nHands, nSims, 
-                      genCumMin=FALSE, genFullMin=FALSE, smpFullMin=100
+                      genCumMin=FALSE, genFullMin=FALSE, smpFullMin=100, runSTP=FALSE
                       ) {
     
     # Extract outcomes and associated odds from the N-play list
@@ -2655,12 +2655,26 @@ sim_NPlay <- function(keyFrame, useName, nPlay, nHands, nSims,
     # Validate that the rouding of odds has not adversely impacted mean/variance
     meanNPlay <- sum(oddsNPlay * resNPlay) / sum(oddsNPlay)
     varNPlay <- sum(oddsNPlay * resNPlay^2) / sum(oddsNPlay) - meanNPlay^2
-    cat("\nMean return per hand:", 1+meanNPlay/nPlay, "with total variance:", varNPlay)
+    cat("\nMean base return per hand:", 1+meanNPlay/nPlay, "with total variance:", varNPlay)
     
     # Take an appropriately sized sample from the resNPlay
     holdNPlay <- base::sample(rep(resNPlay, times=oddsNPlay), 
                               nSims*nHands, replace=TRUE
                               )
+    
+    # Make the STP data (if appropriate)
+    if (isTRUE(runSTP)) {
+        vecSTP <- c(rep(1, 1400), rep(2, 17), rep(3, 33), rep(4, 16), 
+                    rep(5, 24), rep(8, 6), rep(10, 4)
+                    )
+        multSTP <- base::sample(vecSTP, nSims*nHands, replace=TRUE)
+        
+        # Apply the appropriate multiplier (applies only to winners, not bets)
+        holdNPlay <- (holdNPlay + nPlay) * multSTP - nPlay
+        
+        # Subtract the extra bets (costs .2 per hand over nPlay total)
+        holdNPlay <- holdNPlay - .2 * nPlay
+    }
     
     # Convert to the overall outcomes (each column is a simulation)
     sumsNPlay <- colSums(matrix(holdNPlay, ncol=nSims))
@@ -2675,16 +2689,17 @@ sim_NPlay <- function(keyFrame, useName, nPlay, nHands, nSims,
     }
     
     # Report on the overall mean and variance/standard deviation
-    meanOverall <- mean(sumsNPlay) / nHands
+    meanOverall <- mean(sumsNPlay) / (nHands * if(isTRUE(runSTP)) { 1.2 } else { 1.0 } )
     varOverall <- var(sumsNPlay)
     sdOverall <- sd(sumsNPlay)
     cat("\nMean return per hand:", 
         paste0(round(100 * (1 + meanOverall/nPlay), 3), "%"), 
         "with total variance (sd as % of total bet):", 
         prettyNum(round(varOverall, 0), big.mark=","), "(", 
-        paste0(round(100*sdOverall/nHands/nPlay, 2), "%"), ")\n"
+        paste0(round(100*sdOverall/(nHands * if(isTRUE(runSTP)) { 1.2 } else { 1.0 } )/nPlay, 2), "%"), 
+        ")\n"
         )
-    print(round(quantile(sumsNPlay/nHands/nPlay, 
+    print(round(quantile(sumsNPlay/(nHands * if(isTRUE(runSTP)) { 1.2 } else { 1.0 } )/nPlay, 
                          c(0.01, 0.05, 0.10, 0.25, 0.5, 0.75, 0.90, 0.95, 0.99)
                          )
                 , 4)
@@ -2692,10 +2707,12 @@ sim_NPlay <- function(keyFrame, useName, nPlay, nHands, nSims,
     
     # Report on the percentage distributions
     par(mfrow=c(1, 2))
-    hist(sumsNPlay/nHands/nPlay, col="light blue", 
-         main=paste0("% Ret: ", nPlay, "-play (", nHands, " ", useName," deals)")
+    hist(sumsNPlay/(nHands * if(isTRUE(runSTP)) { 1.2 } else { 1.0 } )/nPlay, col="light blue", 
+         main=paste0("% Ret: ", nPlay, "-play (", nHands, " ", useName," deals)"), xlab="% Return"
          )
-    plot(x=(1:nSims)/nSims, y=sort(sumsNPlay/nHands/nPlay), pch=19, col="navy blue", 
+    plot(x=(1:nSims)/nSims, 
+         y=sort(sumsNPlay/(nHands * if(isTRUE(runSTP)) { 1.2 } else { 1.0 } )/nPlay), 
+         pch=19, col="navy blue", 
          main=paste0("% Ret: ", nPlay, "-play (", nHands, " ", useName," deals)"), 
          xlab="Percentile", ylab="% Returns"
          )
@@ -4253,3 +4270,25 @@ graphRRSurvival(keyData=ddb96_01p_24k_fullmin$fullminNPlay,
 
 ```
   
+The sim_NPlay function is adapted for the STP game, with a first pass at the results attempted:  
+```{r}
+
+jb95_05p_10k_fullmin_base <- sim_NPlay(keyFrame=jb95GameData$game_05Play$dfOutcome, 
+                                       useName="JB 95", nPlay=5, nHands=10000, nSims=4000, 
+                                       genCumMin=TRUE, genFullMin=TRUE
+                                       )
+jb95_05p_10k_fullmin_stp <- sim_NPlay(keyFrame=jb95GameData$game_05Play$dfOutcome, 
+                                      useName="JB 95", nPlay=5, nHands=10000, nSims=4000, 
+                                      genCumMin=TRUE, genFullMin=TRUE, runSTP=TRUE
+                                      )
+
+graphRRSurvival(keyData=jb95_05p_10k_fullmin_base$fullminNPlay, 
+                keyName="JB 95 5-play", keyBanks=seq(1000, 6000, by=1000)
+                )
+graphRRSurvival(keyData=jb95_05p_10k_fullmin_stp$fullminNPlay, 
+                keyName="JB 95 5-play (STP)", keyBanks=seq(1000, 6000, by=1000)
+                )
+
+
+```
+
