@@ -336,4 +336,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 creates functional form for survival curves and assesses JB 95 10/5/3/1-play  
 * AdditionalCoding_v006 assesses survival curves for BP 75 and DDB 96 (10/5/3/1-play)  
 * AdditionalCoding_v006 makes initial integration of STP (JB 95 5-play)  
+* AdditionalCoding_v006 assesses "very-low" (JB 85, JB 75, BP 65, DDB 95, DDB 85) games for 12k deals of 10-play  
   
