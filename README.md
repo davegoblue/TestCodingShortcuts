@@ -340,3 +340,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 assesses several variants of 12k deals of JB and DDB  
 * AdditionalCoding_v006 compares multiple game types given a common target and starting conditions  
   
+### Expansions week of 16-JAN-2017  
+* AdditionalCoding_v006 compares a higher deal target for multiple games with the same starting conditions  
+  
