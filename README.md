@@ -343,4 +343,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 16-JAN-2017  
 * AdditionalCoding_v006 compares a higher deal target for multiple games with the same starting conditions  
 * DataCamp_Insights_v001 captures ggplot2 part3 Choropleths (Maps and Animations)  
+* AdditionalCoding_v006 compares a very high deal target for multiple games with the same starting conditions  
   
