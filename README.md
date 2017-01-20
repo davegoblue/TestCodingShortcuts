@@ -345,4 +345,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures ggplot2 part3 Choropleths (Maps and Animations)  
 * AdditionalCoding_v006 compares a very high deal target for multiple games with the same starting conditions  
 * AdditionalCoding_v006 calculates percentiles for units required by # deals  
+* AdditionalCoding_v006 assesses 10-p DDB 95 STP  
   
