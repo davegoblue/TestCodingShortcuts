@@ -347,4 +347,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 calculates percentiles for units required by # deals  
 * AdditionalCoding_v006 assesses 10-p DDB 95 STP  
 * AdditionalCoding_v006 fixes legends for grUnitsDeals()  
+* AdditionalCoding_v006 assesses 10-p BP 75 STP  
   
