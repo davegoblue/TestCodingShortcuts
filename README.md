@@ -349,3 +349,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 fixes legends for grUnitsDeals()  
 * AdditionalCoding_v006 assesses 10-p BP 75 STP  
   
+### Expansions week of 23-JAN-2017  
+* AdditionalCoding_v006 assesses 1-p for JB 95, BP 75, DDB 95, and DDB 96  
