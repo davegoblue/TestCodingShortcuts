@@ -4212,6 +4212,9 @@ The gridExtra library allows for additional customization:
 * Can then treat the various layers of the plot as a list  
 * grid.arrange(multiple plots) and do.call()  
   
+
+  
+  
 Example code includes:  
 ```{r}
 
@@ -4222,6 +4225,7 @@ library(dplyr)
 detach(package:dplyr)
 library(plyr)
 library(dplyr)
+library(aplpack)
 
 
 # Draw rectangle in null viewport
@@ -4449,6 +4453,108 @@ grid.arrange(g1_noleg, g2, my_legend,
   layout_matrix=matrix(c(1, 3, 2, 3), ncol=2), 
   heights=unit.c(unit(1, "npc") - legend_height, legend_height)
   )
+
+```
+  
+Continuing with:  
+```{r}
+
+test_data <- data.frame(x=rep(0, 60), y=rep(0, 60))
+test_data$x <- as.numeric(strsplit("2560 ; 2345 ; 1845 ; 2260 ; 2440 ; 2285 ; 2275 ; 2350 ; 2295 ; 1900 ; 2390 ; 2075 ; 2330 ; 3320 ; 2885 ; 3310 ; 2695 ; 2170 ; 2710 ; 2775 ; 2840 ; 2485 ; 2670 ; 2640 ; 2655 ; 3065 ; 2750 ; 2920 ; 2780 ; 2745 ; 3110 ; 2920 ; 2645 ; 2575 ; 2935 ; 2920 ; 2985 ; 3265 ; 2880 ; 2975 ; 3450 ; 3145 ; 3190 ; 3610 ; 2885 ; 3480 ; 3200 ; 2765 ; 3220 ; 3480 ; 3325 ; 3855 ; 3850 ; 3195 ; 3735 ; 3665 ; 3735 ; 3415 ; 3185 ; 3690", " ; ")[[1]])
+test_data$y <- as.numeric(strsplit("97 ; 114 ; 81 ; 91 ; 113 ; 97 ; 97 ; 98 ; 109 ; 73 ; 97 ; 89 ; 109 ; 305 ; 153 ; 302 ; 133 ; 97 ; 125 ; 146 ; 107 ; 109 ; 121 ; 151 ; 133 ; 181 ; 141 ; 132 ; 133 ; 122 ; 181 ; 146 ; 151 ; 116 ; 135 ; 122 ; 141 ; 163 ; 151 ; 153 ; 202 ; 180 ; 182 ; 232 ; 143 ; 180 ; 180 ; 151 ; 189 ; 180 ; 231 ; 305 ; 302 ; 151 ; 202 ; 182 ; 181 ; 143 ; 146 ; 146", " ; ")[[1]])
+
+
+# Call bagplot() on test_data
+bagplot(test_data)
+
+# Call compute.bagplot on test_data: bag
+bag <- compute.bagplot(test_data)
+
+
+# Highlight components
+points(bag$hull.loop, col = "green", pch = 16)
+points(bag$hull.bag, col = "orange", pch = 16)
+points(bag$pxy.outlier, col="purple", pch=16)
+
+
+# Create data frames from matrices
+hull.loop <- data.frame(x = bag$hull.loop[,1], y = bag$hull.loop[,2])
+hull.bag <- data.frame(x = bag$hull.bag[,1], y = bag$hull.bag[,2])
+pxy.outlier <- data.frame(x = bag$pxy.outlier[, 1], y=bag$pxy.outlier[, 2])
+
+# Finish the ggplot command
+ggplot(test_data, aes(x=x, y=y)) +
+  geom_polygon(data = hull.loop, fill = "green") +
+  geom_polygon(data = hull.bag, fill = "orange") +
+  geom_point(data=pxy.outlier, col="purple", pch=16, cex=1.5)
+
+
+# ggproto for StatLoop (hull.loop)
+StatLoop <- ggproto("StatLoop", Stat,
+                    required_aes = c("x", "y"),
+                    compute_group = function(data, scales) {
+                      bag <- compute.bagplot(x = data$x, y = data$y)
+                      data.frame(x = bag$hull.loop[,1], y = bag$hull.loop[,2])
+                    })
+
+# ggproto for StatBag (hull.bag)
+StatBag <- ggproto("StatBag", Stat,
+                   required_aes = c("x", "y"),
+                   compute_group = function(data, scales) {
+                     bag <- compute.bagplot(x = data$x, y = data$y)
+                     data.frame(x = bag$hull.bag[, 1], y = bag$hull.bag[, 2])
+                   })
+
+# ggproto for StatOut (pxy.outlier)
+StatOut <- ggproto("StatOut", Stat,
+                   required_aes = c("x", "y"),
+                   compute_group = function(data, scales) {
+                     bag <- compute.bagplot(x = data$x, y = data$y)
+                     data.frame(x = bag$pxy.outlier[, 1], y = bag$pxy.outlier[, 2])
+                   })
+
+
+# Combine ggproto objects in layers to build stat_bag()
+stat_bag <- function(mapping = NULL, data = NULL, geom = "polygon",
+                     position = "identity", na.rm = FALSE, show.legend = NA,
+                     inherit.aes = TRUE, loop = FALSE, ...) {
+  list(
+    # StatLoop layer
+    layer(
+      stat = StatLoop, data = data, mapping = mapping, geom = geom, 
+      position = position, show.legend = show.legend, inherit.aes = inherit.aes,
+      params = list(na.rm = na.rm, alpha=0.35, col=NA, ...)
+    ),
+    # StatBag layer
+    layer(
+      stat = StatBag, data = data, mapping = mapping, geom = geom, 
+      position = position, show.legend = show.legend, inherit.aes = inherit.aes,
+      params = list(na.rm = na.rm, alpha=0.35, col=NA, ...)
+    ),
+    # StatOut layer
+    layer(
+      stat = StatOut, data = data, mapping = mapping, geom = "point", 
+      position = position, show.legend = show.legend, inherit.aes = inherit.aes,
+      params = list(na.rm = na.rm, alpha = 0.7, col = NA, shape = 21, ...)
+    )
+  )
+}
+
+
+# Previous method
+ggplot(test_data, aes(x = x,  y = y)) +
+  geom_polygon(data = hull.loop, fill = "green") +
+  geom_polygon(data = hull.bag, fill = "orange") +
+  geom_point(data = pxy.outlier, col = "purple", pch = 16, cex = 1.5)
+
+# stat_bag
+ggplot(test_data, aes(x = x,  y = y)) +
+  stat_bag(fill = "black")
+
+# stat_bag on test_data2
+# Would require brining over test_data2 (point is that it is now transferrable)
+# ggplot(test_data2, aes(x = x,  y = y, fill=treatment)) +
+#  stat_bag()
 
 
 ```
