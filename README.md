@@ -353,4 +353,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 assesses 1-p for JB 95, BP 75, DDB 95, and DDB 96  
 * DataCamp_Insights_v001 captures ggplot2 part4 ggplot2 internals (first two portions)  
 * DataCamp_Insights_v001 captures ggplot2 part4 ggplot2 internals (remaining two portions)  
+* DataCamp_Insights_v001 captures ggplot2 part5 Munging and Visualization (bag plot)  
   
