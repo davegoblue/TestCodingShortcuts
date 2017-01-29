@@ -356,4 +356,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures ggplot2 part5 Munging and Visualization (bag plot)  
 * DataCamp_Insights_v001 captures ggplot2 part5 Munging and Visualization (case studies)  
 * AdditionalCoding_v006 initial pass at replicating grUnitsDeals() using ggplot2  
+* AdditionalCoding_v006 replicates legend for grUnitsDeals() using ggplot2/grid  
   
