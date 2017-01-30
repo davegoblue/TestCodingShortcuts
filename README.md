@@ -358,3 +358,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 initial pass at replicating grUnitsDeals() using ggplot2  
 * AdditionalCoding_v006 replicates legend for grUnitsDeals() using ggplot2/grid  
   
+### Expansions week of 30-JAN-2017  
+* AdditionalCoding_v006 initial pass at grUnitsDealsGG() as ggplot2/grid version of grUnitsDeals()  
+  
