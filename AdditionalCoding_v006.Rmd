@@ -40,7 +40,11 @@ Key libraries are sourced and global parameters set.  In addition, all possible 
 library(tidyr)
 library(dplyr)
 library(ggplot2)
+library(stringr)
 library(microbenchmark)
+library(grid)
+library(gtable)
+library(gridExtra)
 
 
 startTime <- proc.time()
@@ -4985,87 +4989,100 @@ library(gtable)
 library(gridExtra)
 
 
+# Create the ggplot2/grid function to mimic grUnitsDeals()
+grUnitsDealsGG <- function(thisGame, thisName, keyLeg, 
+                           keyPct=c(1, 0.95, 0.8, 0.5), 
+                           keyCol=c("dark green", "blue", "purple", "grey", "orange", "red")
+                           ) {
+
+    # Convert to the key inputs for plotting
+    nDeals <- as.numeric(rownames(thisGame$fullminNPlay))
+    keyLeg <- sort(keyLeg)
+    keyPct <- sort(keyPct)
+    
+    # pctData will have one row per keyPct
+    pctData <- apply(thisGame$fullminNPlay, 1, 
+                     FUN=function(x) { -quantile(-x, keyPct) } 
+                     )
+
+    # Create the graphing data frame
+    thesePlotter <- NULL
+    for (intCtr in seq_along(keyPct)) {
+        thesePlotter <- c(thesePlotter, 0, pctData[intCtr, ])
+    }
+    grFrame <- data.frame(nDeals=rep(c(0, nDeals), length(keyPct)), 
+                          nUnits=thesePlotter,
+                          grpCol=rep(1:length(keyPct), each=(1+ncol(pctData)))
+                          )
+
+    # Re-create the data filtering for useLeg, as well as the legend inputs
+    useLeg <- 1 + apply(outer(keyLeg, nDeals, FUN=">"), 1, FUN=sum)
+    topRow <- paste0("Reqd.      (    ", 
+                     paste0(str_pad(round(nDeals[useLeg]/1000, 1), width=4, side="left"), 
+                            collapse="k     |    "
+                            ), 
+                     "k    )"
+                    )
+    appData <- apply(pctData[, useLeg, drop=FALSE], 1, 
+                     FUN=function(x) { 
+                         paste(format(round(x/1000, 1), nsmall=1, width=6), collapse="k    |   ")
+                         } 
+                    )
+    legText <- paste0(str_pad(round(100*keyPct, 1), width=6, side="left"), 
+                      "%    ( ", appData, "k   )"
+                      )
+
+    # Create the actual graph, roughly replicating grUnitsDeals
+    p <- ggplot(data=grFrame, aes(x=nDeals/1000, y=nUnits/1000, col=keyCol[grpCol])) + 
+        geom_point(pch=19, cex=2) + 
+        scale_color_identity() + 
+        labs(x="# Deals (000)", y="Units Required (000)", 
+             title=paste0("Units Required (000) for ", thisName)
+            ) +
+        scale_y_continuous(limits=c(floor(min(pctData)/1000), 0)) + 
+        geom_vline(xintercept=nDeals[useLeg]/1000, lty=2)
+
+    print(p)
+    
+    # First pass at the custom legend (implemented through grid)
+    # Would be nice to make height/width more flexible/driven by underlying data
+    legTop <- 0.36
+    legPos <- legTop - 0.04 * seq_along(keyPct)
+    legHeight <- max(legTop - legPos)
+
+
+    grid.rect(x=0.08, y=legTop-0.5*legHeight, width=0.6, height=legHeight+0.06, 
+              just="left", gp=gpar(fill="white")
+              )
+    grid.text(topRow, x=0.1, y=legTop, just="left", gp=gpar(fontsize=9))
+    grid.text(legText, x=0.1, y=legPos, just="left", gp=gpar(fontsize=9))
+    grid.points(x=rep(0.1, length(keyPct)), y=legPos, pch=19, 
+                gp=gpar(col=keyCol[seq_along(keyPct)]), default.units="npc"
+                )
+
+}
+
+
 # Make the reference plot
 grUnitsDeals(thisGame=jb95_01p_24k_fullmin, thisName = "JB 95 1-play Base", 
              keyLeg=c(1250, 2500, 5000, 10000, 20000), 
              keyPct=c(1, 0.99, 0.95, 0.8, 0.5)
              )
 
-# Define the same inputs (can make this a function later)
-thisGame <- jb95_01p_24k_fullmin    
-keyLeg <- c(1250, 2500, 5000, 10000, 20000)
-keyPct <- c(1, 0.99, 0.95, 0.8, 0.5)
-keyCol <- c("dark green", "blue", "purple", "grey", "orange", "red")
-thisName <- "JB 95 1-play Base"
 
-# Convert to the key inputs for plotting
-nDeals <- as.numeric(rownames(thisGame$fullminNPlay))
-keyLeg <- sort(keyLeg)
-keyPct <- sort(keyPct)
-    
-# pctData will have one row per keyPct
-pctData <- apply(thisGame$fullminNPlay, 1, FUN=function(x) { -quantile(-x, keyPct) } )
+# Make the same plot using ggplot2/grid
+grUnitsDealsGG(thisGame=jb95_01p_24k_fullmin, thisName = "JB 95 1-play Base", 
+               keyLeg=c(1250, 2500, 5000, 10000, 20000), 
+               keyPct=c(1, 0.99, 0.95, 0.8, 0.5)
+               )
 
-# Create the graphing data frame
-thesePlotter <- NULL
-for (intCtr in seq_along(keyPct)) {
-    thesePlotter <- c(thesePlotter, 0, pctData[intCtr, ])
-}
-grFrame <- data.frame(nDeals=rep(c(0, nDeals), length(keyPct)), 
-                      nUnits=thesePlotter,
-                      grpCol=rep(1:length(keyPct), each=(1+ncol(pctData)))
-                      )
 
-# Re-create the data filtering for useLeg, as well as the legend inputs
-useLeg <- 1 + apply(outer(keyLeg, nDeals, FUN=">"), 1, FUN=sum)
-topRow <- paste0("Reqd.      (    ", 
-                 paste0(str_pad(round(nDeals[useLeg]/1000, 1), width=4, side="left"), 
-                        collapse="k     |    "
-                        ), 
-                 "k    )"
-                 )
-appData <- apply(pctData[, useLeg, drop=FALSE], 1, 
-                 FUN=function(x) { 
-                     paste(format(round(x/1000, 1), nsmall=1, width=6), collapse="k    |   ")
-                     } 
-                 )
-legText <- paste0(str_pad(round(100*keyPct, 1), width=6, side="left"), 
-                  "%    ( ", appData, "k   )"
-                  )
-legTop <- 0.36
-legPos <- legTop - 0.04 * seq_along(keyPct)
-legHeight <- max(legTop - legPos)
+# Use a different number of deals and percents to see how it looks
+grUnitsDealsGG(thisGame=jb95_01p_24k_fullmin, thisName = "JB 95 1-play Base", 
+               keyLeg=c(2500, 5000, 10000, 20000), 
+               keyPct=c(1, 0.99, 0.95, 0.8, 0.5, 0.25)
+               )
 
-# Create the actual graph, roughly replicating grUnitsDeals
-ggplot(data=grFrame, aes(x=nDeals/1000, y=nUnits/1000, col=keyCol[grpCol])) + 
-    geom_point(pch=19, cex=2) + 
-    scale_color_identity() + 
-    labs(x="# Deals (000)", y="Units Required (000)", 
-         title=paste0("Units Required (000) for ", thisName)
-         ) +
-    scale_y_continuous(limits=c(floor(min(pctData)/1000), 0)) + 
-    geom_vline(xintercept=nDeals[useLeg]/1000, lty=2)
-
-# First pass at the custom legend (implemented through grid)
-# Would be nice to make height/width more flexible/driven by underlying data
-grid.rect(x=0.08, y=legTop-0.5*legHeight, width=0.6, height=legHeight+0.06, 
-          just="left", gp=gpar(fill="white")
-          )
-grid.text(topRow, x=0.1, y=legTop, just="left", gp=gpar(fontsize=9))
-grid.text(legText, x=0.1, y=legPos, just="left", gp=gpar(fontsize=9))
-grid.points(x=rep(0.1, length(keyPct)), y=legPos, pch=19, 
-            gp=gpar(col=keyCol[seq_along(keyPct)]), default.units="npc"
-            )
-
-# Not yet implemented
-# legend("bottomleft", 
-#        legend=c(topRow, 
-#                 paste0(str_pad(round(100*keyPct, 1), width=6, side="left"), 
-#                        "%    ( ", appData, "k   )"
-#                        )
-#                 ), 
-#        col=c("white", keyCol), cex=0.8, pch=19, pt.cex=1.2
-#        )
 
 ```
 
