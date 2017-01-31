@@ -360,4 +360,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 30-JAN-2017  
 * AdditionalCoding_v006 initial pass at grUnitsDealsGG() as ggplot2/grid version of grUnitsDeals()  
+* AdditionalCoding_v006 modifies grUnitsDealsGG() to be slightly more flexible  
   
