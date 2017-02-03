@@ -363,4 +363,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 modifies grUnitsDealsGG() to be slightly more flexible  
 * AdditionalCoding_v006 explores/refines grid.text() and grid.rect() in grUnitsDealsGG()  
 * AdditionalCoding_v006 explores fonts (extrafont, fontfamily, windowsFonts, etc.) and additional games  
+* AdditionalCoding_v006 combines two games in to a single overall minimum/results  
   
