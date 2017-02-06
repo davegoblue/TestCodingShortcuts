@@ -367,3 +367,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_v006 creates function cmbTwoGames() for combining two games  
 * AdditionalCoding_v006 runs cmbTwoGames() using random seeds to hold the first 24k deals constant across scenarios  
   
+### Expansions week of 06-FEB-2017  
+* DataCamp_Insights_v001 captures Data Visualization in R - Chapter 1 (Overview)  
+  
