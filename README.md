@@ -369,4 +369,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 06-FEB-2017  
 * DataCamp_Insights_v001 captures Data Visualization in R - Chapter 1 (Overview)  
+* DataCamp_Insights_v001 captures Data Visualization in R - Chapter 2 (Plot Types)  
   
