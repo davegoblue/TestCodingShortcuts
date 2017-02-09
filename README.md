@@ -371,4 +371,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures Data Visualization in R - Chapter 1 (Overview)  
 * DataCamp_Insights_v001 captures Data Visualization in R - Chapter 2 (Plot Types)  
 * DataCamp_Insights_v001 captures Data Visualization in R - Chapter 3 (Adding Details) and Chapter 4 (Too Much)  
+* DataCamp_Insights_v001 captures Data Visualization in R - Chapter 5 (Customization)  
   
