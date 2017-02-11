@@ -373,4 +373,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 captures Data Visualization in R - Chapter 3 (Adding Details) and Chapter 4 (Too Much)  
 * DataCamp_Insights_v001 captures Data Visualization in R - Chapter 5 (Customization)  
 * DataCamp_Insights_v001 captures Geospatial Data - Chapter 1 (Basic Mapping) and Chapter 2 (Point and Polygon Data)  
+* DataCamp_Insights_v001 creates a dummy countries_spdf for a few examples from Chapter 1  
     
