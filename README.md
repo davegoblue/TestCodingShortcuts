@@ -376,3 +376,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v001 creates a dummy countries_spdf for a few examples from Chapter 1  
 * DataCamp_Insights_v001 attempts orphaned holes fix with maptools::checkPolygonsHoles()  
     
+### Expansions week of 13-FEB-2017  
+* DataCamp_Insights_v001 captures Geospatial Data - Chapter 3 (Raster Data and Color)  
+  
