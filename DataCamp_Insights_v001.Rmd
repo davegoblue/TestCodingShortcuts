@@ -6581,9 +6581,9 @@ tm_shape(is0, projection="robin") +
 
 
 ```
-    
+  
 Chapter 3 - Raster Data and Color
-
+  
 Data frames are not an ideal way to store spatial data - duplication of data per polygon/point, no CRS storage, inefficient graphing/display:  
   
 * Matrices tend to be a better structure -- each cell is a data point, with information/CRS layered on top  
@@ -6805,6 +6805,231 @@ intuitive_cols <- c(
 # tm_shape(land_cover) + 
 #   tm_raster(palette=intuitive_cols) +
 #   tm_legend(position = c("left", "bottom"))
+
+
+```
+  
+Chapter 4 - Data Import and Projections  
+  
+Reading in spatial data - case study for creating map of income by census tract in Manhattan:  
+  
+* Spatial objects can include 1) census tract polygons, 2) larger neighborhood polygons, and 3) areas of water polygons  
+* Procedures typically include 1) reading in shape files, 2) aligning all CRS (coordinate reference systems, and 3) merging in data to form a SpatialPolygonsDataFrame  
+* Shape files (points, lines, polygons) can be read in using rgdal::readOGR()  
+    * There are often many files in a single directory, each with same name but different file extension  
+    * water <- rgdal::readOGR("water", "water-areas")  # reads in water-areas.<all> from ./water directory  
+* Raster files can be read in using rgdal::readGDAL() which will convert them to sp data, or using raster::raster() which will leave them as raster objects  
+  
+Coordinate reference systems stored with the data can be accessed using proj4string():  
+  
+* There are actually more than one lat/long, each defined by 1) an ellipsoid representing the non-spherical earth, and 2) a datum representing a position of the ellipsoid relative to the earth  
+    * WGS84 datum with WGS84 ellipsoid is commonly used for global data  
+    * NAD83 datum with GRS80 ellipsoid is commonly used for US data  
+* A WGS84 CRS can be assigned to file x currently lacking any CRS using proj4string(x) <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"  
+* If x already has a CRS and you want a different CRS, then you need to transform the CRS (cannot just reassign using proj4string(x) <- "my desired new CRS"  
+    * sp::spTransform(x, CRSobj, . . . ) will run the conversion  
+    * Common use might be sp::spTrasnform(x, proj4string(y)) to convert the x data to the y projection, allowing these data to be used together  
+  
+Adding data to spatial objects:  
+  
+* Income data is available from acs, and can be found in the acs package -- desire is for nyc_income, a 288x6 frame with name, state, county, tract, estimate, se  
+* Can get the ID slots in a given SpatialPolygons object with sapply(<mySP>@polygons, function(x) { x@ID } )  
+* When running SpatialPolygonsDataFrame(Sr, data, match.ID = TRUE), then the rownames of the data are matched up to the ID slots for the Sr  
+    * If instead match.ID = FALSE, then the items are matched up 1:1 assuming they both have the same IDs and do not need any re-ordering  
+* Generally, the safest way to work with the data is to keep match.id=TRUE and to use rownames for the data and force them to match to the various ID slots  
+    * Equally, the sp::merge() is like base merge but for polygon objects; it also helps to ensure that data are aligned to polygons as intended  
+  
+Polishing the map can make it even better - iterative process to improve the visuals:  
+  
+1) Remove distractions, and let the data shine  
+2) Make sure that any spatial context is useful (e.g., roads may help orient the reader, but the roads should not be the central focal point)  
+3) Double-check that the titles, legends, and labels are clear even to a non-SME  
+4) Annotate the plot; point out anything important, and attribute data sources  
+  
+Example code includes:  
+```{r}
+
+## downloaded "nynta_16d" from https://www1.nyc.gov/site/planning/data-maps/open-data/dwn-nynta.page)
+
+library(sp)
+library(rgdal)
+
+# Call dir() with directory name
+dir("./nynta_16d")
+
+# Read in shapefile with readOGR(): neighborhoods
+neighborhoods <- readOGR("nynta_16d", "nynta")
+
+# summary() of neighborhoods
+summary(neighborhoods)
+
+# Plot neighboorhoods
+plot(neighborhoods)
+
+
+## need to find/create the census tract data file in raster format
+library(raster) 
+
+
+# Call dir() on the directory
+# dir("./nyc_grid_data")
+
+# Use raster() with file path: income_grid
+# income_grid <- raster("./nyc_grid_data/m5602ahhi00.tif")
+
+# Call summary() on income_grid
+# summary(income_grid)
+
+# Call plot() on income_grid
+# plot(income_grid)
+
+
+library(sp)
+
+# Call tracts(): nyc_tracts
+nyc_tracts <- tigris::tracts(state="NY", county="New York", cb=TRUE)
+
+# Call summary() on nyc_tracts
+summary(nyc_tracts)
+
+# Plot nyc_tracts
+tigris::plot(nyc_tracts)
+
+
+# proj4string() on nyc_tracts and neighborhoods
+proj4string(nyc_tracts)
+proj4string(neighborhoods)
+
+# coordinates() on nyc_tracts and neighborhoods
+head(coordinates(nyc_tracts))
+head(coordinates(neighborhoods))
+
+# plot() neighborhoods and nyc_tracts
+plot(neighborhoods)
+plot(nyc_tracts, col="red", add=TRUE)
+
+
+# Use spTransform on neighborhoods: neighborhoods
+neighborhoods <- sp::spTransform(neighborhoods, proj4string(nyc_tracts))
+
+# head() on coordinates() of neighborhoods
+head(coordinates(neighborhoods))
+
+
+## *** NOTE THAT I DO NOT HAVE THE WATER DATA
+# Plot neighborhoods, nyc_tracts and water
+plot(neighborhoods)
+plot(nyc_tracts, col="red", add=TRUE)
+# plot(water, col="blue", add=TRUE)
+
+
+# Example for how to screw up the data slot by assuming same orders!
+# Use str() on nyc_income and nyc_tracts@data
+# str(nyc_income)
+# str(nyc_tracts@data)
+
+# Highlight tract 002201 in nyc_tracts
+# plot(nyc_tracts)
+# plot(nyc_tracts[nyc_tracts$TRACTCE == "002201", ], 
+#      col = "red", add = TRUE)
+
+# Set nyc_tracts@data to nyc_income
+# nyc_tracts@data <- nyc_income
+
+# Highlight tract 002201 in nyc_tracts
+# plot(nyc_tracts)
+# plot(nyc_tracts[nyc_tracts$tract == "002201", ], 
+#      col = "red", add = TRUE)
+     
+
+# Better approach - first, verify that the data can be matched up without errors
+# Check for duplicates in nyc_income
+# any(duplicated(nyc_income$tract))
+
+# Check for duplicates in nyc_tracts
+# any(duplicated(nyc_tracts$TRACTCE))
+
+# Check nyc_tracts in nyc_income
+# all(nyc_tracts$TRACTCE %in% nyc_income$tract)
+
+# Check nyc_income in nyc_tracts
+# all(nyc_income$tract %in% nyc_tracts$TRACTCE)
+
+
+# Merge nyc_tracts and nyc_income: nyc_tracts_merge
+# nyc_tracts_merge <- sp::merge(nyc_tracts, nyc_income, by.x="TRACTCE", by.y="tract")
+
+# Call summary() on nyc_tracts_merge
+# summary(nyc_tracts_merge)
+
+# Choropleth with col mapped to estimate
+# tm_shape(nyc_tracts_merge) + 
+#   tm_fill(col="estimate")
+
+
+# library(tmap)
+# 
+# tm_shape(nyc_tracts_merge) +
+#   tm_fill(col = "estimate") +
+#   # Add a water layer, tm_fill() with col = "grey90"
+#   tm_shape(water) +
+#   tm_fill(col = "grey90") +
+#   # Add a neighborhood layer, tm_borders()
+#   tm_shape(neighborhoods) +
+#   tm_borders()
+
+
+# Find unique() nyc_tracts_merge$COUNTYFP
+# unique(nyc_tracts_merge$COUNTYFP)
+
+# Add logical expression to pull out New York County
+# manhat_hoods <- neighborhoods[neighborhoods$CountyFIPS == "061", ]
+# 
+# tm_shape(nyc_tracts_merge) +
+#   tm_fill(col = "estimate") +
+#   tm_shape(water) +
+#   tm_fill(col = "grey90") +
+  # Edit to use manhat_hoods instead
+  # tm_shape(manhat_hoods) +
+  # tm_borders() +
+  # Add a tm_text() layer
+  # tm_text(text="NTAName")
+
+
+# gsub() to replace " " with "\n"
+# manhat_hoods$name <- gsub(" ", "\n", manhat_hoods$NTAName)
+
+# gsub() to replace "-" with "/\n"
+# manhat_hoods$name <- gsub("-", "/\n", manhat_hoods$name)
+
+# Edit to map text to name, set size to 0.5
+# tm_shape(nyc_tracts_merge) +
+#     tm_fill(col = "estimate") +
+#   tm_shape(water) +
+#     tm_fill(col = "grey90") +
+#   tm_shape(manhat_hoods) +
+#     tm_borders() +
+#     tm_text(text = "name", size=0.5)
+
+
+# tm_shape(nyc_tracts_merge) +
+  # Add title and change palette
+  # tm_fill(col = "estimate", 
+  #         title="Median Income",
+  #         palette="Greens") +
+  # Add tm_borders()
+  # tm_borders(col="grey60", lwd=0.5) +
+  # tm_shape(water) +
+  # tm_fill(col = "grey90") +
+  # tm_shape(manhat_hoods) +
+  # Change col and lwd of neighborhood boundaries
+  # tm_borders(col="grey40", lwd=2) +
+  # tm_text(text = "name", size = 0.5) +
+  # Add tm_credits()
+  # tm_credits("Source: ACS 2014 5-year Estimates, \n accessed via acs package", position=c("right", "bottom"))
+  
+# Save map as "nyc_income_map.png"
+# save_tmap(filename="nyc_income_map.png", width=4, height=7)
 
 
 ```
