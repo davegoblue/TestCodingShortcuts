@@ -379,4 +379,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 13-FEB-2017  
 * DataCamp_Insights_v001 captures Geospatial Data - Chapter 3 (Raster Data and Color)  
 * DataCamp_Insights_v001 captures Geospatial Data - Chapter 4 (Data Import and Projections)  
+* Cleaned DataCamp_Insights_v001, then split in to DataCamp_Visualization_v002 and DataCamp_Insights_v002 (components other than Visualization)  
   
