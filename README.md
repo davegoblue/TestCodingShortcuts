@@ -382,4 +382,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Cleaned DataCamp_Insights_v001, then split in to DataCamp_Visualization_v002 and DataCamp_Insights_v002 (components other than Visualization)  
 * Created DataCamp_ImportClean_v002 and removed those sections from DataCamp_Insights_v002   
 * DataCamp_Insights_v002 captures Object Oriented Programming in R - Chapter 1 (Introduction) and Chapter 2 (Using S3)  
+* DataCamp_Insights_v002 captures Object Oriented Programming in R - Chapter 3 (Using R6)  
   
