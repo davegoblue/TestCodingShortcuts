@@ -385,3 +385,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Object Oriented Programming in R - Chapter 3 (Using R6)  
 * DataCamp_Insights_v002 captures Object Oriented Programming in R - Chapter 4 (R6 Inheritance) and Chapter 5 (Advanced R6 Usage)  
   
+### Expansions week of 20-FEB-2017  
+* DataCamp_Insights_v002 captures Joining Data with dplyr - Chapter 1 (Mutating Joins)  
+  
