@@ -387,4 +387,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 20-FEB-2017  
 * DataCamp_Insights_v002 captures Joining Data with dplyr - Chapter 1 (Mutating Joins)  
+* DataCamp_Insights_v002 captures Joining Data with dplyr - Chapter 2 (Filtering Joins, Set Operations) and Chapter 3 (Assembling Data)  
   
