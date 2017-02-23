@@ -389,4 +389,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Joining Data with dplyr - Chapter 1 (Mutating Joins)  
 * DataCamp_Insights_v002 captures Joining Data with dplyr - Chapter 2 (Filtering Joins, Set Operations) and Chapter 3 (Assembling Data)  
 * DataCamp_Insights_v002 captures Joining Data with dplyr - Chapter 4 (Advanced Joining)  
+* DataCamp_Insights_v002 captures Joining Data with dplyr - Chapter 5 (Case Study)  
   
