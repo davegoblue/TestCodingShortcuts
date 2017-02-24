@@ -3355,3 +3355,323 @@ last(edhec[, "Funds of Funds"], "1 year")
     
 
 ###_Data Manipulation Case Study (Exploratory Data Analysis)_  
+
+Chapter 1 - Data cleaning and summarization - ggplot2, dplyr, real-world dataset
+
+United Nations dataset - voting history, from a scenario where every nation gets a vote:  
+  
+* Rows for observations, columns for variables - rcid (roll call ID), session (year-long), vote (1=yes,2=abstain, 3=no, 8=not present,  9=not member), ccode (country code)  
+* His dataset "votes" appears to be adapted from package "unvotes" (course instructor wrote that package)  
+	* Tibble 508,929 x 4 with the columnse being rcid-session-vote-ccode  
+* Datasets within unvotes include  
+    * unvotes::un_votes - 711,275 x 3 with rcid-country-vote  
+    * unvotes::un_roll_calls - 5,356 x 9 with rcid-session-importantvote-date-unres-amend-para-short-descr  
+    * unvotes::un_roll_call_issues - 4,951 x 3 with rcid-short_name-issue  
+* Can get the sessions by merging together un_roll_calls (which is unique by rcid-session) with un_votes  
+    * May need to then 1) create the country to ccode mapping, and 2) created the vote (9=not member) for the not members  
+    * Conversion of session to year can be based on knowing that session 1 occurred in 1946  
+  
+Grouping and Summarizing - make the dataset manageable:  
+  
+* A common metric in this case study will be "percentage of yes votes"  
+* The dplyr::group_by() and dplyr::summarize() are very hand for this -- n() means number of rows  
+  
+Sorting and filtering summarized data:  
+  
+* dplyr::arrange() is the sorting verb  
+* dplyr::filter() is often helpful after dplyr::arrange(), ensuring that "small n" samples do not dominate the top/bottom of a percentage list  
+  
+Example code includes:  
+```{r}
+
+# Grab only the sessions that are even numbered, then double-check that the list is unique by rcid
+evenSessions <- unvotes::un_roll_calls %>% 
+    filter(session %% 2 == 0)
+nrow(evenSessions) == nrow(evenSessions %>% 
+                               select(rcid) %>% 
+                               distinct()
+                           )
+
+# Double check that un_votes is unique on rcid-country, then inner_join the evenSessions file
+nrow(unvotes::un_votes) == nrow(unvotes::un_votes %>% 
+                                    select(rcid, country) %>% 
+                                    distinct()
+                                )
+baseData <- unvotes::un_votes %>% 
+    inner_join(evenSessions, by="rcid") %>% 
+    select(rcid, session, vote, country)
+str(baseData)
+
+# Create the 1-2-3 system where 1=yes, 2=abstain, and 3=no
+chrVotes <- as.character(baseData$vote)
+fctVotes <- factor(chrVotes, levels=c("yes", "abstain", "no"))
+intVotes <- as.integer(fctVotes)
+table(chrVotes, intVotes)  # confirm that 1=yes, 2=abstain, 3=no
+baseData <- baseData %>% 
+    mutate(oldFctVote = vote, vote=intVotes)
+str(baseData)  # 353,720 x 4
+
+# Create the full table of all combinations of rcid-session x country 
+# (so that votes can be entered there as either 9-not member or 8-not present)
+uqVotes <- distinct(baseData[,c("rcid", "session")])  # 2,590 x 2
+uqCountry <- distinct(baseData[,c("country"),drop=FALSE])  # 200x1
+uqVotes$dummy <- 1L
+uqCountry$dummy <- 1L
+uqVoteCountry <- full_join(uqVotes, uqCountry, by="dummy") # 518,000 x 4 (rcid-session-dummy-country)
+missVoteCountry <- uqVoteCountry %>% 
+    select(-dummy) %>% 
+    setdiff(select(baseData, -vote, -oldFctVote))  # 164,280 x 3 (rcid-session-country)
+
+# Create the unique list of session-country 
+# (countries that voted at least once in a session will be assumed 
+# to have been not members at any votes missed in that session)
+uqSessionCountry <- baseData %>% 
+    select(session, country) %>% 
+    distinct()  # 4,744 x 2
+nmVoteCountry <- missVoteCountry %>% 
+    anti_join(uqSessionCountry, by=c("session", "country")) # 132,147 x 3 (rcid-session-country)
+npVoteCountry <- missVoteCountry %>% 
+    semi_join(uqSessionCountry, by=c("session", "country")) # 32,133 x 3 (rcid-session-country)
+
+# Bind the rows together, noting their sources for the record
+unvotes <- bind_rows(baseData, 
+                     mutate(nmVoteCountry, vote=9, oldFctVote=NA), 
+                     mutate(npVoteCountry, vote=8, oldFctVote=NA), 
+                     .id="source"
+                     )  # 518,000 x 6 (source-rcid-session-vote-country-oldFctVote)
+
+# Put the UN code on them (the unvotes datauses the Correlates of War Number, variable "cown")
+missCountry <- uqCountry %>% 
+    select(-dummy) %>% 
+    anti_join(countrycode::countrycode_data, by=c("country" = "country.name.en"))
+reMap <- c(
+   "Bolivia, Plurinational State of"="Bolivia (Plurinational State of)", 
+   "Congo, the Democratic Republic of the"="Democratic Republic of the Congo",
+   "Cote d'Ivoire"="Côte D'Ivoire",
+   "Gambia"="Gambia (Islamic Republic of the)",
+   "Guinea-Bissau"="Guinea Bissau",
+   "Iran, Islamic Republic of"="Iran (Islamic Republic of)",
+   "Korea, Democratic People's Republic of"="Democratic People's Republic of Korea",
+   "Korea, Republic of"="Republic of Korea",
+   "Macedonia, the former Yugoslav Republic of"="The former Yugoslav Republic of Macedonia",
+   "Micronesia, Federated States of"="Micronesia (Federated States of)",
+   "Moldova, Republic of"="Republic of Moldova",
+   "Tanzania, United Republic of"="United Republic of Tanzania",
+   "United Kingdom"="United Kingdom of Great Britain and Northern Ireland",
+   "United States"="United States of America"
+   )
+mapMissCountry <- missCountry %>% 
+    mutate(newCountry=reMap[country]) %>% 
+    left_join(select(countrycode::countrycode_data, country.name.en, iso3n, un, cown), 
+              by=c("newCountry" = "country.name.en")
+              )
+mapOKCountry <- uqCountry %>% 
+    select(-dummy) %>% 
+    inner_join(select(countrycode::countrycode_data, country.name.en, iso3n, un, cown), 
+               by=c("country" = "country.name.en")
+               )
+mapCountry <- mapMissCountry %>% 
+    select(country, iso3n, un, cown) %>% 
+    bind_rows(mapOKCountry)  # 200 x 2
+mapCountry[duplicated(mapCountry$cown), ]  # no countries
+
+# Place the cown code on the unvotes dataset as ccode, and delete the records where it is NA
+unvotes %>% 
+    anti_join(mapCountry, by=c("country"))  # None, as it should be
+unvotes_tmp <- unvotes %>% 
+    left_join(mapCountry, by=c("country"))
+votes <- unvotes_tmp %>% 
+    filter(!is.na(cown)) %>% 
+    mutate(ccode=cown) %>% 
+    select(rcid, session, vote, ccode)  # 518,000 (200 iso3n x 2,590 votes) x 4 (rcid-session-vote-ccode)
+
+
+# Now can actually run the process on the newly created "votes" dataset
+
+# Print the votes dataset
+votes
+
+# Filter for only votes that are "yes", "abstain", or "no"
+votes %>% filter(vote <= 3)
+
+# Add another %>% step to add a year column
+votes %>%
+  filter(vote <= 3) %>%
+  mutate(year=1945+session)
+
+
+# Convert country code 100
+countrycode::countrycode(100, "cown", "country.name")
+
+# Add a country column within the mutate: votes_processed
+votes_processed <- votes %>%
+  filter(vote <= 3) %>%
+  mutate(year = session + 1945, 
+         country = countrycode::countrycode(ccode, "cown", "country.name")
+         )
+
+
+# Print votes_processed
+votes_processed
+
+# Find total and fraction of "yes" votes
+votes_processed %>%
+  summarize(total=n(), percent_yes=mean(vote==1))
+
+
+# Change this code to summarize by year
+votes_processed %>%
+  group_by(year) %>%
+  summarize(total = n(),
+            percent_yes = mean(vote == 1)
+            )
+
+
+# Summarize by country: by_country
+by_country <- votes_processed %>%
+  group_by(country) %>%
+  summarize(total = n(),
+            percent_yes = mean(vote == 1)
+            )
+
+
+# Print the by_country dataset
+by_country
+
+# Sort in ascending order of percent_yes
+by_country %>%
+  arrange(percent_yes)
+
+# Now sort in descending order
+by_country %>%
+  arrange(-percent_yes)
+
+
+# Filter out countries with fewer than 100 votes
+by_country %>%
+  arrange(percent_yes) %>%
+  filter(total >= 100)
+
+
+```
+  
+  
+Chapter 2 - Visualization with ggplot2
+
+General ggplot2 background - better exploration of the trends over time:  
+  
+* ggplot(df, aes(<variableMapping>)) + <layers>  
+  
+Visualizing by country - see for an individual country or groups of countries:  
+  
+* Need to re-summarize the data, with a dual group-by  
+* Can look at multiple countries using the %in% operator, withi color= inside the ggplot aestehtic  
+  
+Faceting to show multiple plots:  
+  
+* facet_wrap(~ <myVar>), where the tilde (~) means "explained by"  
+* The sub-argument scales="free_y" will allow each facet to be plotted on its own scale, rather than all on the common scale  
+  
+Example code includes:  
+```{r}
+
+# Define by_year
+by_year <- votes_processed %>%
+  group_by(year) %>%
+  summarize(total = n(),
+            percent_yes = mean(vote == 1)
+            )
+
+# Load the ggplot2 package
+library(ggplot2)
+
+# Create line plot
+ggplot(by_year, aes(x=year, y=percent_yes)) + 
+    geom_line()
+
+
+ggplot(by_year, aes(year, percent_yes)) +
+    geom_point() + 
+    geom_smooth()
+
+
+# Group by year and country: by_year_country
+by_year_country <- votes_processed %>%
+  group_by(year, country) %>%
+  summarize(total = n(),
+            percent_yes = mean(vote == 1)
+            )
+
+
+# Print by_year_country
+by_year_country
+
+# Create a filtered version: UK_by_year
+UK_by_year <- by_year_country %>%
+  filter(country == "United Kingdom of Great Britain and Northern Ireland")
+
+# Line plot of percent_yes over time for UK only
+ggplot(UK_by_year, aes(x=year, y=percent_yes)) + geom_line()
+
+
+# Vector of four countries to examine
+countries <- c("United States of America", 
+               "United Kingdom of Great Britain and Northern Ireland",
+               "France", 
+               "India"
+               )
+
+# Filter by_year_country: filtered_4_countries
+filtered_4_countries <- by_year_country %>%
+  filter(country %in% countries)
+
+# Line plot of % yes in four countries
+ggplot(filtered_4_countries, aes(x=year, y=percent_yes, color=country)) + 
+    geom_line()
+
+
+countries <- c("United States of America", 
+               "United Kingdom of Great Britain and Northern Ireland",
+               "France", 
+               "Japan", 
+               "Brazil", 
+               "India"
+               )
+
+# Filtered by_year_country: filtered_6_countries
+filtered_6_countries <- by_year_country %>%
+  filter(country %in% countries)
+
+# Line plot of % yes over time faceted by country
+ggplot(filtered_6_countries, aes(x=year, y=percent_yes)) + 
+    geom_line() + 
+    facet_wrap(~ country)
+
+ggplot(filtered_6_countries, aes(year, percent_yes)) + 
+    geom_line() + 
+    facet_wrap(~ country, scale="free_y")
+
+
+countries <- c("United States of America", 
+               "United Kingdom of Great Britain and Northern Ireland",
+               "France", 
+               "Japan", 
+               "Brazil", 
+               "India", 
+               "Canada", 
+               "Mexico", 
+               "Israel"
+               )
+
+# Filtered by_year_country: filtered_countries
+filtered_countries <- by_year_country %>%
+  filter(country %in% countries)
+
+# Line plot of % yes over time faceted by country
+ggplot(filtered_countries, aes(year, percent_yes)) +
+  geom_line() +
+  facet_wrap(~ country, scales = "free_y")
+
+
+```
+
