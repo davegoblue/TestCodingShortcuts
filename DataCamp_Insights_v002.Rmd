@@ -3675,3 +3675,169 @@ ggplot(filtered_countries, aes(year, percent_yes)) +
 
 ```
 
+
+Chapter 3 - Tidy modeling with broom
+
+Linear regression - quantifying trends (best-fit-lines):  
+  
+* lm(y ~ x, data=<myData>)  # y is explained by x  
+* Hadley Wickham: "Visualization can surprise you, but it does not scale well.  Modeling scales well, but it cannot surprise you"  
+  
+Tidying models with broom:  
+  
+* broom::tidy() turns an lm into a data frame  
+  
+Nesting for multiple models:  
+  
+* The tidyr::nest() command will create a unique file for each country  
+	* by_year(country) %>% tidyr::nest(-country)  # commands to create a file for each unique country (nesting all of the data except for country)  
+    * The output will be a 200x2 tibble, with each row of the tibble being country-tibble(34x3)  # 34 representing the number of years of votes  
+* The tidyr::unnest() command will reverse a nesting process  
+	* tidyr::unnest(data) # treats column data in the tibble as the information that should be un-nested  
+  
+Fitting multiple models to the nested data:  
+  
+* The purrr::map() is an excellent method for applying functions to a list (which is what tidyr::nest() has created)  
+	* purrr::map(myList, ~ . * 10)  # multiple everything by ten  
+* The command mutate(models=map(data, ~ lm(percent_yes ~ year, .)) will create a new column "models" in the list, which will contain the lm  
+  
+Working with many tidy models:  
+  
+* Can filter on just the slop term (term == "year")  
+* Can further filter on p-value such as (p.adjust(p.value) <= 0.05)  
+  
+Example code includes:  
+```{r}
+
+# Percentage of yes votes from the US by year: US_by_year
+US_by_year <- by_year_country %>%
+  filter(country == "United States of America")
+
+# Print the US_by_year data
+US_by_year
+
+# Perform a linear regression of percent_yes by year: US_fit
+US_fit <- lm(percent_yes ~ year, data=US_by_year)
+
+# Perform summary() on the US_fit object
+summary(US_fit)
+
+
+# Call the tidy() function on the US_fit object
+broom::tidy(US_fit)
+
+
+# Linear regression of percent_yes by year for US
+US_by_year <- by_year_country %>%
+  filter(country == "United States of America")
+US_fit <- lm(percent_yes ~ year, US_by_year)
+
+# Fit model for the United Kingdom
+UK_by_year <- by_year_country %>%
+  filter(country == "United Kingdom of Great Britain and Northern Ireland")
+UK_fit <- lm(percent_yes ~ year, UK_by_year)
+
+# Create US_tidied and UK_tidied
+US_tidied <- broom::tidy(US_fit)
+UK_tidied <- broom::tidy(UK_fit)
+
+# Combine the two tidied models
+bind_rows(US_tidied, UK_tidied)
+
+
+# Seems like a HORRIBLE function; messed up all the data unless it was 1) ungrouped, and 2) arranged by the planned nesting variables
+# Nest all columns besides country
+by_year_country %>% 
+    ungroup() %>% 
+    arrange(country) %>% 
+    tidyr::nest(-country)
+nested <- by_year_country %>% 
+    ungroup() %>% 
+    arrange(country) %>% 
+    tidyr::nest(-country)
+
+# Print the nested data for Brazil
+nested$data[nested$country == "Brazil"]
+
+# Unnest the data column to return it to its original form
+tidyr::unnest(nested, data)
+
+
+# Perform a linear regression on each item in the data column
+mdls <- purrr::map(nested$data, ~ lm(percent_yes ~ year, .))
+nested %>%
+  mutate(model = mdls)
+
+# This one errors out for some reason (only in knitr, not in the console)
+# nested %>%
+#   mutate(model = purrr::map(data, ~ lm(percent_yes ~ year, .)))
+
+
+# Add another mutate that applies tidy() to each model
+tidyModel <- purrr::map(mdls, ~broom::tidy(.))
+nested %>%
+  mutate(model = mdls) %>%
+  mutate(tidied = tidyModel)
+
+# This one errors out for some reason (only in knitr, not in the console)
+# nested %>%
+#   mutate(model = purrr::map(data, ~ lm(percent_yes ~ year, data = .))) %>%
+#   mutate(tidied = purrr::map(model, ~ broom::tidy(.)))
+
+
+# Add one more step that unnests the tidied column
+country_coefficients <- nested %>%
+  mutate(model = mdls,
+         tidied = tidyModel
+         ) %>%
+  tidyr::unnest(tidied)
+
+
+# Samer erroring out issue in knitr . . . 
+# country_coefficients <- nested %>%
+#   mutate(model = purrr::map(data, ~ lm(percent_yes ~ year, data = .)),
+#          tidied = purrr::map(model, broom::tidy)
+#          ) %>%
+#   tidyr::unnest(tidied)
+
+# Print the resulting country_coefficients variable
+country_coefficients
+
+
+# Print the country_coefficients dataset
+country_coefficients
+
+# Filter for only the slope terms
+country_coefficients %>%
+  filter(term == "year")
+
+
+# Filter for only the slope terms
+slope_terms <- country_coefficients %>%
+  filter(term == "year")
+  
+
+# Add p.adjusted column, then filter
+slope_terms %>%
+  mutate(p.adjusted = p.adjust(p.value)) %>%
+  filter(p.adjusted < 0.05)
+
+
+# Filter by adjusted p-values
+filtered_countries <- country_coefficients %>%
+  filter(term == "year") %>%
+  mutate(p.adjusted = p.adjust(p.value)) %>%
+  filter(p.adjusted < .05)
+
+# Sort for the countries increasing most quickly
+filtered_countries %>% 
+    arrange(desc(estimate))
+
+# Sort for the countries decreasing most quickly
+filtered_countries %>% 
+    arrange(estimate)
+
+
+```
+  
+
