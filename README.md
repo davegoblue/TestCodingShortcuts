@@ -392,4 +392,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Joining Data with dplyr - Chapter 5 (Case Study)  
 * DataCamp_Insights_v002 captures Exploratory Data Analysis: Case Study - Chapter 1 (Data Cleaning) and Chapter 2 (Visualization)  
 * DataCamp_Insights_v002 captures Exploratory Data Analysis: Case Study - Chapter 3 (Tidy Modeling with Broom)  
+* DataCamp_Insights_v002 captures Exploratory Data Analysis: Case Study - Chapter 4 (Joining and Tidying)  
   
