@@ -394,3 +394,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Exploratory Data Analysis: Case Study - Chapter 3 (Tidy Modeling with Broom)  
 * DataCamp_Insights_v002 captures Exploratory Data Analysis: Case Study - Chapter 4 (Joining and Tidying)  
   
+### Expansions week of 27-FEB-2017  
+* DataCamp_Insights_v002 captures Manipulating Time Series Data: Case Study - Chapter 1 (Flight Data)  
+  
