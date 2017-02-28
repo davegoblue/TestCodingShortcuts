@@ -12,9 +12,9 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Background and Overview  
 DataCamp offer interactive courses related to R Programming.  While some is review, it is helpful to see other perspectives on material.  As well, DataCamp has some interesting materials on packages that I want to learn better (ggplot2, dplyr, ggvis, etc.).  This document summarizes a few key insights from:  
   
-* R Programming (Introduction to R, Intermediate R, Writing Functions in R, Object Oriented Programming in R)  
+* R Programming (Introductory R, Intermediate R, Writing Functions in R, Object Oriented Programming in R)  
 * Importing and Cleaning Data (Cleaning Data in R, Importing Data in to R)  
-* Data Manipulation (dplyr, data.table, xts/zoo)  
+* Data Manipulation (dplyr, data.table, xts/zoo, dplyr joins, cases for EDA/Time Series/Pitch Data)  
 * Data Visualization (base, ggplot2 parts I/II/III, ggvis, geospatial)  
   
 The original DataCamp_Insights_v001 document has been split for this document:  
@@ -23,7 +23,7 @@ The original DataCamp_Insights_v001 document has been split for this document:
 * Importing and Cleaning Data components have been moved to DataCamp_ImportClean_v002  
 * Visualization components have been moved to DataCamp_Visualization_v002  
   
-## R Programming (Introduction to R, Intermediate R, Writing Functions in R, Object Oriented Programming in R)   
+## R Programming (Introductory R, Intermediate R, Writing Functions in R, Object Oriented Programming in R)  
 ###_Introduction, Intermediate_  
 There are a few nuggest from within these beginning modules, including:  
   
@@ -4135,6 +4135,452 @@ head(flights_xts2, n=5)
 ```
   
 
-Chapter 2
+Chapter 2 - Weather Data  
+  
+Merging using rbind() - since xts objects are already ordered by time, rbind() outputs will also be ordered by time:  
+  
+* The order of the inputs to rbind() does not matter, since the output will be ordered  
+  
+Merging time series data by column:  
+  
+* Check for comparable periodicity and time periods  
+* Will need to convert the temperature data to match up with the flights data  
+    * temps_xts["2010/2015"]  # ensure that only the overlapping years are maintained  
+    * to.period(temps_xts, period="months")  # ensure the same periodicity as the flights data  
+* The merge() as applied to xts data will then match-up on timing and attach the new columns  
+  
+Time series data workflows:  
+  
+1) Encode all time series objects as xts  
+2) Examine each object, and adjust periodicity to match prior to merging  
+3) Merge xts objects, then examine the outputs  
+  
+Example code includes:  
+```{r, cache=TRUE}
+
+# Cached to avoid multiple pings to this server
+allWeather <- data.frame()
+for (getYear in 2007:2015) {
+    testWeather <- weatherData::getWeatherForYear(station_id="BOS", year=getYear)
+    # mutate does not accept input variable "Date" as a POSIXlt; convert it outside dplyr
+    testWeather$date <- as.Date(testWeather$Date)  
+    testWeather <- testWeather %>% 
+        select(-Date) %>% 
+        mutate(min=Min_TemperatureF, mean=Mean_TemperatureF, max=Max_TemperatureF) %>% 
+        select(min, mean, max, date)
+    allWeather <- rbind(allWeather, testWeather)
+}
+str(allWeather)
+
+```
+  
+```{r}
+
+# Continuing, no need for cached data
+temps_1 <- allWeather %>% 
+    filter(date <= "2012-12-31")
+temps_2 <- allWeather %>% 
+    filter(date > "2012-12-31")
 
 
+# View the structure of each object
+str(temps_1)
+str(temps_2)
+
+# View the first and last rows of temps_1
+head(temps_1)
+tail(temps_1)
+
+# View the first and last rows of temps_2
+head(temps_2)
+tail(temps_2)
+
+
+# Confirm that the date column in each object is a time-based class
+class(temps_1$date)
+class(temps_2$date)
+
+# Encode your two temperature data frames as xts objects
+temps_1_xts <- as.xts(temps_1[, -4], order.by = temps_1$date)
+temps_2_xts <- as.xts(temps_2[, -4], order.by = temps_2$date)
+
+# View the first few lines of each new xts object to confirm they are properly formatted
+head(temps_1_xts)
+head(temps_2_xts)
+
+# Use rbind to merge your new xts objects
+temps_xts <- rbind(temps_1_xts, temps_2_xts)
+
+# View data for the first 3 days of the last month of the first year in temps_xts
+first(last(first(temps_xts, "1 year"), "1 month"), "3 days")
+
+
+# Identify the periodicity of temps_xts
+periodicity(temps_xts)
+
+# Generate a plot of mean Boston temperature for the duration of your data
+plot.xts(temps_xts$mean)
+
+# Generate a plot of mean Boston temperature from November 2010 through April 2011
+plot.xts(temps_xts["2010-11-01/2011-04-30"]$mean)
+
+lty <- c(3, 1, 3)
+plot.zoo(temps_xts["2010-11-01/2011-04-30"], plot.type = "single", lty = lty)
+
+
+# Subset your temperature data to include only 2010 through 2015: temps_xts_2
+temps_xts_2 <- temps_xts["2010/2015"]
+
+# Use to.period to convert temps_xts_2 to monthly periodicity
+temps_monthly <- to.period(temps_xts_2, period = "months", OHLC = FALSE, indexAt = "firstof")
+
+# Compare the periodicity and duration of temps_monthly and flights_xts 
+periodicity(temps_monthly)
+periodicity(flights_xts)
+
+
+idxRaw <- "2010-01-01 ; 2010-02-01 ; 2010-03-01 ; 2010-04-01 ; 2010-05-01 ; 2010-06-01 ; 2010-07-01 ; 2010-08-01 ; 2010-09-01 ; 2010-10-01 ; 2010-11-01 ; 2010-12-01 ; 2011-01-01 ; 2011-02-01 ; 2011-03-01 ; 2011-04-01 ; 2011-05-01 ; 2011-06-01 ; 2011-07-01 ; 2011-08-01 ; 2011-09-01 ; 2011-10-01 ; 2011-11-01 ; 2011-12-01 ; 2012-01-01 ; 2012-02-01 ; 2012-03-01 ; 2012-04-01 ; 2012-05-01 ; 2012-06-01 ; 2012-07-01 ; 2012-08-01 ; 2012-09-01 ; 2012-10-01 ; 2012-11-01 ; 2012-12-01 ; 2013-01-01 ; 2013-02-01 ; 2013-03-01 ; 2013-04-01 ; 2013-05-01 ; 2013-06-01 ; 2013-07-01 ; 2013-08-01 ; 2013-09-01 ; 2013-10-01 ; 2013-11-01 ; 2013-12-01 ; 2014-01-01 ; 2014-02-01 ; 2014-03-01 ; 2014-04-01 ; 2014-05-01 ; 2014-06-01 ; 2014-07-01 ; 2014-08-01 ; 2014-09-01 ; 2014-10-01 ; 2014-11-01 ; 2014-12-01 ; 2015-01-01 ; 2015-02-01 ; 2015-03-01 ; 2015-04-01 ; 2015-05-01 ; 2015-06-01 ; 2015-07-01 ; 2015-08-01 ; 2015-09-01 ; 2015-10-01 ; 2015-11-01 ; 2015-12-01"
+index <- as.Date(strsplit(idxRaw, " ; ")[[1]])
+
+
+# Split temps_xts_2 into separate lists per month
+monthly_split <- split(temps_xts_2$mean , f = "months")
+
+# Use lapply to generate the monthly mean of mean temperatures
+mean_of_means <- lapply(monthly_split, FUN = mean)
+
+# Use as.xts to generate an xts object of average monthly temperature data
+temps_monthly <- as.xts(as.numeric(mean_of_means), order.by = index)
+ 
+# Compare the periodicity and duration of your new temps_monthly and flights_xts 
+periodicity(temps_monthly)
+periodicity(flights_xts)
+
+
+# Use merge to combine your flights and temperature objects
+flights_temps <- merge(flights_xts, temps_monthly)
+
+# Examine the first few rows of your combined xts object
+head(flights_temps)
+
+# Use plot.zoo to plot these two columns in a single panel
+lty <- c(1, 2)
+plot.zoo(flights_temps[,c("pct_delay", "temps_monthly")], plot.type = "single", lty = lty)
+labels <- c("Pct. Delay", "Temperature")
+legend("topright", lty = lty, legend = labels, bg = "white")
+
+
+windData <- "7.19 ; 5.21 ; 4.9 ; 4.7 ; 4.13 ; 4.3 ; 4.74 ; 4.94 ; 4.57 ; 4.48 ; 5.97 ; 5.87 ; 4.58 ; 6 ; 5.58 ; 5.23 ; 4.71 ; 4.5 ; 3.94 ; 4.65 ; 4.73 ; 5.39 ; 4.2 ; 5.65 ; 5.55 ; 6.03 ; 5.29 ; 5.6 ; 4.03 ; 4.1 ; 4.71 ; 4.55 ; 4.33 ; 4.77 ; 4.63 ; 5.48 ; 5.68 ; 4.82 ; 6 ; 4.93 ; 5.19 ; 4.8 ; 5.19 ; 4.74 ; 4.7 ; 3.52 ; 4.87 ; 4.45 ; 3.87 ; 3.71 ; 5.16 ; 4.2 ; 4.06 ; 4.2 ; 4.32 ; 4.19 ; 4.27 ; 4.65 ; 3.67 ; 4.13 ; 4.77 ; 4.79 ; 5.26 ; 5 ; 4.52 ; 4.47 ; 4.52 ; 4.26 ; 5.03 ; 4.29 ; 4.07 ; 3.84"
+visData <- "5.77 ; 5.86 ; 5.81 ; 6 ; 6 ; 6 ; 6 ; 6 ; 5.93 ; 6 ; 5.83 ; 5.97 ; 5.61 ; 6 ; 6 ; 6 ; 6 ; 6 ; 6 ; 6 ; 5.97 ; 6 ; 5.7 ; 5.61 ; 5.71 ; 5.66 ; 5.9 ; 6.37 ; 6.39 ; 7.5 ; 7.29 ; 7.77 ; 7.8 ; 7.65 ; 7.4 ; 6.68 ; 6.81 ; 6.82 ; 7 ; 7.57 ; 6.94 ; 6.83 ; 6.48 ; 6.45 ; 7.6 ; 9.03 ; 8.2 ; 8.97 ; 6.03 ; 8.57 ; 8.58 ; 7.77 ; 7.74 ; 7.77 ; 8.03 ; 8.55 ; 7.77 ; 8.23 ; 8.2 ; 8.23 ; 8.55 ; 8.79 ; 7.9 ; 8.6 ; 8.26 ; 7.67 ; 8.06 ; 7.87 ; 8.1 ; 7.81 ; 9.33 ; 8.77"
+idxData <- "2010-01-01 ; 2010-02-01 ; 2010-03-01 ; 2010-04-01 ; 2010-05-01 ; 2010-06-01 ; 2010-07-01 ; 2010-08-01 ; 2010-09-01 ; 2010-10-01 ; 2010-11-01 ; 2010-12-01 ; 2011-01-01 ; 2011-02-01 ; 2011-03-01 ; 2011-04-01 ; 2011-05-01 ; 2011-06-01 ; 2011-07-01 ; 2011-08-01 ; 2011-09-01 ; 2011-10-01 ; 2011-11-01 ; 2011-12-01 ; 2012-01-01 ; 2012-02-01 ; 2012-03-01 ; 2012-04-01 ; 2012-05-01 ; 2012-06-01 ; 2012-07-01 ; 2012-08-01 ; 2012-09-01 ; 2012-10-01 ; 2012-11-01 ; 2012-12-01 ; 2013-01-01 ; 2013-02-01 ; 2013-03-01 ; 2013-04-01 ; 2013-05-01 ; 2013-06-01 ; 2013-07-01 ; 2013-08-01 ; 2013-09-01 ; 2013-10-01 ; 2013-11-01 ; 2013-12-01 ; 2014-01-01 ; 2014-02-01 ; 2014-03-01 ; 2014-04-01 ; 2014-05-01 ; 2014-06-01 ; 2014-07-01 ; 2014-08-01 ; 2014-09-01 ; 2014-10-01 ; 2014-11-01 ; 2014-12-01 ; 2015-01-01 ; 2015-02-01 ; 2015-03-01 ; 2015-04-01 ; 2015-05-01 ; 2015-06-01 ; 2015-07-01 ; 2015-08-01 ; 2015-09-01 ; 2015-10-01 ; 2015-11-01 ; 2015-12-01"
+
+wind <- as.xts(as.numeric(strsplit(windData, " ; ")[[1]]), 
+               order.by=as.Date(strsplit(idxData, " ; ")[[1]])
+               )
+vis <- as.xts(as.numeric(strsplit(visData, " ; ")[[1]]), 
+              order.by=as.Date(strsplit(idxData, " ; ")[[1]])
+              )
+
+# Confirm the periodicity and duration of the vis and wind data
+periodicity(vis)
+periodicity(wind)
+
+# Merge vis and wind with your existing flights_temps data
+flights_weather <- merge(flights_temps, vis, wind)
+
+# View the first few rows of your flights_weather data
+head(flights_weather)
+
+```
+  
+  
+Chapter 3 - Economic Data  
+  
+Handling missingness - missing values confound identification of trends and/or statistical tests:  
+  
+* LOCF - "last observation carried forward", is the most common approach used ; na.locf()  
+* NOCB - "next observation carried backwards" ; na.locf(fromLast = TRUE)  
+* Linear interpolation can be run using na.approx()  
+  
+Lagging and differencing - moving averages in the data:  
+  
+* The lag() function will offset observations in time ; e.g., lag(unemployment, k=1)  
+* The diff() function measures changes between period ; e.g., diff(enemployment, lag=1)  
+  
+Rolling functions:  
+  
+* Generally, the sequency will be to split-lapply-bind  
+    * unemployment_yrs <- split(unemployment, f="years")  
+    * unemployment_yrs <- lapply(unemployment, FUN=cummax)  
+    * unemployment_ytd <- do.call(rbind, unemployment_yrs)  
+  
+Example code includes:  
+```{r}
+
+gdpDate <- "1947 Q1 ; 1947 Q2 ; 1947 Q3 ; 1947 Q4 ; 1948 Q1 ; 1948 Q2 ; 1948 Q3 ; 1948 Q4 ; 1949 Q1 ; 1949 Q2 ; 1949 Q3 ; 1949 Q4 ; 1950 Q1 ; 1950 Q2 ; 1950 Q3 ; 1950 Q4 ; 1951 Q1 ; 1951 Q2 ; 1951 Q3 ; 1951 Q4 ; 1952 Q1 ; 1952 Q2 ; 1952 Q3 ; 1952 Q4 ; 1953 Q1 ; 1953 Q2 ; 1953 Q3 ; 1953 Q4 ; 1954 Q1 ; 1954 Q2 ; 1954 Q3 ; 1954 Q4 ; 1955 Q1 ; 1955 Q2 ; 1955 Q3 ; 1955 Q4 ; 1956 Q1 ; 1956 Q2 ; 1956 Q3 ; 1956 Q4 ; 1957 Q1 ; 1957 Q2 ; 1957 Q3 ; 1957 Q4 ; 1958 Q1 ; 1958 Q2 ; 1958 Q3 ; 1958 Q4 ; 1959 Q1 ; 1959 Q2 ; 1959 Q3 ; 1959 Q4 ; 1960 Q1 ; 1960 Q2 ; 1960 Q3 ; 1960 Q4 ; 1961 Q1 ; 1961 Q2 ; 1961 Q3 ; 1961 Q4 ; 1962 Q1 ; 1962 Q2 ; 1962 Q3 ; 1962 Q4 ; 1963 Q1 ; 1963 Q2 ; 1963 Q3 ; 1963 Q4 ; 1964 Q1 ; 1964 Q2 ; 1964 Q3 ; 1964 Q4 ; 1965 Q1 ; 1965 Q2 ; 1965 Q3 ; 1965 Q4 ; 1966 Q1 ; 1966 Q2 ; 1966 Q3 ; 1966 Q4 ; 1967 Q1 ; 1967 Q2 ; 1967 Q3 ; 1967 Q4 ; 1968 Q1 ; 1968 Q2 ; 1968 Q3 ; 1968 Q4 ; 1969 Q1 ; 1969 Q2 ; 1969 Q3 ; 1969 Q4 ; 1970 Q1 ; 1970 Q2 ; 1970 Q3 ; 1970 Q4 ; 1971 Q1 ; 1971 Q2 ; 1971 Q3 ; 1971 Q4 ; 1972 Q1 ; 1972 Q2 ; 1972 Q3 ; 1972 Q4 ; 1973 Q1 ; 1973 Q2 ; 1973 Q3 ; 1973 Q4 ; 1974 Q1 ; 1974 Q2 ; 1974 Q3 ; 1974 Q4 ; 1975 Q1 ; 1975 Q2 ; 1975 Q3 ; 1975 Q4 ; 1976 Q1 ; 1976 Q2 ; 1976 Q3 ; 1976 Q4 ; 1977 Q1 ; 1977 Q2 ; 1977 Q3 ; 1977 Q4 ; 1978 Q1 ; 1978 Q2 ; 1978 Q3 ; 1978 Q4 ; 1979 Q1 ; 1979 Q2 ; 1979 Q3 ; 1979 Q4 ; 1980 Q1 ; 1980 Q2 ; 1980 Q3 ; 1980 Q4 ; 1981 Q1 ; 1981 Q2 ; 1981 Q3 ; 1981 Q4 ; 1982 Q1 ; 1982 Q2 ; 1982 Q3 ; 1982 Q4 ; 1983 Q1 ; 1983 Q2 ; 1983 Q3 ; 1983 Q4 ; 1984 Q1 ; 1984 Q2 ; 1984 Q3 ; 1984 Q4 ; 1985 Q1 ; 1985 Q2 ; 1985 Q3 ; 1985 Q4 ; 1986 Q1 ; 1986 Q2 ; 1986 Q3 ; 1986 Q4 ; 1987 Q1 ; 1987 Q2 ; 1987 Q3 ; 1987 Q4 ; 1988 Q1 ; 1988 Q2 ; 1988 Q3 ; 1988 Q4 ; 1989 Q1 ; 1989 Q2 ; 1989 Q3 ; 1989 Q4 ; 1990 Q1 ; 1990 Q2 ; 1990 Q3 ; 1990 Q4 ; 1991 Q1 ; 1991 Q2 ; 1991 Q3 ; 1991 Q4 ; 1992 Q1 ; 1992 Q2 ; 1992 Q3 ; 1992 Q4 ; 1993 Q1 ; 1993 Q2 ; 1993 Q3 ; 1993 Q4 ; 1994 Q1 ; 1994 Q2 ; 1994 Q3 ; 1994 Q4 ; 1995 Q1 ; 1995 Q2 ; 1995 Q3 ; 1995 Q4 ; 1996 Q1 ; 1996 Q2 ; 1996 Q3 ; 1996 Q4 ; 1997 Q1 ; 1997 Q2 ; 1997 Q3 ; 1997 Q4 ; 1998 Q1 ; 1998 Q2 ; 1998 Q3 ; 1998 Q4 ; 1999 Q1 ; 1999 Q2 ; 1999 Q3 ; 1999 Q4 ; 2000 Q1 ; 2000 Q2 ; 2000 Q3 ; 2000 Q4 ; 2001 Q1 ; 2001 Q2 ; 2001 Q3 ; 2001 Q4 ; 2002 Q1 ; 2002 Q2 ; 2002 Q3 ; 2002 Q4 ; 2003 Q1 ; 2003 Q2 ; 2003 Q3 ; 2003 Q4 ; 2004 Q1 ; 2004 Q2 ; 2004 Q3 ; 2004 Q4 ; 2005 Q1 ; 2005 Q2 ; 2005 Q3 ; 2005 Q4 ; 2006 Q1 ; 2006 Q2 ; 2006 Q3 ; 2006 Q4 ; 2007 Q1 ; 2007 Q2 ; 2007 Q3 ; 2007 Q4 ; 2008 Q1 ; 2008 Q2 ; 2008 Q3 ; 2008 Q4 ; 2009 Q1 ; 2009 Q2 ; 2009 Q3 ; 2009 Q4 ; 2010 Q1 ; 2010 Q2 ; 2010 Q3 ; 2010 Q4 ; 2011 Q1 ; 2011 Q2 ; 2011 Q3 ; 2011 Q4 ; 2012 Q1 ; 2012 Q2 ; 2012 Q3 ; 2012 Q4 ; 2013 Q1 ; 2013 Q2 ; 2013 Q3 ; 2013 Q4 ; 2014 Q1 ; 2014 Q2 ; 2014 Q3 ; 2014 Q4 ; 2015 Q1 ; 2015 Q2 ; 2015 Q3 ; 2015 Q4 ; 2016 Q1 ; 2016 Q2 ; 2016 Q3"
+gdpGDP <- "243.1 ; 246.3 ; 250.1 ; 260.3 ; 266.2 ; 272.9 ; 279.5 ; 280.7 ; 275.4 ; NA ; NA ; 271 ; 281.2 ; NA ; 308.5 ; 320.3 ; 336.4 ; NA ; 351.8 ; 356.6 ; NA ; NA ; NA ; 381.2 ; 388.5 ; NA ; NA ; NA ; NA ; NA ; 391.6 ; 400.3 ; 413.8 ; 422.2 ; 430.9 ; NA ; NA ; 446.8 ; 452 ; 461.3 ; 470.6 ; 472.8 ; NA ; NA ; NA ; NA ; 486.7 ; 500.4 ; 511.1 ; 524.2 ; 525.2 ; 529.3 ; 543.3 ; 542.7 ; 546 ; 541.1 ; 545.9 ; 557.4 ; 568.2 ; 581.6 ; 595.2 ; 602.6 ; 609.6 ; NA ; NA ; NA ; NA ; 654.8 ; 671.1 ; 680.8 ; 692.8 ; 698.4 ; 719.2 ; 732.4 ; NA ; NA ; NA ; NA ; 820.8 ; 834.9 ; 846 ; 851.1 ; 866.6 ; 883.2 ; NA ; 936.3 ; 952.3 ; NA ; 995.4 ; 1011.4 ; 1032 ; 1040.7 ; 1053.5 ; 1070.1 ; NA ; 1091.5 ; 1137.8 ; 1159.4 ; 1180.3 ; 1193.6 ; 1233.8 ; NA ; NA ; 1332 ; 1380.7 ; 1417.6 ; 1436.8 ; 1479.1 ; 1494.7 ; 1534.2 ; NA ; 1603 ; NA ; NA ; 1713.8 ; 1765.9 ; 1824.5 ; 1856.9 ; 1890.5 ; 1938.4 ; 1992.5 ; 2060.2 ; 2122.4 ; NA ; NA ; 2336.6 ; 2398.9 ; 2482.2 ; 2531.6 ; NA ; 2670.4 ; 2730.7 ; 2796.5 ; 2799.9 ; 2860 ; NA ; 3131.8 ; 3167.3 ; 3261.2 ; 3283.5 ; 3273.8 ; NA ; NA ; NA ; 3480.3 ; 3583.8 ; 3692.3 ; 3796.1 ; NA ; NA ; NA ; NA ; 4237 ; 4302.3 ; 4394.6 ; 4453.1 ; NA ; NA ; NA ; NA ; 4736.2 ; 4821.5 ; 4900.5 ; 5022.7 ; NA ; NA ; NA ; NA ; NA ; NA ; 5711.6 ; 5763.4 ; 5890.8 ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; 7545.3 ; 7604.9 ; 7706.5 ; 7799.5 ; 7893.1 ; 8061.5 ; 8159 ; 8287.1 ; 8402.1 ; 8551.9 ; 8691.8 ; 8788.3 ; 8889.7 ; 8994.7 ; 9146.5 ; 9325.7 ; 9447.1 ; NA ; 9712.3 ; 9926.1 ; 10031 ; 10278.3 ; 10357.4 ; 10472.3 ; 10508.1 ; 10638.4 ; 10639.5 ; 10701.3 ; NA ; NA ; 11037.1 ; 11103.8 ; 11230.1 ; 11370.7 ; 11625.1 ; 11816.8 ; 11988.4 ; 12181.4 ; 12367.7 ; 12562.2 ; 12813.7 ; 12974.1 ; 13205.4 ; 13381.6 ; 13648.9 ; NA ; 13908.5 ; 14066.4 ; 14233.2 ; 14422.3 ; 14569.7 ; 14685.3 ; 14668.4 ; 14813 ; 14843 ; 14549.9 ; 14383.9 ; 14340.4 ; 14384.1 ; 14566.5 ; 14681.1 ; 14888.6 ; 15057.7 ; 15230.2 ; NA ; 15460.9 ; 15587.1 ; 15785.3 ; 15973.9 ; 16121.9 ; 16227.9 ; 16297.3 ; 16475.4 ; 16541.4 ; 16749.3 ; 16999.9 ; 17025.2 ; 17285.6 ; 17569.4 ; 17692.2 ; NA ; 17998.3 ; 18141.9 ; 18222.8 ; 18281.6 ; 18450.1 ; 18651.2"
+
+gdp <- data.frame(date=strsplit(gdpDate, " ; ")[[1]], 
+                  gdp_billions=as.numeric(strsplit(gdpGDP, " ; ")[[1]]), 
+                  stringsAsFactors=TRUE
+                  )  # want the date to be a factor to match input
+sum(is.na(gdp))
+str(gdp)
+
+
+# Get a summary of your GDP data
+summary(gdp)
+
+# Convert GDP date column to time object
+gdp$date <- as.yearqtr(gdp$date)
+
+# Convert GDP data to xts
+gdp_xts <- as.xts(gdp[, -1], order.by = gdp$date)
+names(gdp_xts) <- "gdp"
+
+# Plot GDP data over time
+plot.xts(gdp_xts)
+
+
+# Fill NAs in gdp_xts with the last observation carried forward
+gdp_locf <- na.locf(gdp_xts)
+
+# Fill NAs in gdp_xts with the next observation carried backward 
+gdp_nocb <- na.locf(gdp_xts, fromLast=TRUE)
+
+# Produce a plot for each of your new xts objects
+par(mfrow = c(2,1))
+plot.xts(gdp_locf, major.format = "%Y")
+plot.xts(gdp_nocb, major.format = "%Y")
+par(mfrow = c(1,1))
+
+# Query for GDP in 1993 in both gdp_locf and gdp_nocb
+gdp_locf["1993"]
+gdp_nocb["1993"]
+
+
+# Fill NAs in gdp_xts using linear approximation
+gdp_approx <- na.approx(gdp_xts)
+
+# Plot your new xts object
+plot.xts(gdp_approx, major.format = "%Y")
+  
+# Query for GDP in 1993 in gdp_approx
+gdp_approx["1993"]
+
+
+unemCore1 <- "7.9 ; 7.7 ; 7.6 ; 7.7 ; 7.4 ; 7.6 ; NA ; NA ; 7.6 ; 7.7 ; 7.8 ; NA ; 7.5 ; 7.6 ; 7.4 ; 7.2 ; 7 ; 7.2 ; 6.9 ; 7 ; 6.8 ; NA ; NA ; 6.4 ; 6.4 ; 6.3 ; 6.3 ; 6.1 ; 6 ; 5.9 ; 6.2 ; 5.9 ; 6 ; 5.8 ; 5.9 ; 6 ; 5.9 ; 5.9 ; NA ; NA ; NA ; NA ; NA ; 6 ; 5.9 ; 6 ; 5.9 ; 6 ; 6.3 ; NA ; NA ; 6.9 ; 7.5 ; 7.6 ; 7.8 ; 7.7 ; 7.5 ; NA ; NA ; 7.2 ; 7.5 ; 7.4 ; 7.4 ; 7.2 ; NA ; NA ; 7.2 ; 7.4 ; 7.6 ; 7.9 ; 8.3 ; 8.5 ; 8.6 ; 8.9 ; 9 ; 9.3 ; 9.4 ; NA ; NA ; NA ; NA ; NA ; 10.8 ; 10.8 ; 10.4 ; 10.4 ; 10.3 ; 10.2 ; 10.1 ; 10.1 ; 9.4 ; 9.5 ; 9.2 ; NA ; NA ; NA ; 8 ; NA ; 7.8 ; NA ; NA ; 7.2 ; 7.5 ; 7.5 ; 7.3 ; 7.4 ; 7.2 ; 7.3 ; 7.3 ; 7.2 ; 7.2 ; 7.3 ; 7.2 ; 7.4 ; 7.4 ; 7.1 ; 7.1 ; 7.1 ; 7 ; 7 ; 6.7 ; 7.2 ; 7.2 ; 7.1 ; 7.2 ; 7.2 ; 7 ; 6.9 ; 7 ; 7 ; 6.9 ; 6.6 ; 6.6 ; 6.6 ; 6.6 ; 6.3 ; 6.3 ; 6.2 ; 6.1 ; 6 ; 5.9 ; 6 ; 5.8 ; 5.7 ; NA ; NA ; NA ; 5.4 ; 5.6 ; 5.4 ; 5.4 ; 5.6 ; 5.4 ; NA ; NA ; NA ; 5.4 ; 5.2 ; 5 ; 5.2 ; NA ; NA ; NA ; NA ; 5.3 ; 5.3 ; 5.4 ; NA ; 5.4 ; 5.3 ; 5.2 ; 5.4 ; 5.4 ; 5.2 ; 5.5 ; 5.7 ; 5.9 ; 5.9 ; 6.2 ; 6.3 ; 6.4 ; 6.6 ; 6.8 ; 6.7 ; 6.9 ; 6.9 ; 6.8 ; 6.9 ; 6.9 ; 7 ; 7 ; 7.3 ; 7.3 ; 7.4 ; 7.4 ; 7.4 ; 7.6 ; 7.8 ; 7.7 ; 7.6 ; 7.6 ; 7.3 ; 7.4 ; 7.4 ; 7.3 ; 7.1 ; 7 ; 7.1 ; 7.1 ; 7 ; 6.9 ; 6.8 ; 6.7 ; 6.8 ; 6.6 ; 6.5 ; 6.6 ; NA ; 6.5 ; 6.4 ; 6.1 ; NA ; NA ; 6 ; 5.9 ; 5.8 ; 5.6 ; 5.5 ; 5.6 ; 5.4 ; 5.4 ; 5.8 ; 5.6 ; 5.6 ; 5.7 ; 5.7 ; 5.6 ; 5.5 ; 5.6 ; NA ; NA ; NA ; NA ; NA ; 5.6 ; 5.3 ; 5.5 ; 5.1 ; 5.2 ; 5.2 ; 5.4 ; 5.4 ; 5.3 ; 5.2 ; 5.2 ; 5.1 ; 4.9 ; 5 ; 4.9 ; 4.8 ; 4.9 ; 4.7 ; 4.6 ; 4.7 ; 4.6 ; 4.6 ; 4.7 ; 4.3 ; 4.4 ; 4.5 ; 4.5 ; 4.5 ; 4.6 ; 4.5 ; NA ; NA ; NA ; 4.4 ; 4.2 ; 4.3 ; 4.2 ; 4.3 ; 4.3 ; 4.2 ; 4.2 ; 4.1 ; 4.1 ; 4 ; 4 ; 4.1 ; 4 ; 3.8 ; 4 ; 4 ; 4 ; 4.1 ; 3.9 ; NA ; NA ; NA ; 4.2 ; 4.2 ; 4.3 ; 4.4 ; 4.3 ; 4.5 ; 4.6 ; 4.9 ; 5 ; 5.3 ; 5.5 ; 5.7 ; NA ; NA ; NA ; 5.9 ; 5.8 ; 5.8 ; 5.8 ; 5.7 ; 5.7 ; 5.7 ; 5.9 ; 6 ; 5.8 ; 5.9 ; 5.9 ; 6 ; 6.1 ; 6.3 ; 6.2 ; 6.1 ; 6.1 ; 6 ; 5.8 ; 5.7 ; 5.7 ; 5.6 ; 5.8 ; 5.6 ; 5.6 ; 5.6 ; 5.5 ; 5.4 ; 5.4 ; 5.5 ; 5.4 ; 5.4 ; 5.3 ; 5.4 ; 5.2 ; 5.2 ; 5.1 ; 5 ; 5 ; 4.9 ; 5 ; 5 ; 5 ; 4.9 ; 4.7 ; 4.8 ; 4.7 ; 4.7 ; 4.6 ; 4.6 ; 4.7 ; 4.7 ; 4.5 ; 4.4 ; 4.5 ; 4.4 ; 4.6 ; 4.5 ; 4.4 ; 4.5 ; 4.4 ; 4.6 ; 4.7 ; 4.6 ; 4.7 ; 4.7 ; 4.7 ; 5 ; 5 ; 4.9 ; 5.1 ; 5 ; 5.4 ; 5.6 ; 5.8 ; NA ; NA ; NA ; 6.8 ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; NA ; 10 ; 9.9 ; 9.9 ; 9.8 ; 9.8 ; 9.9 ; 9.9 ; 9.6 ; 9.4 ; 9.4 ; 9.5 ; 9.5 ; 9.4 ; 9.8 ; 9.3 ; 9.1 ; 9 ; 9 ; 9.1 ; 9 ; 9.1 ; 9 ; 9 ; 9 ; 8.8 ; NA ; NA ; NA ; NA ; NA ; 8.2 ; 8.2 ; 8.2 ; 8.2 ; 8.1 ; 7.8 ; 7.8 ; 7.7 ; 7.9 ; 8 ; 7.7 ; 7.5 ; 7.6 ; 7.5 ; 7.5 ; 7.3 ; 7.3 ; 7.3 ; 7.2 ; 6.9 ; 6.7 ; 6.6 ; 6.7 ; 6.7 ; 6.2 ; 6.2 ; 6.1 ; 6.2 ; 6.2 ; 6 ; 5.7 ; 5.8 ; 5.6 ; 5.7 ; 5.5 ; 5.5 ; 5.4 ; 5.5 ; 5.3 ; 5.3 ; 5.1 ; 5.1 ; 5 ; 5 ; 5 ; 11.6 ; NA ; 10.9 ; NA ; 9.4 ; 9.8 ; 9.7 ; 9 ; 9 ; 8.3 ; 8.3 ; 8.2 ; 9.5 ; 9.2 ; 8.8 ; NA ; 7.6 ; 8.2 ; 7.8 ; NA ; 7.5 ; 6.6 ; NA ; 6.2 ; 7.5 ; 7.2 ; 6.9 ; 6 ; 5.9 ; 6.4 ; 6.5"
+unemCore2 <- "5.9 ; 6 ; 5.2 ; NA ; 5.7 ; 6.7 ; 6.4 ; 6.2 ; 5.4 ; 5.2 ; 5.7 ; 5.4 ; NA ; 5.4 ; 4.7 ; 4.8 ; 4.9 ; 6.1 ; 5.8 ; 5.8 ; 5.3 ; 5.6 ; 6.1 ; 6.1 ; 5.7 ; 5.6 ; 5.2 ; NA ; 5.1 ; 6.7 ; 6.4 ; 6.3 ; 5.7 ; 5.9 ; 6.5 ; NA ; 6.5 ; 6.8 ; 6.4 ; 6.7 ; 7 ; 8.4 ; 8.2 ; 8 ; 7.5 ; 7.5 ; 8 ; 8 ; 7.6 ; 7.6 ; 7.1 ; 7.3 ; 7.4 ; 8.3 ; 8 ; 7.7 ; 6.9 ; 6.8 ; 7.1 ; 6.6 ; 6.4 ; 6.4 ; 5.7 ; 5.6 ; 5.6 ; 6.5 ; 6 ; 5.7 ; 5 ; 4.5 ; 4.7 ; 4.7 ; 4.4 ; 4.4 ; 3.7 ; 3.7 ; 3.8 ; 4.9 ; 4.5 ; 4.4 ; NA ; 3.8 ; 4.2 ; 4.2 ; 3.8 ; 3.8 ; 3.4 ; 3.4 ; 3.5 ; NA ; 4.4 ; 4.3 ; 3.8 ; 3.9 ; 4.2 ; 4.1 ; 3.8 ; 3.9 ; 3.3 ; 3.3 ; NA ; 4.3 ; 4.2 ; 4 ; 3.3 ; 3.2 ; 3.4 ; 3.3 ; 2.8 ; 2.9 ; 2.4 ; 2.5 ; 2.6 ; 3.9 ; 3.7 ; 3.6 ; 3 ; 3 ; 3.4 ; 3.4 ; 3.1 ; 3.2 ; 2.8 ; 3 ; 3.1 ; 4.3 ; 4.1 ; 4 ; 3.7 ; 3.7 ; 4.2 ; 4.3 ; 4.1 ; 4.4 ; 4.1 ; 4.3 ; 4.5 ; 5.8 ; NA ; 5.9 ; 5.6 ; 5.7 ; 6.1 ; 6.5 ; 6.4 ; 6.8 ; 6.5 ; 7 ; 7.3 ; 8.7 ; 8.8 ; 8.9 ; 8.3 ; 8.6 ; 8.9 ; 8.9 ; 8.7 ; 8.8 ; 8.3 ; NA ; NA ; 9.4 ; 9.2 ; 9 ; 8.3 ; 8.4 ; 8.8 ; 8.7 ; 8.3 ; 8.4 ; 7.7 ; NA ; 7.6 ; 8.6 ; 8.2 ; 7.8 ; 7.1 ; 6.9 ; 7.1 ; 6.9 ; 6.5 ; 6.6 ; 6.1 ; 6 ; 6 ; 7.3 ; 6.9 ; 6.7 ; 6.1 ; 5.8 ; 6.2 ; 6.1 ; 5.8 ; 5.8 ; 5.4 ; 5.3 ; 5.3 ; 6.4 ; 5.9 ; 5.7 ; 5.3 ; NA ; 5.5 ; 5.5 ; 5.1 ; 5.2 ; 4.6 ; 4.6 ; 4.6 ; 5.7 ; 5.2 ; 5 ; 4.4 ; 4.4 ; 4.5 ; 4.6 ; 4 ; 4.2 ; 3.7 ; 3.8 ; 3.8 ; 4.9 ; 4.6 ; 4.4 ; 3.9 ; 3.8 ; 4.2 ; 4.1 ; 3.7 ; 3.8 ; 3.2 ; 3.2 ; 3.3 ; 4.2 ; 3.9 ; 3.8 ; 3 ; 3.1 ; 3.5 ; 3.4 ; 3 ; 3.2 ; 2.8 ; 2.8 ; 2.9 ; 3.9 ; 3.6 ; 3.4 ; 3.1 ; 3 ; 3.4 ; 3.5 ; 3 ; 3.2 ; 2.7 ; 2.7 ; 2.7 ; 3.6 ; 3.3 ; 3.1 ; 2.4 ; 2.5 ; 2.8 ; 2.8 ; 2.5 ; 2.5 ; 2.1 ; 2.3 ; 2.4 ; 3.7 ; 3.5 ; 3.6 ; 3.2 ; 3.3 ; 3.8 ; 3.9 ; 3.8 ; 4 ; 3.7 ; 4 ; 4.2 ; 5.5 ; 5.3 ; 5.3 ; 5 ; 5 ; 5.5 ; 5.5 ; 5.3 ; 5.4 ; 5 ; 5.2 ; 5.2 ; 6.3 ; 6 ; 5.9 ; 5.5 ; 5.6 ; 6.1 ; 5.9 ; 5.7 ; 5.8 ; 5.2 ; 5.3 ; 5.2 ; 6.2 ; 5.8 ; 5.7 ; 5.1 ; 5.1 ; 5.5 ; 5.3 ; 4.8 ; 4.9 ; 4.4 ; 4.5 ; 4.5 ; 5.6 ; 5.4 ; 5.1 ; 4.7 ; 4.6 ; 5 ; 4.9 ; 4.5 ; 4.9 ; 4.4 ; 4.7 ; 4.6 ; 5.5 ; 5.4 ; 5.2 ; 4.9 ; 4.7 ; 5.1 ; 5 ; 4.7 ; 4.9 ; 4.3 ; 4.5 ; 4.6 ; 5.6 ; 5.2 ; 4.8 ; NA ; NA ; 4.8 ; 4.7 ; 4.3 ; 4.5 ; 4 ; 4.1 ; 4.4 ; 5.4 ; 5.2 ; 5 ; 4.6 ; 5 ; 5.6 ; 5.7 ; 5.6 ; 5.9 ; 5.7 ; 6.1 ; 6.6 ; 7.9 ; 7.9 ; 7.8 ; 7.3 ; 7.7 ; 8.3 ; 8.4 ; 8.2 ; 8.6 ; 8.2 ; 8.3 ; 8.5 ; 9.6 ; 9.2 ; 8.9 ; 8.3 ; 8.2 ; 8.4 ; 8.3 ; 7.9 ; 8 ; 7.5 ; 7.7 ; 7.6 ; 8.5 ; 8.1 ; 7.7 ; 7.2 ; 7.1 ; 7.6 ; 7.4 ; 6.9 ; 7.1 ; 6.5 ; 6.4 ; 6.6 ; 7.4 ; 7.2 ; 6.8 ; 6.3 ; 6.3 ; 6.9 ; 6.9 ; 6.6 ; 6.6 ; 6.2 ; 6.2 ; 6.5 ; 7.6 ; 7.2 ; 7 ; 6.6 ; 6.6 ; 7.3 ; 7 ; 6.6 ; 6.6 ; 6.2 ; 6 ; 5.9 ; 6.8 ; 6.5 ; 6.2 ; 5.5 ; 5.5 ; 6 ; 6 ; NA ; 5.7 ; 5 ; 5 ; 4.9 ; 5.8 ; 5.5 ; 5.2 ; 4.7 ; 4.9 ; 5.2 ; 5.2 ; 4.7 ; 4.9 ; 4.5 ; 4.5 ; 4.6"
+unemIndex1 <- "Jan 1976 ; Feb 1976 ; Mar 1976 ; Apr 1976 ; May 1976 ; Jun 1976 ; Jul 1976 ; Aug 1976 ; Sep 1976 ; Oct 1976 ; Nov 1976 ; Dec 1976 ; Jan 1977 ; Feb 1977 ; Mar 1977 ; Apr 1977 ; May 1977 ; Jun 1977 ; Jul 1977 ; Aug 1977 ; Sep 1977 ; Oct 1977 ; Nov 1977 ; Dec 1977 ; Jan 1978 ; Feb 1978 ; Mar 1978 ; Apr 1978 ; May 1978 ; Jun 1978 ; Jul 1978 ; Aug 1978 ; Sep 1978 ; Oct 1978 ; Nov 1978 ; Dec 1978 ; Jan 1979 ; Feb 1979 ; Mar 1979 ; Apr 1979 ; May 1979 ; Jun 1979 ; Jul 1979 ; Aug 1979 ; Sep 1979 ; Oct 1979 ; Nov 1979 ; Dec 1979 ; Jan 1980 ; Feb 1980 ; Mar 1980 ; Apr 1980 ; May 1980 ; Jun 1980 ; Jul 1980 ; Aug 1980 ; Sep 1980 ; Oct 1980 ; Nov 1980 ; Dec 1980 ; Jan 1981 ; Feb 1981 ; Mar 1981 ; Apr 1981 ; May 1981 ; Jun 1981 ; Jul 1981 ; Aug 1981 ; Sep 1981 ; Oct 1981 ; Nov 1981 ; Dec 1981 ; Jan 1982 ; Feb 1982 ; Mar 1982 ; Apr 1982 ; May 1982 ; Jun 1982 ; Jul 1982 ; Aug 1982 ; Sep 1982 ; Oct 1982 ; Nov 1982 ; Dec 1982 ; Jan 1983 ; Feb 1983 ; Mar 1983 ; Apr 1983 ; May 1983 ; Jun 1983 ; Jul 1983 ; Aug 1983 ; Sep 1983 ; Oct 1983 ; Nov 1983 ; Dec 1983 ; Jan 1984 ; Feb 1984 ; Mar 1984 ; Apr 1984 ; May 1984 ; Jun 1984 ; Jul 1984 ; Aug 1984 ; Sep 1984 ; Oct 1984 ; Nov 1984 ; Dec 1984 ; Jan 1985 ; Feb 1985 ; Mar 1985 ; Apr 1985 ; May 1985 ; Jun 1985 ; Jul 1985 ; Aug 1985 ; Sep 1985 ; Oct 1985 ; Nov 1985 ; Dec 1985 ; Jan 1986 ; Feb 1986 ; Mar 1986 ; Apr 1986 ; May 1986 ; Jun 1986 ; Jul 1986 ; Aug 1986 ; Sep 1986 ; Oct 1986 ; Nov 1986 ; Dec 1986 ; Jan 1987 ; Feb 1987 ; Mar 1987 ; Apr 1987 ; May 1987 ; Jun 1987 ; Jul 1987 ; Aug 1987 ; Sep 1987 ; Oct 1987 ; Nov 1987 ; Dec 1987 ; Jan 1988 ; Feb 1988 ; Mar 1988 ; Apr 1988 ; May 1988 ; Jun 1988 ; Jul 1988 ; Aug 1988 ; Sep 1988 ; Oct 1988 ; Nov 1988 ; Dec 1988 ; Jan 1989 ; Feb 1989 ; Mar 1989 ; Apr 1989 ; May 1989 ; Jun 1989 ; Jul 1989 ; Aug 1989 ; Sep 1989 ; Oct 1989 ; Nov 1989 ; Dec 1989 ; Jan 1990 ; Feb 1990 ; Mar 1990 ; Apr 1990 ; May 1990 ; Jun 1990 ; Jul 1990 ; Aug 1990 ; Sep 1990 ; Oct 1990 ; Nov 1990 ; Dec 1990 ; Jan 1991 ; Feb 1991 ; Mar 1991 ; Apr 1991 ; May 1991 ; Jun 1991 ; Jul 1991 ; Aug 1991 ; Sep 1991 ; Oct 1991 ; Nov 1991 ; Dec 1991 ; Jan 1992 ; Feb 1992 ; Mar 1992 ; Apr 1992 ; May 1992 ; Jun 1992 ; Jul 1992 ; Aug 1992 ; Sep 1992 ; Oct 1992 ; Nov 1992 ; Dec 1992 ; Jan 1993 ; Feb 1993 ; Mar 1993 ; Apr 1993 ; May 1993 ; Jun 1993 ; Jul 1993 ; Aug 1993 ; Sep 1993 ; Oct 1993 ; Nov 1993 ; Dec 1993 ; Jan 1994 ; Feb 1994 ; Mar 1994 ; Apr 1994 ; May 1994 ; Jun 1994 ; Jul 1994 ; Aug 1994 ; Sep 1994 ; Oct 1994 ; Nov 1994 ; Dec 1994 ; Jan 1995 ; Feb 1995 ; Mar 1995 ; Apr 1995 ; May 1995 ; Jun 1995 ; Jul 1995 ; Aug 1995 ; Sep 1995 ; Oct 1995 ; Nov 1995 ; Dec 1995 ; Jan 1996 ; Feb 1996 ; Mar 1996 ; Apr 1996 ; May 1996 ; Jun 1996 ; Jul 1996 ; Aug 1996 ; Sep 1996 ; Oct 1996 ; Nov 1996 ; Dec 1996"
+unemIndex2 <- "Jan 1997 ; Feb 1997 ; Mar 1997 ; Apr 1997 ; May 1997 ; Jun 1997 ; Jul 1997 ; Aug 1997 ; Sep 1997 ; Oct 1997 ; Nov 1997 ; Dec 1997 ; Jan 1998 ; Feb 1998 ; Mar 1998 ; Apr 1998 ; May 1998 ; Jun 1998 ; Jul 1998 ; Aug 1998 ; Sep 1998 ; Oct 1998 ; Nov 1998 ; Dec 1998 ; Jan 1999 ; Feb 1999 ; Mar 1999 ; Apr 1999 ; May 1999 ; Jun 1999 ; Jul 1999 ; Aug 1999 ; Sep 1999 ; Oct 1999 ; Nov 1999 ; Dec 1999 ; Jan 2000 ; Feb 2000 ; Mar 2000 ; Apr 2000 ; May 2000 ; Jun 2000 ; Jul 2000 ; Aug 2000 ; Sep 2000 ; Oct 2000 ; Nov 2000 ; Dec 2000 ; Jan 2001 ; Feb 2001 ; Mar 2001 ; Apr 2001 ; May 2001 ; Jun 2001 ; Jul 2001 ; Aug 2001 ; Sep 2001 ; Oct 2001 ; Nov 2001 ; Dec 2001 ; Jan 2002 ; Feb 2002 ; Mar 2002 ; Apr 2002 ; May 2002 ; Jun 2002 ; Jul 2002 ; Aug 2002 ; Sep 2002 ; Oct 2002 ; Nov 2002 ; Dec 2002 ; Jan 2003 ; Feb 2003 ; Mar 2003 ; Apr 2003 ; May 2003 ; Jun 2003 ; Jul 2003 ; Aug 2003 ; Sep 2003 ; Oct 2003 ; Nov 2003 ; Dec 2003 ; Jan 2004 ; Feb 2004 ; Mar 2004 ; Apr 2004 ; May 2004 ; Jun 2004 ; Jul 2004 ; Aug 2004 ; Sep 2004 ; Oct 2004 ; Nov 2004 ; Dec 2004 ; Jan 2005 ; Feb 2005 ; Mar 2005 ; Apr 2005 ; May 2005 ; Jun 2005 ; Jul 2005 ; Aug 2005 ; Sep 2005 ; Oct 2005 ; Nov 2005 ; Dec 2005 ; Jan 2006 ; Feb 2006 ; Mar 2006 ; Apr 2006 ; May 2006 ; Jun 2006 ; Jul 2006 ; Aug 2006 ; Sep 2006 ; Oct 2006 ; Nov 2006 ; Dec 2006 ; Jan 2007 ; Feb 2007 ; Mar 2007 ; Apr 2007 ; May 2007 ; Jun 2007 ; Jul 2007 ; Aug 2007 ; Sep 2007 ; Oct 2007 ; Nov 2007 ; Dec 2007 ; Jan 2008 ; Feb 2008 ; Mar 2008 ; Apr 2008 ; May 2008 ; Jun 2008 ; Jul 2008 ; Aug 2008 ; Sep 2008 ; Oct 2008 ; Nov 2008 ; Dec 2008 ; Jan 2009 ; Feb 2009 ; Mar 2009 ; Apr 2009 ; May 2009 ; Jun 2009 ; Jul 2009 ; Aug 2009 ; Sep 2009 ; Oct 2009 ; Nov 2009 ; Dec 2009 ; Jan 2010 ; Feb 2010 ; Mar 2010 ; Apr 2010 ; May 2010 ; Jun 2010 ; Jul 2010 ; Aug 2010 ; Sep 2010 ; Oct 2010 ; Nov 2010 ; Dec 2010 ; Jan 2011 ; Feb 2011 ; Mar 2011 ; Apr 2011 ; May 2011 ; Jun 2011 ; Jul 2011 ; Aug 2011 ; Sep 2011 ; Oct 2011 ; Nov 2011 ; Dec 2011 ; Jan 2012 ; Feb 2012 ; Mar 2012 ; Apr 2012 ; May 2012 ; Jun 2012 ; Jul 2012 ; Aug 2012 ; Sep 2012 ; Oct 2012 ; Nov 2012 ; Dec 2012 ; Jan 2013 ; Feb 2013 ; Mar 2013 ; Apr 2013 ; May 2013 ; Jun 2013 ; Jul 2013 ; Aug 2013 ; Sep 2013 ; Oct 2013 ; Nov 2013 ; Dec 2013 ; Jan 2014 ; Feb 2014 ; Mar 2014 ; Apr 2014 ; May 2014 ; Jun 2014 ; Jul 2014 ; Aug 2014 ; Sep 2014 ; Oct 2014 ; Nov 2014 ; Dec 2014 ; Jan 2015 ; Feb 2015 ; Mar 2015 ; Apr 2015 ; May 2015 ; Jun 2015 ; Jul 2015 ; Aug 2015 ; Sep 2015 ; Oct 2015 ; Nov 2015 ; Dec 2015"
+
+unemCore <- paste(unemCore1, unemCore2, sep=" ; ")
+unemIndex <- paste(unemIndex1, unemIndex2, sep=" ; ")
+
+mtxCore <- matrix(data=as.numeric(strsplit(unemCore, " ; ")[[1]]), ncol=2, byrow=FALSE)
+colnames(mtxCore) <- c("us", "ma")
+vecIndex <- as.yearmon(strsplit(unemIndex, " ; ")[[1]], "%b %Y")
+unemployment <- as.xts(mtxCore, order.by=vecIndex)
+str(unemployment)
+
+
+# View a summary of your unemployment data
+summary(unemployment)
+
+# Use na.approx to remove missing values in unemployment data
+unemployment <- na.approx(unemployment)
+
+# Plot new unemployment data
+lty <- c(1, 2)
+plot.zoo(unemployment, plot.type = "single", lty = lty)
+labels <- c("US Unemployment (%)" , "MA Unemployment (%)")
+legend("topright", lty = lty, legend = labels, bg = "white")
+
+
+# Create a one month lag of US unemployment
+us_monthlag <- stats::lag(unemployment$us, k = 1) # caution that dplyr::lag can mask stats::lag
+
+# Create a one year lag of US unemployment
+us_yearlag <- stats::lag(unemployment$us, k = 12) # caution that dplyr::lag can mask stats::lag
+
+# Merge your original data with your new lags 
+unemployment_lags <- merge(unemployment, us_monthlag, us_yearlag)
+
+# View the first 15 rows of unemployment_lags
+head(unemployment_lags, n=15)
+
+
+# Generate monthly difference in unemployment
+unemployment$us_monthlydiff <- diff(unemployment$us, lag = 1, differences = 1)
+
+# Generate yearly difference in unemployment
+unemployment$us_yearlydiff <- diff(unemployment$us, lag = 12, differences = 1)
+
+# Plot US unemployment and annual difference
+par(mfrow = c(2,1))
+plot.xts(unemployment$us)
+plot.xts(unemployment$us_yearlydiff, type = "h")
+par(mfrow=c(1, 1))
+
+
+# Add a quarterly difference in gdp
+gdp_xts <- na.approx(gdp_xts)
+gdp_xts$quarterly_diff <- diff(gdp_xts$gdp, lag = 1, differences = 1)
+
+# Split gdp$quarterly_diff into years
+gdpchange_years <- split(gdp_xts$quarterly_diff, f = "years")
+
+# Use lapply to calculate the cumsum each year
+gdpchange_ytd <- lapply(gdpchange_years, FUN = cumsum)
+
+# Use do.call to rbind the results
+gdpchange_xts <- do.call(rbind, gdpchange_ytd)
+
+# Plot cumulative year-to-date change in GDP
+plot.xts(gdpchange_xts, type = "h")
+
+
+# Use rollapply to calculate the rolling yearly average US unemployment
+unemployment$year_avg <- rollapply(unemployment$us, width = 12, FUN = mean)
+
+# Plot all columns of US unemployment data
+lty <- c(2, 1)
+lwd <- c(1, 2)
+plot.zoo(unemployment[, c("us", "year_avg")], plot.type = "single", lty = lty, lwd = lwd)
+
+
+# Add a one-year lag of MA unemployment
+unemployment$ma_yearlag <- stats::lag(unemployment$ma, k=12)  # caution that dplyr::lag can mask stats::lag
+
+# Add a six-month difference of MA unemployment
+unemployment$ma_sixmonthdiff <- diff(unemployment$ma, lag=6, differences=1)
+
+# Add a six-month rolling average of MA unemployment
+unemployment$ma_sixmonthavg <- rollapply(unemployment$ma, width=6, FUN=mean)
+  
+# Add a yearly rolling maximum of MA unemployment
+unemployment$ma_yearmax <- rollapply(unemployment$ma, width=12, FUN=max)
+
+# View the last year of unemployment data
+tail(unemployment, n=12)
+
+
+```
+  
+
+Chapter 4 - Sports Data  
+  
+Advanced features of xts:  
+  
+* Finding endpoints can be done using endpoints(, on="years")  
+    * years <- endpoints(unemployment, on="years") ; unemployment[years]  
+* Applying by period can be run using period.apply()  
+	* period.apply(unemployment, INDEX=years, FUN=mean)  
+  
+Indexing commands in xts:  
+  
+* The .index() extracts the raw index, in fractional seconds since UNIX day-zero  
+* The .indexwday() command gives you the day of the week  # 0 = Sunday  
+  
+Example code includes:  
+```{r}
+
+rsDate1 <- "2010-04-04 ; 2010-04-06 ; 2010-04-07 ; 2010-04-16 ; 2010-04-17 ; 2010-04-18 ; 2010-04-19 ; 2010-04-20 ; 2010-04-21 ; 2010-04-22 ; 2010-04-23 ; 2010-04-24 ; 2010-04-25 ; 2010-05-03 ; 2010-05-04 ; 2010-05-05 ; 2010-05-06 ; 2010-05-07 ; 2010-05-08 ; 2010-05-09 ; 2010-05-10 ; 2010-05-11 ; 2010-05-12 ; 2010-05-19 ; 2010-05-20 ; 2010-05-27 ; 2010-05-28 ; 2010-05-29 ; 2010-05-30 ; 2010-06-01 ; 2010-06-02 ; 2010-06-03 ; 2010-06-11 ; 2010-06-12 ; 2010-06-13 ; 2010-06-15 ; 2010-06-16 ; 2010-06-17 ; 2010-06-18 ; 2010-06-19 ; 2010-06-20 ; 2010-06-29 ; 2010-06-30 ; 2010-07-02 ; 2010-07-03 ; 2010-07-04 ; 2010-07-15 ; 2010-07-16 ; 2010-07-17 ; 2010-07-18 ; 2010-07-30 ; 2010-07-31 ; 2010-08-01 ; 2010-08-02 ; 2010-08-03 ; 2010-08-04 ; 2010-08-05 ; 2010-08-17 ; 2010-08-18 ; 2010-08-19 ; 2010-08-20 ; 2010-08-21 ; 2010-08-22 ; 2010-08-23 ; 2010-08-25 ; 2010-08-25 ; 2010-09-04 ; 2010-09-04 ; 2010-09-05 ; 2010-09-06 ; 2010-09-07 ; 2010-09-08 ; 2010-09-17 ; 2010-09-18 ; 2010-09-19 ; 2010-09-20 ; 2010-09-21 ; 2010-09-22 ; 2010-10-02 ; 2010-10-02 ; 2010-10-03 ; 2011-04-08 ; 2011-04-09 ; 2011-04-10 ; 2011-04-11 ; 2011-04-12 ; 2011-04-15 ; 2011-04-16 ; 2011-04-17 ; 2011-04-18 ; 2011-04-29 ; 2011-04-30 ; 2011-05-01 ; 2011-05-02 ; 2011-05-03 ; 2011-05-04 ; 2011-05-05 ; 2011-05-06 ; 2011-05-07 ; 2011-05-08 ; 2011-05-09 ; 2011-05-16 ; 2011-05-18 ; 2011-05-19 ; 2011-05-20 ; 2011-05-21 ; 2011-05-22 ; 2011-05-30 ; 2011-05-31 ; 2011-06-01 ; 2011-06-03 ; 2011-06-04 ; 2011-06-05 ; 2011-06-17 ; 2011-06-18 ; 2011-06-19 ; 2011-06-20 ; 2011-06-21 ; 2011-06-22 ; 2011-07-04 ; 2011-07-05 ; 2011-07-06 ; 2011-07-07 ; 2011-07-08 ; 2011-07-09 ; 2011-07-10 ; 2011-07-22 ; 2011-07-23 ; 2011-07-24 ; 2011-07-25 ; 2011-07-26 ; 2011-07-27 ; 2011-07-28 ; 2011-08-01 ; 2011-08-02 ; 2011-08-03 ; 2011-08-04 ; 2011-08-05 ; 2011-08-06 ; 2011-08-07 ; 2011-08-16 ; 2011-08-16 ; 2011-08-17 ; 2011-08-26 ; 2011-08-27 ; 2011-08-27 ; 2011-08-30 ; 2011-08-31 ; 2011-09-01 ; 2011-09-02 ; 2011-09-03 ; 2011-09-04 ; 2011-09-13 ; 2011-09-14 ; 2011-09-15 ; 2011-09-16 ; 2011-09-17 ; 2011-09-18 ; 2011-09-19 ; 2011-09-19 ; 2011-09-20 ; 2011-09-21 ; 2012-04-13 ; 2012-04-14 ; 2012-04-15 ; 2012-04-16 ; 2012-04-17 ; 2012-04-18 ; 2012-04-20 ; 2012-04-21 ; 2012-04-30 ; 2012-05-01 ; 2012-05-02 ; 2012-05-04 ; 2012-05-05 ; 2012-05-06 ; 2012-05-10 ; 2012-05-11 ; 2012-05-12 ; 2012-05-13 ; 2012-05-14 ; 2012-05-15 ; 2012-05-25 ; 2012-05-26 ; 2012-05-27 ; 2012-05-28 ; 2012-05-29 ; 2012-05-30 ; 2012-05-31 ; 2012-06-05 ; 2012-06-06 ; 2012-06-07 ; 2012-06-08 ; 2012-06-09 ; 2012-06-10 ; 2012-06-19 ; 2012-06-20 ; 2012-06-21 ; 2012-06-22 ; 2012-06-23 ; 2012-06-24 ; 2012-06-25 ; 2012-06-26 ; 2012-06-27 ; 2012-07-06 ; 2012-07-07 ; 2012-07-07 ; 2012-07-08 ; 2012-07-16 ; 2012-07-17 ; 2012-07-18 ; 2012-07-19 ; 2012-07-20 ; 2012-07-21 ; 2012-07-22 ; 2012-07-30 ; 2012-07-31 ; 2012-08-01 ; 2012-08-02 ; 2012-08-03 ; 2012-08-04 ; 2012-08-05 ; 2012-08-06 ; 2012-08-07 ; 2012-08-08 ; 2012-08-21 ; 2012-08-22 ; 2012-08-23 ; 2012-08-24 ; 2012-08-25 ; 2012-08-26 ; 2012-08-27 ; 2012-09-07 ; 2012-09-08 ; 2012-09-09 ; 2012-09-11 ; 2012-09-12 ; 2012-09-13 ; 2012-09-21 ; 2012-09-22 ; 2012-09-23 ; 2012-09-25 ; 2012-09-26"
+rsDate2 <- "2013-04-08 ; 2013-04-10 ; 2013-04-11 ; 2013-04-13 ; 2013-04-14 ; 2013-04-15 ; 2013-04-20 ; 2013-04-21 ; 2013-04-21 ; 2013-04-22 ; 2013-04-23 ; 2013-04-24 ; 2013-04-25 ; 2013-04-26 ; 2013-04-27 ; 2013-04-28 ; 2013-05-06 ; 2013-05-07 ; 2013-05-08 ; 2013-05-09 ; 2013-05-10 ; 2013-05-11 ; 2013-05-12 ; 2013-05-23 ; 2013-05-24 ; 2013-05-25 ; 2013-05-26 ; 2013-05-27 ; 2013-05-28 ; 2013-06-04 ; 2013-06-05 ; 2013-06-06 ; 2013-06-08 ; 2013-06-08 ; 2013-06-09 ; 2013-06-18 ; 2013-06-18 ; 2013-06-19 ; 2013-06-25 ; 2013-06-26 ; 2013-06-27 ; 2013-06-28 ; 2013-06-29 ; 2013-06-30 ; 2013-07-02 ; 2013-07-03 ; 2013-07-04 ; 2013-07-19 ; 2013-07-20 ; 2013-07-21 ; 2013-07-22 ; 2013-07-23 ; 2013-07-24 ; 2013-07-29 ; 2013-07-30 ; 2013-07-31 ; 2013-08-01 ; 2013-08-02 ; 2013-08-03 ; 2013-08-04 ; 2013-08-16 ; 2013-08-17 ; 2013-08-18 ; 2013-08-27 ; 2013-08-28 ; 2013-08-29 ; 2013-08-30 ; 2013-08-31 ; 2013-09-01 ; 2013-09-02 ; 2013-09-03 ; 2013-09-04 ; 2013-09-13 ; 2013-09-14 ; 2013-09-15 ; 2013-09-17 ; 2013-09-18 ; 2013-09-19 ; 2013-09-20 ; 2013-09-21 ; 2013-09-22 ; 2014-04-04 ; 2014-04-05 ; 2014-04-06 ; 2014-04-07 ; 2014-04-08 ; 2014-04-09 ; 2014-04-18 ; 2014-04-19 ; 2014-04-20 ; 2014-04-21 ; 2014-04-22 ; 2014-04-23 ; 2014-04-24 ; 2014-04-29 ; 2014-05-01 ; 2014-05-01 ; 2014-05-02 ; 2014-05-03 ; 2014-05-04 ; 2014-05-06 ; 2014-05-07 ; 2014-05-16 ; 2014-05-17 ; 2014-05-18 ; 2014-05-20 ; 2014-05-21 ; 2014-05-22 ; 2014-05-28 ; 2014-05-29 ; 2014-05-30 ; 2014-05-31 ; 2014-06-01 ; 2014-06-12 ; 2014-06-13 ; 2014-06-14 ; 2014-06-15 ; 2014-06-16 ; 2014-06-17 ; 2014-06-18 ; 2014-06-30 ; 2014-07-01 ; 2014-07-02 ; 2014-07-05 ; 2014-07-05 ; 2014-07-06 ; 2014-07-07 ; 2014-07-08 ; 2014-07-09 ; 2014-07-10 ; 2014-07-18 ; 2014-07-19 ; 2014-07-20 ; 2014-07-28 ; 2014-07-29 ; 2014-07-30 ; 2014-08-01 ; 2014-08-02 ; 2014-08-03 ; 2014-08-14 ; 2014-08-15 ; 2014-08-16 ; 2014-08-17 ; 2014-08-18 ; 2014-08-19 ; 2014-08-20 ; 2014-08-21 ; 2014-08-22 ; 2014-08-23 ; 2014-08-24 ; 2014-09-05 ; 2014-09-06 ; 2014-09-07 ; 2014-09-08 ; 2014-09-09 ; 2014-09-10 ; 2014-09-23 ; 2014-09-24 ; 2014-09-25 ; 2014-09-26 ; 2014-09-27 ; 2014-09-28 ; 2015-04-13 ; 2015-04-14 ; 2015-04-15 ; 2015-04-17 ; 2015-04-18 ; 2015-04-19 ; 2015-04-20 ; 2015-04-27 ; 2015-04-28 ; 2015-04-29 ; 2015-05-01 ; 2015-05-02 ; 2015-05-03 ; 2015-05-04 ; 2015-05-05 ; 2015-05-06 ; 2015-05-19 ; 2015-05-20 ; 2015-05-21 ; 2015-05-22 ; 2015-05-23 ; 2015-05-24 ; 2015-06-02 ; 2015-06-03 ; 2015-06-03 ; 2015-06-04 ; 2015-06-05 ; 2015-06-06 ; 2015-06-07 ; 2015-06-12 ; 2015-06-13 ; 2015-06-14 ; 2015-06-15 ; 2015-06-16 ; 2015-06-23 ; 2015-06-24 ; 2015-06-25 ; 2015-07-03 ; 2015-07-04 ; 2015-07-05 ; 2015-07-07 ; 2015-07-08 ; 2015-07-10 ; 2015-07-11 ; 2015-07-12 ; 2015-07-24 ; 2015-07-25 ; 2015-07-26 ; 2015-07-27 ; 2015-07-28 ; 2015-07-29 ; 2015-07-30 ; 2015-07-31 ; 2015-08-01 ; 2015-08-02 ; 2015-08-14 ; 2015-08-15 ; 2015-08-16 ; 2015-08-17 ; 2015-08-18 ; 2015-08-19 ; 2015-08-20 ; 2015-08-21 ; 2015-08-22 ; 2015-08-23 ; 2015-08-31 ; 2015-09-01 ; 2015-09-02 ; 2015-09-04 ; 2015-09-05 ; 2015-09-06 ; 2015-09-07 ; 2015-09-08 ; 2015-09-09 ; 2015-09-21 ; 2015-09-22 ; 2015-09-23 ; 2015-09-24 ; 2015-09-25 ; 2015-09-26 ; 2015-09-27"
+rsDate3 <- "2010-04-09 ; 2010-04-10 ; 2010-04-11 ; 2010-04-12 ; 2010-04-14 ; 2010-04-15 ; 2010-04-26 ; 2010-04-27 ; 2010-04-28 ; 2010-04-30 ; 2010-05-01 ; 2010-05-02 ; 2010-05-14 ; 2010-05-15 ; 2010-05-16 ; 2010-05-17 ; 2010-05-18 ; 2010-05-21 ; 2010-05-22 ; 2010-05-23 ; 2010-05-24 ; 2010-05-25 ; 2010-05-26 ; 2010-06-04 ; 2010-06-05 ; 2010-06-06 ; 2010-06-07 ; 2010-06-08 ; 2010-06-09 ; 2010-06-10 ; 2010-06-22 ; 2010-06-23 ; 2010-06-24 ; 2010-06-25 ; 2010-06-26 ; 2010-06-27 ; 2010-07-05 ; 2010-07-06 ; 2010-07-07 ; 2010-07-09 ; 2010-07-10 ; 2010-07-11 ; 2010-07-19 ; 2010-07-20 ; 2010-07-21 ; 2010-07-22 ; 2010-07-23 ; 2010-07-24 ; 2010-07-25 ; 2010-07-26 ; 2010-07-27 ; 2010-07-28 ; 2010-08-06 ; 2010-08-07 ; 2010-08-08 ; 2010-08-09 ; 2010-08-10 ; 2010-08-11 ; 2010-08-12 ; 2010-08-13 ; 2010-08-14 ; 2010-08-15 ; 2010-08-27 ; 2010-08-28 ; 2010-08-29 ; 2010-08-31 ; 2010-09-01 ; 2010-09-02 ; 2010-09-10 ; 2010-09-11 ; 2010-09-12 ; 2010-09-13 ; 2010-09-14 ; 2010-09-15 ; 2010-09-24 ; 2010-09-25 ; 2010-09-26 ; 2010-09-27 ; 2010-09-28 ; 2010-09-29 ; 2010-09-30 ; 2011-04-01 ; 2011-04-02 ; 2011-04-03 ; 2011-04-05 ; 2011-04-06 ; 2011-04-07 ; 2011-04-19 ; 2011-04-20 ; 2011-04-21 ; 2011-04-22 ; 2011-04-23 ; 2011-04-24 ; 2011-04-26 ; 2011-04-27 ; 2011-04-28 ; 2011-05-10 ; 2011-05-11 ; 2011-05-13 ; 2011-05-14 ; 2011-05-15 ; 2011-05-23 ; 2011-05-24 ; 2011-05-25 ; 2011-05-26 ; 2011-05-27 ; 2011-05-29 ; 2011-05-29 ; 2011-06-07 ; 2011-06-08 ; 2011-06-09 ; 2011-06-10 ; 2011-06-11 ; 2011-06-12 ; 2011-06-14 ; 2011-06-15 ; 2011-06-16 ; 2011-06-24 ; 2011-06-25 ; 2011-06-26 ; 2011-06-28 ; 2011-06-29 ; 2011-06-30 ; 2011-07-01 ; 2011-07-02 ; 2011-07-03 ; 2011-07-15 ; 2011-07-16 ; 2011-07-17 ; 2011-07-18 ; 2011-07-19 ; 2011-07-20 ; 2011-07-29 ; 2011-07-30 ; 2011-07-31 ; 2011-08-08 ; 2011-08-09 ; 2011-08-10 ; 2011-08-12 ; 2011-08-13 ; 2011-08-14 ; 2011-08-18 ; 2011-08-19 ; 2011-08-20 ; 2011-08-21 ; 2011-08-22 ; 2011-08-23 ; 2011-08-24 ; 2011-08-25 ; 2011-09-05 ; 2011-09-06 ; 2011-09-07 ; 2011-09-08 ; 2011-09-09 ; 2011-09-10 ; 2011-09-11 ; 2011-09-24 ; 2011-09-25 ; 2011-09-25 ; 2011-09-26 ; 2011-09-27 ; 2011-09-28 ; 2012-04-05 ; 2012-04-07 ; 2012-04-08 ; 2012-04-09 ; 2012-04-10 ; 2012-04-11 ; 2012-04-23 ; 2012-04-24 ; 2012-04-25 ; 2012-04-26 ; 2012-04-27 ; 2012-04-28 ; 2012-04-29 ; 2012-05-07 ; 2012-05-08 ; 2012-05-09 ; 2012-05-16 ; 2012-05-17 ; 2012-05-18 ; 2012-05-19 ; 2012-05-20 ; 2012-05-21 ; 2012-05-22 ; 2012-05-23 ; 2012-06-01 ; 2012-06-02 ; 2012-06-03 ; 2012-06-11 ; 2012-06-12 ; 2012-06-13 ; 2012-06-15 ; 2012-06-16 ; 2012-06-17 ; 2012-06-28 ; 2012-06-29 ; 2012-06-30 ; 2012-07-01 ; 2012-07-02 ; 2012-07-03 ; 2012-07-04 ; 2012-07-13 ; 2012-07-14 ; 2012-07-15 ; 2012-07-23 ; 2012-07-24 ; 2012-07-25 ; 2012-07-27 ; 2012-07-28 ; 2012-07-29 ; 2012-08-09 ; 2012-08-10 ; 2012-08-11 ; 2012-08-12 ; 2012-08-14 ; 2012-08-15 ; 2012-08-16 ; 2012-08-17 ; 2012-08-18 ; 2012-08-19 ; 2012-08-28 ; 2012-08-29 ; 2012-08-30 ; 2012-08-31 ; 2012-09-01 ; 2012-09-02 ; 2012-09-03 ; 2012-09-04 ; 2012-09-05 ; 2012-09-14 ; 2012-09-15 ; 2012-09-16 ; 2012-09-17 ; 2012-09-18 ; 2012-09-19 ; 2012-09-20 ; 2012-09-28 ; 2012-09-29 ; 2012-09-30 ; 2012-10-01 ; 2012-10-02 ; 2012-10-03"
+rsDate4 <- "2013-04-01 ; 2013-04-03 ; 2013-04-04 ; 2013-04-05 ; 2013-04-06 ; 2013-04-07 ; 2013-04-16 ; 2013-04-17 ; 2013-04-18 ; 2013-04-30 ; 2013-05-01 ; 2013-05-02 ; 2013-05-03 ; 2013-05-04 ; 2013-05-05 ; 2013-05-14 ; 2013-05-15 ; 2013-05-16 ; 2013-05-17 ; 2013-05-18 ; 2013-05-19 ; 2013-05-20 ; 2013-05-21 ; 2013-05-22 ; 2013-05-29 ; 2013-05-30 ; 2013-05-31 ; 2013-06-01 ; 2013-06-02 ; 2013-06-10 ; 2013-06-11 ; 2013-06-12 ; 2013-06-13 ; 2013-06-14 ; 2013-06-15 ; 2013-06-16 ; 2013-06-20 ; 2013-06-21 ; 2013-06-22 ; 2013-06-23 ; 2013-07-05 ; 2013-07-06 ; 2013-07-07 ; 2013-07-08 ; 2013-07-09 ; 2013-07-10 ; 2013-07-11 ; 2013-07-12 ; 2013-07-13 ; 2013-07-14 ; 2013-07-26 ; 2013-07-27 ; 2013-07-28 ; 2013-08-05 ; 2013-08-06 ; 2013-08-07 ; 2013-08-08 ; 2013-08-09 ; 2013-08-10 ; 2013-08-11 ; 2013-08-13 ; 2013-08-14 ; 2013-08-15 ; 2013-08-19 ; 2013-08-20 ; 2013-08-21 ; 2013-08-23 ; 2013-08-24 ; 2013-08-25 ; 2013-09-05 ; 2013-09-06 ; 2013-09-07 ; 2013-09-08 ; 2013-09-10 ; 2013-09-11 ; 2013-09-12 ; 2013-09-24 ; 2013-09-25 ; 2013-09-27 ; 2013-09-28 ; 2013-09-29 ; 2014-03-31 ; 2014-04-02 ; 2014-04-03 ; 2014-04-10 ; 2014-04-11 ; 2014-04-12 ; 2014-04-13 ; 2014-04-15 ; 2014-04-16 ; 2014-04-17 ; 2014-04-25 ; 2014-04-26 ; 2014-04-27 ; 2014-05-09 ; 2014-05-10 ; 2014-05-11 ; 2014-05-13 ; 2014-05-14 ; 2014-05-15 ; 2014-05-23 ; 2014-05-24 ; 2014-05-25 ; 2014-05-26 ; 2014-05-27 ; 2014-06-02 ; 2014-06-03 ; 2014-06-04 ; 2014-06-06 ; 2014-06-07 ; 2014-06-08 ; 2014-06-09 ; 2014-06-10 ; 2014-06-11 ; 2014-06-19 ; 2014-06-20 ; 2014-06-21 ; 2014-06-22 ; 2014-06-23 ; 2014-06-24 ; 2014-06-25 ; 2014-06-27 ; 2014-06-28 ; 2014-06-29 ; 2014-07-11 ; 2014-07-12 ; 2014-07-13 ; 2014-07-21 ; 2014-07-22 ; 2014-07-23 ; 2014-07-24 ; 2014-07-25 ; 2014-07-26 ; 2014-07-27 ; 2014-08-05 ; 2014-08-06 ; 2014-08-07 ; 2014-08-08 ; 2014-08-09 ; 2014-08-10 ; 2014-08-12 ; 2014-08-13 ; 2014-08-25 ; 2014-08-26 ; 2014-08-27 ; 2014-08-29 ; 2014-08-30 ; 2014-08-31 ; 2014-09-01 ; 2014-09-02 ; 2014-09-03 ; 2014-09-04 ; 2014-09-11 ; 2014-09-12 ; 2014-09-13 ; 2014-09-14 ; 2014-09-16 ; 2014-09-17 ; 2014-09-18 ; 2014-09-19 ; 2014-09-20 ; 2014-09-21 ; 2015-04-06 ; 2015-04-08 ; 2015-04-09 ; 2015-04-10 ; 2015-04-11 ; 2015-04-12 ; 2015-04-21 ; 2015-04-22 ; 2015-04-23 ; 2015-04-24 ; 2015-04-25 ; 2015-04-26 ; 2015-05-08 ; 2015-05-09 ; 2015-05-10 ; 2015-05-11 ; 2015-05-12 ; 2015-05-13 ; 2015-05-14 ; 2015-05-15 ; 2015-05-16 ; 2015-05-17 ; 2015-05-25 ; 2015-05-26 ; 2015-05-27 ; 2015-05-28 ; 2015-05-29 ; 2015-05-30 ; 2015-05-31 ; 2015-06-09 ; 2015-06-10 ; 2015-06-11 ; 2015-06-17 ; 2015-06-18 ; 2015-06-19 ; 2015-06-20 ; 2015-06-21 ; 2015-06-26 ; 2015-06-27 ; 2015-06-28 ; 2015-06-29 ; 2015-06-30 ; 2015-07-01 ; 2015-07-02 ; 2015-07-17 ; 2015-07-18 ; 2015-07-20 ; 2015-07-20 ; 2015-07-21 ; 2015-07-22 ; 2015-07-23 ; 2015-08-04 ; 2015-08-05 ; 2015-08-06 ; 2015-08-07 ; 2015-08-08 ; 2015-08-09 ; 2015-08-11 ; 2015-08-12 ; 2015-08-24 ; 2015-08-25 ; 2015-08-26 ; 2015-08-28 ; 2015-08-29 ; 2015-08-30 ; 2015-09-11 ; 2015-09-12 ; 2015-09-13 ; 2015-09-14 ; 2015-09-15 ; 2015-09-16 ; 2015-09-18 ; 2015-09-19 ; 2015-09-20 ; 2015-09-28 ; 2015-09-29 ; 2015-09-30 ; 2015-10-01 ; 2015-10-02 ; 2015-10-03 ; 2015-10-04"
+rsDate <- paste(rsDate1, rsDate2, rsDate3, rsDate4, sep=" ; ")
+
+rsScore <- "9 ; 4 ; 1 ; 1 ; 5 ; 1 ; 2 ; 7 ; 8 ; 0 ; 4 ; 7 ; 6 ; 17 ; 5 ; 3 ; 11 ; 3 ; 3 ; 9 ; 7 ; 6 ; 2 ; 3 ; 6 ; 3 ; 5 ; 1 ; 8 ; 9 ; 6 ; 8 ; 12 ; 10 ; 3 ; 6 ; 6 ; 8 ; 10 ; 5 ; 2 ; 8 ; 4 ; 3 ; 9 ; 1 ; 2 ; 4 ; 3 ; 2 ; 5 ; 5 ; 4 ; 5 ; 3 ; 1 ; 6 ; 6 ; 7 ; 2 ; 2 ; 5 ; 5 ; 6 ; 5 ; 2 ; 1 ; 1 ; 5 ; 12 ; 5 ; 11 ; 9 ; 3 ; 6 ; 2 ; 1 ; 6 ; 5 ; 7 ; 8 ; 9 ; 4 ; 4 ; 5 ; 2 ; 6 ; 4 ; 8 ; 9 ; 4 ; 0 ; 3 ; 9 ; 7 ; 3 ; 0 ; 2 ; 4 ; 9 ; 2 ; 8 ; 1 ; 4 ; 15 ; 3 ; 5 ; 3 ; 7 ; 4 ; 8 ; 9 ; 6 ; 10 ; 2 ; 12 ; 14 ; 4 ; 1 ; 7 ; 3 ; 6 ; 10 ; 10 ; 4 ; 8 ; 7 ; 3 ; 12 ; 1 ; 13 ; 12 ; 3 ; 6 ; 3 ; 4 ; 3 ; 2 ; 10 ; 3 ; 3 ; 2 ; 0 ; 5 ; 9 ; 4 ; 2 ; 9 ; 2 ; 0 ; 12 ; 4 ; 18 ; 4 ; 2 ; 4 ; 3 ; 5 ; 5 ; 18 ; 5 ; 4 ; 12 ; 13 ; 6 ; 0 ; 3 ; 3 ; 2 ; 9 ; 11 ; 3 ; 2 ; 4 ; 2 ; 6 ; 3 ; 7 ; 4 ; 12 ; 6 ; 5 ; 4 ; 3 ; 3 ; 7 ; 6 ; 6 ; 3 ; 6 ; 1 ; 7 ; 4 ; 2 ; 3 ; 7 ; 15 ; 6 ; 1 ; 8 ; 9 ; 6 ; 5 ; 10 ; 8 ; 1 ; 9 ; 3 ; 5 ; 5 ; 10 ; 3 ; 1 ; 3 ; 7 ; 7 ; 4 ; 5 ; 0 ; 5 ; 4 ; 6 ; 9 ; 3 ; 9 ; 3 ; 3 ; 13 ; 4 ; 9 ; 8 ; 5 ; 5 ; 2 ; 3 ; 4 ; 4 ; 0 ; 2 ; 6 ; 2 ; 2 ; 2 ; 3 ; 5 ; 2 ; 2 ; 5 ; 3 ; 4 ; 2 ; 4 ; 9 ; 0 ; 6 ; 7 ; 7 ; 8 ; 6 ; 6 ; 1 ; 8 ; 3 ; 5 ; 2 ; 4 ; 3 ; 8 ; 7 ; 6 ; 9 ; 1 ; 17 ; 2 ; 6 ; 5 ; 7 ; 10 ; 5 ; 3 ; 2 ; 11 ; 5 ; 7 ; 7 ; 2 ; 5 ; 4 ; 2 ; 8 ; 4 ; 2 ; 8 ; 0 ; 6 ; 1 ; 1 ; 8 ; 5 ; 8 ; 6 ; 5 ; 4 ; 3 ; 6 ; 6 ; 13 ; 4 ; 2 ; 4 ; 7 ; 7 ; 0 ; 2 ; 20 ; 8 ; 5 ; 9 ; 2 ; 3 ; 3 ; 6 ; 2 ; 5 ; 2 ; 6 ; 0 ; 5 ; 7 ; 4 ; 4 ; 4 ; 6 ; 6 ; 3 ; 5 ; 5 ; 7 ; 1 ; 5 ; 7 ; 6 ; 2 ; 4 ; 4 ; 0 ; 1 ; 2 ; 4 ; 4 ; 2 ; 4 ; 4 ; 3 ; 7 ; 4 ; 5 ; 10 ; 2 ; 2 ; 1 ; 2 ; 2 ; 0 ; 1 ; 9 ; 3 ; 4 ; 6 ; 0 ; 3 ; 5 ; 4 ; 5 ; 2 ; 6 ; 1 ; 2 ; 1 ; 4 ; 4 ; 7 ; 9 ; 3 ; 10 ; 1 ; 2 ; 3 ; 3 ; 0 ; 3 ; 3 ; 6 ; 9 ; 4 ; 1 ; 0 ; 1 ; 6 ; 2 ; 11 ; 11 ; 2 ; 10 ; 5 ; 9 ; 8 ; 5 ; 3 ; 1 ; 3 ; 7 ; 6 ; 8 ; 4 ; 2 ; 2 ; 5 ; 1 ; 2 ; 3 ; 4 ; 1 ; 1 ; 5 ; 8 ; 6 ; 1 ; 6 ; 0 ; 4 ; 4 ; 4 ; 7 ; 10 ; 4 ; 5 ; 2 ; 9 ; 4 ; 5 ; 6 ; 8 ; 6 ; 5 ; 4 ; 6 ; 1 ; 5 ; 6 ; 2 ; 1 ; 11 ; 8 ; 4 ; 2 ; 8 ; 7 ; 11 ; 3 ; 15 ; 22 ; 8 ; 2 ; 9 ; 6 ; 4 ; 7 ; 3 ; 6 ; 4 ; 1 ; 8 ; 7 ; 9 ; 6 ; 11 ; 1 ; 10 ; 8 ; 2 ; 2 ; 2 ; 7 ; 8 ; 2 ; 3 ; 8 ; 8 ; 2 ; 6 ; 0 ; 13 ; 2 ; 2 ; 4 ; 9 ; 2 ; 7 ; 6 ; 1 ; 9 ; 7 ; 1 ; 5 ; 8 ; 6 ; 2 ; 11 ; 11 ; 8 ; 3 ; 4 ; 3 ; 0 ; 7 ; 1 ; 6 ; 13 ; 4 ; 4 ; 5 ; 5 ; 2 ; 4 ; 14 ; 5 ; 3 ; 2 ; 4 ; 4 ; 8 ; 2 ; 1 ; 2 ; 6 ; 4 ; 7 ; 6 ; 2 ; 2 ; 2 ; 7 ; 10 ; 5 ; 9 ; 3 ; 3 ; 3 ; 2 ; 3 ; 2 ; 9 ; 6 ; 0 ; 3 ; 5 ; 5 ; 9 ; 5 ; 10 ; 7 ; 3 ; 6 ; 4 ; 2 ; 2 ; 5 ; 5 ; 1 ; 1 ; 4 ; 0 ; 0 ; 5 ; 4 ; 4 ; 5 ; 7 ; 1 ; 4 ; 6 ; 6 ; 3 ; 5 ; 6 ; 7 ; 2 ; 4 ; 14 ; 14 ; 6 ; 4 ; 0 ; 6 ; 11 ; 8 ; 5 ; 16 ; 14 ; 0 ; 3 ; 4 ; 1 ; 4 ; 4 ; 0 ; 1 ; 5 ; 7 ; 10 ; 2 ; 6 ; 9 ; 1 ; 15 ; 2 ; 4 ; 1 ; 10 ; 5 ; 8 ; 4 ; 2 ; 6 ; 4 ; 3 ; 4 ; 7 ; 4 ; 6 ; 0 ; 11 ; 13 ; 6 ; 0 ; 14 ; 10 ; 4 ; 2 ; 5 ; 1 ; 1 ; 2 ; 7 ; 3 ; 8 ; 3 ; 2 ; 0 ; 12 ; 4 ; 3 ; 1 ; 6 ; 11 ; 7 ; 10 ; 10 ; 1 ; 1 ; 11 ; 4 ; 3 ; 1 ; 5 ; 4 ; 7 ; 5 ; 8 ; 1 ; 6 ; 7 ; 7 ; 1 ; 1 ; 2 ; 10 ; 0 ; 4 ; 7 ; 0 ; 5 ; 2 ; 2 ; 1 ; 2 ; 2 ; 3 ; 3 ; 7 ; 1 ; 2 ; 3 ; 3 ; 8 ; 3 ; 3 ; 3 ; 2 ; 14 ; 1 ; 3 ; 6 ; 4 ; 4 ; 1 ; 5 ; 3 ; 2 ; 2 ; 1 ; 2 ; 1 ; 4 ; 1 ; 8 ; 3 ; 0 ; 5 ; 7 ; 3 ; 4 ; 1 ; 3 ; 3 ; 2 ; 3 ; 2 ; 8 ; 7 ; 2 ; 6 ; 0 ; 13 ; 7 ; 6 ; 6 ; 7 ; 10 ; 3 ; 0 ; 1 ; 3 ; 3 ; 9 ; 4 ; 3 ; 12 ; 5 ; 4 ; 1 ; 6 ; 3 ; 9 ; 1 ; 11 ; 3 ; 10 ; 3 ; 2 ; 4 ; 0 ; 5 ; 3 ; 3 ; 10 ; 3 ; 5 ; 6 ; 7 ; 0 ; 4 ; 11 ; 11 ; 8 ; 4 ; 0 ; 2 ; 0 ; 7 ; 5 ; 0 ; 15 ; 7 ; 1 ; 6 ; 5 ; 3 ; 4 ; 3 ; 1 ; 7 ; 2 ; 12 ; 0 ; 4 ; 8 ; 9 ; 12 ; 13 ; 3 ; 2 ; 7 ; 3 ; 3 ; 15 ; 12 ; 5 ; 6 ; 1 ; 6 ; 4 ; 1 ; 4 ; 4 ; 2 ; 1 ; 6 ; 3 ; 8 ; 7 ; 1 ; 0 ; 8 ; 5 ; 6 ; 9 ; 3 ; 0 ; 5 ; 5 ; 8 ; 6 ; 2 ; 3 ; 4 ; 2 ; 6 ; 5 ; 0 ; 1 ; 0 ; 2 ; 3 ; 1 ; 7 ; 3 ; 2 ; 5 ; 0 ; 2 ; 8 ; 8 ; 2 ; 11 ; 14 ; 3 ; 4 ; 0 ; 4 ; 0 ; 3 ; 2 ; 2 ; 2 ; 4 ; 4 ; 3 ; 3 ; 5 ; 4 ; 11 ; 2 ; 8 ; 0 ; 3 ; 3 ; 9 ; 1 ; 4 ; 6 ; 4 ; 1 ; 8 ; 0 ; 1 ; 2 ; 5 ; 2 ; 3 ; 8 ; 2 ; 6 ; 6 ; 8 ; 4 ; 1 ; 5 ; 1 ; 7 ; 4 ; 7 ; 0 ; 1 ; 6 ; 5 ; 2 ; 2 ; 2 ; 1 ; 4 ; 0 ; 2 ; 1 ; 4 ; 5 ; 4 ; 0 ; 3 ; 0 ; 2 ; 5 ; 2 ; 5 ; 7 ; 4 ; 13 ; 4 ; 1 ; 5 ; 3 ; 4 ; 2 ; 12 ; 0 ; 0 ; 1 ; 3 ; 3 ; 2 ; 4 ; 3 ; 2 ; 1 ; 7 ; 6 ; 7 ; 4 ; 6 ; 5 ; 4 ; 3 ; 6 ; 3 ; 4 ; 4 ; 10 ; 2 ; 0 ; 5 ; 10 ; 1 ; 7 ; 4 ; 5 ; 10 ; 9 ; 1 ; 2 ; 0 ; 1"
+oppScore <- "7 ; 6 ; 3 ; 3 ; 6 ; 7 ; 8 ; 6 ; 7 ; 3 ; 3 ; 6 ; 7 ; 8 ; 1 ; 1 ; 6 ; 10 ; 14 ; 3 ; 6 ; 1 ; 3 ; 2 ; 2 ; 4 ; 12 ; 0 ; 1 ; 4 ; 4 ; 9 ; 2 ; 2 ; 5 ; 3 ; 2 ; 5 ; 6 ; 4 ; 0 ; 5 ; 9 ; 2 ; 3 ; 6 ; 7 ; 8 ; 2 ; 4 ; 6 ; 4 ; 3 ; 6 ; 1 ; 9 ; 2 ; 0 ; 5 ; 7 ; 16 ; 4 ; 0 ; 3 ; 3 ; 4 ; 3 ; 3 ; 7 ; 5 ; 14 ; 5 ; 11 ; 4 ; 0 ; 4 ; 9 ; 1 ; 6 ; 6 ; 4 ; 6 ; 9 ; 0 ; 16 ; 3 ; 7 ; 1 ; 1 ; 1 ; 5 ; 2 ; 2 ; 5 ; 3 ; 5 ; 11 ; 9 ; 0 ; 5 ; 1 ; 7 ; 0 ; 3 ; 5 ; 9 ; 1 ; 7 ; 10 ; 7 ; 6 ; 8 ; 3 ; 4 ; 4 ; 3 ; 5 ; 5 ; 5 ; 9 ; 2 ; 4 ; 4 ; 3 ; 0 ; 6 ; 4 ; 1 ; 8 ; 3 ; 9 ; 5 ; 4 ; 9 ; 2 ; 3 ; 7 ; 3 ; 4 ; 2 ; 1 ; 6 ; 4 ; 15 ; 3 ; 0 ; 5 ; 5 ; 4 ; 10 ; 7 ; 11 ; 6 ; 5 ; 9 ; 3 ; 4 ; 8 ; 6 ; 9 ; 7 ; 6 ; 2 ; 5 ; 4 ; 1 ; 18 ; 6 ; 6 ; 15 ; 6 ; 5 ; 4 ; 6 ; 8 ; 9 ; 8 ; 5 ; 1 ; 1 ; 1 ; 0 ; 7 ; 2 ; 4 ; 4 ; 3 ; 4 ; 7 ; 8 ; 2 ; 0 ; 7 ; 4 ; 4 ; 5 ; 5 ; 5 ; 4 ; 4 ; 4 ; 9 ; 1 ; 4 ; 10 ; 6 ; 5 ; 7 ; 1 ; 7 ; 1 ; 1 ; 6 ; 7 ; 15 ; 3 ; 1 ; 7 ; 5 ; 6 ; 6 ; 4 ; 2 ; 6 ; 10 ; 5 ; 7 ; 14 ; 3 ; 10 ; 6 ; 1 ; 7 ; 9 ; 4 ; 3 ; 5 ; 2 ; 4 ; 9 ; 1 ; 5 ; 4 ; 1 ; 8 ; 3 ; 1 ; 0 ; 2 ; 3 ; 4 ; 5 ; 6 ; 13 ; 5 ; 2 ; 3 ; 4 ; 1 ; 5 ; 6 ; 15 ; 5 ; 0 ; 3 ; 12 ; 12 ; 1 ; 4 ; 5 ; 3 ; 3 ; 5 ; 3 ; 3 ; 9 ; 2 ; 5 ; 1 ; 1 ; 6 ; 4 ; 3 ; 4 ; 5 ; 6 ; 4 ; 1 ; 1 ; 2 ; 2 ; 5 ; 7 ; 3 ; 2 ; 5 ; 2 ; 2 ; 4 ; 7 ; 7 ; 2 ; 0 ; 10 ; 1 ; 9 ; 2 ; 3 ; 3 ; 3 ; 2 ; 6 ; 3 ; 1 ; 4 ; 4 ; 1 ; 2 ; 3 ; 5 ; 1 ; 3 ; 4 ; 2 ; 6 ; 7 ; 4 ; 1 ; 10 ; 2 ; 8 ; 2 ; 5 ; 7 ; 9 ; 1 ; 14 ; 4 ; 2 ; 6 ; 1 ; 3 ; 3 ; 3 ; 3 ; 1 ; 6 ; 6 ; 7 ; 6 ; 7 ; 0 ; 3 ; 2 ; 1 ; 0 ; 2 ; 3 ; 3 ; 3 ; 0 ; 1 ; 1 ; 2 ; 2 ; 16 ; 2 ; 7 ; 7 ; 4 ; 8 ; 4 ; 3 ; 4 ; 1 ; 0 ; 14 ; 4 ; 6 ; 3 ; 6 ; 8 ; 4 ; 5 ; 7 ; 8 ; 4 ; 4 ; 8 ; 2 ; 5 ; 7 ; 8 ; 8 ; 3 ; 3 ; 4 ; 4 ; 10 ; 6 ; 3 ; 1 ; 3 ; 4 ; 9 ; 4 ; 7 ; 10 ; 2 ; 4 ; 8 ; 1 ; 5 ; 11 ; 1 ; 3 ; 4 ; 8 ; 5 ; 0 ; 5 ; 3 ; 2 ; 3 ; 12 ; 3 ; 1 ; 0 ; 3 ; 2 ; 8 ; 2 ; 2 ; 4 ; 13 ; 5 ; 13 ; 4 ; 4 ; 6 ; 1 ; 8 ; 12 ; 1 ; 4 ; 3 ; 3 ; 5 ; 3 ; 8 ; 1 ; 5 ; 1 ; 10 ; 9 ; 9 ; 2 ; 5 ; 7 ; 4 ; 1 ; 10 ; 10 ; 8 ; 1 ; 4 ; 1 ; 2 ; 6 ; 8 ; 3 ; 3 ; 13 ; 5 ; 2 ; 2 ; 4 ; 5 ; 4 ; 7 ; 5 ; 6 ; 4 ; 0 ; 0 ; 0 ; 4 ; 3 ; 6 ; 5 ; 3 ; 8 ; 12 ; 1 ; 0 ; 5 ; 12 ; 3 ; 2 ; 7 ; 5 ; 11 ; 6 ; 5 ; 0 ; 3 ; 1 ; 0 ; 3 ; 0 ; 2 ; 4 ; 1 ; 2 ; 11 ; 8 ; 2 ; 8 ; 11 ; 5 ; 2 ; 1 ; 6 ; 3 ; 6 ; 3 ; 9 ; 2 ; 1 ; 5 ; 6 ; 6 ; 1 ; 5 ; 4 ; 3 ; 2 ; 3 ; 3 ; 5 ; 7 ; 1 ; 5 ; 1 ; 6 ; 10 ; 1 ; 7 ; 1 ; 3 ; 5 ; 5 ; 6 ; 4 ; 5 ; 4 ; 3 ; 1 ; 6 ; 1 ; 8 ; 3 ; 4 ; 1 ; 5 ; 5 ; 8 ; 9 ; 12 ; 5 ; 3 ; 8 ; 1 ; 5 ; 3 ; 2 ; 3 ; 0 ; 0 ; 4 ; 5 ; 2 ; 7 ; 9 ; 4 ; 0 ; 5 ; 3 ; 2 ; 2 ; 1 ; 3 ; 3 ; 3 ; 4 ; 6 ; 3 ; 1 ; 4 ; 1 ; 4 ; 0 ; 2 ; 3 ; 6 ; 2 ; 5 ; 2 ; 2 ; 5 ; 4 ; 1 ; 9 ; 5 ; 0 ; 10 ; 6 ; 0 ; 3 ; 2 ; 3 ; 6 ; 3 ; 5 ; 4 ; 5 ; 5 ; 3 ; 1 ; 9 ; 1 ; 4 ; 5 ; 2 ; 0 ; 1 ; 0 ; 11 ; 7 ; 7 ; 6 ; 9 ; 9 ; 6 ; 4 ; 6 ; 7 ; 4 ; 3 ; 10 ; 13 ; 2 ; 7 ; 3 ; 5 ; 2 ; 6 ; 3 ; 3 ; 0 ; 4 ; 5 ; 6 ; 4 ; 2 ; 3 ; 6 ; 5 ; 1 ; 6 ; 4 ; 5 ; 2 ; 4 ; 5 ; 4 ; 1 ; 2 ; 3 ; 3 ; 4 ; 1 ; 0 ; 3 ; 1 ; 6 ; 3 ; 3 ; 1 ; 5 ; 3 ; 9 ; 1 ; 5 ; 10 ; 6 ; 2 ; 5 ; 2 ; 5 ; 1 ; 7 ; 5 ; 3 ; 6 ; 1 ; 4 ; 6 ; 10 ; 5 ; 20 ; 7 ; 6 ; 4 ; 3 ; 2 ; 5 ; 2 ; 5 ; 2 ; 5 ; 13 ; 7 ; 9 ; 4 ; 6 ; 10 ; 4 ; 14 ; 2 ; 4 ; 4 ; 4 ; 5 ; 0 ; 2 ; 3 ; 3 ; 9 ; 1 ; 1 ; 7 ; 5 ; 4 ; 5 ; 2 ; 3 ; 2 ; 5 ; 1 ; 6 ; 3 ; 2 ; 4 ; 2 ; 4 ; 1 ; 0 ; 8 ; 8 ; 1 ; 5 ; 2 ; 4 ; 6 ; 4 ; 6 ; 10 ; 7 ; 2 ; 9 ; 3 ; 11 ; 8 ; 4 ; 7 ; 2 ; 3 ; 3 ; 6 ; 3 ; 0 ; 2 ; 10 ; 5 ; 5 ; 9 ; 3 ; 4 ; 2 ; 4 ; 2 ; 0 ; 3 ; 1 ; 2 ; 2 ; 1 ; 8 ; 8 ; 9 ; 4 ; 0 ; 3 ; 4 ; 8 ; 5 ; 3 ; 6 ; 7 ; 2 ; 2 ; 3 ; 4 ; 2 ; 7 ; 3 ; 2 ; 4 ; 1 ; 1 ; 6 ; 7 ; 8 ; 3 ; 2 ; 8 ; 4 ; 4 ; 1 ; 6 ; 8 ; 6 ; 3 ; 3 ; 5 ; 7 ; 6 ; 8 ; 3 ; 4 ; 0 ; 6 ; 4 ; 4 ; 2 ; 6 ; 12 ; 8 ; 4 ; 6 ; 1 ; 5 ; 3 ; 3 ; 0 ; 1 ; 7 ; 6 ; 8 ; 6 ; 3 ; 2 ; 3 ; 1 ; 5 ; 2 ; 5 ; 1 ; 2 ; 4 ; 3 ; 7 ; 5 ; 4 ; 7 ; 0 ; 4 ; 4 ; 5 ; 5 ; 3 ; 2 ; 7 ; 4 ; 4 ; 9 ; 3 ; 3 ; 7 ; 2 ; 0 ; 4 ; 2 ; 5 ; 4 ; 14 ; 0 ; 7 ; 2 ; 5 ; 5 ; 18 ; 7 ; 7 ; 3 ; 4 ; 9 ; 0 ; 1 ; 2 ; 2 ; 5 ; 7 ; 2 ; 6 ; 1 ; 7 ; 8 ; 4 ; 1 ; 5 ; 6 ; 5 ; 2 ; 3 ; 7 ; 2 ; 3 ; 4 ; 3 ; 1 ; 3 ; 11 ; 6 ; 1 ; 3 ; 11 ; 7 ; 8 ; 4 ; 5 ; 13 ; 1 ; 2 ; 2 ; 7 ; 2 ; 5 ; 14 ; 4 ; 5 ; 0 ; 4 ; 1 ; 5 ; 8 ; 4 ; 0 ; 2 ; 6 ; 1 ; 6 ; 6 ; 3 ; 1 ; 4 ; 5 ; 4 ; 8 ; 2 ; 3"
+rsHome <- "1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0"
+rsSeas1 <- "2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015"
+rsSeas2 <- "2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2010 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2011 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2012 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2013 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2014 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015 ; 2015"
+rsSeas <- paste(rsSeas1, rsSeas2, sep=" ; ")
+
+redsox <- data.frame(date=strsplit(rsDate, " ; ")[[1]], 
+                     boston_score=as.integer(strsplit(rsScore, " ; ")[[1]]), 
+                     opponent_score=as.integer(strsplit(oppScore, " ; ")[[1]]), 
+                     homegame=as.numeric(strsplit(rsHome, " ; ")[[1]]), 
+                     mlb=1, nfl=0, nhl=0, nba=0, 
+                     season=as.numeric(strsplit(rsSeas, " ; ")[[1]]), 
+                     stringsAsFactors=FALSE
+                     )
+
+
+# View summary information about your redsox data
+summary(redsox)
+
+# Convert the date column to a time-based format
+redsox$date<- as.Date(redsox$date)
+
+# Convert your red sox data to xts
+redsox_xts <- as.xts(redsox[,-1], order.by = redsox$date)
+
+# Plot the Red Sox score and the opponent score over time
+plot.zoo(redsox_xts[, c("boston_score", "opponent_score")])
+
+
+# Generate a new variable coding for red sox wins
+redsox_xts$win_loss <- ifelse(redsox_xts$boston_score > redsox_xts$opponent_score, 1, 0)
+
+# Identify the date of the last game each season
+close <- endpoints(redsox_xts, on = "years")
+
+# Calculate average win/loss record at the end of each season
+period.apply(redsox_xts[, "win_loss"], INDEX=close, FUN=mean)
+
+
+# Split redsox_xts win_loss data into years 
+redsox_seasons <- split(redsox_xts$win_loss, f = "years")
+
+# Use lapply to calculate the cumulative mean for each season
+redsox_ytd <- lapply(redsox_seasons, cummean)
+
+# Use do.call to rbind the results
+redsox_winloss <- do.call(rbind, redsox_ytd)
+
+# Plot the win_loss average for the 2013 season
+plot.xts(  as.xts(as.vector(t(redsox_winloss)), order.by=index(redsox_xts))["2013"], ylim = c(0, 1))
+
+
+# Select only the 2013 season
+redsox_2013 <- redsox_xts["2013"]
+
+# Use rollapply to generate the last ten average
+lastten_2013 <- rollapply(redsox_2013$win_loss, width = 10, FUN = mean)
+
+# Plot the last ten average during the 2013 season
+plot.xts(lastten_2013, ylim = c(0, 1))
+
+
+### *** dataset "sports" is not available; need to comment out
+# Extract the day of the week of each observation
+# weekday <- .indexwday(sports)
+# head(weekday)
+
+# Generate an index of weekend dates
+# weekend <- which(.indexwday(sports) == 0 | .indexwday(sports) == 6)
+
+# Subset only weekend games
+# weekend_games <- sports[weekend]
+# head(weekend_games)
+
+
+# Generate a subset of sports data with only homegames
+# homegames <- sports[sports$homegame == 1]
+
+# Calculate the win/loss average of the last 20 home games
+# homegames$win_loss_20 <- rollapply(homegames$win_loss, width = 20, FUN = mean)
+
+# Calculate the win/loss average of the last 100 home games
+# homegames$win_loss_100 <- rollapply(homegames$win_loss, width = 100, FUN = mean)
+
+# Use plot.xts to generate
+# plot.zoo(homegames[, c("win_loss_20", "win_loss_100")], plot.type = "single", lty = lty, lwd = lwd)
+
+```
+  
+  
+###_Exploring Pitch Data in R (Case Study)_  
+  
