@@ -397,4 +397,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 27-FEB-2017  
 * DataCamp_Insights_v002 captures Manipulating Time Series Data: Case Study - Chapter 1 (Flight Data)  
 * DataCamp_Insights_v002 captures Manipulating Time Series Data: Case Study - Chapter 2 (Weather Data), Chapter 3 (Economic Data), and Chapter 4 (Sports Data)  
+* DataCamp_Insights_v002 captures Exploring Pitch Data in R: Chapter 1 (Pitch Velocities) and Chapter 2 (Pitch Types)  
   
