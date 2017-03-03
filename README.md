@@ -399,4 +399,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Manipulating Time Series Data: Case Study - Chapter 2 (Weather Data), Chapter 3 (Economic Data), and Chapter 4 (Sports Data)  
 * DataCamp_Insights_v002 captures Exploring Pitch Data in R: Chapter 1 (Pitch Velocities) and Chapter 2 (Pitch Types)  
 * DataCamp_Insights_v002 captures Exploring Pitch Data in R: Chapter 3 (Pitch Locations) and Chapter 4 (Batted Ball Outcomes)  
+* DataCamp_Insights_v002 captures Introduction to Data: Chapter 1 (Language) and Chapter 2 (Study Types and Cautions)  
   
