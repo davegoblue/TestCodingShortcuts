@@ -401,4 +401,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Exploring Pitch Data in R: Chapter 3 (Pitch Locations) and Chapter 4 (Batted Ball Outcomes)  
 * DataCamp_Insights_v002 captures Introduction to Data: Chapter 1 (Language) and Chapter 2 (Study Types and Cautions)  
 * DataCamp_Insights_v002 captures Introduction to Data: Chapter 3 (Sampling Strategies and Experimental Design) and Chapter 4 (Case Study)  
+* DataCamp_Insights_v002 captures Exploratory Data Analysis: Chapter 1 (Categorical Data) and Chapter 2 (Numerical Data)  
   
