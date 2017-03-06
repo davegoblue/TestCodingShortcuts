@@ -403,3 +403,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Introduction to Data: Chapter 3 (Sampling Strategies and Experimental Design) and Chapter 4 (Case Study)  
 * DataCamp_Insights_v002 captures Exploratory Data Analysis: Chapter 1 (Categorical Data) and Chapter 2 (Numerical Data)  
   
+### Expansions week of 06-MAR-2017  
+* DataCamp_Insights_v002 captures Exploratory Data Analysis: Chapter 3 (Numerical Studies) and Chapter 4 (Case Study)  
+  
