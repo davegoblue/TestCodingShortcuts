@@ -6282,6 +6282,408 @@ ggplot(email, aes(x=number, fill=factor(spam))) +
   
 Chapter 1 - Introduction to Ideas of Inference  
   
+Statistical inference is the process of making claims about a population based on information from a sample of data:  
+  
+* General first step is to assume similarity (null hypothesis is of no differences - "claim that is not interesting" - Ho)  
+* The research hypothesis is the alternate hypothesis, also known as Ha  
+* The typical goal is to disprove the null hypothesis  
+  
+Randomized distributions:  
+  
+* Take the difference in a single key metric from two samples  
+* Can generate a distribution of differences assuming that the null hypothesis is true  
+* Take the overall data collected across both samples  
+	* Randomly permute the data to get a null distribution  
+    * Need sufficient permutations to get an appropriate density function for the null hypothesis  
+  
+Using the randomization distribution - comparing the observed statistic to the null distribution:  
+  
+* Goal is to show that our observed data are different than the null hypothesis  
+* How much of the null hypothesis distribution is "more extreme" than the observed data?  
+  
+The sample being consistent with the null hypothesis does not "prove" the null hypothesis; you can only "reject" the null hypothesis  
+  
+Example code includes:  
+```{r}
+
+# PROBLEM - I DO NOT HAVE oilabs::rep_sample_n() ; cut/paste to replicate as oilabs_rep_sample_n
+# Copied code from https://github.com/OpenIntroOrg/oilabs/blob/master/R/rep_sample_n.R
+oilabs_rep_sample_n <- function(tbl, size, replace = FALSE, reps = 1) {
+    n <- nrow(tbl)
+    i <- unlist(replicate(reps, sample.int(n, size, replace = replace), simplify = FALSE))
+    rep_tbl <- cbind(replicate = rep(1:reps,rep(size,reps)), tbl[i,])
+    dplyr::group_by(rep_tbl, replicate)
+}
+
+```
+   
+And, then the actual coding:  
+```{r}
+
+data(NHANES, package="NHANES")
+
+# What are the variables in the NHANES dataset?
+names(NHANES)
+
+# Create bar plot for Home Ownership by Gender
+ggplot(NHANES, aes(x = Gender, fill = HomeOwn)) + 
+  geom_bar(position = "fill") +
+  ylab("Relative frequencies")
+
+# Density for SleepHrsNight colored by SleepTrouble, faceted by HealthGen
+ggplot(NHANES, aes(x = SleepHrsNight, col = SleepTrouble)) + 
+  geom_density(adjust = 2) + 
+  facet_wrap(~ HealthGen)
+
+
+# Subset the data: homes
+homes <- NHANES %>%
+  select(Gender, HomeOwn) %>%
+  filter(HomeOwn %in% c("Own", "Rent"))
+
+# Perform one permutation 
+homes %>%
+  mutate(HomeOwn_perm = sample(HomeOwn)) %>%
+  group_by(Gender) %>%
+  summarize(prop_own_perm = mean(HomeOwn_perm == "Own"), 
+            prop_own = mean(HomeOwn == "Own")) %>%
+  summarize(diff_perm = diff(prop_own_perm),
+            diff_orig = diff(prop_own))
+
+
+# Perform 10 permutations
+homeown_perm <- homes %>%
+  oilabs_rep_sample_n(size = nrow(homes), reps = 10) %>%
+  mutate(HomeOwn_perm = sample(HomeOwn)) %>%
+  group_by(replicate, Gender) %>%
+  summarize(prop_own_perm = mean(HomeOwn_perm == "Own"), 
+            prop_own = mean(HomeOwn == "Own")) %>%
+  summarize(diff_perm = diff(prop_own_perm),
+            diff_orig = diff(prop_own)) # male - female
+
+# Print differences to console
+homeown_perm
+
+# Dotplot of 10 permuted differences in proportions
+ggplot(homeown_perm, aes(x = diff_perm)) + 
+  geom_dotplot(binwidth = 0.001)
+
+
+# Perform 100 permutations
+homeown_perm <- homes %>%
+  oilabs_rep_sample_n(nrow(homes), reps=100) %>%
+  mutate(HomeOwn_perm = sample(HomeOwn)) %>%
+  group_by(replicate, Gender) %>%
+  summarize(prop_own_perm = mean(HomeOwn_perm == "Own"), 
+            prop_own = mean(HomeOwn == "Own")) %>%
+  summarize(diff_perm = diff(prop_own_perm),
+            diff_orig = diff(prop_own)) # male - female
+
+# Dotplot of 100 permuted differences in proportions
+ggplot(homeown_perm, aes(x = diff_perm)) + 
+  geom_dotplot(binwidth = 0.001)
+
+
+# Perform 1000 permutations
+homeown_perm <- homes %>%
+  oilabs_rep_sample_n(nrow(homes), reps=1000) %>%
+  mutate(HomeOwn_perm = sample(HomeOwn)) %>%
+  group_by(replicate, Gender) %>%
+  summarize(prop_own_perm = mean(HomeOwn_perm == "Own"), 
+            prop_own = mean(HomeOwn == "Own")) %>%
+  summarize(diff_perm = diff(prop_own_perm),
+            diff_orig = diff(prop_own)) # male - female
+
+
+# Density plot of 1000 permuted differences in proportions
+ggplot(homeown_perm, aes(x = diff_perm)) + 
+  geom_density()
+
+
+# Plot permuted differences
+ggplot(homeown_perm, aes(x = diff_perm)) + 
+  geom_density() +
+  geom_vline(aes(xintercept = diff_orig),
+          col = "red")
+
+# Compare permuted differences to observed difference
+homeown_perm %>%
+  summarize(sum(diff_orig >= diff_perm))
+
+```
+  
+  
+Chapter 2 - Completing a randomization study  
+  
+Gender discrimination case - promotion case study among bank managers:  
+  
+* Identical files, only difference is gender, assess number promoted to next level  
+* The shuffling process breaks the link between gender and promotion - understand the null distribution  
+  
+Distribution of statistics - different forms of the null hypothesis:  
+  
+* Difference in proportions (subtract) - used in this course  
+* Ratio of proportions (divide) - used in other courses  
+* Can get the quantiles in R using quantile(x, p=)  
+* The critical region is the (often pre-defined) region where the observed statistic will be deemed much different than the null distribution  
+  
+Why 0.05 for the critical region?  
+  
+* "The choice is somewhat arbitrary, but use is historical, ingrained in science, and somewhat intuitive"  
+	* RA Fisher (1929) indicated that significance of 0.05 should indicate what to throw away, not what to believe  
+* Statistical significance can be thought of as the "degree of skepticism"  
+    * Only "significant results" should lead to further investigation  
+  
+What is a p-value?  
+  
+* The level of significance would mean that we sometimes reject the null hypothesis, and sometimes do not  
+* The p-value is the probability of observing data as/more extreme as what we got assuming the null hypothesis were true  
+  
+Example code includes:  
+```{r}
+
+discPromote <- "promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted"
+discSex <- "male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female ; male ; male ; male ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female"
+
+disc <- data.frame(promote=factor(strsplit(discPromote, " ; ")[[1]], 
+                                  levels=c("not_promoted", "promoted")
+                                  ), 
+                   sex=factor(strsplit(discSex, " ; ")[[1]])
+                   )
+
+# Create a contingency table summarizing the data
+table(disc$sex, disc$promote)
+
+# Find proportion of each sex who were promoted
+disc %>%
+  group_by(sex) %>%
+  summarize(promoted_prop=mean(promote == "promoted"))
+
+
+# Sample the entire data frame 5 times
+disc %>%
+  oilabs_rep_sample_n(size = nrow(disc), reps = 5) 
+
+# Shuffle the promote variable within replicate
+disc %>%
+  oilabs_rep_sample_n(size = nrow(disc), reps = 5) %>%
+  mutate(prom_perm = sample(promote)) 
+
+# Find the proportion of promoted in each replicate and sex
+disc %>%
+  oilabs_rep_sample_n(size = nrow(disc), reps = 5) %>%
+  mutate(prom_perm = sample(promote)) %>%
+  group_by(replicate, sex) %>%
+  summarize(prop_prom_perm = mean(prom_perm == "promoted"),
+            prop_prom = mean(promote == "promoted")) 
+
+# Difference in proportion of promoted across sex grouped by gender
+disc %>%
+  oilabs_rep_sample_n(size = nrow(disc), reps = 5) %>%
+  mutate(prom_perm = sample(promote)) %>%
+  group_by(replicate, sex) %>%
+  summarize(prop_prom_perm = mean(prom_perm == "promoted"),
+            prop_prom = mean(promote == "promoted"))  %>%
+  summarize(diff_perm = diff(prop_prom_perm),
+            diff_orig = diff(prop_prom))  # male - female
+
+
+# Create a data frame of differences in promotion rates
+disc_perm <- disc %>%
+  oilabs_rep_sample_n(size = nrow(disc), reps = 1000) %>%
+  mutate(prom_perm = sample(promote)) %>%
+  group_by(replicate, sex) %>%
+  summarize(prop_prom_perm = mean(prom_perm == "promoted"),
+            prop_prom = mean(promote == "promoted")) %>%
+  summarize(diff_perm = diff(prop_prom_perm),
+            diff_orig = diff(prop_prom))  # male - female
+
+# Histogram of permuted differences
+ggplot(disc_perm, aes(x = diff_perm)) + 
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(aes(xintercept = diff_orig), col = "red")
+
+
+# Find the 0.90, 0.95, and 0.99 quantiles of diff_perm
+disc_perm %>% 
+  summarize(q.90 = quantile(diff_perm, p = 0.90),
+            q.95 = quantile(diff_perm, p = 0.95),
+            q.99 = quantile(diff_perm, p = 0.99)
+            )
+
+
+# Find the 0.10, 0.05, and 0.01 quantiles of diff_perm
+disc_perm %>% 
+  summarize(q.01 = quantile(diff_perm, p = 0.01),
+            q.05 = quantile(diff_perm, p = 0.05),
+            q.10 = quantile(diff_perm, p = 0.10)
+            )
+
+
+discsmallSex <- "2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 1 ; 1 ; 1 ; 1 ; 1 ; 2 ; 1 ; 1 ; 1"  # 2 is male
+discbigSex <- "2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1" # 2 is male
+discbigPromote <- "2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1" # 2 is promote
+discsmallPromote <- "2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 2 ; 1 ; 1 ; 1 ; 1" # 2 is promote
+
+
+dsSex <- factor(strsplit(discsmallSex, " ; ")[[1]], 
+                labels=c("female", "male")
+                )
+dbSex <- factor(strsplit(discbigSex, " ; ")[[1]], 
+                labels=c("female", "male")
+                )
+dsPromote <- factor(strsplit(discsmallPromote, " ; ")[[1]], 
+                    labels=c("not_promoted", "promoted")
+                    )
+dbPromote <- factor(strsplit(discbigPromote, " ; ")[[1]], 
+                    labels=c("not_promoted", "promoted")
+                    )
+
+disc_small <- data.frame(sex=dsSex, promote=dsPromote)
+disc_big <- data.frame(sex=dbSex, promote=dbPromote)
+
+
+# Tabulate the small and big data frames
+disc_small %>% 
+  select(sex, promote) %>%
+  table()
+disc_big %>% 
+  select(sex, promote) %>%
+  table()
+
+
+# Create a 1000 permutation for each
+disc_small_perm <- disc_small %>%
+  oilabs_rep_sample_n(size = nrow(disc_small), reps = 1000) %>%
+  mutate(prom_perm = sample(promote)) %>%
+  group_by(replicate, sex) %>%
+  summarize(prop_prom_perm = mean(prom_perm == "promoted"),
+            prop_prom = mean(promote == "promoted")) %>%
+  summarize(diff_perm = diff(prop_prom_perm),
+            diff_orig = diff(prop_prom))  # male - female
+
+
+# Create a 1000 permutation for each
+disc_big_perm <- disc_big %>%
+  oilabs_rep_sample_n(size = nrow(disc_big), reps = 1000) %>%
+  mutate(prom_perm = sample(promote)) %>%
+  group_by(replicate, sex) %>%
+  summarize(prop_prom_perm = mean(prom_perm == "promoted"),
+            prop_prom = mean(promote == "promoted")) %>%
+  summarize(diff_perm = diff(prop_prom_perm),
+            diff_orig = diff(prop_prom))  # male - female
+
+
+# Plot the distributions of permuted differences
+ggplot(disc_small_perm, aes(x = diff_perm)) + 
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(aes(xintercept = diff_orig), col = "red")
+
+ggplot(disc_big_perm, aes(x = diff_perm)) + 
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(aes(xintercept = diff_orig), col = "red")
+
+
+# Recall the quantiles associated with the original dataset
+disc_perm %>% 
+  summarize(q.90 = quantile(diff_perm, p = 0.90),
+            q.95 = quantile(diff_perm, p = 0.95),
+            q.99 = quantile(diff_perm, p = 0.99)
+            )
+
+# Calculate the quantiles associated with the small dataset
+disc_small_perm %>% 
+  summarize(q.90 = quantile(diff_perm, p = 0.90),
+            q.95 = quantile(diff_perm, p = 0.95),
+            q.99 = quantile(diff_perm, p = 0.99)
+            )
+
+# Calculate the quantiles associated with the big dataset
+disc_big_perm %>% 
+  summarize(q.90 = quantile(diff_perm, p = 0.90),
+            q.95 = quantile(diff_perm, p = 0.95),
+            q.99 = quantile(diff_perm, p = 0.99)
+            )
+
+
+# Calculate the p-value for the original dataset
+disc_perm %>%
+  summarize(mean(diff_orig <= diff_perm))
+
+# Calculate the p-value for the small dataset
+disc_small_perm %>%
+  summarize(mean(diff_orig <= diff_perm))
+
+# Calculate the p-value for the big dataset
+disc_big_perm %>%
+  summarize(mean(diff_orig <= diff_perm))
+
+
+dnPromote <- "promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted ; not_promoted"
+dnSex <- "male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; male ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female ; female ; male ; male ; male ; male ; male ; male ; female ; female ; female ; female ; female ; female ; female"
+
+disc_new <- data.frame(promote=factor(strsplit(dnPromote, " ; ")[[1]], 
+                                      levels=c("not_promoted", "promoted")
+                                      ), 
+                       sex=factor(strsplit(dnSex, " ; ")[[1]])
+                       )
+
+# Create a 1000 permutation for each
+disc_perm <- disc %>%
+  oilabs_rep_sample_n(size = nrow(disc), reps = 1000) %>%
+  mutate(prom_perm = sample(promote)) %>%
+  group_by(replicate, sex) %>%
+  summarize(prop_prom_perm = mean(prom_perm == "promoted"),
+            prop_prom = mean(promote == "promoted")) %>%
+  summarize(diff_perm = diff(prop_prom_perm),
+            diff_orig = diff(prop_prom))  # male - female
+
+
+disc_new_perm <- disc_new %>%
+  oilabs_rep_sample_n(size = nrow(disc_new), reps = 1000) %>%
+  mutate(prom_perm = sample(promote)) %>%
+  group_by(replicate, sex) %>%
+  summarize(prop_prom_perm = mean(prom_perm == "promoted"),
+            prop_prom = mean(promote == "promoted")) %>%
+  summarize(diff_perm = diff(prop_prom_perm),
+            diff_orig = diff(prop_prom))  # male - female
+
+
+# Recall the original data
+disc %>% 
+  select(sex, promote) %>%
+  table()
+
+# Tabulate the new data
+disc_new %>% 
+  select(sex, promote) %>%
+  table()
+
+# Plot the distribution of the original permuted differences
+ggplot(disc_perm, aes(x = diff_perm)) + 
+  geom_histogram() +
+  geom_vline(aes(xintercept = diff_orig), col = "red")
+
+# Plot the distribution of the new permuted differences
+ggplot(disc_new_perm, aes(x = diff_perm)) + 
+  geom_histogram() +
+  geom_vline(aes(xintercept = diff_orig), col = "red")
+
+# Find the p-value from the original data
+disc_perm %>%
+  summarize(mean(diff_orig <= diff_perm))
+
+# Find the p-value from the new data
+disc_new_perm %>%
+  summarize(mean(diff_orig <= diff_perm))
+
+
+```
+  
+  
+Chapter 3 - Hypothesis Testing Errors  
+  
+
   
   
   
