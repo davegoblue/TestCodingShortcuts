@@ -406,4 +406,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 06-MAR-2017  
 * DataCamp_Insights_v002 captures Exploratory Data Analysis: Chapter 3 (Numerical Studies) and Chapter 4 (Case Study)  
 * DataCamp_Insights_v002 captures Foundations of Inference: Chapter 1 (Ideas of Inference) and Chapter 2 (Randomization Studies)  
+* DataCamp_Insights_v002 captures Foundations of Inference: Chapter 3 (Hypothesis Testing Errors)  
   
