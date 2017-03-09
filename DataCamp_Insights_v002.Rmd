@@ -3220,8 +3220,9 @@ Final topics:
 * Can align timing -- align.time(x, n=60) # n is in seconds  
     * make.index.unique(x, eps=1e-06, drop=FALSE, fromLast=FALSE, . ) will help to manage duplicates  
   
-Example code includes:  
-```{r}
+Example code includes (cached to avoid future internet calls):  
+```{r, cache=TRUE}
+
 library(xts)
 library(zoo)
 
@@ -6752,7 +6753,229 @@ opp_perm %>%
 
 Chapter 4 - Confidence Intervals  
   
-
+Parameters and confidence intervals - research questions can be comparative (hypothesis test) or estimation (confidence intervals):  
   
+* Estimation problems should be answered with confidence intervals  
+* A "parameter" is a numerical value from the population  
+* A "confidence interval" is a range of number that hopefully captures the true parameter  
+  
+Bootstrapping:  
+  
+* The statistic p-hat is the proportion of success in the sample  
+* The parameter p is the proportion of success in the population  
+* With a confidence interval, there is no null population; goal is to determine how do p and p-hat vary  
+* Bootstrapping lets us estimate the distance from the statistic (p-hat) and population (p)  
+* Bootstrapping is the process of re-sampling with replacement (to the same size) from the sample; provides an excellent estimation of the population  
+	* The bootstrapping statistic is generally called p-hat-star  
+    * The variability in the bootstrapping statistic provides an excellent approximation of the population standard error  
+  
+Variability in p-hat - how far are the sample data from the parameter?  
+  
+* Bootstrapping provides about the same standard error (SE) as actual sampling from the population  
+* Roughly 95% of sample will prodce p-hats that are within 2 SE of the center  
+  
+Interpreting CI and technical conditions:  
+  
+* We are X% confident that the true proportion of people planning to do Y is between (X% CI)  
+* Technical conditions need to hold for this to work  
+	1) Sampling distribution of the statistic is reasonably symmetric and bell-shaped  
+    2) Sample size is reasonably large  
+  
+Example code includes:  
+```{r}
+
+# Do not have this dataset (30000 x 2 - poll-vote) - 30 votes in each of 1000 samples
+voteSum <- c(9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25)
+voteN <- c(1, 7, 10, 27, 42, 90, 101, 143, 151, 136, 129, 79, 43, 25, 13, 3)
+
+voteAll <- integer(0)
+for (intCtr in seq_along(voteSum)) { 
+    vecTemp <- rep(0L, 30) 
+    vecTemp[seq_len(voteSum[intCtr])] <- 1L 
+    voteAll <- c(voteAll, rep(vecTemp, times=voteN[intCtr])) 
+}
+voteNum <- sample(1:1000, 1000, replace=FALSE)
+
+# Needs to be a tibble since oilabs_rep_sample_n() has an implied drop=TRUE for data frames
+all_polls <- tibble::as_tibble(data.frame(poll=rep(voteNum, each=30), 
+                                          vote=voteAll
+                                          ) %>% arrange(poll)
+                               )
+
+
+# Select one poll from which to resample: one_poll
+one_poll <- all_polls %>%
+  filter(poll == 1) %>%
+  select(vote)
+  
+# Generate 1000 resamples of one_poll: one_poll_boot_30
+one_poll_boot_30 <- one_poll %>%
+  oilabs_rep_sample_n(size = nrow(one_poll), replace = TRUE, reps = 1000)
+
+# Compute p-hat for each poll: ex1_props
+ex1_props <- all_polls %>% 
+  group_by(poll) %>% 
+  summarize(prop_yes = mean(vote))
+  
+# Compute p-hat* for each resampled poll: ex2_props
+ex2_props <- one_poll_boot_30 %>% 
+  group_by(replicate) %>% 
+  summarize(prop_yes = mean(vote))
+
+# Compare variability of p-hat and p-hat*
+ex1_props %>% summarize(sd(prop_yes))
+ex2_props %>% summarize(sd(prop_yes))
+
+
+# Resample from one_poll with n = 3: one_poll_boot_3
+one_poll_boot_3 <- one_poll %>%
+  oilabs_rep_sample_n(3, replace = TRUE, reps = 1000)
+
+# Resample from one_poll with n = 300: one_poll_boot_300
+one_poll_boot_300 <- one_poll %>%
+  oilabs_rep_sample_n(300, replace = TRUE, reps = 1000)
+  
+# Compute p-hat* for each resampled poll: ex3_props
+ex3_props <- one_poll_boot_3 %>% 
+  summarize(prop_yes = mean(vote))
+  
+# Compute p-hat* for each resampled poll: ex4_props
+ex4_props <- one_poll_boot_300 %>% 
+  summarize(prop_yes = mean(vote))
+
+# Compare variability of p-hat* for n = 3 vs. n = 300
+ex3_props %>% summarize(sd(prop_yes))
+ex4_props %>% summarize(sd(prop_yes))
+
+
+# Recall the variability of sample proportions
+ex1_props %>% summarize(sd(prop_yes))
+ex2_props %>% summarize(sd(prop_yes))
+ex3_props %>% summarize(sd(prop_yes))
+ex4_props %>% summarize(sd(prop_yes))
+
+# Create smoothed density curves for all four experiments
+ggplot() + 
+  geom_density(data = ex1_props, aes(x = prop_yes), col = "black", bw = .1) +
+  geom_density(data = ex2_props, aes(x = prop_yes), col = "green", bw = .1) +
+  geom_density(data = ex3_props, aes(x = prop_yes), col = "red", bw = .1) +
+  geom_density(data = ex4_props, aes(x = prop_yes), col = "blue", bw = .1)
+
+
+# Compute proportion of votes for Candidate X: props
+props <- all_polls %>%
+  group_by(poll) %>% 
+  summarize(prop_yes = mean(vote))
+
+# Proportion of polls within 2SE
+props %>%
+  mutate(lower = mean(prop_yes) - 2 * sd(prop_yes),
+         upper = mean(prop_yes) + 2 * sd(prop_yes),
+         in_CI = prop_yes > lower & prop_yes < upper) %>%
+  summarize(mean(in_CI))
+
+
+# Again, set the one sample that was collected
+one_poll <- all_polls %>%
+  filter(poll == 1) %>%
+  select(vote)
+  
+# Compute p-hat from one_poll: p_hat
+p_hat <- mean(one_poll$vote)
+
+# Bootstrap to find the SE of p-hat: one_poll_boot
+one_poll_boot <- one_poll %>%
+  oilabs_rep_sample_n(30, replace = TRUE, reps = 1000) %>%
+  summarize(prop_yes_boot = mean(vote))
+
+# Create an interval of plausible values
+one_poll_boot %>%
+  summarize(lower = p_hat - 2 * sd(prop_yes_boot),
+            upper = p_hat + 2 * sd(prop_yes_boot)
+            )
+
+
+# Find the 2.5% and 97.5% of the p-hat values
+one_poll_boot %>% 
+  summarize(q025_prop = quantile(prop_yes_boot, p = 0.025),
+            q975_prop = quantile(prop_yes_boot, p = 0.975))
+
+# Bootstrap t-confidence interval for comparison
+one_poll_boot %>%
+  summarize(lower = p_hat - 2 * sd(prop_yes_boot),
+            upper = p_hat + 2 * sd(prop_yes_boot)
+            )
+
+
+# Recall the bootstrap t-confidence interval
+p_hat <- mean(one_poll$vote)
+one_poll_boot %>%
+  summarize(lower = p_hat - 2 * sd(prop_yes_boot),
+            upper = p_hat + 2 * sd(prop_yes_boot))
+
+# Collect a sample of 30 observations from the population
+one_poll <- as.tbl(data.frame(vote = rbinom(n = 30, 1, .6)))
+
+# Resample the data using samples of size 300 (an incorrect strategy!)
+one_poll_boot_300 <- one_poll %>%
+  oilabs_rep_sample_n(size=300, replace = TRUE, reps = 1000) %>%
+  summarize(prop_yes_boot = mean(vote))
+
+# Find the endpoints of the the bootstrap t-confidence interval
+one_poll_boot_300 %>%
+  summarize(lower = p_hat - 2 * sd(prop_yes_boot),
+            upper = p_hat + 2 * sd(prop_yes_boot)
+            )
+
+# Resample the data using samples of size 3 (an incorrect strategy!)
+one_poll_boot_3 <- one_poll %>%
+  oilabs_rep_sample_n(size=3, replace = TRUE, reps = 1000) %>%
+  summarize(prop_yes_boot = mean(vote)) 
+
+# Find the endpoints of the the bootstrap t-confidence interval 
+one_poll_boot_3 %>%
+  summarize(lower = p_hat - 2 * sd(prop_yes_boot),
+            upper = p_hat + 2 * sd(prop_yes_boot)
+            )
+
+
+# Collect 30 observations from a population with true proportion of 0.8
+one_poll <- as.tbl(data.frame(vote = rbinom(n = 30, size = 1, prob = 0.8)))
+
+# Compute p-hat of new sample: p_hat
+p_hat <- mean(one_poll$vote)
+
+# Resample the 30 observations (with replacement)
+one_poll_boot <- one_poll %>%
+  oilabs_rep_sample_n(size=nrow(one_poll), replace = TRUE, reps = 1000) %>%
+  summarize(prop_yes_boot = mean(vote)) 
+
+# Calculate the bootstrap t-confidence interval
+one_poll_boot %>%
+  summarize(lower = p_hat - 2 * sd(prop_yes_boot),
+            upper = p_hat + 2 * sd(prop_yes_boot)
+            )
+
+
+# Calculate a 95% bootstrap percentile interval
+one_poll_boot %>% 
+  summarize(q025_prop = quantile(prop_yes_boot, p = 0.025),
+            q975_prop = quantile(prop_yes_boot, p = 0.975))
+
+# Calculate a 99% bootstrap percentile interval
+one_poll_boot %>% 
+  summarize(q005_prop = quantile(prop_yes_boot, p = 0.005),
+            q995_prop = quantile(prop_yes_boot, p = 0.995))
+
+# Calculate a 90% bootstrap percentile interval
+one_poll_boot %>% 
+  summarize(q05_prop = quantile(prop_yes_boot, p = 0.05),
+            q95_prop = quantile(prop_yes_boot, p = 0.95))
+
+
+```
+  
+
+###_Correlation and Regression_  
   
   
