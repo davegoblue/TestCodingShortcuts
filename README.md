@@ -408,4 +408,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Foundations of Inference: Chapter 1 (Ideas of Inference) and Chapter 2 (Randomization Studies)  
 * DataCamp_Insights_v002 captures Foundations of Inference: Chapter 3 (Hypothesis Testing Errors)  
 * DataCamp_Insights_v002 captures Foundations of Inference: Chapter 4 (Confidence Intervals)  
+* DataCamp_Insights_v002 captures Correlation and Regression: Chapter 1 (Correlation and Regression)  
   
