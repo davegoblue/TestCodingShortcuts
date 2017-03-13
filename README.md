@@ -412,3 +412,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Correlation and Regression: Chapter 2 (Correlation)  
 * DataCamp_Insights_v002 captures Correlation and Regression: Chapter 3 (Simple Linear Regression)  
   
+### Expansions week of 13-MAR-2017  
+* DataCamp_Insights_v002 captures Correlation and Regression: Chapter 4 (Interpreting Regression Models)  
+  
