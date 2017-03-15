@@ -416,4 +416,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Correlation and Regression: Chapter 4 (Interpreting Regression Models)  
 * DataCamp_Insights_v002 captures Correlation and Regression: Chapter 5 (Model Fit)  
 * DataCamp_Insights_v002 captures Statistical Modeling in R: Chapter 1 (What is Statistical Modeling?)  
+* DataCamp_Insights_v002 captures Statistical Modeling in R: Chapter 2 (Designing and Training Models)  
   
