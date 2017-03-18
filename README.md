@@ -419,4 +419,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Statistical Modeling in R: Chapter 2 (Designing and Training Models)  
 * DataCamp_Insights_v002 captures Statistical Modeling in R: Chapter 3 (Assessing Prediction Performance)  
 * DataCamp_Insights_v002 captures Statistical Modeling in R: Chapter 4 (Exploring Data with Models)  
+* DataCamp_Insights_v002 captures Statistical Modeling in R: Chapter 5 (Covariates and Effect Sizes)  
   
