@@ -415,9 +415,10 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 13-MAR-2017  
 * DataCamp_Insights_v002 captures Correlation and Regression: Chapter 4 (Interpreting Regression Models)  
 * DataCamp_Insights_v002 captures Correlation and Regression: Chapter 5 (Model Fit)  
-* DataCamp_Insights_v002 captures Statistical Modeling in R: Chapter 1 (What is Statistical Modeling?)  
-* DataCamp_Insights_v002 captures Statistical Modeling in R: Chapter 2 (Designing and Training Models)  
-* DataCamp_Insights_v002 captures Statistical Modeling in R: Chapter 3 (Assessing Prediction Performance)  
-* DataCamp_Insights_v002 captures Statistical Modeling in R: Chapter 4 (Exploring Data with Models)  
-* DataCamp_Insights_v002 captures Statistical Modeling in R: Chapter 5 (Covariates and Effect Sizes)  
+* DataCamp_Insights_v002 captures Statistical Modeling in R (Part I): Chapter 1 (What is Statistical Modeling?)  
+* DataCamp_Insights_v002 captures Statistical Modeling in R (Part I): Chapter 2 (Designing and Training Models)  
+* DataCamp_Insights_v002 captures Statistical Modeling in R (Part I): Chapter 3 (Assessing Prediction Performance)  
+* DataCamp_Insights_v002 captures Statistical Modeling in R (Part I): Chapter 4 (Exploring Data with Models)  
+* DataCamp_Insights_v002 captures Statistical Modeling in R (Part I): Chapter 5 (Covariates and Effect Sizes)  
+* DataCamp_Insights_v002 captures Statistical Modeling in R (Part II): Chapter 1 (Effect Size and Interaction)  
   
