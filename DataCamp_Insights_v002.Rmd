@@ -8353,6 +8353,203 @@ with(output_2, var(model_output) / var(hdd))
   
 Chapter 3 - Sampling Variability  
   
+Bootstrapping and precision - applying CI and the like to assess the precision of statistical models:  
+  
+* Bootstrapping will build on the cross-validation concepts from the previous chapters  
+* Population is the wider group of interest; random sample is frequently the data that we have; sample statistic is a quantity from our dataset (effect size, MSE, etc.)  
+* Theoretially, we could take the full population, continually sample randomly, and then calculate the sample statistics; the outcomes form the sampling distribution  
+	* The actual study run is just one data point from this theoretical sampling distribution  
+* Bootstrapping takes the one sample that we have, and re-samples from it WITH replacement  
+	* Resampling is practical since it is 1) on the computer, and 2) requires only the single sample that we already possess  
+  
+Scales and transformations - what do the numbers actually represent?  
+  
+* Sometimes they are 0/1 for situations like yes/no or true/false - logistic regressions may help  
+* Sometimes they are count variables - Poisson regressions may help  
+* Sometimes they are cyclic in nature - time-series techniques may help  
+* Sometimes the response variable is money, or another variable where change is proportional to current size (pay raises, inflation, population growth, etc.)  
+	* Using the logarithms can help when attempting to model a rate  
+    * After running the model, taking exp(effect_size) - 1 converts from the logarithmic scale back to the proportional scale (which most people find easier to interpret)  
+    * Similar transformations can help for the confidence intervals associated to the proportional rates  
+* Ranking transformations can be very helpful also - minimize impact of outliers, data-entry screw-ups, etc.  
+  
+Example code includes:  
+```{r}
+
+data(CPS85, package="mosaicData")
+
+# Two starting elements
+model <- lm(wage ~ age + sector, data = CPS85)
+statisticalModeling::effect_size(model, ~ age)
+
+# For practice
+my_test_resample <- sample(1:10, replace = TRUE)
+my_test_resample
+
+# Construct a resampling of CPS85
+trial_1_indices <- sample(1:nrow(CPS85), replace = TRUE)
+trial_1_data <- CPS85[trial_1_indices, ]
+
+# Train the model to that resampling
+trial_1_model <- lm(wage ~ age + sector, data = trial_1_data)
+
+# Calculate the quantity 
+statisticalModeling::effect_size(trial_1_model, ~ age)
+
+
+# Model and effect size from the "real" data
+model <- lm(wage ~ age + sector, data = CPS85)
+statisticalModeling::effect_size(model, ~ age)
+
+# Generate 10 resampling trials
+my_trials <- statisticalModeling::ensemble(model, nreps = 10)
+
+# Find the effect size for each trial
+statisticalModeling::effect_size(my_trials, ~ age)
+
+# Re-do with 100 trials
+my_trials <- statisticalModeling::ensemble(model, nreps = 100)
+trial_effect_sizes <- statisticalModeling::effect_size(my_trials, ~ age)
+
+# Calculate the standard deviation of the 100 effect sizes
+sd(trial_effect_sizes$slope)
+
+
+# An estimate of the value of a fireplace
+model <- lm(price ~ land_value + fireplaces + living_area, 
+            data = Houses_for_sale
+            )
+statisticalModeling::effect_size(model, ~ fireplaces)
+
+# Generate 100 resampling trials
+trials <- statisticalModeling::ensemble(model, nreps = 100)
+
+# Calculate the effect size in each of the trials
+effect_sizes_in_trials <- statisticalModeling::effect_size(trials, ~ fireplaces)
+
+# Show a histogram of the effect sizes
+hist(effect_sizes_in_trials$slope)
+
+# Calculate the standard error
+sd(effect_sizes_in_trials$slope)
+
+
+data(AARP, package="statisticalModeling")
+
+# Make model with log(Cost)
+mod_1 <- lm(log(Cost) ~ Age + Sex + Coverage, data = AARP)
+mod_2 <- lm(log(Cost) ~ Age * Sex + Coverage, data = AARP)
+mod_3 <- lm(log(Cost) ~ Age * Sex + log(Coverage), data = AARP)
+mod_4 <- lm(log(Cost) ~ Age * Sex * log(Coverage), data = AARP)
+
+# To display each model in turn 
+statisticalModeling::fmodel(mod_1, ~ Age + Sex + Coverage, 
+       Coverage = c(10, 20, 50)) +
+  ggplot2::geom_point(data = AARP, alpha = 0.5,
+                      aes(y = log(Cost), color = Sex))
+
+statisticalModeling::fmodel(mod_2, ~ Age + Sex + Coverage, 
+       Coverage = c(10, 20, 50)) +
+  ggplot2::geom_point(data = AARP, alpha = 0.5,
+                      aes(y = log(Cost), color = Sex))
+
+statisticalModeling::fmodel(mod_3, ~ Age + Sex + Coverage, 
+       Coverage = c(10, 20, 50)) +
+  ggplot2::geom_point(data = AARP, alpha = 0.5,
+                      aes(y = log(Cost), color = Sex))
+
+statisticalModeling::fmodel(mod_4, ~ Age + Sex + Coverage, 
+       Coverage = c(10, 20, 50)) +
+  ggplot2::geom_point(data = AARP, alpha = 0.5,
+                      aes(y = log(Cost), color = Sex))
+
+
+# Use cross validation to compare mod_4 and mod_1
+results <- statisticalModeling::cv_pred_error(mod_1, mod_4) 
+boxplot(mse ~ model, data = results)
+
+
+data(Oil_history, package="statisticalModeling")
+str(Oil_history)
+
+Oil_production <- Oil_history %>% 
+    filter(year <= 1968) %>% 
+    mutate(log_mbbl=log(mbbl))
+str(Oil_production)
+ggplot(Oil_production, aes(x=year, y=mbbl)) + 
+    geom_point() + 
+    geom_line()
+
+# Model of oil production in mbbl
+model_1 <- lm(mbbl ~ year, data = Oil_production)
+
+# Plot model_1 with scatterplot of mbbl vs. year
+statisticalModeling::fmodel(model_1, data = Oil_production) + 
+  geom_point(data = Oil_production)
+
+# Effect size of year
+statisticalModeling::effect_size(model_1, ~ year)
+
+# Model of log-transformed production
+model_2 <- lm(log_mbbl ~ year, data = Oil_production)
+
+# Plot model_2 with scatterplot of mbbl vs. year
+statisticalModeling::fmodel(model_2, data = Oil_production) +
+  geom_point(data = Oil_production)
+
+# And the effect size on log-transformed production
+statisticalModeling::effect_size(model_2, ~ year)
+
+# Annual growth
+100 * (exp(round(0.06637, 3)) - 1)
+
+
+data(Used_Fords, package="statisticalModeling")
+
+# A model of price
+model_1 <- lm(Price ~ Mileage + Age, data = Used_Fords)
+
+# A model of logarithmically transformed price
+Used_Fords$log_price <- log(Used_Fords$Price)
+model_2 <- lm(log_price ~ Mileage + Age, data = Used_Fords)
+
+# The model values on the original cases
+preds_1 <- statisticalModeling::evaluate_model(model_1, data = Used_Fords)
+
+# The model output for model_2 - giving log price
+preds_2 <- statisticalModeling::evaluate_model(model_2, data = Used_Fords)
+
+# Transform predicted log price to price
+preds_2$model_price <- exp(preds_2$model_output)
+
+# Mean square errors in price
+mean((preds_1$Price - preds_1$model_output)^2, na.rm = TRUE)
+mean((preds_2$Price - preds_2$model_price)^2, na.rm = TRUE)
+
+
+data(Used_Fords, package="statisticalModeling")
+
+# A model of logarithmically transformed price
+model <- lm(log(Price) ~ Mileage + Age, data = Used_Fords)
+
+# Create the bootstrap replications
+bootstrap_reps <- statisticalModeling::ensemble(model, nreps = 100, data = Used_Fords)
+
+# Find the effect size
+age_effect <- statisticalModeling::effect_size(bootstrap_reps, ~ Age)
+
+# Change the slope to a percent change
+age_effect$percent_change <- 100 * (exp(age_effect$slope) - 1)
+
+# Find confidence interval
+with(age_effect, mean(percent_change) + c(-2, 2) * sd(percent_change))
+
+
+```
+  
+  
+Chapter 4 - Variables Working Together
+  
 
 
   
