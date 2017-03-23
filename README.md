@@ -420,8 +420,12 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Statistical Modeling in R (Part I): Chapter 3 (Assessing Prediction Performance)  
 * DataCamp_Insights_v002 captures Statistical Modeling in R (Part I): Chapter 4 (Exploring Data with Models)  
 * DataCamp_Insights_v002 captures Statistical Modeling in R (Part I): Chapter 5 (Covariates and Effect Sizes)  
-* DataCamp_Insights_v002 captures Statistical Modeling in R (Part II): Chapter 1 (Effect Size and Interaction)  
+* DataCamp_Insights_v002 captures Statistical Modeling in R (Part II): Chapter 1 (Effect Size and Interaction) 
+
+### Expansions week of 20-MAR-2017  
 * DataCamp_Insights_v002 captures Statistical Modeling in R (Part II): Chapter 2 (Total and Partial Change)  
 * DataCamp_Insights_v002 captures Statistical Modeling in R (Part II): Chapter 3 (Sampling Variability)  
 * DataCamp_Insights_v002 captures Statistical Modeling in R (Part II): Chapter 4 (Variables Working Together)  
+* DataCamp_Insights_v002 captures Introduction to Time Series Analysis: Chapter 1 (Exploratory Time Series Data Analysis)  
+  
   
