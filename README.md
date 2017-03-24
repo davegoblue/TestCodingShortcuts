@@ -427,5 +427,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Statistical Modeling in R (Part II): Chapter 3 (Sampling Variability)  
 * DataCamp_Insights_v002 captures Statistical Modeling in R (Part II): Chapter 4 (Variables Working Together)  
 * DataCamp_Insights_v002 captures Introduction to Time Series Analysis: Chapter 1 (Exploratory Time Series Data Analysis)  
+* DataCamp_Insights_v002 captures Introduction to Time Series Analysis: Chapter 2 (Predicting the Future)  
   
   
