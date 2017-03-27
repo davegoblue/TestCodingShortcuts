@@ -431,4 +431,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Introduction to Time Series Analysis: Chapter 3 (Correlation Analysis)  
 * DataCamp_Insights_v002 captures Introduction to Time Series Analysis: Chapter 4 (Autoregression)  
   
+### Expansions week of 27-MAR-2017  
+* DataCamp_Insights_v002 captures Introduction to Time Series Analysis: Chapter 5 (Simple Moving Average)  
+  
   
