@@ -435,5 +435,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Introduction to Time Series Analysis: Chapter 5 (Simple Moving Average)  
 * DataCamp_Insights_v002 captures ARIMA Modeling with R: Chapter 1 (Time Series Data and Models)  
 * DataCamp_Insights_v002 captures ARIMA Modeling with R: Chapter 2 (Fitting ARMA Models)  
+* DataCamp_Insights_v002 captures ARIMA Modeling with R: Chapter 3 (ARIMA Models)  
   
   
