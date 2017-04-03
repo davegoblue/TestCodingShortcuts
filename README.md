@@ -440,4 +440,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Beginning Bayes in R: Chapter 1 (Introduction to Bayesian Thinking)  
 * DataCamp_Insights_v002 captures Beginning Bayes in R: Chapter 2 (Binomial Probability)  
   
+### Expansions week of 03-APR-2017  
+* DataCamp_Insights_v002 captures Beginning Bayes in R: Chapter 3 (Normal Mean)  
+  
   
