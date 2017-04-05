@@ -443,5 +443,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 03-APR-2017  
 * DataCamp_Insights_v002 captures Beginning Bayes in R: Chapter 3 (Normal Mean)  
 * DataCamp_Insights_v002 captures Beginning Bayes in R: Chapter 4 (Bayesian Comparisons)  
+* DataCamp_Insights_v002 captures Introduction to Machine Learning: Chapter 1 (What is Machine Learning?)  
   
   
