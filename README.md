@@ -444,5 +444,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Beginning Bayes in R: Chapter 3 (Normal Mean)  
 * DataCamp_Insights_v002 captures Beginning Bayes in R: Chapter 4 (Bayesian Comparisons)  
 * DataCamp_Insights_v002 captures Introduction to Machine Learning: Chapter 1 (What is Machine Learning?)  
+* DataCamp_Insights_v002 captures Introduction to Machine Learning: Chapter 2 (Performance Measures)  
   
   
