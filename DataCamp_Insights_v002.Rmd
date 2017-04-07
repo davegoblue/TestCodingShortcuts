@@ -10875,6 +10875,254 @@ conf_full <- table(emails_full$spam, spam_classifier(emails_full$avg_capital_seq
   
 Chapter 3 - Classification  
   
+Decision trees - assign class to an unseen observation (each observation consists of a vector of features, and a classification):  
+  
+* Binary for two-class, and multi-class for 3+ class; features can be categorical or continuous  
+* Trees build from root (top-level) to leaves (bottom-level) by way of intermediate nodes (children)  
+* Goal is for each leaf to be "pure" (single class), though this is very rare due to noise within the data  
+* Learning the tree involves selecting from among the features, then selecting the threshhold/split for that feature, then continuing to the next children  
+* Assessments are often made based on "information gain" from each feature; the splits creating the greatest "information gain" are used next  
+* Pruning is the process of reducing bias by eliminating overfits, though the defaults in rpart::rpart() typically have already done reasonably well at this  
+  
+K-nearest-neighbors (knn) - an example of "instance based learning":  
+  
+* Instance-based learning saves the training set in memory, and then compares the unseen instances to the training set  
+* The simplest form is to run k-nearest-neighbors with k=1, aka "nearest neighbor" using Euclidean distance on the standardized variables  
+	* With greater k, find the k-nearest neighbors and use plurality/majority voting to select a prediction  
+    * Can also use the Manhattan distances rather than Euclidean distances, which is to say sum(abs(a(i)-b(i)) rather than sqrt( sum( (a(i) - b(i))^2 )  
+    * Caution to have normalized/standardized all the inputs to avoid the scaling/units problem; transfrom both the train and test data the same  
+* Categorical features with n-categories should typically be split in to either n OR n-1 dummy variables (the n-1 will always work better - is required actually - for non-singular regression matrix on the same data)  
+  
+ROC curve - Receiver Operator Characteristic curve - is a powerful performance measure for binary classification:  
+  
+* Key idea is to use a probability threshhold to make the binary classification (need not be simple majority; could require strong-majority or even sizable-minority to declare as positive)  
+* Key Ratio 1: True Positive Rate = Recall = TP / (TP + FN)  # of all the patients that are actually sick, what percentage do I correctly flag as sick?  
+* Key Ratio 2: False Positive Rate = FP / (FP + TN)  # of all the patients that are actually NOT sick, what percentage do I INCORRECTLY flag as sick?  
+* For the ROC curve, the FPR is on the horizontal axis while the TPR is on the vertical axis  
+	* Curve can be drawn based on the output probabilities from the classifier, using various threshholds to get an associate (FPR, TPR) for the graph  
+* Interpreting the curve - the closer to the upper-left corner (TPR=1, FPR=0), the better  
+	* Area Under Curve (AUC) of 0.9+ is generally an excellent classifier  
+  
+Example code includes:  
+```{r}
+
+titanic <- titanic_train %>% 
+    select(Survived, Pclass, Sex, Age) %>% 
+    mutate(Survived=factor(Survived, levels=c(1, 0)), Sex=factor(Sex), Pclass=factor(Pclass)) %>% 
+    na.omit()
+
+trIdx <- sample(x=1:nrow(titanic), size=round(.7*nrow(titanic)), replace=FALSE)
+train <- titanic[trIdx, ]
+test <- titanic[-trIdx, ]
+str(train); str(test)
+
+
+# Fill in the ___, build a tree model: tree
+tree <- rpart::rpart(Survived ~ ., data=train, method="class")
+
+# Draw the decision tree
+rattle::fancyRpartPlot(tree)
+
+# Predict the values of the test set: pred
+pred <- predict(tree, newdata=test, type="class")
+
+# Construct the confusion matrix: conf
+(conf <- table(test$Survived, pred))
+
+# Print out the accuracy
+sum(diag(conf)) / sum(conf)
+
+
+# Calculation of a complex tree
+tree <- rpart::rpart(Survived ~ ., train, method = "class", control = rpart::rpart.control(cp=0.00001))
+
+# Draw the complex tree
+rattle::fancyRpartPlot(tree)
+
+# Prune the tree: pruned
+pruned <- rpart::prune(tree, cp=0.01)
+
+# Draw pruned
+rattle::fancyRpartPlot(pruned)
+
+
+data(spam, package="kernlab")
+spam <- spam %>% 
+    mutate(spam=as.integer(type)-1L) %>% 
+    select(-type)
+str(spam)
+
+idxTrain <- sample(x=1:nrow(spam), size=round(.7*nrow(spam)), replace=FALSE)
+train <- spam[idxTrain, ]
+test <- spam[-idxTrain, ]
+dim(train); dim(test)
+
+
+# Train and test tree with gini criterion
+tree_g <- rpart::rpart(spam ~ ., train, method = "class")
+pred_g <- predict(tree_g, test, type = "class")
+conf_g <- table(test$spam, pred_g)
+acc_g <- sum(diag(conf_g)) / sum(conf_g)
+
+# Change the first line of code to use information gain as splitting criterion
+tree_i <- rpart::rpart(spam ~ ., train, method = "class", parms = list(split = "information"))
+pred_i <- predict(tree_i, test, type = "class")
+conf_i <- table(test$spam, pred_i)
+acc_i <- sum(diag(conf_i)) / sum(conf_i)
+
+# Draw a fancy plot of both tree_g and tree_i
+rattle::fancyRpartPlot(tree_g)
+rattle::fancyRpartPlot(tree_i)
+
+# Print out acc_g and acc_i
+acc_g
+acc_i
+
+
+# Shuffle the dataset, call the result shuffled
+titanic <- titanic_train %>% 
+    select(Survived, Pclass, Sex, Age) %>% 
+    mutate(Survived=factor(Survived, levels=c(1, 0)), Sex=as.integer(factor(Sex))-1L) %>% 
+    na.omit()
+n <- nrow(titanic)
+shuffled <- titanic[sample(n),]
+
+# Split the data in train and test
+train_indices <- 1:round(0.7*n)
+train <- shuffled[train_indices, ]
+test <- shuffled[-train_indices, ]
+
+# Print the structure of train and test
+str(train)
+str(test)
+
+
+# Store the Survived column of train and test in train_labels and test_labels
+train_labels <- train$Survived
+test_labels <- test$Survived
+
+# Copy train and test to knn_train and knn_test
+knn_train <- train
+knn_test <- test
+
+# Drop Survived column for knn_train and knn_test
+knn_train$Survived <- NULL
+knn_test$Survived <- NULL
+
+# Normalize Pclass
+min_class <- min(knn_train$Pclass)
+max_class <- max(knn_train$Pclass)
+knn_train$Pclass <- (knn_train$Pclass - min_class) / (max_class - min_class)
+knn_test$Pclass <- (knn_test$Pclass - min_class) / (max_class - min_class)
+
+# Normalize Age
+min_age <- min(knn_train$Age)
+max_age <- max(knn_train$Age)
+knn_train$Age <- (knn_train$Age - min_age) / (max_age - min_age)
+knn_test$Age <- (knn_test$Age - min_age) / (max_age - min_age)
+
+
+# Fill in the ___, make predictions using knn: pred
+pred <- class::knn(train = knn_train, test = knn_test, cl = train_labels, k = 5)
+
+# Construct the confusion matrix: conf
+(conf <- table(test_labels, pred))
+
+
+range <- 1:round(0.2 * nrow(knn_train))
+accs <- rep(0, length(range))
+
+for (k in range) {
+
+  # Fill in the ___, make predictions using knn: pred
+  pred <- class::knn(knn_train, knn_test, cl=train_labels, k = k)
+
+  # Fill in the ___, construct the confusion matrix: conf
+  conf <- table(test_labels, pred)
+
+  # Fill in the ___, calculate the accuracy and store it in accs[k]
+  accs[k] <- sum(diag(conf)) / sum(conf)
+}
+
+# Plot the accuracies. Title of x-axis is "k".
+plot(range, accs, xlab = "k")
+
+# Calculate the best k
+which.max(accs)
+
+
+# CAUTION - DO NOT HAVE THIS DATA, though UCIMLR (Census + Income) is the SOURCE
+# test should be 9215 x 14 while train should be 21503 x 14
+# income is the key variable, with 1 meaning > $50,000 while 0 meaning otherwise
+
+
+# Build a tree on the training set: tree
+# tree <- rpart::rpart(income ~ ., train, method = "class")
+
+# Predict probability values using the model: all_probs
+# all_probs <- predict(tree, newdata=test, type="prob")
+
+# Print out all_probs
+# str(all_probs)
+
+# Select second column of all_probs: probs
+# probs <- all_probs[, 2]
+
+
+# Make a prediction object: pred
+# pred <- ROCR::prediction(probs, test$income)
+
+# Make a performance object: perf
+# perf <- ROCR::performance(pred, "tpr", "fpr")
+
+# Plot this curve
+# plot(perf)
+
+# Make a performance object: perf
+# perf <- ROCR::performance(pred, "auc")
+
+# Print out the AUC
+# perf@y.values[[1]]
+
+
+# EVEN MORE DATA THAT I DO NOT HAVE
+
+draw_roc_lines <- function(tree, knn) {
+  if (!(class(tree)== "performance" && class(knn) == "performance") ||
+      !(attr(class(tree),"package") == "ROCR" && attr(class(knn),"package") == "ROCR")) {
+    stop("This predefined function needs two performance objects as arguments.")
+  } else if (length(tree@x.values) == 0 | length(knn@x.values) == 0) {
+    stop('This predefined function needs the right kind of performance objects as arguments. Are you sure you are creating both objects with arguments "tpr" and  "fpr"?')
+  } else {
+    plot(0,0,
+         type = "n",
+         main = "ROC Curves",
+         ylab = "True positive rate",
+         xlab = "False positive rate",
+         ylim = c(0,1),
+         xlim = c(0,1))
+    lines(tree@x.values[[1]], tree@y.values[[1]], type = "l", lwd = 2, col = "red")
+    lines(knn@x.values[[1]], knn@y.values[[1]], type = "l", lwd = 2, col = "green")
+    legend("bottomright", c("DT","KNN"), lty=c(1,1),lwd=c(2.5,2.5),col=c("red","green"))
+  }
+}
+
+# Make the prediction objects for both models: pred_t, pred_k
+# pred_t <- ROCR::prediction(probs_t, test$spam)
+# pred_k <- ROCR::prediction(probs_k, test$spam)
+
+# Make the performance objects for both models: perf_t, perf_k
+# perf_t <- ROCR::performance(pred_t, "tpr", "fpr")
+# perf_k <- ROCR::performance(pred_k, "tpr", "fpr")
+
+# Draw the ROC lines using draw_roc_lines()
+# draw_roc_lines(perf_t, perf_k)
+
+
+```
+  
+  
+Chapter 4 - Regression
 
   
   
