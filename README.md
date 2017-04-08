@@ -446,5 +446,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Introduction to Machine Learning: Chapter 1 (What is Machine Learning?)  
 * DataCamp_Insights_v002 captures Introduction to Machine Learning: Chapter 2 (Performance Measures)  
 * DataCamp_Insights_v002 captures Introduction to Machine Learning: Chapter 3 (Classification)  
+* DataCamp_Insights_v002 captures Introduction to Machine Learning: Chapter 4 (Regression)  
   
   
