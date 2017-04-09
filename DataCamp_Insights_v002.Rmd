@@ -11412,7 +11412,271 @@ sqrt(mean( (test_output_knn - world_bank_test$urb_pop) ^ 2))
   
 Chapter 5 - Clustering  
   
-
-
-
+Clustering with k-means (unsupervised learning) - objects that are similar within and dissimilar across:  
   
+* The clusters have no pre-defined labels, and there is no right or wrong per se (different clustering seeds may return different clusters)  
+* Clustering can help with data visualization, pre-processing, outlier detection, target marketing, etc.  
+* Clustering requires definitions (measurements) for "similarity" of various observations; typically  
+	* Numeric variables can be standardized and then assessed using Euclidean and/or Manhattan distances  
+    * Categorical variables can be converted to 0/1 dummies, with a user-defined "distance" for 0 vs 1  
+* Clustering also requires a selection of a methodology, for example  
+	* k-means separates the data in to k disjoint subsets, reflecting the structure of the data  
+    * Botton-up hierarchical  
+* Measuring the outcome clusters looks at WSS (within sum-squares) and BSS (between cluster sum-squares)  
+	* WSS = sum-across-clusters-of ( sum-within-cluster-of ( distance-to-mean^2 ) )  
+    * BSS = sum-across-clsuters-of ( nObjects-in-cluster * (distance-cluster-centroid-to-fulldata-centroid )^2 )  
+* The R methodology for k-means is iterative  
+	1.  Randomly assign k centroids  
+    2.  Assign all data to the closest centroid  
+    3.  Calculate the mean of each cluster, and make that the new centroid  
+    4.  Repeat steps 2-3 until maxIter is reached or the segmentes do not change  
+* As a back-envelope rul-of-thumb, select k such that WSS is decreasing slowly, and that WSS / (WSS + BSS) < 0.2 ; can use the "Scree plot" to examine this  
+* kmeans(data, centers, nstart)  # centers can either be the pre-defined clusters OR a number of clusters desired; nstart is the number of restarts with different centroids, frequently 10+  
+    * The clustering object will have $tot.withinss (WSS) and $betweenss (BSS), with calculations having been done from a Euclidean distance  
+  
+Performance and scaling issues - since there is no "truth", the goal is to have compact clusters with low variance within the clusters and high separation between the clusters:  
+  
+* Can use Dunn's index for ( minimum-distance-between-cluster-points ) / (maximum-diameter)  # higher is better, but this has a high computational cost, and is skewed to the worst cluster in the data  
+* Internal validation can also include BIC and Silhouette's Index  
+* External validation (based on previous knowledge) can be Hulbert's Correlation or Jaccard's Coefficient  
+* The R packages "cluster" and "clValid" contain the functions for many of these validations  
+	* clValid::dunn(clusters=, Data=)  
+* Scale of variables can pose challenges - frequently a good idea to "rescale" (at a minimum) so that variables are on the same scale  
+	* Typically, it is easiest to standardize (subtract mean, divide by sigma) all the variables  
+    * Can use scale(myData) to perform this ; caution that interpretation can be tricky since the units have been stripped of their scales  
+  
+Hierarchical Clustering - addressing questions such as "which objects cluster first" and "which cluster pairs merge, and when":  
+  
+* Bottom-up (agglomerative) hierarchical clustering can provide further insights on a question of interest  
+* First, all the distances between objects are calculated and stored in a distance matrix  
+* Next, find the closest data points, merge them, call them a cluster, and compute the distance from this cluster to everything else  
+	* Distance can be simple-linkage (minimum distance from any point in the cluster to any point in the other cluster); often leads to undesirable chaining, though can be a very nice outlier detector as a result  
+    * Distance can be complete-linkage (maximum distance between any point in the cluster to any point in the other cluster)  
+    * Distance can be average-linkage (average distance between points in the cluster and points in the other cluster)  
+  
+* The dedrogram (tree disgram) will show which leaves have merged where, with the heights being the distances at the merge; can prune at any height  
+* The distances can be calculated in R using dist(myData, method=)  # euclidean, manhattan, etc.  
+* The clusters can be created using hclust(myDistanceData, method=)  
+* The hierarchical clustering methodology is in-depth, but at the expense of high computational costs; clusters cannot be un-merged as the process continues  
+* The k-means clustering methodology can undo merges and is computationally milder, but can be harder to interpret and also requires specifying the number of clusters and/or centroids  
+  
+Example code includes:  
+```{r}
+
+seeds <- data.frame(area=c( 15.26, 14.88, 14.29, 13.84, 16.14, 14.38, 14.69, 14.11, 16.63, 16.44, 15.26, 14.03, 13.89, 13.78, 13.74, 14.59, 13.99, 15.69, 14.7, 12.72, 14.16, 14.11, 15.88, 12.08, 15.01, 16.19, 13.02, 12.74, 14.11, 13.45, 13.16, 15.49, 14.09, 13.94, 15.05, 16.12, 16.2, 17.08, 14.8, 14.28, 13.54, 13.5, 13.16, 15.5, 15.11, 13.8, 15.36, 14.99, 14.79, 14.86, 14.43, 15.78, 14.49, 14.33, 14.52, 15.03, 14.46, 14.92, 15.38, 12.11, 11.42, 11.23, 12.36, 13.22, 12.78, 12.88, 14.34, 14.01, 14.37, 12.73, 17.63, 16.84, 17.26, 19.11, 16.82, 16.77, 17.32, 20.71, 18.94, 17.12, 16.53, 18.72, 20.2, 19.57, 19.51, 18.27, 18.88, 18.98, 21.18, 20.88, 20.1, 18.76, 18.81, 18.59, 18.36, 16.87, 19.31, 18.98, 18.17, 18.72, 16.41, 17.99, 19.46, 19.18, 18.95, 18.83, 18.85, 17.63, 19.94, 18.55, 18.45, 19.38, 19.13, 19.14, 20.97, 19.06, 18.96, 19.15, 18.89, 20.03, 20.24, 18.14, 16.17, 18.43, 15.99, 18.75, 18.65, 17.98, 20.16, 17.55, 18.3, 18.94, 15.38, 16.16, 15.56, 15.38, 17.36, 15.57, 15.6, 16.23, 13.07, 13.32, 13.34, 12.22, 11.82, 11.21, 11.43, 12.49, 12.7, 10.79, 11.83, 12.01, 12.26, 11.18, 11.36, 11.19, 11.34, 12.13, 11.75, 11.49, 12.54, 12.02, 12.05, 12.55, 11.14, 12.1, 12.44, 12.15, 11.35, 11.24, 11.02, 11.55, 11.27, 11.4, 10.83, 10.8, 11.26, 10.74, 11.48, 12.21, 11.41, 12.46, 12.19, 11.65, 12.89, 11.56, 11.81, 10.91, 11.23, 10.59, 10.93, 11.27, 11.87, 10.82, 12.11, 12.8, 12.79, 13.37, 12.62, 12.76, 12.38, 12.67, 11.18, 12.7, 12.37, 12.19, 11.23, 13.2, 11.84, 12.3 ))
+seeds$perimeter <- c( 14.84, 14.57, 14.09, 13.94, 14.99, 14.21, 14.49, 14.1, 15.46, 15.25, 14.85, 14.16, 14.02, 14.06, 14.05, 14.28, 13.83, 14.75, 14.21, 13.57, 14.4, 14.26, 14.9, 13.23, 14.76, 15.16, 13.76, 13.67, 14.18, 14.02, 13.82, 14.94, 14.41, 14.17, 14.68, 15, 15.27, 15.38, 14.52, 14.17, 13.85, 13.85, 13.55, 14.86, 14.54, 14.04, 14.76, 14.56, 14.52, 14.67, 14.4, 14.91, 14.61, 14.28, 14.6, 14.77, 14.35, 14.43, 14.77, 13.47, 12.86, 12.63, 13.19, 13.84, 13.57, 13.5, 14.37, 14.29, 14.39, 13.75, 15.98, 15.67, 15.73, 16.26, 15.51, 15.62, 15.91, 17.23, 16.49, 15.55, 15.34, 16.19, 16.89, 16.74, 16.71, 16.09, 16.26, 16.66, 17.21, 17.05, 16.99, 16.2, 16.29, 16.05, 16.52, 15.65, 16.59, 16.57, 16.26, 16.34, 15.25, 15.86, 16.5, 16.63, 16.42, 16.29, 16.17, 15.86, 16.92, 16.22, 16.12, 16.72, 16.31, 16.61, 17.25, 16.45, 16.2, 16.45, 16.23, 16.9, 16.91, 16.12, 15.38, 15.97, 14.89, 16.18, 16.41, 15.85, 17.03, 15.66, 15.89, 16.32, 14.9, 15.33, 14.89, 14.66, 15.76, 15.15, 15.11, 15.18, 13.92, 13.94, 13.95, 13.32, 13.4, 13.13, 13.13, 13.46, 13.71, 12.93, 13.23, 13.52, 13.6, 13.04, 13.05, 13.05, 12.87, 13.73, 13.52, 13.22, 13.67, 13.33, 13.41, 13.57, 12.79, 13.15, 13.59, 13.45, 13.12, 13, 13, 13.1, 12.97, 13.08, 12.96, 12.57, 13.01, 12.73, 13.05, 13.47, 12.95, 13.41, 13.36, 13.07, 13.77, 13.31, 13.45, 12.8, 12.82, 12.41, 12.8, 12.86, 13.02, 12.83, 13.27, 13.47, 13.53, 13.78, 13.67, 13.38, 13.44, 13.32, 12.72, 13.41, 13.47, 13.2, 12.88, 13.66, 13.21, 13.34 )
+seeds$compactness <- c( 0.87, 0.88, 0.9, 0.9, 0.9, 0.9, 0.88, 0.89, 0.87, 0.89, 0.87, 0.88, 0.89, 0.88, 0.87, 0.9, 0.92, 0.91, 0.92, 0.87, 0.86, 0.87, 0.9, 0.87, 0.87, 0.88, 0.86, 0.86, 0.88, 0.86, 0.87, 0.87, 0.85, 0.87, 0.88, 0.9, 0.87, 0.91, 0.88, 0.89, 0.89, 0.89, 0.9, 0.88, 0.9, 0.88, 0.89, 0.89, 0.88, 0.87, 0.88, 0.89, 0.85, 0.88, 0.86, 0.87, 0.88, 0.9, 0.89, 0.84, 0.87, 0.88, 0.89, 0.87, 0.87, 0.89, 0.87, 0.86, 0.87, 0.85, 0.87, 0.86, 0.88, 0.91, 0.88, 0.86, 0.86, 0.88, 0.88, 0.89, 0.88, 0.9, 0.89, 0.88, 0.88, 0.89, 0.9, 0.86, 0.9, 0.9, 0.87, 0.9, 0.89, 0.91, 0.85, 0.86, 0.88, 0.87, 0.86, 0.88, 0.89, 0.9, 0.9, 0.87, 0.88, 0.89, 0.91, 0.88, 0.88, 0.89, 0.89, 0.87, 0.9, 0.87, 0.89, 0.89, 0.91, 0.89, 0.9, 0.88, 0.89, 0.88, 0.86, 0.91, 0.91, 0.9, 0.87, 0.9, 0.87, 0.9, 0.91, 0.89, 0.87, 0.86, 0.88, 0.9, 0.88, 0.85, 0.86, 0.88, 0.85, 0.86, 0.86, 0.87, 0.83, 0.82, 0.83, 0.87, 0.85, 0.81, 0.85, 0.82, 0.83, 0.83, 0.84, 0.83, 0.86, 0.81, 0.81, 0.83, 0.84, 0.85, 0.84, 0.86, 0.86, 0.88, 0.85, 0.84, 0.83, 0.84, 0.82, 0.85, 0.84, 0.84, 0.81, 0.86, 0.84, 0.83, 0.85, 0.85, 0.86, 0.87, 0.86, 0.86, 0.85, 0.82, 0.82, 0.84, 0.86, 0.86, 0.84, 0.86, 0.88, 0.83, 0.86, 0.89, 0.88, 0.88, 0.85, 0.9, 0.86, 0.9, 0.87, 0.89, 0.86, 0.88, 0.85, 0.89, 0.85, 0.87 )
+seeds$length <- c( 5.76, 5.55, 5.29, 5.32, 5.66, 5.39, 5.56, 5.42, 6.05, 5.88, 5.71, 5.44, 5.44, 5.48, 5.48, 5.35, 5.12, 5.53, 5.21, 5.23, 5.66, 5.52, 5.62, 5.1, 5.79, 5.83, 5.39, 5.39, 5.54, 5.52, 5.45, 5.76, 5.72, 5.58, 5.71, 5.71, 5.83, 5.83, 5.66, 5.4, 5.35, 5.35, 5.14, 5.88, 5.58, 5.38, 5.7, 5.57, 5.54, 5.68, 5.58, 5.67, 5.71, 5.5, 5.74, 5.7, 5.39, 5.38, 5.66, 5.16, 5.01, 4.9, 5.08, 5.39, 5.26, 5.14, 5.63, 5.61, 5.57, 5.41, 6.19, 6, 5.98, 6.15, 6.02, 5.93, 6.06, 6.58, 6.45, 5.85, 5.88, 6.01, 6.29, 6.38, 6.37, 6.17, 6.08, 6.55, 6.57, 6.45, 6.58, 6.17, 6.27, 6.04, 6.67, 6.14, 6.34, 6.45, 6.27, 6.22, 5.72, 5.89, 6.11, 6.37, 6.25, 6.04, 6.15, 6.03, 6.67, 6.15, 6.11, 6.3, 6.18, 6.26, 6.56, 6.42, 6.05, 6.25, 6.23, 6.49, 6.32, 6.06, 5.76, 5.98, 5.36, 6.11, 6.29, 5.98, 6.51, 5.79, 5.98, 6.14, 5.88, 5.84, 5.78, 5.48, 6.14, 5.92, 5.83, 5.87, 5.47, 5.54, 5.39, 5.22, 5.31, 5.28, 5.18, 5.27, 5.39, 5.32, 5.26, 5.41, 5.41, 5.22, 5.17, 5.25, 5.05, 5.39, 5.44, 5.3, 5.45, 5.35, 5.27, 5.33, 5.01, 5.11, 5.32, 5.42, 5.18, 5.09, 5.33, 5.17, 5.09, 5.14, 5.28, 4.98, 5.19, 5.14, 5.18, 5.36, 5.09, 5.24, 5.24, 5.11, 5.5, 5.36, 5.41, 5.09, 5.09, 4.9, 5.05, 5.09, 5.13, 5.18, 5.24, 5.16, 5.22, 5.32, 5.41, 5.07, 5.22, 4.98, 5.01, 5.18, 5.2, 5.14, 5.14, 5.24, 5.17, 5.24 )
+seeds$width <- c( 3.31, 3.33, 3.34, 3.38, 3.56, 3.31, 3.26, 3.3, 3.46, 3.5, 3.24, 3.2, 3.2, 3.16, 3.11, 3.33, 3.38, 3.51, 3.47, 3.05, 3.13, 3.17, 3.51, 2.94, 3.25, 3.42, 3.03, 2.96, 3.22, 3.06, 2.98, 3.37, 3.19, 3.15, 3.33, 3.48, 3.46, 3.68, 3.29, 3.3, 3.16, 3.16, 3.2, 3.4, 3.46, 3.15, 3.39, 3.38, 3.29, 3.26, 3.27, 3.43, 3.11, 3.2, 3.11, 3.21, 3.38, 3.41, 3.42, 3.03, 2.85, 2.88, 3.04, 3.07, 3.03, 3.12, 3.19, 3.16, 3.15, 2.88, 3.56, 3.48, 3.59, 3.93, 3.49, 3.44, 3.4, 3.81, 3.64, 3.57, 3.47, 3.86, 3.86, 3.77, 3.8, 3.65, 3.76, 3.67, 4.03, 4.03, 3.79, 3.8, 3.69, 3.86, 3.48, 3.46, 3.81, 3.55, 3.51, 3.68, 3.52, 3.69, 3.89, 3.68, 3.75, 3.79, 3.81, 3.57, 3.76, 3.67, 3.77, 3.79, 3.9, 3.74, 3.99, 3.72, 3.9, 3.82, 3.77, 3.86, 3.96, 3.56, 3.39, 3.77, 3.58, 3.87, 3.59, 3.69, 3.77, 3.69, 3.75, 3.83, 3.27, 3.4, 3.41, 3.46, 3.57, 3.23, 3.29, 3.47, 2.99, 3.07, 3.07, 2.97, 2.78, 2.69, 2.72, 2.97, 2.91, 2.65, 2.84, 2.78, 2.83, 2.69, 2.75, 2.67, 2.85, 2.75, 2.68, 2.69, 2.88, 2.81, 2.85, 2.97, 2.79, 2.94, 2.9, 2.84, 2.67, 2.71, 2.7, 2.85, 2.76, 2.76, 2.64, 2.82, 2.71, 2.64, 2.76, 2.89, 2.77, 3.02, 2.91, 2.85, 3.03, 2.68, 2.72, 2.67, 2.82, 2.79, 2.72, 2.8, 2.95, 2.63, 2.98, 3.13, 3.05, 3.13, 2.91, 3.15, 2.99, 3.13, 2.81, 3.09, 2.96, 2.98, 2.8, 3.23, 2.84, 2.97 )
+seeds$asymmetry <- c( 2.22, 1.02, 2.7, 2.26, 1.36, 2.46, 3.59, 2.7, 2.04, 1.97, 4.54, 1.72, 3.99, 3.14, 2.93, 4.18, 5.23, 1.6, 1.77, 4.1, 3.07, 2.69, 0.77, 1.42, 1.79, 0.9, 3.37, 2.5, 2.75, 3.53, 0.86, 3.41, 3.92, 2.12, 2.13, 2.27, 2.82, 2.96, 3.11, 6.68, 2.59, 2.25, 2.46, 4.71, 3.13, 1.56, 1.37, 2.96, 2.7, 2.13, 3.98, 5.59, 4.12, 3.33, 1.48, 1.93, 2.8, 1.14, 2, 1.5, 2.7, 2.27, 3.22, 4.16, 1.18, 2.35, 1.31, 2.22, 1.46, 3.53, 4.08, 4.67, 4.54, 2.94, 4, 4.92, 3.82, 4.45, 5.06, 2.86, 5.53, 5.32, 5.17, 1.47, 2.96, 2.44, 1.65, 3.69, 5.78, 5.02, 1.96, 3.12, 3.24, 6, 4.93, 3.7, 3.48, 2.14, 2.85, 2.19, 4.22, 2.07, 4.31, 3.36, 3.37, 2.55, 2.84, 3.75, 3.25, 1.74, 2.23, 3.68, 2.11, 6.68, 4.68, 2.25, 4.33, 3.08, 3.64, 3.06, 5.9, 3.62, 4.29, 2.98, 3.34, 4.19, 4.39, 2.26, 1.91, 5.37, 2.84, 2.91, 4.46, 4.27, 4.97, 3.6, 3.53, 2.64, 2.73, 3.77, 5.3, 7.04, 6, 5.47, 4.47, 6.17, 2.22, 4.42, 3.26, 5.46, 5.2, 6.99, 4.76, 3.33, 4.05, 5.81, 3.35, 4.83, 4.38, 5.39, 3.08, 4.27, 4.99, 4.42, 6.39, 2.2, 4.92, 3.64, 4.34, 3.52, 6.74, 6.71, 4.31, 5.59, 5.18, 4.77, 5.34, 4.7, 5.88, 1.66, 4.96, 4.99, 4.86, 5.21, 6.18, 4.06, 4.9, 4.18, 7.52, 4.97, 5.4, 3.98, 3.6, 4.85, 4.13, 4.87, 5.48, 4.67, 3.31, 2.83, 5.47, 2.3, 4.05, 8.46, 3.92, 3.63, 4.33, 8.31, 3.6, 5.64 )
+seeds$groove_length <- c( 5.22, 4.96, 4.83, 4.8, 5.17, 4.96, 5.22, 5, 5.88, 5.53, 5.31, 5, 4.74, 4.87, 4.83, 4.78, 4.78, 5.05, 4.65, 4.91, 5.18, 5.22, 5.09, 4.96, 5, 5.31, 4.83, 4.87, 5.04, 5.1, 5.06, 5.23, 5.3, 5.01, 5.36, 5.44, 5.53, 5.48, 5.31, 5, 5.18, 5.18, 4.78, 5.53, 5.18, 4.96, 5.13, 5.17, 5.11, 5.35, 5.14, 5.14, 5.4, 5.22, 5.49, 5.44, 5.04, 5.09, 5.22, 4.52, 4.61, 4.7, 4.61, 5.09, 4.78, 4.61, 5.15, 5.13, 5.3, 5.07, 6.06, 5.88, 5.79, 6.08, 5.84, 5.8, 5.92, 6.45, 6.36, 5.75, 5.88, 5.88, 6.19, 6.27, 6.18, 6.2, 6.11, 6.5, 6.23, 6.32, 6.45, 6.05, 6.05, 5.88, 6.45, 5.97, 6.24, 6.45, 6.27, 6.1, 5.62, 5.84, 6.01, 6.23, 6.15, 5.88, 6.2, 5.93, 6.55, 5.89, 5.79, 5.96, 5.92, 6.05, 6.32, 6.16, 5.75, 6.18, 5.97, 6.32, 6.19, 6.01, 5.7, 5.91, 5.14, 5.99, 6.1, 5.92, 6.18, 5.66, 5.96, 5.95, 5.8, 5.8, 5.85, 5.44, 5.97, 5.88, 5.75, 5.92, 5.39, 5.44, 5.31, 5.22, 5.18, 5.28, 5.13, 5, 5.32, 5.19, 5.31, 5.27, 5.36, 5, 5.26, 5.22, 5, 5.22, 5.31, 5.31, 5.49, 5.31, 5.05, 5.18, 5.05, 5.06, 5.27, 5.34, 5.13, 5.09, 5.16, 4.96, 5, 5.09, 5.18, 5.06, 5.09, 4.96, 5, 5.18, 4.83, 5.15, 5.16, 5.13, 5.32, 5.18, 5.35, 4.96, 4.96, 4.79, 5.04, 5, 5.13, 5.09, 5.01, 4.91, 4.96, 5.09, 5.23, 4.83, 5.04, 4.75, 4.83, 5, 5, 4.87, 5, 5.06, 5.04, 5.06 )
+str(seeds)
+
+seeds_type <- c( 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3 )
+
+# Do k-means clustering with three clusters, repeat 20 times: seeds_km
+seeds_km <- kmeans(seeds, centers=3, nstart=20)
+
+# Print out seeds_km
+seeds_km
+
+# Compare clusters with actual seed types. Set k-means clusters as rows
+table(seeds_km$cluster, seeds_type)
+
+# Plot the length as function of width. Color by cluster
+plot(x=seeds$width, y=seeds$length, col=seeds_km$cluster)
+
+
+# Apply kmeans to seeds twice: seeds_km_1 and seeds_km_2
+seeds_km_1 <- kmeans(seeds, centers=5, nstart=1)
+seeds_km_2 <- kmeans(seeds, centers=5, nstart=1)
+  
+# Return the ratio of the within cluster sum of squares
+seeds_km_1$tot.withinss / seeds_km_2$tot.withinss
+
+# Compare the resulting clusters
+table(seeds_km_1$cluster, seeds_km_2$cluster)
+
+
+school_result <- data.frame(reading.4=c( 2.7, 3.9, 4.8, 3.1, 3.4, 3.1, 4.6, 3.1, 3.8, 5.2, 3.9, 4.1, 
+                                         5.7, 3, 2.9, 3.4, 4, 3, 4, 3, 3.6, 3.1, 3.2, 3, 3.8 
+                                        ),
+                            arithmetic.4=c( 3.2, 3.8, 4.1, 3.5, 3.7, 3.4, 4.4, 3.3, 3.7, 4.9, 3.8, 4, 
+                                            5.1, 3.2, 3.3, 3.3, 4.2, 3, 4.1, 3.2, 3.6, 3.2, 3.3, 3.4, 4 
+                                          ),
+                            reading.6=c( 4.5, 5.9, 6.8, 4.3, 5.1, 4.1, 6.6, 4, 4.7, 8.2, 5.2, 5.6, 7, 
+                                         4.5, 4.5, 4.4, 5.2, 4.6, 5.9, 4.4, 5.3, 4.6, 5.4, 4.2, 6.9 
+                                        ), 
+                            arithmetic.6=c( 4.8, 6.2, 5.5, 4.6, 5.6, 4.7, 6.1, 4.9, 4.9, 6.9, 5.4, 5.6, 
+                                            6.3, 5, 5.1, 5, 5.4, 5, 5.8, 5.1, 5.4, 5, 5.3, 4.7, 6.7 
+                                          )
+                            )
+
+# Explore the structure of your data
+str(school_result)
+
+# Initialise ratio_ss 
+ratio_ss <- rep(0, 7)
+
+# Finish the for-loop. 
+for (k in 1:7) {
+  
+  # Apply k-means to school_result: school_km
+  school_km <- kmeans(school_result, centers=k, nstart=20)
+  
+  # Save the ratio between of WSS to TSS in kth element of ratio_ss
+  ratio_ss[k] <- school_km$tot.withinss / school_km$totss
+  
+}
+
+# Make a scree plot with type "b" and xlab "k"
+plot(ratio_ss, type="b", xlab="k")
+
+
+run_record <- data.frame(X100m=c( 10.23, 9.93, 10.15, 10.14, 10.27, 10, 9.84, 10.1, 10.17, 10.29, 10.97, 10.32, 10.24, 10.29, 10.16, 10.21, 10.02, 10.06, 9.87, 10.11, 10.32, 10.08, 10.33, 10.2, 10.35, 10.2, 10.01, 10, 10.28, 10.34, 10.6, 10.41, 10.3, 10.13, 10.21, 10.64, 10.19, 10.11, 10.08, 10.4, 10.57, 10, 9.86, 10.21, 10.11, 10.78, 10.37, 10.17, 10.18, 10.16, 10.36, 10.23, 10.38, 9.78 )
+                         )
+run_record$X200m <- c( 20.37, 20.06, 20.45, 20.19, 20.3, 19.89, 20.17, 20.15, 20.42, 20.85, 22.46, 20.96, 20.61, 20.52, 20.65, 20.47, 20.16, 20.23, 19.94, 19.85, 21.09, 20.11, 20.73, 20.93, 20.54, 20.89, 19.72, 20.03, 20.43, 20.41, 21.23, 20.77, 20.92, 20.06, 20.4, 21.52, 20.19, 20.42, 20.17, 21.18, 21.43, 19.98, 20.12, 20.75, 20.23, 21.86, 21.14, 20.59, 20.43, 20.41, 20.81, 20.69, 21.04, 19.32 
+                       )
+run_record$X400m <- c( 46.18, 44.38, 45.8, 45.02, 45.26, 44.29, 44.72, 45.92, 45.25, 45.84, 51.4, 46.42, 45.77, 45.89, 44.9, 45.49, 44.64, 44.33, 44.36, 45.57, 48.44, 45.43, 45.48, 46.37, 45.58, 46.59, 45.26, 44.78, 44.18, 45.37, 46.95, 47.9, 46.41, 44.69, 44.31, 48.63, 45.68, 46.09, 46.11, 46.77, 45.57, 44.62, 46.11, 45.77, 44.6, 49.98, 47.6, 44.96, 45.54, 44.99, 46.72, 46.05, 46.63, 43.18 
+                       )
+run_record$X800m <- c( 106.2, 104.4, 106.2, 103.8, 107.4, 102, 105, 105.6, 106.2, 108, 116.4, 112.2, 105, 101.4, 108.6, 104.4, 103.2, 103.8, 102, 105, 109.2, 105.6, 105.6, 109.8, 105, 108, 103.8, 106.2, 102, 104.4, 109.2, 105.6, 107.4, 108, 106.8, 108, 103.8, 104.4, 102.6, 108, 108, 103.2, 105, 105.6, 102.6, 116.4, 110.4, 103.8, 105.6, 102.6, 107.4, 108.6, 106.8, 102.6 
+                       )
+run_record$X1500m <- c( 220.8, 211.8, 214.8, 214.2, 222, 214.2, 211.8, 219, 216.6, 223.2, 254.4, 230.4, 214.8, 211.2, 223.8, 216.6, 208.8, 211.8, 209.4, 216.6, 224.4, 215.4, 217.8, 226.2, 213.6, 222, 213, 217.2, 206.4, 218.4, 226.2, 220.2, 225.6, 229.8, 217.8, 228, 213, 212.4, 217.2, 240, 229.2, 215.4, 210, 214.2, 212.4, 240.6, 231.6, 208.8, 216.6, 211.8, 226.2, 226.2, 215.4, 207.6 
+                        )
+run_record$X5000m <- c( 799.8, 775.8, 795.6, 769.8, 878.4, 808.8, 793.8, 803.4, 805.2, 809.4, 1002, 825, 805.2, 805.2, 858.6, 796.2, 778.8, 774.6, 780.6, 808.8, 838.8, 807, 810, 852.6, 784.2, 819.6, 785.4, 793.2, 759.6, 830.4, 834, 818.4, 846.6, 849, 787.8, 851.4, 793.2, 792.6, 786.6, 883.2, 838.2, 797.4, 783, 795, 792, 976.8, 897.6, 782.4, 797.4, 787.8, 834.6, 855, 807, 778.2 
+                        )
+run_record$X10000m <- c( 1659, 1651.8, 1663.2, 1612.2, 1829.4, 1687.8, 1656, 1685.4, 1690.2, 1672.8, 2122.8, 1728.6, 1668, 1674.6, 1825.8, 1651.2, 1642.8, 1641.6, 1638, 1687.2, 1760.4, 1681.8, 1728.6, 1779, 1666.8, 1723.2, 1636.8, 1654.8, 1587.6, 1710.6, 1707, 1726.2, 1770, 1790.4, 1628.4, 1777.2, 1646.4, 1662, 1652.4, 1881.6, 1742.4, 1673.4, 1632.6, 1660.2, 1674, 2082.6, 1879.2, 1634.4, 1675.8, 1674, 1752, 1780.2, 1699.8, 1633.8 
+                         )
+run_record$marathon <- c( 7774.2, 7650.6, 7933.2, 7632, 8782.2, 7563, 7805.4, 7931.4, 7750.8, 7870.2, 10275.6, 7993.8, 7894.2, 7765.8, 8760, 7869, 7581.6, 7708.2, 7627.8, 7922.4, 7951.8, 7926, 7920, 8350.8, 7749, 8052.6, 7637.4, 7569.6, 7473, 7632, 7755.6, 8041.8, 8956.2, 8584.2, 7631.4, 8374.2, 7698.6, 7715.4, 7810.2, 8887.8, 8306.4, 7753.8, 7581.6, 7938, 7749.6, 9690, 8653.2, 7633.8, 7822.8, 7773.6, 8061, 8359.8, 7815, 7522.8 
+                          )
+rownames(run_record) <- c( 'Argentina', 'Australia', 'Austria', 'Belgium', 'Bermuda', 'Brazil', 'Canada', 'Chile', 'China', 'Columbia', 'CookIslands', 'CostaRica', 'CzechRepublic', 'Denmark', 'DominicanRepub', 'Finland', 'France', 'Germany', 'GreatBritain', 'Greece', 'Guatemala', 'Hungary', 'India', 'Indonesia', 'Ireland', 'Israel', 'Italy', 'Japan', 'Kenya', 'Korea,South', 'Korea,North', 'Luxembourg', 'Malaysia', 'Mauritius', 'Mexico', 'Myanmar(Burma)', 'Netherlands', 'NewZealand', 'Norway', 'PapuaNewGuinea', 'Philippines', 'Poland', 'Portugal', 'Romania', 'Russia', 'Samoa', 'Singapore', 'Spain', 'Sweden', 'Switzerland', 'Taiwan', 'Thailand', 'Turkey', 'U.S.A.' 
+                           )
+
+# Explore your data with str() and summary()
+str(run_record)
+summary(run_record)
+
+# Cluster run_record using k-means: run_km. 5 clusters, repeat 20 times
+run_km <- kmeans(run_record, centers=5, nstart=20)
+
+# Plot the 100m as function of the marathon. Color using clusters
+plot(x=run_record$marathon, y=run_record$X100m, col=run_km$cluster)
+
+# Calculate Dunn's index: dunn_km. Print it.
+(dunn_km <- clValid::dunn(clusters=run_km$cluster, Data=run_record))
+
+
+# Standardize run_record, transform to a dataframe: run_record_sc
+run_record_sc <- as.data.frame( scale(run_record) )
+
+# Cluster run_record_sc using k-means: run_km_sc. 5 groups, let R start over 20 times
+run_km_sc <- kmeans(run_record_sc, centers=5, nstart=20)
+
+# Plot records on 100m as function of the marathon. Color using the clusters in run_km_sc
+plot(x=run_record$marathon, y=run_record$X100m, col=run_km_sc$cluster, 
+     xlab="Marathon", ylab="100 metres"
+     )
+
+# Compare the resulting clusters in a nice table
+table(run_km$cluster, run_km_sc$cluster)
+
+# Calculate Dunn's index: dunn_km_sc. Print it.
+(dunn_km_sc <- clValid::dunn(clusters=run_km_sc$cluster, Data=run_record_sc))
+
+
+# Apply dist() to run_record_sc: run_dist
+run_dist <- dist(run_record_sc)
+
+# Apply hclust() to run_dist: run_single
+run_single <- hclust(run_dist, method="single")
+
+# Apply cutree() to run_single: memb_single
+memb_single <- cutree(run_single, k=5)
+
+# Apply plot() on run_single to draw the dendrogram
+plot(run_single)
+
+# Apply rect.hclust() on run_single to draw the boxes
+rect.hclust(run_single, k=5, border=2:6)
+
+
+# Apply hclust() to run_dist: run_complete
+run_complete <- hclust(run_dist, method="complete")
+
+# Apply cutree() to run_complete: memb_complete
+memb_complete <- cutree(run_complete, k=5)
+
+# Apply plot() on run_complete to draw the dendrogram
+plot(run_complete)
+
+# Apply rect.hclust() on run_complete to draw the boxes
+rect.hclust(run_complete, k=5, border=2:6)
+
+# table() the clusters memb_single and memb_complete. Put memb_single in the rows
+table(memb_single, memb_complete)
+
+
+# Dunn's index for k-means: dunn_km
+dunn_km <- clValid::dunn(clusters=run_km_sc$cluster, Data=run_record_sc)
+
+# Dunn's index for single-linkage: dunn_single
+dunn_single <- clValid::dunn(clusters=memb_single, Data=run_record_sc)
+
+# Dunn's index for complete-linkage: dunn_complete
+dunn_complete <- clValid::dunn(clusters=memb_complete, Data=run_record_sc)
+
+# Compare k-means with single-linkage
+table(run_km_sc$cluster, memb_single)
+
+# Compare k-means with complete-linkage
+table(run_km_sc$cluster, memb_complete)
+
+
+crime_data <- data.frame(murder=c( 13.2, 10, 8.1, 8.8, 9, 7.9, 3.3, 5.9, 15.4, 17.4, 5.3, 2.6, 10.4, 7.2, 2.2, 6, 9.7, 15.4, 2.1, 11.3, 4.4, 12.1, 2.7, 16.1, 9, 6, 4.3, 12.2, 2.1, 7.4, 11.4, 11.1, 13, 0.8, 7.3, 6.6, 4.9, 6.3, 3.4, 14.4, 3.8, 13.2, 12.7, 3.2, 2.2, 8.5, 4, 5.7, 2.6, 6.8 )
+                         )
+crime_data$assault <- c( 236, 263, 294, 190, 276, 204, 110, 238, 335, 211, 46, 120, 249, 113, 56, 115, 109, 249, 83, 300, 149, 255, 72, 259, 178, 109, 102, 252, 57, 159, 285, 254, 337, 45, 120, 151, 159, 106, 174, 279, 86, 188, 201, 120, 48, 156, 145, 81, 53, 161 
+                         )
+crime_data$urb_pop <- c( 58, 48, 80, 50, 91, 78, 77, 72, 80, 60, 83, 54, 83, 65, 57, 66, 52, 66, 51, 67, 85, 74, 66, 44, 70, 53, 62, 81, 56, 89, 70, 86, 45, 44, 75, 68, 67, 72, 87, 48, 45, 59, 80, 80, 32, 63, 73, 39, 66, 60 
+                         )
+crime_data$rape <- c( 21.2, 44.5, 31, 19.5, 40.6, 38.7, 11.1, 15.8, 31.9, 25.8, 20.2, 14.2, 24, 21, 11.3, 18, 16.3, 22.2, 7.8, 27.8, 16.3, 35.1, 14.9, 17.1, 28.2, 16.4, 16.5, 46, 9.5, 18.8, 32.1, 26.1, 16.1, 7.3, 21.4, 20, 29.3, 14.9, 8.3, 22.5, 12.8, 26.9, 25.5, 22.9, 11.2, 20.7, 26.2, 9.3, 10.8, 15.6 
+                      )
+rownames(crime_data) <- c( 'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware', 'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan', 'Minnesota', 'Mississippi', 'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey', 'New Mexico', 'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon', 'Pennsylvania', 'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah', 'Vermont', 'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming' 
+                           )
+str(crime_data)
+
+
+# Scale the dataset: crime_data_sc
+crime_data_sc <- as.data.frame(scale(crime_data))
+
+# Perform k-means clustering: crime_km
+crime_km <- kmeans(crime_data_sc, centers=4, nstart=20)
+
+# Perform single-linkage hierarchical clustering
+## Calculate the distance matrix: dist_matrix
+dist_matrix <- dist(crime_data_sc)
+
+## Calculate the clusters using hclust(): crime_single
+crime_single <- hclust(dist_matrix, method="single")
+
+## Cut the clusters using cutree: memb_single
+memb_single <- cutree(crime_single, k=4)
+
+# Calculate the Dunn's index for both clusterings: dunn_km, dunn_single
+dunn_km <- clValid::dunn(clusters=crime_km$cluster, Data=crime_data_sc)
+dunn_single <- clValid::dunn(clusters=memb_single, Data=crime_data_sc)
+
+# Print out the results
+dunn_km
+dunn_single
+table(crime_km$cluster, memb_single)
+
+```
+  
+  
+###_Unsupervised Learning in R_  
+
+Chapter 1 - Unsupervised Learning in R  
+  
+
+
+
