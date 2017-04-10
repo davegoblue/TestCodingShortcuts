@@ -449,4 +449,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Introduction to Machine Learning: Chapter 4 (Regression)  
 * DataCamp_Insights_v002 captures Introduction to Machine Learning: Chapter 5 (Clustering)  
   
+### Expansions week of 10-APR-2017  
+* DataCamp_Insights_v002 captures Unsupervised Learning in R: Chapter 1 (Unsupervised Learning)  
+  
   
