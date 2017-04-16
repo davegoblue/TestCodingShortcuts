@@ -456,5 +456,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Unsupervised Learning in R: Chapter 4 (Case Study)  
 * DataCamp_Insights_v002 captures Machine Learning Toolbox: Chapter 1 (Regression Models)  
 * DataCamp_Insights_v002 captures Machine Learning Toolbox: Chapter 2 (Classification Models)  
+* DataCamp_Insights_v002 captures Machine Learning Toolbox: Chapter 3 (Tuning Model Parameters)  
   
   
