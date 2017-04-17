@@ -12531,6 +12531,175 @@ myControl <- caret::trainControl(
   
 Chapter 4 - Pre-processing data  
   
+Median imputation - real-world data has missing values which pose problems for many machine learning algorithms:  
+  
+* Removing rows is generally not a good idea as it can bias the models and generate over-confident predictions  
+* A stronger approach is to impute the median for any missing values (requires that the data be "missing at random", which is to say that NA is not a signal)  
+* Can implement this using train(., preProcess="medianImpute", .)  
+  
+KNN imputation addresses the concern that median imputation may miss patterns in the NA data:  
+  
+* Tree-based models tend to be more robust to the missing but non-random case, but the issue is especially salient for linear models  
+* The kNN (k-nearest-neighbors) imputes values based on the "nearest" (most similar) non-missing rows  
+* Can implement this using train(., preProcess="knnImpute", .)  
+  
+Multiple pre-processing methods - can do much more than median imputation or kNN imputation:  
+  
+* Can chain several methods together, such as median imputation followed by centering/scaling data to normal(0, 1) followed by PCA followed by fitting GLM  
+* Median imputation should generally be first, while PCA should be late (after centering/scaling data)  
+	* See ?preProcess for many more details  
+* Can be handled in caret::train(., preProcess=c(quoted-steps-in-order), .)  # for example, preProcess=c("knnImpute", "center", "scale", "pca")  
+	* The "spatialSign" transform projects the data on to a sphere, which is especially useful for outliers or high-dimensionality  
+* Tree-based models tend to need much less pre-processing (as little as just median imputation)  
+  
+Handling low-information predictors - some variables may contain very little information (e.g., variables with no/low variance):  
+  
+* There is an extra risk that a very-low-variance column might have a fold where the predictor is constant; this can wreak havoc on the model/results  
+* Usually it is best to remove the no/low variance variables prior to modeling  
+* The "zv" (zero variance) and "nzv" (near zero variance) parameters passed to preProcess will remove data with zero and/or near-zero variance  
+  
+Principal Components Analysis (PCA) is especially valuable for linear modelling:  
+  
+* PCA combines all the low-variance and correlated variables in to a single set of high-variance perpendicular predictors  
+* By definition, the principal components are uncorrelated, removing the problem that linear models do not handle highly-correlated data well  
+	* First component has the highest variance, second component has the second-highest variance, etc.  
+* While the zero variance data still need to be removed, PCA negates the need to remove the near-zero-variance data  
+  
+Example code includes:  
+```{r}
+
+v1 <- c( 5, NA, NA, 6, 4, 8, 1, 2, NA, NA, 1, 2, 5, 1, NA, 7, 4, 4, 10, NA, 7, 10, 3, 8, NA, 5, 3, 5, 2, 1, 3, 2, 10, 2, 3, 2, NA, 6, 5, NA, 6, 10, 6, 5, 10, NA, 3, 1, 4, NA, 9, 5, 10, 5, 10, 10, 8, 8, 5, 9, NA, 1, NA, 6, 1, 10, 4, 5, 8, 1, 5, 6, 1, 9, 10, 1, 1, 5, NA, 2, 2, 4, 5, 3, 3, 5, NA, 3, 4, 2, 1, 3, 4, 1, 2, 1, NA, 5, NA, 7, 10, 2, 4, NA, 10, 7, NA, 1, 1, 6, 1, 8, NA, 10, 3, 1, NA, 4, 1, 3, 1, 4, 10, 5, 5, 1, 7, 3, 8, NA, 5, 2, 5, NA, 3, 5, 4, 3, 4, 1, 3, 2, 9, 1, NA, 1, 3, 1, 3, 8, 1, 7, NA, NA, 1, 5, 1, 2, 1, 9, 10, NA, 3, 1, 5, 4, 5, 10, 3, 1, 3, 1, 1, 6, 8, 5, 2, 5, NA, 5, 1, 1, 6, 5, NA, 2, 1, 10, 5, 1, NA, 7, 5, 1, NA, 4, 8, 5, NA, 3, NA, 10, 1, 5, 1, 5, 10, 1, 1, 5, 8, 8, 1, 10, 10, 8, 1, 1, 6, 6, 1, 10, NA, 7, 10, 1, 10, 8, 1, 10, 7, 6, 8, NA, 3, 3, 10, 9, 8, 10, NA, 3, NA, 1, NA, 5, 8, 8, 4, 3, 1, 10, 6, 6, 9, 5, NA, 3, NA, 5, 10, 5, 8, NA, 7, 5, 10, NA, 10, 1, 8, 5, 3, 7, 3, 3, NA, NA, 1, 10, 3, 2, NA, 10, 7, 8, 10, 3, 6, 5, 1, 1, 8, NA, 1, 5, NA, 5, 8, NA, 8, 1, 10, 1, 8, NA, 1, 1, 7, 3, 2, 1, NA, 1, 1, 4, NA, 6, 1, 4, NA, 3, 3, NA, 1, 3, 10, NA, 8, 10, 10, NA, 5, 5, 8, 1, 6, 1, 1, 8, 10, 1, 2, 1, 7, 1, 5, 1, 3, 4, 5, 2, NA, 2, 1, 4, 5, 8, 8, 10, 6, NA, 3, 4, 2, 2, 6, 5, 1, 1, NA, 1, 4, 5, NA, 1, 1, NA, 3, NA, 1, 10, 3, 2, 2, 3, 7, NA, 2, 5, 1, 10, 3, 1, 1, 3, 3, NA, 3, NA, 3, 3, 5, 3, 1, 1, 4, 1, 2, NA, 1, 1, 10, 5, 8, 3, 8, 1, 5, 2, 3, 10, 4, 5, NA, 9, 5, NA, 1, 2, 1, 5, 5, 3, 6, 10, 10, NA, 4, NA, NA, 5, 1, 1, 5, NA, 1, 5, 1, 5, 4, 5, 3, 4, 2, 10, 10, 8, 5, 5, NA, 3, 6, 4, NA, 10, 10, 6, 4, 1, 3, 6, 6, 4, 5, 3, 4, 4, 5, 4, 5, 5, 9, 8, 5, NA, 3, 10, 3, 6 )
+breast_cancer_x <- data.frame( X1 = c( v1, 1, NA, 4, NA, 5, NA, 1, 4, 4, 4, 6, 4, 4, 4, 1, 3, 8, 1, NA, 2, 1, 5, 5, 3, 6, 4, NA, NA, NA, 4, 1, 4, 10, 7, NA, 3, 4, NA, 6, 4, 7, NA, NA, 3, 2, 1, 5, NA, NA, 6, NA, 3, 5, 4, 2, 5, 6, NA, 3, 7, 3, 1, 3, 4, 3, 4, NA, 5, NA, 5, 5, 5, 1, 3, NA, 5, 3, 4, 8, 10, 8, 7, 3, 1, 10, 5, 5, NA, 1, 1, 5, 5, 6, NA, 5, 1, 8, 5, 9, 5, 4, 2, 10, 5, 4, 5, 4, 5, 3, 5, 3, 1, 4, NA, 5, 10, 4, 1, 5, 5, 10, NA, 8, NA, 2, 4, 3, NA, 4, 5, NA, 6, 7, 1, 5, 3, 4, 2, 2, 4, 6, 5, 1, NA, 3, NA, 10, 4, 4, 5, 4, NA, NA, 1, NA, 3, 1, 1, 5, 3, 3, 1, 5, 4, NA, 3, 5, 5, 7, 1, 1, 4, 1, 1, NA, NA, 5, NA, NA, 5, 3, 3, 2, NA, NA, 4, 1, 5, 1, 2, 10, 5, 5, 1, NA, 1, 1, 3, NA, 1, 1, 5, 3, 3, 3, 2, 5, 4, NA ))
+
+v1 <- c( NA, 4, NA, 8, 1, 10, 1, 1, 1, 2, 1, 1, NA, 1, 7, 4, 1, 1, NA, 1, 3, 5, 1, 4, 1, 2, 2, 1, NA, 1, 1, 1, 7, NA, 1, NA, 10, 2, NA, 5, NA, 4, 10, 6, NA, 1, 7, 1, NA, NA, NA, 3, 3, 5, 5, 6, 10, 2, 2, 5, 3, 1, 10, 3, 1, 4, 1, 3, NA, 1, NA, 10, NA, 4, 6, 1, 1, 3, 1, NA, 2, 1, 2, 1, 5, 10, NA, 6, NA, 1, NA, NA, 1, 1, 1, 1, 1, 1, 6, 5, 3, 3, NA, 2, 10, 3, 10, 6, 1, 5, 3, 6, 3, 10, NA, NA, 3, NA, 1, 2, NA, NA, 10, 3, 4, 1, 5, 1, 3, 1, 1, 1, 10, NA, 1, NA, 1, 1, 1, 1, 1, 1, 5, NA, 1, 1, 4, NA, NA, 8, 1, 2, 10, NA, 1, 5, 2, 1, NA, 9, 7, 1, 1, 1, 1, 1, 6, 8, 1, 1, NA, NA, NA, 10, NA, 8, 1, 10, 1, 3, NA, 1, 1, 8, 7, 1, 5, 5, 8, 2, NA, 5, NA, 1, 1, 1, 4, 1, 1, NA, 7, 8, 1, 1, 1, NA, 10, 1, 1, 1, 10, 10, 1, 10, NA, 7, NA, 1 )
+breast_cancer_x <- cbind(breast_cancer_x, c( v1, 10, 1, 1, 6, 1, 5, 5, 1, 5, 9, 1, 10, 4, 8, NA, 4, NA, 1, 8, 8, 10, 4, 1, 1, 1, 1, 1, 1, 10, 4, 1, 1, 2, NA, 3, 10, 10, 6, 1, NA, 1, 7, NA, 10, NA, 4, NA, 1, 10, 3, 8, 1, 4, 1, NA, 2, 1, 1, 1, 1, NA, 5, 1, NA, 4, 4, 4, 10, 10, 1, NA, 6, 1, 1, 8, 4, 1, 5, 3, NA, 2, 1, 4, 1, 10, 1, NA, 8, NA, 1, 8, 1, 1, 1, NA, 1, 1, 6, 5, 8, NA, 4, 6, 1, 1, 4, 1, 2, NA, 1, NA, 4, 4, 1, 2, 4, 6, 1, 5, 1, 1, 5, 3, 1, NA, NA, 6, 1, NA, 1, 4, 2, 1, 1, 4, 7, 1, 1, NA, 10, 10, 3, 10, 10, 2, NA, 1, 1, 10, 8, NA, 1, 3, NA, 1, 1, 1, 1, 1, 1, 1, 3, 1, 6, NA, 1, 1, 3, 6, 3, 1, 1, 1, 8, 1, NA, 2, 1, 1, 1, 2, 2, NA, 1, 3, 1, NA, 1, 2, 1, 3, 1, 1, 1, 10, 1, 5, 3, 7, 1, 2, 3, 2, 10, 3, 1, 1, NA, NA, 7, 1, 1, 3, NA, 1, NA, 9, 8, 10, 1, NA, NA, NA, 2, 1, 1, NA, 1, NA, 1, 1, 7, 1, 1, 1, NA, 3, NA, 6, 8, 1, 1, 1, 1, 1, 1, 1, 9, 6, NA, 1, 1, 1, 1, NA, 1, 1, 1, 1, 1, 2, NA, NA, NA, 10, 7, 1, 1, 1, 10, NA, NA, 1, 8, NA, 10, NA, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 3, 10, 1, NA, 1, 1, 1, 1, 1, 6, 10, 1, 1, 1, 7, 1, 1, 4, 5, NA, 1, 1, NA, NA, 1, 4, 2, NA, 1, 1, 1, NA, 1, NA, NA, 1, 1, NA, 1, 1, 1, 10, 1, 1, 8, 1, 1, 2, 4, 1, NA, 2, 1, 1, 1, 1, 1, 1, 1, 1, 7, NA, 1, 4, 10, NA, 6, 1, 1, 9, 1, 1, 1, 1, NA, 1, 7, 10, 1, NA, 1, 10, 1, 8, 1, 10, 5, NA, NA, 8, NA, 1, 1, 1, NA, 1, 1, 1, 4, 3, 5, 1, 1, 10, 1, 4, 10, 10, 3, 1, 1, 1, NA, 1, 1, NA, 3, 1, 1, 1, 1, 6, 1, 1, NA, NA, 1, 1, 7, 1, 1, 10, 2, 1, 1, 1, NA, 1, 1, 1, NA, NA, 1, 10, 1, 1, 2, 1, 1, NA, 1, 1, 4, NA, 1, 1, 1, NA, 1, 1, 1, 2, 1, 7, 10, NA, 2, 1, 3, 1, 1, 1, 1, 1, 1, 10, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1, 10, 1, 1, 1, 1, 10, 8, 8 ))
+
+v1 <- c( 1, 4, 1, 8, 1, 10, NA, 2, 1, 1, 1, 1, 3, NA, 5, 6, 1, 1, 7, 1, 2, 5, 1, 5, 1, 3, 1, NA, 1, 3, NA, 1, 7, 1, 2, 1, 10, 1, 4, 3, NA, NA, NA, 5, NA, 1, 7, 1, 1, 7, 8, 3, NA, 5, 5, 6, 10, 4, 3, 5, 5, 1, 10, 4, NA, 2, 1, 4, 8, 1, 3, 2, 3, 5, 4, 2, 4, 1, 1, 1, 2, 1, 1, 1, 7, 6, 6, 6, 1, 1, NA, NA, 1, 1, 1, 1, 1, 1, NA, 6, 5, 4, 2, 3, 10, 4, NA, 8, 1, 4, NA, 4, 3, 10, 2, 1, 3, 5, 1, 1, NA, 1, 10, 5, NA, 1, 3, 1, 5, 1, 3, 1, 8, 1, 1, 1, 1, NA, 2, 1, NA, 1, 5, 1, 1, NA, 5, 1, 1, 7, 1, 4, 8, 1, 1, 5, 2, 1, 2, 10, 7, NA, 1, 1, 1, 1, 7, 10, 1, 1, 1, 1, NA, 10, 5, NA, 1, 10, 1, 3, 1, NA, 1, 8, 6, NA, 8, 6, 4, 3, NA, 10, 1, 1, 1, 1, 4, 1, 1, 1, 7, 8, 1, 1, 1, NA, 9, 1, 1, 1, NA, 8, 1, 10, 10, 8, 1, NA, 7, 3, 1, NA, 1, 6, 5, 1, 7, 9, 1, NA, NA, NA, 6, 5, 2, 4, 8, 8, 10, 3, 3, 1, 1, 1, 1, 1, 10, 4, 1, 1, 2, 4, 3, 10, 10, 6, NA, 1 )
+breast_cancer_x <- cbind(breast_cancer_x, c( v1, 1, NA, 8, 10, 9, NA, 4, NA, 6, 5, 8, 1, 7, NA, 5, 4, 1, 3, 1, 1, 1, 7, NA, 1, 3, 6, 5, 10, 10, 1, 3, 6, NA, 1, 8, 4, 1, 7, 4, 3, 1, 2, 10, 1, 10, 1, 4, 4, 1, NA, 7, 1, 1, 1, 4, 1, 1, 5, 5, 7, 1, 4, 3, 1, 1, 6, 1, 2, 1, 1, 3, 6, NA, 1, NA, 6, 7, 1, 5, 1, 1, 5, 3, NA, 1, 1, 4, 1, 2, 1, 4, 3, NA, 1, 5, 10, 1, 1, 3, NA, 5, 5, NA, NA, 2, 4, NA, 1, NA, 8, 3, 3, NA, 3, 2, 1, 2, NA, NA, 1, 1, 4, 1, 3, 2, 1, 1, 2, 6, NA, 1, 1, 1, 7, 1, NA, 3, 1, 1, 1, 1, 3, 8, NA, 3, 1, 1, NA, NA, 1, 2, 2, 1, 1, 10, 2, 6, 2, 8, NA, 2, 1, 2, 10, 3, 3, 1, 10, 6, 8, 1, 1, 1, 1, 1, 2, 7, 10, NA, 1, NA, 1, 3, 2, 1, 1, NA, 1, 1, NA, 1, 9, NA, 1, 1, 5, 1, 2, 5, 9, 2, NA, 1, 1, 1, NA, NA, 8, 6, 6, 1, NA, 1, 1, 1, 1, 1, 1, 2, NA, 1, 7, 1, 2, 10, 8, 2, NA, 1, 10, 4, NA, 1, 9, 1, NA, NA, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, NA, 10, 1, NA, 1, 1, 1, 1, 1, 7, 4, NA, NA, NA, 8, 1, 1, NA, 6, 1, 1, 1, 1, 3, 1, 4, 2, 1, 1, NA, 3, 1, 2, NA, 1, 1, 1, 1, NA, 3, 1, 10, 1, 1, 3, 1, 1, 2, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, NA, 1, 10, 2, 1, NA, 8, 4, 10, 1, NA, 7, 2, NA, 1, 1, 1, 2, 10, 5, 1, 1, 1, 10, 1, NA, 1, 8, NA, 4, 2, 6, NA, 2, 3, 1, NA, NA, 1, 1, 6, NA, 10, 1, 1, 10, 1, 3, 10, 10, 1, 1, 3, 1, 1, 1, NA, 1, NA, 2, 1, 1, 3, NA, NA, 1, 1, 3, 1, 1, 4, 1, 4, 7, 4, 1, NA, 1, 1, 1, 1, 1, 1, 2, NA, 10, 1, 1, NA, 1, 1, 1, 1, 1, 5, 8, 1, NA, 1, 3, 3, 1, NA, 2, NA, 4, 10, 7, 1, 1, 2, NA, 4, 2, 1, 1, NA, 10, 10, NA, 1, 1, 1, 1, 1, 1, 1, 1, 10, 1, NA, 1, 1, 10, 6, 8 ))
+
+v1 <- c( 1, NA, 1, NA, 3, 8, NA, 1, NA, 1, 1, 1, 3, 1, 10, 4, 1, 1, 6, 1, 10, NA, 1, NA, 1, 4, 1, 1, 1, 1, 1, NA, 3, 2, 1, 1, 8, 1, 9, 3, NA, 1, 2, NA, 4, 1, 4, 1, 3, NA, 1, NA, 2, 8, 6, NA, 1, 1, 1, NA, 5, 1, 1, NA, 1, 1, NA, 1, 3, NA, 1, 8, 2, 10, 1, 1, NA, 2, 1, 1, 1, 2, 1, 1, 8, 1, 4, 6, 1, 2, 1, 2, NA, 1, 1, 1, NA, 1, NA, 10, 1, NA, 1, 1, NA, 4, 8, 10, NA, 4, 2, 3, 10, 3, NA, 1, 1, 10, 1, NA, 2, 1, NA, 1, 7, 1, 7, 1, 4, 1, 1, 1, NA, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 2, 1, 3, NA, 1, 1, 6, 1, 1, 6, 1, 1, 1, NA, 4, 1, 1, 2, 1, 1, 8, 10, 1, 2, 1, 1, NA, 10, 4, 7, 1, 3, NA, 3, 1, 1, NA, 8, 4, 1, NA, 10, 10, 1, 8, 10, 1, 1, NA, 1, NA, 4, 1, 1, 5, 4, 1, 1, 1, 9, 3, 1, 1, 1, 10, 8, 1, NA, 10, 7, 1, 1, 7, 1, NA, 3 )
+breast_cancer_x <- cbind(breast_cancer_x, c( v1, 3, 3, 6, 1, 4, 5, 1, 3, 4, 5, 3, 5, 1, 1, NA, 5, 8, 2, 3, 3, 1, 1, 1, 2, 8, 1, 1, 1, NA, 10, 5, NA, 1, 2, 1, 1, 1, 1, 10, 6, 4, 10, NA, 1, 3, 2, 2, 1, 1, 1, 2, 1, 1, NA, NA, 1, NA, 3, NA, NA, 10, 1, NA, 10, 10, 1, 1, 8, 1, 1, 1, 6, 1, 8, 3, 1, 1, 6, 5, 1, 7, 1, NA, 4, 1, 1, 6, NA, 1, 1, 10, 1, NA, 6, NA, 8, NA, 4, 2, 1, 1, 10, NA, 1, 1, NA, 2, 4, 2, NA, NA, 6, 3, 1, 8, NA, NA, 5, 1, 1, 1, 1, 8, NA, 2, NA, 10, NA, 3, 1, 3, 10, 1, 1, 1, 7, 3, 4, 10, 10, 1, 2, 1, 1, 10, 10, NA, 1, 1, 1, 1, 2, 1, 1, NA, 1, 4, 1, 1, 6, 2, 1, 1, 2, 3, 2, 1, NA, 2, 4, 1, 1, 1, 1, 1, 1, 1, 1, 7, 1, 1, 1, NA, 1, 1, NA, 2, 1, 1, 1, 6, NA, 2, 6, 5, 1, 2, 1, NA, 7, 1, NA, 1, 10, 1, 2, 1, 1, 1, 3, 1, 3, 5, 1, NA, 1, 3, 1, 10, 4, 3, 1, 6, 1, 1, 1, 1, 8, 3, 1, NA, NA, 1, 1, 8, 6, 1, 1, 3, 1, 3, 1, 1, 7, 2, 5, 1, 1, 1, 3, NA, NA, 1, 1, 1, 1, 1, 10, 1, 4, NA, 5, 1, 3, 1, 10, 10, 1, 1, 4, 1, 10, 10, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 10, NA, 1, 1, 1, 1, 1, 1, NA, 7, NA, NA, 2, 3, 1, 1, 4, 10, NA, NA, NA, 1, 2, 1, 3, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 10, 1, NA, 7, 1, 1, NA, 1, 1, 1, 2, 3, 1, NA, 1, 1, 1, 1, 1, NA, 1, 1, 1, 10, 4, 5, 1, 1, 3, 1, 1, 1, NA, 1, 1, 6, 5, 1, 6, 1, 10, 1, 9, NA, 5, 6, 5, 1, NA, 1, 1, 1, NA, NA, NA, 1, 1, 8, 8, 3, 2, 1, 10, 1, 10, 10, NA, 1, 1, 1, 1, 1, 1, 1, NA, 3, 3, 1, 2, NA, NA, 1, 1, 1, 1, NA, 1, 4, 1, 1, 8, NA, NA, 3, 3, 1, 1, 1, 1, NA, 1, 3, 10, 1, 2, 3, NA, 1, 1, 1, 1, 1, 7, 1, NA, 1, 1, NA, NA, 1, 2, 1, 1, 8, NA, 2, NA, 1, 1, 1, 1, 1, 1, 1, 10, NA, 1, 1, 1, 1, 1, 1, 1, 1, 3, 5, 1, 1, NA, 1, 3, 4, 5 ))
+
+v1 <- c( NA, 7, 2, NA, 2, 7, 2, 2, 2, 2, 1, 2, NA, 2, 7, 6, 2, 2, 4, 2, 5, 6, 2, 2, 2, NA, 1, NA, 2, 2, NA, 2, 8, 2, 2, 2, 6, NA, 2, NA, NA, 3, 8, 10, 8, 2, 4, 2, 2, 4, 2, 2, 3, NA, 8, 4, 3, NA, 6, NA, 3, 2, 10, 5, 2, NA, 2, 8, NA, 2, 2, 10, 2, 6, 3, 2, 2, 2, 2, NA, 1, 2, 2, 2, NA, 10, 5, 5, 2, 3, 2, 2, 2, NA, 2, 2, 2, NA, 10, 5, 10, 2, NA, 6, 10, NA, 2, NA, 2, 3, 2, 5, 2, 10, 2, 2, 2, 4, NA, NA, 2, 2, 10, 8, 9, NA, 4, 2, 5, 10, 2, 2, 8, 2, 3, NA, 2, 2, NA, 1, NA, 2, NA, 2, 2, 2, 6, 3, 8, 10, 1, 6, NA, 2, 2, NA, 2, 2, 3, 6, 5, 2, 2, 1, 2, NA, 8, NA, 2, 1, 2, NA, 2, 8, NA, 10, 2, 8, NA, NA, 1, 2, 2, NA, NA, 1, 5, 6, 5, 2, 6, 10, 2, 2, 2, 2, NA, 2, 2, NA, 5, 10, 2, 2, 2, 6, 7, 1, 1, 1, 5, NA, 2, 7, 3, 5, 2, NA, 6, 2 )
+breast_cancer_x <- cbind(breast_cancer_x, c( v1, NA, NA, 1, 3, 3, 2, NA, 3, 1, 10, 3, 6, 3, 5, 3, 2, 8, 6, 6, 3, 2, 1, 2, 2, 2, 2, 5, 2, 2, 2, 2, NA, 3, 8, 10, 4, 2, 2, 2, 5, NA, 10, 5, NA, 10, 2, NA, 3, 3, NA, 3, 2, NA, 3, 2, 2, NA, 2, 2, 3, 2, 2, 4, 2, 2, 8, 10, 3, 4, 6, 2, 2, 2, NA, 2, 6, 4, 2, 5, 4, NA, 2, 9, 2, 3, 4, 2, 2, 4, 2, 3, 2, 10, 2, 1, NA, 5, 6, 5, 6, 5, 2, 2, NA, 2, 2, 2, 2, 6, 5, 2, 2, 2, 4, 3, 2, 4, 2, 1, 2, 2, 2, 2, 2, 10, 2, 3, 1, 5, 3, 2, 2, 7, NA, 2, 3, 3, NA, 8, 3, 10, 6, 4, 2, 2, 2, 8, 5, 2, 1, 3, 2, 2, 2, 2, 2, 2, 1, 3, 4, 2, 4, NA, 2, 2, 3, 2, 3, 2, NA, 2, 3, 2, NA, NA, 2, NA, 2, 2, NA, NA, 2, 2, 2, 2, 2, 2, 2, NA, NA, 2, 1, 8, 2, 3, 3, 10, 2, 2, 5, 2, 10, 2, 2, 2, 10, NA, 4, NA, 2, 2, 4, 2, 2, 5, 3, NA, 2, 2, 2, 4, 2, 2, 2, 3, NA, 2, 2, 1, 6, 1, 2, NA, 6, 3, 2, 5, 6, 2, 2, 2, NA, NA, 2, 2, 6, 4, NA, 2, 2, 1, 2, 1, 2, 2, NA, 2, 2, 2, 4, 1, 2, 10, NA, 2, 1, 1, 6, 3, 3, 2, 3, 1, 6, 4, 1, 1, 2, 2, NA, 2, 2, 2, 2, 2, 2, 7, 2, 2, NA, 2, 2, 2, NA, 3, 3, NA, 1, 2, 4, 3, 3, NA, 4, 2, 2, NA, NA, NA, 1, NA, 2, NA, 2, 2, 2, 2, 2, 2, 2, 2, 2, NA, 2, 2, 2, 4, 1, 1, 4, 2, NA, 2, 2, 2, 2, NA, 2, 2, 2, NA, 2, 2, 2, 2, 5, 2, 2, 6, 6, 8, 3, 2, 2, NA, 2, 2, 2, NA, 2, 2, NA, 4, NA, 3, 2, 6, 2, 6, 2, 4, 4, 3, 2, 4, 2, 2, 2, 2, 1, NA, 1, 2, 4, 5, 5, 2, 2, 10, 2, 3, 5, NA, 2, 1, 2, 2, NA, 2, 2, 2, 3, 2, NA, 1, 3, 7, NA, 2, 2, 2, 2, 2, 5, 2, 2, 7, 2, 2, NA, 2, 2, 2, 2, 2, 2, 2, 2, 10, 2, NA, NA, 2, 2, 2, 2, NA, 8, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 6, 5, 5, 2, NA, 3, 2, 2, NA, 2, 2, 2, 5, 4, 2, NA, 2, NA, 2, 2, 2, 2, 2, 4, NA, 2, NA, 2, 7, 3, 4 ))
+
+v1 <- c( 1, 10, NA, 4, 1, 10, 10, 1, 1, 1, 1, 1, 3, 3, 9, 1, 1, 1, 10, NA, 10, 7, 1, NA, 1, 7, 1, 1, 1, 1, 1, 1, NA, NA, 1, 1, 1, 1, 10, NA, NA, 3, NA, 1, 1, 1, 9, NA, 1, 8, 3, 4, 5, 8, 8, 5, 6, 1, 10, 2, 3, 2, 8, 2, 1, 2, 1, 10, 9, 1, 1, 2, 1, 10, NA, 2, 1, 1, 3, 1, 1, 1, 1, 2, 9, 4, 8, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 6, 10, 5, 5, 1, 3, 1, 3, 10, 10, 1, 9, 2, 9, 10, 8, 3, 5, 2, NA, 3, NA, 1, 2, 10, 10, 7, 1, NA, NA, 10, NA, 1, 1, 10, 1, 1, 2, 1, 1, 1, NA, 1, 1, NA, 5, NA, NA, 8, 2, 1, 10, 1, 10, 5, 3, NA, 10, 1, 1, NA, 10, 10, 1, 1, 3, NA, 2, 10, 1, 1, 1, 1, 1, 1, 10, 10, 10, 1, 1, 1, NA, 1, 1, 1, 10, 10, 1, 8, NA, 8, NA, 8, 10, 1, NA, 1, 1, 7, 1, 1, 1, 10, 10, 1, 1, 1, 10, 5, 1, 1, 1, 10, 8, 1, 10, 10, 5, 1, 1 )
+breast_cancer_x <- cbind(breast_cancer_x, c( v1, 4, NA, 1, 10, NA, 8, 10, 1, 10, 5, 1, NA, 7, 8, 1, NA, 1, NA, 10, 2, NA, 10, 2, NA, 1, 5, 1, NA, 10, 9, 1, NA, NA, 10, 10, 10, 8, 10, 1, 1, NA, 8, 10, 10, 10, 10, 3, 1, 10, 10, NA, NA, 10, 1, 10, 4, 1, NA, 1, 1, 1, 7, 1, 1, 10, NA, 10, 10, 10, 1, 5, 10, 1, 1, NA, NA, NA, 10, 5, NA, 1, NA, 4, 1, 10, 1, 10, 10, 1, 1, NA, NA, 1, 1, 1, 1, 1, NA, 10, 8, 1, 5, NA, NA, 1, 10, 1, 1, 10, 1, 4, NA, 8, 1, 1, 10, 10, 1, NA, 1, NA, 10, 10, NA, NA, 1, NA, 1, 1, 1, 1, 8, 1, 1, 3, 10, NA, 1, 3, 10, 4, 7, 10, 10, 3, 3, 1, 1, 10, NA, 1, 1, 1, 1, 1, 1, NA, 1, 1, 1, 1, NA, 1, 10, NA, 1, 1, 1, 10, 1, 1, 2, 1, 10, 1, 1, NA, NA, NA, 1, 1, 1, 9, 1, 1, 4, 1, 1, 1, NA, 2, 1, NA, NA, 4, NA, 10, 3, 10, 1, 2, 1, 3, 10, 1, NA, 1, 10, 1, 2, NA, 1, 1, 1, 1, 1, 8, 10, NA, 1, 1, 1, 10, 4, NA, 2, 1, 1, 1, 1, 1, 10, NA, 1, 1, 10, 1, 6, NA, NA, 1, 1, 1, NA, 1, 1, 1, 4, 10, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 10, 1, 1, 5, NA, 1, NA, 1, 10, 3, 4, 1, 10, 1, 10, 5, 1, 1, 1, 1, 1, 1, NA, 1, 1, NA, 1, 5, 4, 1, 1, 1, 1, NA, NA, 10, 10, 1, 1, 1, 10, 1, 1, 5, 10, 1, 1, 1, NA, 1, 1, 10, 1, 1, 1, 1, NA, 1, 1, 1, NA, 2, 1, NA, 1, NA, 1, 10, 1, 1, NA, 1, 1, 1, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 10, 1, 3, 10, 5, 10, 10, 1, NA, NA, 1, 1, 1, 1, NA, NA, NA, 10, 1, NA, 1, 10, 1, 3, NA, 1, NA, 10, 1, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1, NA, 8, 1, 1, 10, 1, 10, 2, 10, 1, 1, 1, 1, NA, 1, 1, NA, 2, 1, 1, 1, 4, 6, 5, NA, 1, 1, 1, NA, 3, 1, 1, 1, 2, 1, 1, NA, 1, 1, NA, 1, 1, 1, 1, NA, 1, 4, 1, 1, 1, 1, 1, 1, 1, 10, 1, 1, 1, NA, 1, NA, NA, 1, 1, 1, NA, 8, 1, 1, 1, 1, NA, 1, 1, 1, 1, 10, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1, 5, 1, 1, 2, 1, 3, 4, 5 ))
+
+v1 <- c( 3, 3, 3, 3, 3, NA, 3, 3, NA, 2, 3, 2, 4, 3, 5, NA, 2, 3, 4, 3, 5, 7, NA, 7, 3, 3, 2, NA, NA, 1, 2, 3, 7, 3, 2, 2, 8, 7, 5, 7, 7, 6, 7, 3, 8, NA, 4, 2, 3, NA, 2, 3, 4, 7, 7, 3, 3, 5, 5, NA, 4, NA, 3, 3, 2, 4, 3, 4, 8, 3, 2, 7, 7, 4, 3, 4, 2, 2, 3, 2, 7, 2, 3, 7, 7, 4, NA, 6, 3, 2, 3, 1, 3, NA, 3, NA, 1, NA, 2, 7, 3, 2, NA, 7, 8, 3, 4, 5, 2, 7, 5, 3, 7, NA, 3, 1, NA, NA, 1, NA, NA, 3, 5, 5, 8, 2, 7, NA, 1, 1, 2, 3, 3, 2, 2, 3, 2, 1, 2, 2, 1, 1, 4, 1, 2, 2, 4, 2, 5, 7, 3, NA, 8, NA, 1, NA, 2, 3, 1, NA, 5, 3, 3, 1, 3, 3, 3, 3, NA, 1, 1, 3, 2, 10, 6, 5, NA, 5, 3, 3, 3, 1, 3, 7, 5, 3, 7, 7, 9, 3, 7, 4, 2, 3, NA, 3, NA, 3, NA, 2, 7, 8, 3, NA, 3, NA, 3, 3, 3, 3, 8, 7, 3, 7, 10, NA, 2, 3, 8, 3, 3, 9, 2, NA, 7, 2, 8, 7, 3, 9, NA, 8, 4, 4, 3, NA, NA, 4, 3, 5, 2, 3, 3, 5, NA, 3, 7, NA, NA, 3, 1, 5, 3, 7, 3, 3, 1, 2, 3, 3, 5, NA, 7, 5, 5, 3, 4, 7, 8, 3, NA, 3, NA, 3, NA, 2, 2, NA, 3, 3, 3, NA, 5, 5, 3, NA, 4, 2, 5, 4, 1, 3, 6, 2, NA )
+breast_cancer_x <- cbind(breast_cancer_x, c( v1, 7, 4, 2, 1, 7, 7, 3, 7, 3, 3, 3, 3, 3, 8, 5, 2, 1, 3, 1, NA, 4, 4, 8, 3, 7, 7, 3, NA, 4, 3, 2, 5, 2, 3, 7, 6, 3, NA, 4, NA, 1, 3, 3, 2, NA, NA, 3, 1, NA, NA, 1, 1, 1, 3, 7, 1, 3, 4, NA, NA, 2, 3, 7, 4, 3, 8, 5, NA, 2, 3, 2, NA, 8, 1, NA, 2, 1, 2, NA, 2, NA, 2, 2, 2, 3, 1, 7, NA, 1, 1, 1, 7, 3, 2, 2, 2, 7, 2, 1, 2, 2, NA, 1, 2, 1, 9, 1, 2, 1, 1, 2, 2, 2, 3, 2, 2, NA, 8, NA, 6, 3, 7, 2, 3, 1, 3, 8, 3, 2, NA, 10, NA, 5, 2, 2, 2, 3, 2, 1, 4, NA, 2, 1, 1, 1, 10, NA, 1, NA, 2, 1, 1, 1, 1, NA, 2, 1, 1, 10, 1, 1, 8, 10, 1, 1, 1, 1, 1, 1, 1, 7, 9, 7, 1, 2, 2, 1, NA, 1, 1, NA, 1, 1, 1, 7, 1, 1, 10, 9, NA, 1, 2, 8, 3, 4, 1, 7, 2, 6, 2, 2, 1, 1, 2, 2, NA, NA, 2, 3, 1, 1, NA, 1, 1, 1, NA, NA, 1, 2, 8, 9, 1, 2, 1, 9, 1, NA, 7, NA, 2, 1, NA, 3, 1, 2, 6, 2, 3, NA, 2, 3, 3, NA, 2, 2, 2, 1, 1, 2, 2, 2, 7, 1, 1, 7, 2, 3, 4, 2, 1, 4, NA, 1, NA, 2, 3, 3, 3, 2, 3, 10, NA, NA, 2, 10, 8, 9, NA, 2, 7, 3, NA, 2, 2, 3, 2, 7, 6, 1, 1, 1, 10, NA, 4, NA, 10, 7, 4, 1, 7, 2, 2, NA, NA, 1, 2, 2, 2, 8, NA, 7, 1, 1, 10, 1, 7, 8, 10, 2, 2, 2, NA, 1, 2, 2, 2, NA, 2, NA, 2, 1, 7, NA, 1, 1, 1, 2, 1, 5, NA, 1, 10, 2, 1, 1, NA, 2, 2, 1, 1, 2, 1, NA, 10, 2, 1, 2, 2, 2, NA, 2, NA, 3, 7, 1, 2, 3, NA, 2, 2, 1, 1, 3, 7, 7, 7, 3, 3, 1, 2, 1, 2, NA, 1, 1, 10, 5, 3, 1, 1, 1, 1, 2, 1, 1, NA, 4, 1, 2, 1, 1, 8, 10, 10 ))
+
+v1 <- c( 1, NA, 1, 7, NA, 7, 1, 1, 1, NA, 1, 1, NA, 1, NA, 3, 1, 1, 1, 1, 4, 10, 1, 3, 1, 6, 1, 1, 1, 1, 1, 1, NA, 1, 1, NA, 9, 1, 6, NA, 8, NA, 3, 1, 10, NA, 8, NA, 1, 8, 1, 4, 10, 3, 1, 6, NA, 4, 1, 1, 10, 1, 3, 9, 1, 3, 1, 9, 9, 2, NA, 8, 2, 8, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, NA, 10, 4, 8, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, NA, 9, NA, 5, 1, 1, 8, 2, 1, NA, 3, 8, 3, 1, 3, 1, 1, NA, 2, 5, 1, 1, 1, 1, 3, 3, 10, NA, 5, 1, NA, NA, 1, 1, 6, 2, 1, 3, 1, 1, 1, 1, 1, 1, 3, 1, NA, 1, 1, 1, 8, NA, 1, 4, NA, 1, 1, 1, 1, 1, 1, 10, 7, 2, NA, 1, 1, 2, 10, 1, 1, 1, 1, 1, 1, NA, NA, 7, NA, 10, 1, 1, NA, 1, 1, 8, NA, NA, 10, 7, 10, NA, 10, 10, NA, 1, 1, 1, NA, 1, 1, NA, NA, 1, NA, NA, 1, 10, 5, NA, 1, NA, 10, 7, 1, 10, 6, 10, 1, 1, 10, 1, 1, 10, 1, NA, 9, 1, 9, 7, 1, 10, 6, 9, 3, 1, 6, 1, 8, 10, 10, NA, 3, 1, 1, 1, 1, 1, 8, 3, 6, 1, 1, 3, 5, 3 )
+breast_cancer_x <- cbind(breast_cancer_x, c( v1, 3, 6, 1, 1, 1, 4, 1, NA, 8, 5, 3, 2, 3, 1, 7, 1, 9, 1, 1, 3, 2, 1, NA, 1, NA, 3, 1, 1, 6, NA, 8, 7, 10, 1, 10, 10, 1, 1, 10, 3, NA, 4, 7, NA, 1, 7, 10, 1, NA, 1, 3, 10, 1, 1, 8, NA, NA, NA, 5, 1, 1, 9, 3, NA, 1, 3, 4, 1, 1, NA, 1, 3, 4, NA, NA, 1, 1, NA, NA, 3, 4, 1, 4, 1, 1, NA, 6, 1, NA, NA, NA, 1, 3, 3, 3, 6, 1, 1, 6, NA, 1, 2, 3, NA, 10, 5, 10, 1, NA, 1, 1, 1, NA, 10, 1, NA, NA, 1, 1, NA, NA, 1, 1, NA, 2, NA, 1, 8, 2, 1, 1, 2, 1, 1, 2, 2, 1, 9, 1, 1, 1, NA, 1, 1, NA, 1, 3, 1, 1, 1, 2, 1, 1, 1, 1, NA, 1, 1, NA, 1, 6, 5, 2, 1, 2, 1, NA, 2, 3, 1, 1, 10, 1, 10, 1, 1, 2, 2, 2, NA, NA, NA, 8, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, NA, 1, 10, 1, 1, NA, 7, 1, 1, 6, 10, 1, 1, 1, 1, 1, NA, 1, 10, 7, 6, 1, 1, 1, 1, 1, NA, 1, 1, NA, 1, 1, 5, 1, 1, 10, 10, 1, 1, 1, 1, 4, NA, 1, NA, NA, 5, 1, 1, NA, 1, NA, 1, 1, 1, 1, NA, 1, 1, 8, 1, 1, 1, 1, 1, 1, 1, NA, 10, 1, 1, 1, 1, 1, 1, 3, 3, 1, 1, 1, NA, 1, 1, 9, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, NA, 1, 1, 10, 1, 1, 8, 1, NA, 2, 1, NA, 8, 1, 1, 1, 1, 1, 1, NA, 1, 2, 10, 1, 1, 5, 3, NA, 10, 1, 1, 7, 1, 1, 1, 1, 1, 1, 5, 10, 1, 1, 1, 10, NA, 1, 1, 1, 6, 1, 1, 1, NA, 1, 1, 1, 1, 1, 1, 1, 10, 1, 8, 1, 1, NA, 1, 1, 5, 10, 1, NA, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 7, 1, 1, 1, 1, 1, 1, 10, NA, 1, 10, 1, 1, 1, 1, 1, 1, 1, NA, 1, 1, 1, 10, 1, 1, NA, 2, 1, 1, 1, 1, 6, 2, 1, 1, 1, 1, 1, 1, 1, 1, NA, 10, 10, 4, 1, 1, 1, NA, 1, 1, NA, NA, 1, 10, NA, 2, 1, 1, 1, NA, 3, 1, 1, NA, 4, 1, 1, 1, 1, 10, NA, 4 ))
+
+v1 <- c( 1, 1, 1, 1, 1, 1, 1, 1, 5, 1, 1, NA, 1, 1, 4, 1, 1, 1, NA, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, NA, 1, 3, 1, 1, 1, NA, 1, 1, 1, 1, 2, 3, 1, 1, 2, NA, 1, 1, 2, 5, NA, 2, 7, NA, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 10, 1, 1, 8, 1, 1, 10, NA, 1, NA, 1, NA, NA, 1, 1, 1, NA, NA, NA, 7, 10, 1, NA, NA, 1, NA, NA, 1, 1, 1, 1, 1, NA, NA, 4, 2, 1, 1, 1, 8, 7, 1, 1, NA, 3, 2, 1, 3, 1, 1, 1, 1, 8, 1, 1, 1, 1, 3, 1, 1, NA, 5, 1, NA, 1, 1, 1, 3, NA, 1, 1, 1, 1, 1, NA, 1, 1, 3, 1, NA, 1, 1, 1, 1, NA, 1, 3, 1, 1, NA, 1, NA, 1, 1, 6, 2, 1, NA, NA, NA, 1, 3, NA, NA, 1, NA, 1, 1, 7, 1, 1, NA, 3, 1, 1, NA, NA, 1, 1, 1, 1, 1, 10, 1, 1, NA, 3, 1, 1, 1, 1, 2, 1, 1, 1, 3, 1, 1, 1, 1, 5, 1, 1, 1, 1, NA, 1, NA, 4, 1, 2, NA, 1, 2, 1, 1, 1, 1, 1 )
+breast_cancer_x <- cbind(breast_cancer_x, c( v1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, NA, 1, 10, NA, NA, 2, 1, 1, NA, 1, 1, 1, 1, 1, 1, NA, 1, 3, 3, 3, 1, 1, 1, 1, 1, 1, 3, 5, NA, 1, NA, 1, 2, 1, 8, 1, NA, 1, 1, NA, NA, 1, NA, 1, 1, 8, 1, 1, 1, 1, 2, 3, 10, 1, 1, 4, 1, 1, 1, 1, 1, 1, NA, 1, 1, 2, NA, 1, NA, 1, 1, NA, 1, NA, NA, 1, 1, NA, 1, 1, 1, 1, 1, 1, 1, 1, 6, 1, 1, 1, 1, NA, 1, 1, NA, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, NA, 1, NA, 3, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, NA, 8, 3, 3, 10, NA, NA, 1, 1, 1, 7, 3, 1, 1, 1, 1, 1, 1, NA, 1, NA, 1, 1, 1, 1, 4, 1, 1, 1, 3, NA, 1, 1, NA, 1, 1, 1, 1, 1, 1, NA, NA, 1, 1, NA, NA, 1, NA, NA, NA, 1, 1, 1, 1, 1, 1, NA, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, NA, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, NA, 1, 1, NA, 1, 1, 1, 1, 1, 1, NA, 1, 1, 1, 1, 1, NA, 1, 1, 1, NA, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 1, NA, 1, NA, 1, 1, 1, 1, 1, 1, 1, 1, NA, 1, 1, NA, 10, 1, NA, 1, 1, 5, NA, 1, NA, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 7, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, NA, NA, NA, 1, 1, 1, 1, NA, NA, 1, NA, 1, 1, NA, 1, 1, 1, 1, NA, 1, 1, 1, 1, NA, 1, NA, 2, 1, 1, 1, 2, 1, 1, 1, NA, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, NA, 1, 1, 1, 1, NA, NA, 1, 1, 1, 1, 1, NA, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, NA, 1, 2, 3, 1, NA, 1, 1, 2, 1, 10, 1, 1, 1, 1, 1, 1, 1, NA, NA, NA, 1, 1, 1, 3, 1, 1, NA, 1, 1, 1, 1, 1, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, NA, 1, 1, 10, 1, 1, 1, 1, NA, 1, NA, 1, 1, 3, 1, 1, 1, 1, 1, 1, 1, 2, 1, 3, 1, NA, 1, 1, 1, 1, NA, 1, 1, 1, 1, NA, 3, 1, 1, 1, NA, 1, 1, 1, 8, 1, 1, 1, 2, 1, 1, 2, NA, 1 ))
+
+names(breast_cancer_x) <- c( 'Cl.thickness', 'Cell.size', 'Cell.shape', 'Marg.adhesion', 
+                             'Epith.c.size', 'Bare.nuclei', 'Bl.cromatin', 'Normal.nucleoli', 'Mitoses' 
+                             )
+str(breast_cancer_x)
+
+v1 <- c( 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 2, 2, 1, 1, 2, 1, 2, 2, 1, 2, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 2, 1, 2, 2, 1, 2, 2, 2, 2, 1, 2, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 1, 2, 1, 2, 2, 1, 1, 2, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 1, 2, 1, 2, 2, 2, 1, 1, 1, 2, 1, 1, 1, 1, 2, 2, 2, 1, 2, 1, 2, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 2, 1, 1, 2, 1, 2, 2, 1, 1, 2, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 2, 2, 2, 1, 2, 1, 2, 1, 1, 1, 2, 2, 1, 2, 2, 2, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 2, 2, 1, 1, 1, 2, 2, 1, 2, 2, 2, 1, 1, 2, 1, 1, 2, 2, 2, 2, 1, 2, 2, 1, 2, 2, 2, 1, 2, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 2, 1, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 1, 2, 2, 2, 1, 2, 1, 2, 2, 1, 1, 1, 1, 1, 2, 1, 1, 2, 2, 2, 2, 2, 1, 2, 2, 1, 1, 2, 2, 1, 2, 1, 1, 1, 2, 2, 1, 2, 1, 2, 2, 1, 1, 2, 1, 1, 1, 2, 1, 1, 1, 2, 2, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 2, 2, 2, 1, 1, 2, 2, 1, 2, 1, 1, 2, 2, 1, 1, 1, 2, 1, 1, 1, 2, 2, 1 )
+breast_cancer_y <- ifelse(c( v1, 1, 1, 2, 1, 1, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 2, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 2, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 2, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 2, 1, 1, 1, 2, 2, 2, 1, 2, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 2, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 2, 2, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 2, 1, 2, 1, 2, 2, 2, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 2, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 2, 2 ) == 2, "malignant", "benign")
+breast_cancer_y <- factor(breast_cancer_y, levels=c("benign", "malignant"))
+str(breast_cancer_y)
+
+
+# Create custom trainControl: myControl
+myControl <- caret::trainControl(
+  method = "cv", number = 10,
+  summaryFunction = twoClassSummary,
+  classProbs = TRUE, # IMPORTANT!
+  verboseIter = TRUE
+)
+
+# Apply median imputation: model
+model <- caret::train(
+  x = breast_cancer_x, y = breast_cancer_y,
+  method = "glm",
+  trControl = myControl,
+  preProcess = "medianImpute"
+)
+
+# Print model to console
+model
+
+
+# Apply KNN imputation: model2
+model2 <- caret::train(
+  x = breast_cancer_x, y = breast_cancer_y,
+  method = "glm",
+  trControl = myControl,
+  preProcess = "knnImpute"
+)
+
+# Print model to console
+model2
+
+
+# Fit glm with median imputation: model1
+model1 <- caret::train(
+  x = breast_cancer_x, y = breast_cancer_y,
+  method = "glm",
+  trControl = myControl,
+  preProcess = "medianImpute"
+)
+
+# Print model1
+model1
+
+# Fit glm with median imputation and standardization: model2
+model2 <- caret::train(
+  x = breast_cancer_x, y = breast_cancer_y,
+  method = "glm",
+  trControl = myControl,
+  preProcess = c("medianImpute", "center", "scale")
+)
+
+# Print model2
+model2
+
+
+data(BloodBrain, package="caret")  # produces logBBB (y) and bbbDescr (x)
+
+bloodbrain_y <- logBBB
+keyNames <- c( 'tpsa', 'nbasic', 'vsa_hyd', 'a_aro', 'weight', 'peoe_vsa.0', 'peoe_vsa.1', 'peoe_vsa.2', 'peoe_vsa.3', 'peoe_vsa.4', 'peoe_vsa.5', 'peoe_vsa.6', 'peoe_vsa.0.1', 'peoe_vsa.1.1', 'peoe_vsa.2.1', 'peoe_vsa.3.1', 'peoe_vsa.4.1', 'peoe_vsa.5.1', 'peoe_vsa.6.1', 'a_acc', 'a_acid', 'a_base', 'vsa_acc', 'vsa_acid', 'vsa_base', 'vsa_don', 'vsa_other', 'vsa_pol', 'slogp_vsa0', 'slogp_vsa1', 'slogp_vsa2', 'slogp_vsa3', 'slogp_vsa4', 'slogp_vsa5', 'slogp_vsa6', 'slogp_vsa7', 'slogp_vsa8', 'slogp_vsa9', 'smr_vsa0', 'smr_vsa1', 'smr_vsa2', 'smr_vsa3', 'smr_vsa4', 'smr_vsa5', 'smr_vsa6', 'smr_vsa7', 'tpsa.1', 'logp.o.w.', 'frac.anion7.', 'frac.cation7.', 'andrewbind', 'rotatablebonds', 'mlogp', 'clogp', 'mw', 'nocount', 'hbdnr', 'rule.of.5violations', 'prx', 'ub', 'pol', 'inthb', 'adistm', 'adistd', 'polar_area', 'nonpolar_area', 'psa_npsa', 'tcsa', 'tcpa', 'tcnp', 'ovality', 'surface_area', 'volume', 'most_negative_charge', 'most_positive_charge', 'sum_absolute_charge', 'dipole_moment', 'homo', 'lumo', 'hardness', 'ppsa1', 'ppsa2', 'ppsa3', 'pnsa1', 'pnsa2', 'pnsa3', 'fpsa1', 'fpsa2', 'fpsa3', 'fnsa1', 'fnsa2', 'fnsa3', 'wpsa1', 'wpsa2', 'wpsa3', 'wnsa1', 'wnsa2', 'wnsa3', 'dpsa1', 'dpsa2', 'dpsa3', 'rpcg', 'rncg', 'wpcs', 'wncs', 'sadh1', 'sadh2', 'sadh3', 'chdh1', 'chdh2', 'chdh3', 'scdh1', 'scdh2', 'scdh3', 'saaa1', 'saaa2', 'saaa3', 'chaa1', 'chaa2', 'chaa3', 'scaa1', 'scaa2', 'scaa3', 'ctdh', 'ctaa', 'mchg', 'achg', 'rdta', 'n_sp2', 'n_sp3', 'o_sp2', 'o_sp3' )
+bloodbrain_x <- bbbDescr[, keyNames]
+dim(bloodbrain_x)
+
+# Identify near zero variance predictors: remove_cols
+remove_cols <- caret::nearZeroVar(bloodbrain_x, names = TRUE, 
+                           freqCut = 2, uniqueCut = 20)
+
+# Get all column names from bloodbrain_x: all_cols
+all_cols <- names(bloodbrain_x)
+
+# Remove from data: bloodbrain_x_small
+bloodbrain_x_small <- bloodbrain_x[ , setdiff(all_cols, remove_cols)]
+
+# Fit model on reduced data: model
+model <- caret::train(x = bloodbrain_x_small, y = bloodbrain_y, method = "glm")
+
+# Print model to console
+model
+
+
+# Fit glm model using PCA: model
+model <- caret::train(
+  x = bloodbrain_x, y = bloodbrain_y,
+  method = "glm", preProcess = "pca"
+)
+
+# Print model to console
+model
+
+```
+  
+  
+Chapter 5 - Selecting Models Case Study (Customer Churn)  
+  
+
 
 
 
