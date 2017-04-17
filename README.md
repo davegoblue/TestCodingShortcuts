@@ -458,4 +458,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures Machine Learning Toolbox: Chapter 2 (Classification Models)  
 * DataCamp_Insights_v002 captures Machine Learning Toolbox: Chapter 3 (Tuning Model Parameters)  
   
+### Expansions week of 17-APR-2017  
+* DataCamp_Insights_v002 captures Machine Learning Toolbox: Chapter 4 (Pre-Processing Data)  
   
