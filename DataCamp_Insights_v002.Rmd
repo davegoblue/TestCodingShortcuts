@@ -12699,6 +12699,148 @@ model
   
 Chapter 5 - Selecting Models Case Study (Customer Churn)  
   
+Reusing a trainControl - to compare apples to apples, make sure that all the models use the same training/test splits:  
+  
+* A shared trainControl() object can be used across multiple models  
+* data(churn, package="C50") produces both churnTest and chrunTrain (data already split)  
+* The myFolds <- caret::createFolds(trainData, k=) will produce k-folds of the data which can be used in all of the modeling  
+* Then, caret::trainControl(summaryFunction=twoClassSummary, classProbs=TRUE, verboseIter=TRUE, savePredictions=TRUE, index=myFolds) will use myFolds  
+  
+Reintroduce glmnet - linear model with built-in variable selection:  
+  
+* Great baseline model - fast (fits quickly), ignores noisy variables, provides interpretable coefficients, reasonably accurate for predictions  
+  
+Reintroduce random forest - often the second model to try on a new predictive model:  
+  
+* Slower to fit and more black-box than glmnet, though often more accurate also  
+* Requires minimal if any pre-processing, and handles the missing-not-random case pretty well even if all you used is median imputation  
+  
+Comparing models - assess the quality of the predictions (apples to apples is gained by using the same test=train splits on the data):  
+  
+* Selection criteria for a good model include 1) highest average AUC across folds, 2) lower standard deviation of AUC  
+* The function caret::resamples() helps to collect the key data about multiple models  
+	* model_list <- list(name1=model1, name2=model2, .)  
+    * resamps <- caret::resamples(model_list)  
+    * resamps; summary(resamps)  # look at which models perform the best  
+  
+More on resamples - many great methods and inspired the caretEnsembles package:  
+  
+* Box and Whisker Plot - bwplot(resamps, metric="ROC")  
+* Dot Plot (same information, but visually simpler) - dotplot(resamps, metric="ROC")  
+* Density Plot (full distribution of AUC) - densityplot(resamps, metric="ROC")  
+* Scatter Plot - xyplot(resamps, metric="ROC")  
+  
+Example code includes:  
+```{r}
+
+data(churn, package="C50")
+sum(is.na(churnTrain))  # 0
+dim(churnTrain)  # 3333 x 20
+
+keyStateNums <- c( 5, 4, 8, 3, 4, 3, 4, 3, 5, 4, 4, 3, 3, 9, 4, 1, 9, 8, 4, 3, 4, 5, 4, 6, 6, 
+                   1, 4, 3, 3, 8, 4, 7, 5, 5, 6, 7, 4, 6, 5, 6, 9, 3, 5, 4, 6, 11, 2, 4, 2, 9, 5 
+                  )
+keyStateNames <- c( 'AK', 'AL', 'AR', 'AZ', 'CA', 'CO', 'CT', 'DC', 'DE', 'FL', 'GA', 'HI', 'IA', 
+                    'ID', 'IL', 'IN', 'KS', 'KY', 'LA', 'MA', 'MD', 'ME', 'MI', 'MN', 'MO', 'MS', 
+                    'MT', 'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV', 'NY', 'OH', 'OK', 'OR', 'PA', 
+                    'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VA', 'VT', 'WA', 'WI', 'WV', 'WY' 
+                  )
+
+keyIdx <- integer(0)
+for (eachState in keyStateNames) { 
+    keyIdx <- c(keyIdx, 
+                sort(sample(as.integer(row.names(churnTrain[churnTrain$state == eachState, ])), 
+                            size=keyStateNums[match(eachState, keyStateNames)], replace=FALSE
+                            )
+                     )
+                )
+}
+
+churn_x <- churnTrain[keyIdx, ] %>% 
+    mutate(international_planyes=as.integer(international_plan=="yes"), 
+           area_codearea_code_415=as.integer(area_code=="area_code_415"), 
+           area_codearea_code_510=as.integer(area_code=="area_code_510"), 
+           voice_mail_planyes=as.integer(voice_mail_plan=="yes")
+           ) %>% 
+    select(-c(state, churn, area_code, international_plan, voice_mail_plan))
+churn_y <- factor(churnTrain[keyIdx, "churn"], levels=c("no", "yes"))
+
+stateCols <- matrix(data=0L, nrow=sum(keyStateNums), ncol=length(keyStateNums))
+curCol <- 1
+curRow <- 1
+for (intCtr in cumsum(keyStateNums)) { 
+    stateCols[curRow:intCtr, curCol] <- 1L 
+    curCol <- curCol + 1 
+    curRow <- intCtr + 1 
+}
+stateDF <- as.data.frame(stateCols)
+names(stateDF) <- paste0("state", keyStateNames)
+churn_x <- cbind(churn_x, stateDF)
+
+
+# Create custom indices: myFolds
+myFolds <- caret::createFolds(churn_y, k = 5)
+
+# Create reusable trainControl object: myControl
+myControl <- caret::trainControl(
+  summaryFunction = twoClassSummary,
+  classProbs = TRUE, # IMPORTANT!
+  verboseIter = TRUE,
+  savePredictions = TRUE,
+  index = myFolds
+)
+
+
+# Fit glmnet model: model_glmnet
+model_glmnet <- caret::train(
+  x = churn_x, y = churn_y,
+  metric = "ROC",
+  method = "glmnet",
+  trControl = myControl
+)
+
+
+# Fit random forest: model_rf
+model_rf <- caret::train(
+  x = churn_x, y = churn_y,
+  metric = "ROC",
+  method = "ranger",
+  trControl = myControl
+)
+
+
+# Create model_list
+model_list <- list(item1 = model_glmnet, item2 = model_rf)
+
+# Pass model_list to resamples(): resamples
+resamps <- caret::resamples(model_list)
+
+# Summarize the results
+summary(resamps)
+
+
+# Create bwplot
+bwplot(resamps, metric="ROC")
+
+# Create xyplot
+xyplot(resamps, metric="ROC")
+
+
+# Create ensemble model: stack
+# Crashes out on my machine; not sure why . . . 
+# stack <- caretEnsemble::caretStack(model_list, method="glm")
+
+# Look at summary
+# summary(stack)
+
+```
+  
+  
+## R Markdown and RStudio  
+###_RStudio IDE (Part I)_  
+
+Chapter 1 - Orientation  
+  
 
 
 
