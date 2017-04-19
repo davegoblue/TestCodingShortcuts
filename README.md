@@ -461,4 +461,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 17-APR-2017  
 * DataCamp_Insights_v002 captures Machine Learning Toolbox: Chapter 4 (Pre-Processing Data)  
 * DataCamp_Insights_v002 captures Machine Learning Toolbox: Chapter 5 (Case Study)  
+* DataCamp_Insights_v002 captures RStudio IDE - Part I: Chapter 1 (Orientation)  
   
