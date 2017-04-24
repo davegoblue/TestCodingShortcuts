@@ -466,5 +466,8 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures RStudio IDE - Part I: Chapter 3 (Packages)  
 * Cleaned DataCamp_Insights_v002 with updated introductory bullets for the contents  
 * DataCamp_Insights_v002 captures RStudio IDE - Part II: Chapter 1 (Packages)  
+
+### Expansions week of 24-APR-2017  
+* DataCamp_Insights_v002 captures RStudio IDE - Part II: Chapter 2 (Version Control)  
   
   
