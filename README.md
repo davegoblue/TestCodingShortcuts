@@ -470,5 +470,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 24-APR-2017  
 * DataCamp_Insights_v002 captures RStudio IDE - Part II: Chapter 2 (Version Control)  
 * DataCamp_Insights_v002 captures RStudio IDE - Part II: Chapter 3 (Reporting)  
+* Created stand-alone, archived DataCamp_DataManipulation_v002 and DataCamp_Statistics_v002 from DataCamp_Insights_v002  
   
   
