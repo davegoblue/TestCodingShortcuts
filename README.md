@@ -472,5 +472,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v002 captures RStudio IDE - Part II: Chapter 3 (Reporting)  
 * Created stand-alone, archived DataCamp_DataManipulation_v002 and DataCamp_Statistics_v002 from DataCamp_Insights_v002  
 * Created DataCamp_Insights_v003 (contains portions of DataCamp_Insights_v002 other than Data Manipulation and Statistics)  
-  
+* DataCamp_Insights_v003 captures Reporting with R Markdown: Chapter 1 (Authoring R Markdown Reports)  
   
