@@ -474,4 +474,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Created DataCamp_Insights_v003 (contains portions of DataCamp_Insights_v002 other than Data Manipulation and Statistics)  
 * DataCamp_Insights_v003 captures Reporting with R Markdown: Chapter 1 (Authoring R Markdown Reports)  
 * DataCamp_Insights_v003 captures in-line R usage example from Reporting with R Markdown: Chapter 1 (Authoring R Markdown Reports)  
+* DataCamp_Insights_v003 captures Reporting with R Markdown: Chapter 2 (Embedding Code)  
   
