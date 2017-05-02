@@ -478,5 +478,6 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 01-MAY-2017  
 * DataCamp_Insights_v003 captures in-line R usage example from Reporting with R Markdown: Chapter 2 (Embedding Code)  
+* DataCamp_Insights_v003 captures additional in-line R usage example from Reporting with R Markdown: Chapter 2 (Embedding Code)  
   
   
