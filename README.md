@@ -480,5 +480,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 captures in-line R usage example from Reporting with R Markdown: Chapter 2 (Embedding Code)  
 * DataCamp_Insights_v003 captures additional in-line R usage example from Reporting with R Markdown: Chapter 2 (Embedding Code)  
 * DataCamp_Insights_v003 captures Reporting with R Markdown: Chapter 3 (Compiling Reports)  
+* DataCamp_Insights_v003 captures Reporting with R Markdown: Chapter 4 (Configuring R Markdown)  
   
   
