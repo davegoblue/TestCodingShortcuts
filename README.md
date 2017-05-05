@@ -481,5 +481,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 captures additional in-line R usage example from Reporting with R Markdown: Chapter 2 (Embedding Code)  
 * DataCamp_Insights_v003 captures Reporting with R Markdown: Chapter 3 (Compiling Reports)  
 * DataCamp_Insights_v003 captures Reporting with R Markdown: Chapter 4 (Configuring R Markdown)  
+* Now using R 3.3.0 which allows for loading packages qdap and slam  
+* DataCamp_Insights_v003 captures Text Mining: Bag of Words - Chapter 1 (Jumping In)  
   
   
