@@ -486,4 +486,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 includes coffee tweets examples from Text Mining: Bag of Words - Chapter 1 (Jumping In)  
 * DataCamp_Insights_v003 captures Text Mining: Bag of Words - Chapter 2 (Word Clouds and Visuals)  
   
+### Expansions week of 08-MAY-2017  
+* DataCamp_Insights_v003 captures chardonnay tweets exampled from Text Mining: Bag of Words - Chapter 2 (Word Clouds and Visuals)  
+  
   
