@@ -488,5 +488,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 08-MAY-2017  
 * DataCamp_Insights_v003 captures chardonnay tweets exampled from Text Mining: Bag of Words - Chapter 2 (Word Clouds and Visuals)  
-  
+* DataCamp_Insights_v003 captures Text Mining: Bag of Words - Chapter 3 (Additional Text Mining Skills - library tm)  
   
