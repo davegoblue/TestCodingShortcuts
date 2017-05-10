@@ -4586,10 +4586,290 @@ custom_reader <- readTabular(mapping = list(content = "text",
   
 Chapter 4 - Case study  
   
+Amazon vs Google case study - following the six key steps on an HR analytics project:  
+  
+1.  Problem definition and specific goals (Amazon and Google employee reviews - "does Amazon or Google have better on-line perception for work-life or benefits?")  
+2.  Identify text to be collected (2,000 reviews already captured and assigned to 4 corpora - Amazon/pro, Amazon/con, Google/pro, Google/con)  
+3.  Text organization  
+4.  Feature extraction  
+5.  Analysis  
+6.  Reach insights and make recommendations  
+  
+Step 3: Text Organization - creating an integrated qdapClean function:  
+  
+* qdap functions can be applied directly to a text vector, rather than needing a corpus  
+* Alternately, the tm functions can be applied to a corpus  
+  
+Steps 4&5: Feature Extraction and Analysis - for example, sentiment scoring or bi-gram TDM:  
+  
+* Can use the Rweka toeknizer - TermDocumentMatrix(myCorpus, control=list(tokenize=tokenizer)) # where tokenizer is previously defined  
+* The bi-grams help with pyramid plots of common words from negative/positive reviews about Google/Amazon  
+  
+Step 6: Reach a conclusion - end of the work flow:  
+  
+* Steps in the process maximize probabilities of getting to interesting results that can be acted upon  
+  
+Example code includes:  
+```{r}
+
+# Re-creating the data sets available in the case study
+test <- read.csv("AmazonGoogleHRData_v001.csv", 
+                 stringsAsFactors=FALSE, 
+                 na.strings=c("NA", "NA ")
+                 )
+amzn <- subset(test, src=="amzn")
+goog <- subset(test, src=="goog")
+amzn$src <- NULL
+goog$src <- NULL
 
 
+# Print the structure of amzn
+str(amzn)
+
+# Create amzn_pros
+amzn_pros <- amzn$pros
+
+# Create amzn_cons
+amzn_cons <- amzn$cons
+
+# Print the structure of goog
+str(goog)
+
+# Create goog_pros
+goog_pros <- goog$pros
+
+# Create goog_cons
+goog_cons <- goog$cons
+
+
+qdap_clean <- function(x){
+  x <- replace_abbreviation(x)
+  x <- replace_contraction(x)
+  x <- replace_number(x)
+  x <- replace_ordinal(x)
+  x <- replace_ordinal(x)
+  x <- replace_symbol(x)
+  x <- tolower(x)
+  return(x)
+}
+
+tm_clean <- function(corpus){
+  corpus <- tm_map(corpus, removePunctuation)
+  corpus <- tm_map(corpus, stripWhitespace)
+  corpus <- tm_map(corpus, removeWords, 
+                   c(stopwords("en"), "Google", "Amazon", "company"))
+  return(corpus)
+}
+
+
+# Alter amzn_pros
+amzn_pros <- qdap_clean(amzn_pros)
+
+# Alter amzn_cons
+amzn_cons <- qdap_clean(amzn_cons)
+
+# Create az_p_corp 
+az_p_corp <- VCorpus(VectorSource(amzn_pros[complete.cases(amzn_pros)]))
+
+# Create az_c_corp
+az_c_corp <- VCorpus(VectorSource(amzn_cons[complete.cases(amzn_cons)]))
+
+# Create amzn_pros_corp
+amzn_pros_corp <- tm_clean(az_p_corp)
+
+# Create amzn_cons_corp
+amzn_cons_corp <- tm_clean(az_c_corp)
+
+
+# Apply qdap_clean to goog_pros
+goog_pros <- qdap_clean(goog_pros)
+
+# Apply qdap_clean to goog_cons
+goog_cons <- qdap_clean(goog_cons)
+
+# Create goog_p_corp
+# complete.cases() to avoid the NA problem in RWeka::NGramTokenizer
+goog_p_corp <- VCorpus(VectorSource(goog_pros[complete.cases(goog_pros)]))
+
+# Create goog_c_corp
+# complete.cases() to avoid the NA problem in RWeka::NGramTokenizer
+goog_c_corp <- VCorpus(VectorSource(goog_cons[complete.cases(goog_cons)]))
+
+# Create goog_pros_corp
+goog_pros_corp <- tm_clean(goog_p_corp)
+
+# Create goog_cons_corp
+goog_cons_corp <- tm_clean(goog_c_corp)
+
+
+# DOES NOT WORK ON MY MACHINE (needed the complete.cases() fix above - seems to struggle with NA data)
+tokenizer <- function(x) { RWeka::NGramTokenizer(x, RWeka::Weka_control(min=2, max=2)) }
+
+# Create amzn_p_tdm
+amzn_p_tdm <- TermDocumentMatrix(amzn_pros_corp, control=list(tokenize=tokenizer))
+
+# Create amzn_p_tdm_m
+amzn_p_tdm_m <- as.matrix(amzn_p_tdm)
+
+# Create amzn_p_freq
+amzn_p_freq <- rowSums(amzn_p_tdm_m)
+
+# Plot a wordcloud using amzn_p_freq values
+wordcloud(names(amzn_p_freq), amzn_p_freq, max.words=25, color="blue")
+
+
+# Create amzn_c_tdm
+amzn_c_tdm <- TermDocumentMatrix(amzn_cons_corp, control=list(tokenize=tokenizer))
+
+# Create amzn_c_tdm_m
+amzn_c_tdm_m <- as.matrix(amzn_c_tdm)
+
+# Create amzn_c_freq
+amzn_c_freq <- rowSums(amzn_c_tdm_m)
+
+# Plot a wordcloud of negative Amazon bigrams
+wordcloud(names(amzn_c_freq), amzn_c_freq, max.words=25, color="red")
+
+
+# Create amzn_c_tdm
+amzn_c_tdm <- TermDocumentMatrix(amzn_cons_corp, control=list(tokenize=tokenizer))
+
+# Print amzn_c_tdm to the console
+amzn_c_tdm
+
+# Create amzn_c_tdm2 by removing sparse terms 
+amzn_c_tdm2 <- removeSparseTerms(amzn_c_tdm, sparse=0.993)
+
+# Create hc as a cluster of distance values
+hc <- hclust(dist(amzn_c_tdm2, method="euclidean"), method="complete")
+
+# Produce a plot of hc
+plot(hc)
+
+
+# Create amzn_p_tdm
+amzn_p_tdm <- TermDocumentMatrix(amzn_pros_corp, control=list(tokenize=tokenizer))
+
+# Create amzn_p_m
+amzn_p_m <- as.matrix(amzn_p_tdm)
+
+# Create amzn_p_freq
+amzn_p_freq <- rowSums(amzn_p_m)
+
+# Create term_frequency
+term_frequency <- sort(amzn_p_freq, decreasing=TRUE)
+
+# Print the 5 most common terms
+term_frequency[1:5]
+
+# Find associations with fast paced
+findAssocs(amzn_p_tdm, "fast paced", 0.2)
+
+
+# DO NOT HAVE FILE all_goog_corp
+# Created below
+goog_df <- data.frame(pros=goog_pros, cons=goog_cons)
+goog_df <- goog_df[complete.cases(goog_df), ]
+str(goog_df)
+
+goog_vec <- c(paste(goog_df$pros, collapse=" "), 
+              paste(goog_df$cons, collapse=" ")
+              )
+all_goog_corpus <- VCorpus(VectorSource(goog_vec))
+
+# Create all_goog_corp
+all_goog_corp <- tm_clean(all_goog_corpus)
+
+# Create all_tdm
+all_tdm <- TermDocumentMatrix(all_goog_corp)
+
+# Name the columns of all_tdm
+colnames(all_tdm) <- c("Goog_Pros", "Goog_Cons")
+
+# Create all_m
+all_m <- as.matrix(all_tdm)
+
+# Build a comparison cloud
+comparison.cloud(all_m, max.words=100, colors=c("#F44336", "#2196f3"))
+
+
+# DO NOT HAVE - THIS IS THE ALL POSITIVE ASSOCIATIONS
+# Created below
+goog_p_tdm <- TermDocumentMatrix(goog_pros_corp, control=list(tokenize=tokenizer))
+goog_p_tdm_m <- as.matrix(goog_p_tdm)
+goog_p_freq <- rowSums(goog_p_tdm_m)
+
+all_tdm_df <- merge(y=data.frame(keyWord=names(goog_p_freq), googNum=goog_p_freq, stringsAsFactors=FALSE), 
+                    x=data.frame(keyWord=names(amzn_p_freq), amznNum=amzn_p_freq, stringsAsFactors=FALSE),
+                    by="keyWord", all=TRUE
+                    )
+all_tdm_df[is.na(all_tdm_df)] <- 0
+all_tdm_m <- as.matrix(all_tdm_df[, -1])
+rownames(all_tdm_m) <- all_tdm_df$keyWord
+
+# Create common_words
+common_words <- subset(all_tdm_m, all_tdm_m[, 1] > 0 & all_tdm_m[, 2] > 0)
+
+# Create difference
+difference <- abs(common_words[, 2] - common_words[, 1])
+
+# Add difference to common_words
+common_words <- cbind(common_words, difference)
+
+# Order the data frame from most differences to least
+common_words <- common_words[order(common_words[, 3], decreasing=TRUE), ]
+
+# Create top15_df
+top15_df <- data.frame(x=common_words[1:15, 1], y=common_words[1:15, 2], labels=rownames(common_words)[1:15])
+
+# Create the pyramid plot
+plotrix::pyramid.plot(top15_df$x, top15_df$y, 
+                      labels=top15_df$labels, gap = 12, 
+                      top.labels = c("Amzn", "Pro Words", "Google"), 
+                      main = "Words in Common", unit = NULL
+                      )
+
+
+# DO NOT HAVE - THIS IS THE ALL NEGATIVE ASSOCIATIONS
+# Created below
+goog_c_tdm <- TermDocumentMatrix(goog_cons_corp, control=list(tokenize=tokenizer))
+goog_c_tdm_m <- as.matrix(goog_c_tdm)
+goog_c_freq <- rowSums(goog_c_tdm_m)
+
+all_tdm_df <- merge(y=data.frame(keyWord=names(goog_c_freq), googNum=goog_c_freq, stringsAsFactors=FALSE), 
+                    x=data.frame(keyWord=names(amzn_c_freq), amznNum=amzn_c_freq, stringsAsFactors=FALSE),
+                    by="keyWord", all=TRUE
+                    )
+all_tdm_df[is.na(all_tdm_df)] <- 0
+all_tdm_m <- as.matrix(all_tdm_df[, -1])
+rownames(all_tdm_m) <- all_tdm_df$keyWord
+
+# Create common_words
+common_words <- subset(all_tdm_m, all_tdm_m[, 1] > 0 & all_tdm_m[, 2] > 0)
+
+# Create difference
+difference <- abs(common_words[, 2] - common_words[, 1])
+
+# Bind difference to common_words
+common_words <- cbind(common_words, difference)
+
+# Order the data frame from most differences to least
+common_words <- common_words[order(common_words[, 3], decreasing=TRUE), ]
+
+# Create top15_df
+top15_df <- data.frame(x=common_words[1:15, 1], y=common_words[1:15, 2], labels=rownames(common_words)[1:15])
+
+# Create the pyramid plot
+plotrix::pyramid.plot(top15_df$x, top15_df$y, 
+                      labels=top15_df$labels, gap = 12, 
+                      top.labels = c("Amzn", "Cons Words", "Google"), 
+                      main = "Words in Common", unit = NULL
+                      )
+
+
+```
   
-  
+
 ## R Markdown and RStudio  
 ###_RStudio IDE (Part I)_  
 
