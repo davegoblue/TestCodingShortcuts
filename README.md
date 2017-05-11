@@ -490,4 +490,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 captures chardonnay tweets exampled from Text Mining: Bag of Words - Chapter 2 (Word Clouds and Visuals)  
 * DataCamp_Insights_v003 captures Text Mining: Bag of Words - Chapter 3 (Additional Text Mining Skills - library tm)  
 * DataCamp_Insights_v003 captures Text Mining: Bag of Words - Chapter 4 (Case Study)  
+* DataCamp_PythonNotes_v001 created to test running simple Python code within an R Markdown document  
+* DataCamp_PythonNotes_v001 captures Intro to Python for Data Science - Chapter 1 (Python Basics)  
   
