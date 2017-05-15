@@ -495,4 +495,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Intro to Python for Data Science - Chapter 2 (Lists)  
 * DataCamp_PythonNotes_v001 captures Intro to Python for Data Science - Chapter 3 (Functions and Packages)  
 * DataCamp_PythonNotes_v001 captures Intro to Python for Data Science - Chapter 4 (Numpy)  
-  
+
+### Expansions week of 15-MAY-2017  
+* DataCamp_PythonNotes_v001 captures Intermediate Python for Data Science - Chapter 1 (Matplotlib for Data Visualization)  
