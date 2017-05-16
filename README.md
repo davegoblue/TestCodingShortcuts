@@ -498,3 +498,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 15-MAY-2017  
 * DataCamp_PythonNotes_v001 captures Intermediate Python for Data Science - Chapter 1 (Matplotlib for Data Visualization)  
+* DataCamp_PythonNotes_v001 explores saving PNG using matplotlib.pyplot.savefig() and displaying them in an R Markdown document  
