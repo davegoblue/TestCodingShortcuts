@@ -500,3 +500,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Intermediate Python for Data Science - Chapter 1 (Matplotlib for Data Visualization)  
 * DataCamp_PythonNotes_v001 explores saving PNG using matplotlib.pyplot.savefig() and displaying them in an R Markdown document  
 * DataCamp_PythonNotes_v001 captures Intermediate Python for Data Science - Chapter 2 (Dictionaries and Pandas)  
+* DataCamp_PythonNotes_v001 captures Intermediate Python for Data Science - Chapter 3 (Logic, Control Flow, and Filtering)  
