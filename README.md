@@ -505,3 +505,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Intermediate Python for Data Science - Chapter 5 (Case Study)  
 * DataCamp_PythonNotes_v001 captures Python Data Science Toolbox (Part I) - Chapter 1 (Writing Functions)  
   
+### Expansions week of 22-MAY-2017  
+* DataCamp_PythonNotes_v001 captures Python Data Science Toolbox (Part I) - Chapter 2 (Functions: Default and Variable-Length Arguments)  
+  
