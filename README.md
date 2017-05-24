@@ -508,4 +508,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 22-MAY-2017  
 * DataCamp_PythonNotes_v001 captures Python Data Science Toolbox (Part I) - Chapter 2 (Functions: Default and Variable-Length Arguments)  
 * DataCamp_PythonNotes_v001 captures Python Data Science Toolbox (Part I) - Chapter 3 (Lambda Functions and Error Handling)  
+* DataCamp_PythonNotes_v001 captures Python Data Science Toolbox (Part II) - Chapter 1 (Iterators and Iterables)  
   
