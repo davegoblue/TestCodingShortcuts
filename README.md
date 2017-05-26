@@ -510,4 +510,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Python Data Science Toolbox (Part I) - Chapter 3 (Lambda Functions and Error Handling)  
 * DataCamp_PythonNotes_v001 captures Python Data Science Toolbox (Part II) - Chapter 1 (Iterators and Iterables)  
 * DataCamp_PythonNotes_v001 captures Python Data Science Toolbox (Part II) - Chapter 2 (List Comprehensions and Generators)  
+* DataCamp_PythonNotes_v001 captures Python Data Science Toolbox (Part II) - Chapter 3 (Case Study)  
   
