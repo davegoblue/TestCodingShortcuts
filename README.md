@@ -512,4 +512,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Python Data Science Toolbox (Part II) - Chapter 2 (List Comprehensions and Generators)  
 * DataCamp_PythonNotes_v001 captures Python Data Science Toolbox (Part II) - Chapter 3 (Case Study)  
 * DataCamp_PythonNotes_v001 includes graphs for Python Data Science Toolbox (Part II) - Chapter 3 (Case Study)  
+* DataCamp_PythonNotes_v001 captures Network Analysis in Python (Part I) - Chapter 1 (Introduction to Networks)  
   
