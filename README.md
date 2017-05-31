@@ -517,3 +517,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 29-MAY-2017  
 * DataCamp_PythonNotes_v001 captures Network Analysis in Python (Part I) - Chapter 2 (Important Nodes)  
 * DataCamp_PythonNotes_v001 captures Network Analysis in Python (Part I) - Chapter 3 (Structures)  
+* DataCamp_PythonNotes_v001 captures Network Analysis in Python (Part I) - Chapter 4 (Case Study)  
+  
