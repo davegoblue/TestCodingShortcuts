@@ -519,4 +519,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Network Analysis in Python (Part I) - Chapter 3 (Structures)  
 * DataCamp_PythonNotes_v001 captures Network Analysis in Python (Part I) - Chapter 4 (Case Study)  
 * DataCamp_PythonNotes_v001 captures plots for Network Analysis in Python (Part I)  
+* DataCamp_PythonNotes_v001 captures Importing Data in Python (Part I) - Chapter 1 (Introduction and Flat Files)  
     
