@@ -523,3 +523,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Importing Data in Python (Part I) - Chapter 2 (Importing Data from Other File Types)  
 * DataCamp_PythonNotes_v001 captures Importing Data in Python (Part I) - Chapter 3 (Relational Databases)  
     
+### Expansions week of 05-JUN-2017  
+* DataCamp_PythonNotes_v001 captures Importing Data in Python (Part II) - Chapter 1 (Importing Data from the Internet)  
+  
