@@ -525,4 +525,5 @@ All simple things to do, but knowing these will advance my capabilities in R
     
 ### Expansions week of 05-JUN-2017  
 * DataCamp_PythonNotes_v001 captures Importing Data in Python (Part II) - Chapter 1 (Importing Data from the Internet)  
-  
+* DataCamp_PythonNotes_v001 captures Importing Data in Python (Part II) - Chapter 2 (Interacting with API)  
+    
