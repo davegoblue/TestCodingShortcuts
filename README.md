@@ -528,4 +528,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Importing Data in Python (Part II) - Chapter 2 (Interacting with API)  
 * DataCamp_PythonNotes_v001 captures Importing Data in Python (Part II) - Chapter 3 (Twitter API)  
 * DataCamp_PythonNotes_v001 captures Cleaning Data in Python - Chapter 1 (Exploring Your Data)  
+* DataCamp_PythonNotes_v001 captures Cleaning Data in Python - Chapter 2 (Tidying Data for Analysis)  
     
