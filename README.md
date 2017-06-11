@@ -530,4 +530,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Cleaning Data in Python - Chapter 1 (Exploring Your Data)  
 * DataCamp_PythonNotes_v001 captures Cleaning Data in Python - Chapter 2 (Tidying Data for Analysis)  
 * DataCamp_PythonNotes_v001 captures Cleaning Data in Python - Chapter 3 (Combining Data for Analysis)  
+* DataCamp_PythonNotes_v001 captures Cleaning Data in Python - Chapter 4 (Cleaning Data for Analysis)  
     
