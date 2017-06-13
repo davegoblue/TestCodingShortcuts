@@ -534,5 +534,6 @@ All simple things to do, but knowing these will advance my capabilities in R
     
 ### Expansions week of 12-JUN-2017  
 * DataCamp_PythonNotes_v001 captures Cleaning Data in Python - Chapter 5 (Case Study)  
+* DataCamp_PythonNotes_v001 captures pandas Foundations - Chapter 1 (Data Ingestion and Inspection)  
   
   
