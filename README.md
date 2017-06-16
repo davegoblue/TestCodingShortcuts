@@ -537,5 +537,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures pandas Foundations - Chapter 1 (Data Ingestion and Inspection)  
 * DataCamp_PythonNotes_v001 includes all graphs and captures KAUS METAR data for 2010-08  
 * DataCamp_PythonNotes_v001 captures pandas Foundations - Chapter 2 (Exploratory Data Analysis)  
+* DataCamp_PythonNotes_v001 captures graphs and additional examples for Chapter 2  
   
   
