@@ -6663,6 +6663,242 @@ plt.clf()
   
 Chapter 3 - Time series in pandas  
   
+Indexing pandas time series - dates and times are stored in datetime options:  
+  
+* When reading from a CSV, the command parse_dates=True will convert the relevant column(s) to ISO-8601 formats (yyyy-mm-dd hh:mm:ss)  
+* The index_col="myDateFieldFromCSV" option in a pd.read_csv() will set the relevant date column (assuming parse_dates=True) as the datetime index for the DataFrame  
+* Assuming that a DataFrame is indexed by datetime, can pass a smaller string (e.g., 2012-2 rather than 2012-2-5 11:00:00) to df.loc[] and everything that matches all of the smaller string will be extracted  
+* Pandas supports partial datetime string selection, and using many input formats  
+	* df.loc["February 5, 2015"] or df.loc["2015-Feb-5"] or df.loc["2015"  
+* Can also slice a datetime string, such as df.loc["2015-Jan":"2015-Mar"] to get the entire Q1 2015 data  
+* Can convert objects to datetime using pd.to_datetime()  
+* Can reindex the data using df.reindex(myTime, method=)  
+	* The default method is to fill with np.nan, though can specify "ffill" or "bfill" to fill forwards or backwards  
+  
+Resampling pandas time series - taking statistical measures over different time intervals:  
+  
+* Downsampling is the process of reducing datetime rows to slower frequency (e.g., hourly to daily)  
+	* df.resample("D").mean() will take the mean of the down-sampled data, with "D" meaning "daily"  
+    * df.resample("W").mean() will take the mean of weekly data  
+    * Can build longer chains where needed; for example, df.resample("D").sum().max() will be the maximum daily sum  
+    * "min" or "T" is minute; "H" is hourly; "D" is daily; "B" is busines daily  
+    * "W" is week; "M" is month; "Q" is quarter; "A" is year (annual)  
+    * Can further using interval multiples, for example "3M" would be 3-monthly (essentially, quarterly)  
+    * There are certain default to things like "#W", for example, aligning weekly data to report by Sundays  
+* Upsampling is the process of increasing datetime rows to faster frequency (e.g., daily to hourly)  
+	* A common upsampling approach would use "ffill" or "bfill" such as df.resample("4H").ffill() - interpolation  
+  
+Manipulating pandas time series - changing the data in one or more columns:  
+  
+* Can apply the string methods such as df["myCol"].str.upper() - note that this is NOT a transformation in place but rather a new series  
+* Can apply the string method .contains() to search for a partial string, such as df["myCol"].str.contains("ello") - will return a boolean of the same length  
+* Can access the .dt method (datetime method) and its features, such as df["myCol"].dt.hour - will extract the hour  
+	* The .dt.tz_localize("US/Central") will convert everything to US Central Time  
+    * The .dt.tz_convert("US/Eastern") will convert everything to US Eastern Time  
+* Can also chain these, such as .dt.tz_localize("US/Central").dt.tz_convert("US/Eastern") - note that the second .dt is needed after the tz_localize, since that returned a new series and not a .dt  
+* To run a linear interpolation, use df.resample("Y").first().interpolate("linear") - will do linear interpolation between the values that already exist  
+  
+Visualizing pandas time series - additional plotting techniques such line types, plot types, and sub-plots:  
+  
+* Using daily S&P 500 date from 2010-01-01 through 2015-12-31 - Open-High-Low-Close-Volume  
+* When plotting, can run df.plot(title=) to set the title, and plt.ylabel() later to set the y-axis labels  
+* By default, df.plot will use a blue line provided that df is a pandas DataFrame  
+* Can pass "MATLAB-like style strings" to the .plot(style=) options for other than lines  
+	* The string has 3 characters; color ("k" is black), market ("." is dot), and line type ("-", or hyphen, is solid) - so "k.-" means black, solid line with a dot marker  
+    * Colors - "b" for blue, "g" for green, "r" for red", "c" for cyan  
+    * Markers - "o" for circle, "*" for star, "s" for square, "+" for plus  
+    * Line - ":" for dotted, "--" for dashed  
+* Can also pass an argument to the .plot(kind=) to instead have "hist" or "area"  
+* Can also pass the argument .plot(subplots=True) to have sub-plots created (on separate scales) for each of the data series  
+  
+Example code includes:  
+```{r engine='python'}
+
+myPath = "./PythonInputFiles/"
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+# GREAT data is available at https://mesonet.agron.iastate.edu/request/download.phtml?network=IL_ASOS
+# Downloaded KORD data from 2010 to myPath + "KORD_2010_from_IAState.txt"
+# First 5 rows are commented, the sixth row is the header, and the next 10,443 rows are the data
+
+# Load the file
+tmpORD = pd.read_csv(myPath + "KORD_2010_from_IAState.txt", header=5)
+tmpORD.columns = tmpORD.columns.str.strip()
+isMETAR = tmpORD.loc[:, "valid"].str.contains(":51")  # KORD METAR are taken at xx:51
+useORD = tmpORD.loc[isMETAR, :]  # ends as 8709 x 22, probably the METAR check missed a few at "off" times
+
+date_list = useORD["valid"]
+temperature_list = list(useORD["tmpf"])
+
+# This is 8,759 temperature observations refelecting 20100101 00:00 through 20101231 23:00 on an hourly basis
+# Prepare a format string: time_format
+time_format = '%Y-%m-%d %H:%M'
+
+# Convert date_list into a datetime object: my_datetimes
+my_datetimes = pd.to_datetime(date_list, format=time_format)  
+
+# Construct a pandas Series using temperature_list and my_datetimes: time_series
+# Something to explore later - this produced all np.nan if temperature_list were already a Series
+ts0 = pd.Series(temperature_list, index=my_datetimes)
+
+# Extract the hour from 9pm to 10pm on '2010-10-11': ts1
+ts1 = ts0.loc['2010-10-11 20:51:00']
+
+# Extract '2010-07-04' from ts0: ts2
+ts2 = ts0.loc["2010-07-04"]
+
+# Extract data from '2010-12-15' to '2010-12-31': ts3
+ts3 = ts0.loc["2010-12-15":"2010-12-31"]
+
+
+# Reindex without fill method: ts3
+ts3 = ts2.reindex(ts0.index)
+
+# Reindex with fill method, using forward fill: ts4
+ts4 = ts2.reindex(ts0.index, method="ffill")
+
+# Combine ts1 + ts2: sum12
+sum12 = ts1 + ts2
+
+# Combine ts1 + ts3: sum13
+sum13 = ts1 + ts3
+
+# Combine ts1 + ts4: sum14
+sum14 = ts1 + ts4
+
+
+# Still working with the temperature data, now renamed as df [technically, same index but containing Temperature-Dew Point-Pressure]
+df = useORD[["tmpf", "dwpf", "alti"]]
+df.index = my_datetimes
+df.columns = ["Temperature", "DewPoint", "Pressure"]
+saveWeather = df.copy()
+
+
+# Downsample to 6 hour data and aggregate by mean: df1
+df1 = df["Temperature"].resample("6H").mean()
+
+# Downsample to daily data and count the number of data points: df2
+df2 = df["Temperature"].resample("D").count()
+
+
+# Extract temperature data for August: august
+august = df.loc["2010-08", "Temperature"]
+
+# Downsample to obtain only the daily highest temperatures in August: august_highs
+august_highs = august.resample("D").max()
+
+# Extract temperature data for February: february
+february = df.loc["2010-02", "Temperature"]
+
+# Downsample to obtain the daily lowest temperatures in February: february_lows
+february_lows = february.resample("D").min()
+
+
+# Extract data from 2010-Aug-01 to 2010-Aug-15: unsmoothed
+unsmoothed = df['Temperature']["2010-08-01":"2010-08-15"]
+
+# Apply a rolling mean with a 24 hour window: smoothed
+smoothed = unsmoothed.rolling(window=24).mean()
+
+# Create a new DataFrame with columns smoothed and unsmoothed: august
+august = pd.DataFrame({'smoothed':smoothed, 'unsmoothed':unsmoothed})
+
+# Plot both smoothed and unsmoothed data using august.plot().
+august.plot()
+# plt.show()
+plt.clf()
+
+
+# Extract the August 2010 data: august
+august = df['Temperature']["2010-08"]
+
+# Resample to daily data, aggregating by max: daily_highs
+daily_highs = august.resample("D").max()
+
+# Use a rolling 7-day window with method chaining to smooth the daily high temperatures in August
+daily_highs_smoothed = daily_highs.rolling(window=7).mean()
+print(daily_highs_smoothed)
+
+
+# Now, df is 1741x17 of airline/airport data
+# Strip extra whitespace from the column names: df.columns
+# df.columns = df.columns.str.strip()
+
+# Extract data for which the destination airport is Dallas: dallas
+# dallas = df['Destination Airport'].str.contains("DAL")
+
+# Compute the total number of Dallas departures each day: daily_departures
+# daily_departures = dallas.resample("D").sum()
+
+# Generate the summary statistics for daily Dallas departures: stats
+# stats = daily_departures.describe()
+
+
+# Reset the index of ts2 to ts1, and then use linear interpolation to fill in the NaNs: ts2_interp
+# ts2_interp = ts2.reindex(ts1.index).interpolate("linear")
+
+# Compute the absolute difference of ts1 and ts2_interp: differences 
+# differences = np.abs(ts2_interp - ts1)
+
+# Generate and print summary statistics of the differences
+# print(differences.describe())
+
+
+# Buid a Boolean mask to filter out all the 'LAX' departure flights: mask
+# mask = df['Destination Airport'] == "LAX"
+
+# Use the mask to subset the data: la
+# la = df[mask]
+
+# Combine two columns of data to create a datetime series: times_tz_none 
+# times_tz_none = pd.to_datetime( la['Date (MM/DD/YYYY)'] + ' ' + la['Wheels-off Time'] )
+
+# Localize the time to US/Central: times_tz_central
+# times_tz_central = times_tz_none.dt.tz_localize("US/Central")
+
+# Convert the datetimes from US/Central to US/Pacific
+# times_tz_pacific = times_tz_central.dt.tz_convert("US/Pacific")
+
+
+# Plot the raw data before setting the datetime index
+# df.plot()
+# plt.show()
+
+# Convert the 'Date' column into a collection of datetime objects: df.Date
+# df.Date = pd.to_datetime(df["Date"])
+
+# Set the index to be the converted 'Date' column
+# df.set_index("Date", inplace=True)  # inplace=True makes the conversion in place; no need to reassign
+
+# Re-plot the DataFrame to see that the axis is now datetime aware!
+# df.plot()
+# plt.show()
+
+
+# Plot the summer data
+df = saveWeather.copy()
+df.Temperature["2010-Jun":"2010-Aug"].plot()
+# plt.show()
+plt.clf()
+
+# Plot the one week data
+df.Temperature['2010-06-10':'2010-06-17'].plot()
+# plt.show()
+plt.clf()
+
+```
+  
+  
+***
+  
+Chapter 4 - Case Study - Sunlight in Austin  
+  
+
+
 
 	
 
