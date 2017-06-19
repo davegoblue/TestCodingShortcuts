@@ -541,4 +541,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures weather component for pandas Foundations - Chapter 3 (Time Series in pandas)  
 * DataCamp_PythonNotes_v001 captures graphs for pandas Foundations - Chapter 3 (Time Series in pandas)  
   
+### Expansions week of 19-JUN-2017  
+* DataCamp_PythonNotes_v001 captures flights time-series for pandas Foundations - Chapter 3 (Time Series in pandas)  
   
