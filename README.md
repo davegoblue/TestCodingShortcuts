@@ -544,4 +544,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 19-JUN-2017  
 * DataCamp_PythonNotes_v001 captures flights time-series for pandas Foundations - Chapter 3 (Time Series in pandas)  
 * DataCamp_PythonNotes_v001 captures 2011 component for pandas Foundations - Chapter 4 (Case Study - Sunlight in Austin)  
+* DataCamp_PythonNotes_v001 captures graphs for pandas Foundations - Chapter 4 (Case Study - Sunlight in Austin)  
   
