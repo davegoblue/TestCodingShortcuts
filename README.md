@@ -546,4 +546,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures 2011 component for pandas Foundations - Chapter 4 (Case Study - Sunlight in Austin)  
 * DataCamp_PythonNotes_v001 captures graphs for pandas Foundations - Chapter 4 (Case Study - Sunlight in Austin)  
 * DataCamp_PythonNotes_v001 captures Manipulating DataFrames with pandas - Chapter 1 (Extract and Transform Data)  
+* DataCamp_PythonNotes_v001 captures Manipulating DataFrames with pandas - Chapter 2 (Advanced Indexing)  
   
