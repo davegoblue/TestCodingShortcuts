@@ -550,3 +550,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Manipulating DataFrames with pandas - Chapter 3 (Rearrange and Reshape Data)  
 * DataCamp_PythonNotes_v001 captures Manipulating DataFrames with pandas - Chapter 4 (Grouping Data)  
   
+### Expansions week of 26-JUN-2017  
+* DataCamp_PythonNotes_v001 captures Manipulating DataFrames with pandas - Chapter 5 (Case Study - Summer Olympics Medals)  
+  
