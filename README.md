@@ -553,4 +553,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 26-JUN-2017  
 * DataCamp_PythonNotes_v001 captures Manipulating DataFrames with pandas - Chapter 5 (Case Study - Summer Olympics Medals)  
 * DataCamp_PythonNotes_v001 captures Merging DataFrames with pandas - Chapter 1 (Preparing Data)  
+* DataCamp_PythonNotes_v001 captures additional examples from Merging DataFrames with pandas - Chapter 1 (Preparing Data)  
   
