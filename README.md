@@ -556,4 +556,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures additional examples from Merging DataFrames with pandas - Chapter 1 (Preparing Data)  
 * DataCamp_PythonNotes_v001 captures Merging DataFrames with pandas - Chapter 2 (Concatenating Data)  
 * DataCamp_PythonNotes_v001 captures Merging DataFrames with pandas - Chapter 3 (Merging Data)  
+* DataCamp_PythonNotes_v001 captures Merging DataFrames with pandas - Chapter 4 (Case Study)  
   
