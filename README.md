@@ -559,3 +559,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Merging DataFrames with pandas - Chapter 4 (Case Study)  
 * DataCamp_PythonNotes_v001 adds missing plots  
   
+### Expansions week of 03-JUL-2017  
+* DataCamp_PythonNotes_v001 captures Introduction to Databases in Python - Chapter 1 (Basics of Relational Databases)  
+  
