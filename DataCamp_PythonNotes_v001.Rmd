@@ -9479,18 +9479,244 @@ df.sort_values("population", ascending=False).set_index("state").plot.bar()
   
 Chapter 3 - Advanced SQL Alchemy Queries  
   
+Calculating Values in a Query - addition, subtraction, multiplication, and the like:  
+  
+* Can put calculations directly in the select statement, such as select([(census.columns.pop2008 - census.columns.pop2000).label("pop_change")])  
+* Can limit the number of records pulled using .limit(5)  # will return 5 in this case; can use any number  
+* Case statements can help with treating data differently based on a condition (includes a final else clause, represented as else_, for full-on mismatches)  
+	* from sqlalchemy import case  
+    * func.sum( case( [ (census.columns.state == "New York", census.columns.pop2008) ], else_=0 ))  
+* Cast statements can be useful for converting among integers, floats, strings, and the like  
+	* from sqlalchemy import case, cast, Float  
+    * cast(func.sum(census.columns.pop2008), Float)  # will convert the sum of the population columns to a float  
+  
+SQL Relationships - bridging data that appears in multiple SQL tables:  
+  
+* Sometimes, an automatic join type is pre-defined in the database; if so, the simple select statement from multiple tables wil perform the join (???)  
+* Can instead use the join clause to perform the join if it has not been pre-defined - should be directly after select()  
+	* This is implemented in SQL Alchemy using the select_from() function  
+    * stmt = select([func.sum(census.columns.pop2000)])  
+    * stmt = stmt.select_from(census.join(state_fact))   # optionally, stmt = stmt.select_from(census.join(state_fact, census.columns.state == state_fact.columns.name))  
+    * stmt = stmt.where(state_fact.columns.circuit_court == "10")  
+  
+Working with Hierarchical Tables (self-referential tables) - tables that refer to themselves:  
+  
+* The alias() method allows for referring to a table with two different names, making it possible to join columns from the same table to each other  
+	* managers = employees.alias()  # managers will now refer to the employees table  
+    * managers.columns.name.label("manager")  
+    * employees.columns.name.label("employee")  
+    * stmt = stmt.select_from(employees.join( managers, managers.columns.id == employees.columns.manager ))  
+    * stmt = stmt.order_by(managers.columns.name)  
+* The alias and the table name should both be used in the query, otherwise there was no reason to create the alias  
+	* Be careful with group_by() and the like  
+  
+Dealing with large ResultSets - running out of memory or disk space or the like:  
+  
+* The fetchmany() method allows for retrieveing only a subset of the records from SQL, with the option to retrieve more records later  
+	* Returns an empty list when there is nothing left to retrieve  
+    * Need to close the ResultProxy afterwards  
+  
+Example code includes:  
+```{r engine='python'}
+
+myPath = "./PythonInputFiles/"
 
 
+
+import pandas as pd
+
+
+# Import sqlalchemy functions
+from sqlalchemy import create_engine, MetaData, Table, select, func, desc
+
+# Create an engine to the census database
+# engine = create_engine('mysql+pymysql://' + 'student:datacamp' + '@courses.csrrinzqubik.us-east-1.rds.amazonaws.com:3306/' + 'census')
+# Created dummy data with real state-gender-age-pop2010 and totally fake pop2000 = (0.90, 1.05) * pop2010
+engine = create_engine("sqlite:///" + myPath + "PartialFakeCensusExample.db")
+
+# Print the table names
+print(engine.table_names())
+
+# General pre-amble to be able to access "census"
+metadata = MetaData()
+census = Table("census", metadata, autoload=True, autoload_with=engine)  # make sure this is set up
+state_fact = Table("state_fact", metadata, autoload=True, autoload_with=engine)  # make sure this is set up
+
+# Build query to return state names by population difference from 2008 (make 2010) to 2000: stmt
+stmt = select([census.columns.state, (census.columns.pop2010 - census.columns.pop2000).label("pop_change")])
+
+# Append group by for the state: stmt
+stmt = stmt.group_by(census.columns.state)
+
+# Append order by for pop_change descendingly: stmt
+stmt = stmt.order_by(desc("pop_change"))
+
+# Return only 5 results: stmt
+stmt = stmt.limit(5)
+
+# Use connection to execute the statement and fetch all results
+connection = engine.connect()  # Create connection to the engine defined above (not sure . . . )
+results = connection.execute(stmt).fetchall()
+
+# Print the state and population change for each record
+for result in results:
+    print('{}:{}'.format(result.state, result.pop_change))
+
+
+# import case, cast and Float from sqlalchemy
+from sqlalchemy import case, cast, Float
+
+# Build an expression to calculate female population in 2000
+female_pop2000 = func.sum(
+    case([
+        (census.columns.gender == "female", census.columns.pop2000)
+    ], else_=0))
+
+# Cast an expression to calculate total population in 2000 to Float
+total_pop2000 = cast(func.sum(census.columns.pop2000), Float)
+
+# Build a query to calculate the percentage of females in 2000: stmt
+stmt = select([female_pop2000 / total_pop2000* 100])
+
+# Execute the query and store the scalar result: percent_female
+percent_female = connection.execute(stmt).scalar()
+
+# Print the percentage
+print(percent_female)
+
+
+# Build a statement to join census and state_fact tables: stmt
+stmt = select([census.columns.pop2000, state_fact.columns.abbreviation])
+
+# Execute the statement and get the first result: result
+result = connection.execute(stmt).first()
+
+# Loop over the keys in the result object and print the key and value
+for key in result.keys():
+    print(key, getattr(result, key))
+
+
+# Build a statement to select the census and state_fact tables: stmt
+stmt = select([census, state_fact])
+
+# Add a select_from clause that wraps a join for the census and state_fact
+# tables where the census state column and state_fact name column match
+stmt = stmt.select_from(
+    (census.join(state_fact, census.columns.state == state_fact.columns.name)))
+
+# Execute the statement and get the first result: result
+result = connection.execute(stmt).first()
+
+# Loop over the keys in the result object and print the key and value
+for key in result.keys():
+    print(key, getattr(result, key))
+
+
+# Build a statement to select the state, sum of 2008 (using 2010 instead) population and census
+# division name: stmt
+stmt = select([
+    census.columns.state,
+    func.sum(census.columns.pop2010),
+    state_fact.columns.census_division_name
+])
+
+# Append select_from to join the census and state_fact tables by the census state and state_fact name columns
+stmt = stmt.select_from(
+    census.join(state_fact, census.columns.state == state_fact.columns.name)
+)
+
+# Append a group by for the state_fact name column
+stmt = stmt.group_by(state_fact.columns.name)
+
+# Execute the statement and get the results: results
+results = connection.execute(stmt).fetchall()
+
+# Loop over the the results object and print each record.
+for record in results:
+    print(record)
+
+
+# Make an alias of the employees table: managers
+# managers = employees.alias()
+
+# Build a query to select manager's and their employees names: stmt
+# stmt = select(
+#     [managers.columns.name.label('manager'),
+#      employees.columns.name.label("employee")]
+# )
+
+# Match managers id with employees mgr: stmt
+# stmt = stmt.where(managers.columns.id == employees.columns.mgr)
+
+# Order the statement by the managers name: stmt
+# stmt = stmt.order_by(managers.columns.name)
+
+# Execute statement: results
+# results = connection.execute(stmt).fetchall()
+
+# Print records
+# for record in results:
+#     print(record)
+
+
+# Make an alias of the employees table: managers
+# managers = employees.alias()
+
+# Build a query to select managers and counts of their employees: stmt
+# stmt = select([managers.columns.name, func.count(employees.columns.id)])
+
+# Append a where clause that ensures the manager id and employee mgr are equal
+# stmt = stmt.where(managers.columns.id == employees.columns.mgr)
+
+# Group by Managers Name
+# stmt = stmt.group_by(managers.columns.name)
+
+# Execute statement: results
+# results = connection.execute(stmt).fetchall()
+
+# print manager
+# for record in results:
+#     print(record)
+
+
+# Start a while loop checking for more results
+# while more_results:
+    # Fetch the first 50 results from the ResultProxy: partial_results
+#     partial_results = results_proxy.fetchmany(50)
+
+    # if empty list, set more_results to False
+#     if partial_results == []:
+#         more_results = False
+
+    # Loop over the fetched records and increment the count for the state
+#     for row in partial_results:
+#         if row.state in state_count:
+#             state_count[row.state] += 1
+#         else:
+#             state_count[row.state] = 1
+
+# Close the ResultProxy, and thus the connection
+# results_proxy.close()
+
+# Print the count by state
+# print(state_count)
+
+
+```
+  
+  
+***
+  
+Chapter 4 - Creating and Manipulating Databases  
+  
 
 
 	
 
 
-  
-  
 
 
-
+	
 
 
   
