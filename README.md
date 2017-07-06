@@ -563,4 +563,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Introduction to Databases in Python - Chapter 1 (Basics of Relational Databases)  
 * DataCamp_PythonNotes_v001 captures Introduction to Databases in Python - Chapter 2 (Filtering, Ordering, etc.)  
 * DataCamp_PythonNotes_v001 captures Introduction to Databases in Python - Chapter 3 (Advanced SQL Alchemy)  
+* DataCamp_PythonNotes_v001 captures Introduction to Databases in Python - Chapter 4 (Create and Manipulate Databases)  
   
