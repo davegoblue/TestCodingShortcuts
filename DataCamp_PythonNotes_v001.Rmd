@@ -4224,6 +4224,14 @@ print(top10_pairs)
 ![](_dummyPy041.png)
   
   
+###_Network Analysis in Python (Part II)_#  
+  
+Chapter 1 - Bipartite Graphs and Recommendation Systems  
+  
+
+  
+  
+  
 ## Python Import and Clean Data  
 ###_Importing Data in Python (Part I)_#
   
@@ -10042,6 +10050,175 @@ connection.close()
   
 Chapter 5 - Case Study  
   
+Census Case Study - three components:  
+  
+* Prepare SQLAlchemy and the Database  
+* Load data in to the Database  
+* Solve Data Science Problems with the Database  
+  
+Populating the Database - using CSV file from the Census:  
+  
+* Define an empty list  
+* Loop over the rows of the CSV  
+* Make each row in to a dictionary  
+* Append each dictionary to the list  
+* Then, add everything to the table  
+	* stmt = insert(employees)  
+    * result_proxy = connection.execute(stmt, values_list)  
+  
+Example Queries:  
+  
+* Average age by gender  
+* Percentage by gender by state  
+* Difference in 2008 vs 2000 populations  
+  
+Example code includes:  
+```{r engine='python'}
+
+myPath = "./PythonInputFiles/"
+
+
+
+import pandas as pd
+
+
+# Import sqlalchemy functions
+from sqlalchemy import create_engine, MetaData, Table, select, func, desc
+from sqlalchemy import Table, Column, String, Integer, Float, Boolean
+
+
+# Define an engine to connect to chapter5.sqlite: engine
+engine = create_engine('sqlite:///' + myPath + 'chapter5.sqlite')
+
+# Initialize MetaData: metadata
+metadata = MetaData()
+
+
+# Build a census table: census
+census = Table('census', metadata,
+               Column('state', String(30)),
+               Column("gender", String(6)),
+               Column("age", Integer()),
+               Column("pop2000", Integer()),
+               Column("pop2010", Integer()),
+               Column("ageText", String(30))
+               )
+
+# Create the table in the database
+metadata.create_all(engine)
+
+# Create mapping of text ages to numeric ages
+import numpy as np
+tmpAge = list(pd.read_csv(myPath + "_notuse_census2000.csv")["age"].unique())
+tmpNum = [np.mean([int(x.split("to")[0]), int(x.split("to")[1])]) if x.find("to") > -1 else 0 for x in tmpAge]
+tmpNum[tmpAge.index("20")] = 20
+tmpNum[tmpAge.index("21")] = 21
+tmpNum[tmpAge.index("lt5")] = 2.5
+tmpNum[tmpAge.index("ge85")] = 90
+
+# Create an empty list: values_list
+values_list = []
+
+# Iterate over the rows
+for idx, row in enumerate(open(myPath + "_notuse_census2000.csv", "r")):
+    if idx == 0 : 
+        print("Headers are: ", row)
+        continue
+    
+    # Create a dictionary with the values
+    rowItems = row.split(",")
+    ageNum = tmpNum[tmpAge.index(rowItems[3])]
+    data = {'state': rowItems[1], 'gender': rowItems[2], 'age': ageNum, 'pop2000': int(rowItems[4]),
+            'pop2010': int(rowItems[5]), "ageText":rowItems[3]}
+    values_list.append(data)
+
+# Import insert
+from sqlalchemy import insert
+
+# Build insert statement: stmt
+stmt = insert(census)
+
+# Use values_list to insert data: results
+connection = engine.connect()
+results = connection.execute(stmt, values_list)
+
+# Print rowcount
+print(results.rowcount)
+
+
+# Import select
+from sqlalchemy import select
+
+# Calculate weighted average age: stmt
+stmt = select([census.columns.gender,
+               (func.sum(census.columns.age * census.columns.pop2010) /
+                func.sum(census.columns.pop2010)).label("average_age")
+               ])
+
+# Group by sex
+stmt = stmt.group_by(census.columns.gender)
+
+# Execute the query and store the results: results
+results = connection.execute(stmt).fetchall()
+
+
+# Print the average age by sex
+for x in results:
+    print(x[0], x[1])
+
+
+# import case, cast and Float from sqlalchemy
+from sqlalchemy import case, cast, Float
+
+# Build a query to calculate the percentage of females in 2000: stmt
+stmt = select([census.columns.state,
+    (func.sum(
+        case([
+            (census.columns.gender == 'female', census.columns.pop2000)
+        ], else_=0)) /
+     cast(func.sum(census.columns.pop2000), Float) * 100).label('percent_female')
+])
+
+# Group By state
+stmt = stmt.group_by(census.columns.state)
+
+# Execute the query and store the results: results
+results = connection.execute(stmt).fetchall()
+
+# Print the percentage
+for result in results:
+    print(result.state, result.percent_female)
+
+
+# Build query to return state name and population difference from 2008 to 2000
+stmt = select([census.columns.state,
+     (census.columns.pop2010 - census.columns.pop2000).label('pop_change')
+])
+
+# Group by State
+stmt = stmt.group_by(census.columns.state)
+
+# Order by Population Change
+stmt = stmt.order_by(desc("pop_change"))
+
+# Limit to top 10
+stmt = stmt.limit(10)
+
+# Use connection to execute the statement and fetch all results
+results = connection.execute(stmt).fetchall()
+
+# Print the state and population change for each record
+for result in results:
+    print('{}:{}'.format(result.state, result.pop_change))
+
+
+# Delete the DB
+# Get rid of all tables in the database
+metadata.drop_all(engine)
+connection.close()
+
+```
+
 
 	
 
