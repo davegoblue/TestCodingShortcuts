@@ -10493,6 +10493,217 @@ print(recommend_repositories(G, 1050, 1100))
   
 Chapter 2 - Graph projections  
   
+Concept of projection - investigating relationships between nodes in one partition CONDITIONAL on connections to nodes in the other partition:  
+  
+* An example would be that if customer1 and customer2 both bought product3, then customer1 and customer2 could be considered related by means of product3  
+* Graphs on Disk - flat edge lists ; CSV files (nodelist + metadata , edgelist + metadata)  
+	* Text file is space-delimited containing Person Club {metadata}  
+    * A text file like the above can be read in directly using nx.read_edgelist("myTextFile.txt")  
+* Can create a projection provided that one of the node types has already been created as a list  
+	* G_cust = nx.bipartite.projected_graph(G, cust_nodes)  
+    * G will have nodes as per cust_nodes and edges as per all common relationships found to the other partition  
+* Can generate degree centrality in any of three manners  
+	* nx.bipartite.degree_centrality(G, cust_nodes)  # denominator is only the OTHER partition  
+    * nx.degree_centrality(G)  # denominator is everyone other than myself  
+    * nx.degree_centrality(G_cust)  # denominator is everyone in MY partition  
+  
+Bipartite graphs as matrices - modifications to the MatrixPlot methodology for bipartite graphs:  
+  
+* Rows - nodes in one partition  
+* Columns - nodes in other partition  
+* Cells - 1 if edge exists, 0 if not  
+* Can be generated using mat = nx.bipartite.biadjacency_matrix(G, row_order=cust_nodes, column_order = prod_nodes)  
+	* The row_order and column_order are optional, passed if there is reason to want the row/column sorted in a particular manner  
+    * The matrix returned is of type Sparse Matrix (memory-efficient matrices)  
+* The projection can be calculated as mat %*% t(mat), where mat is per above  
+	* The diagonals show the number of connections within the own partition for that node  
+    * The off-diagonals show the projection based on connections to the other partition  
+    * Can also run t(mat) %*% mat for the results based on the other of the two partitions  
+* Matrix multiplication in Python is run using the "@" operator  
+	* mat.T is the transpose of mat in Python  
+  
+Representing network data with pandas - human-readable graphs with CSV:  
+  
+* CSV files have many advantages - human-readable, easy for pandas to work with  
+	* Primary disadvantage is disk space, as there is repetition that might be avoided in the binary coding for a network/graph  
+* Node list - each row is one node, with each column being some of the metadata associated to that node  
+* Edge list - each row is one edge, with each column being some of the metadata associated to that edge  
+* For pandas, take the data in G.nodes(data=True) and create a dictionary for each node, with the dictionaries being in a list  
+	* Can use the command dictA.update(dictB) and it will add the elements of dictB to dictA (seems like "append" for dictionaries)  
+    * Can then run pd.DataFrame(nodeList) and a data frame will be created  
+  
+Example code includes:  
+```{r engine='python'}
+
+myPath = "./PythonInputFiles/"
+
+
+
+import pandas as pd
+
+
+
+# Import networkx
+import networkx as nx
+
+# Read in the data: g (create from the CSV instead)
+# G = nx.read_edgelist('american-revolution.edgelist')
+
+# downloaded file from DataCamp
+revMap = pd.read_csv(myPath + "revolution_network_flatfile.txt", index_col=0)
+revPeople = list(revMap.index)
+revClubs = list(revMap.columns)
+
+G = nx.Graph()
+G.add_nodes_from(revPeople + revClubs)
+
+for m in range(revMap.shape[0]):
+    for n in range(revMap.shape[1]):
+        if revMap.iloc[m, n] == 1: G.add_edge(revPeople[m], revClubs[n])
+
+# Assign nodes to 'clubs' or 'people' partitions
+for n, d in G.nodes(data=True):
+    if '.' in n:
+        G.node[n]["bipartite"] = 'people'
+    else:
+        G.node[n]["bipartite"] = 'clubs'
+
+# Print the edges of the graph (too many - skip)
+# print(G.edges())
+
+
+# Prepare the nodelists needed for computing projections: people, clubs
+people = [n for n in G.nodes() if G.node[n]["bipartite"] == 'people']
+clubs = [n for n, d in G.nodes(data=True) if d['bipartite'] == 'clubs']
+
+# Compute the people and clubs projections: peopleG, clubsG
+peopleG = nx.bipartite.projected_graph(G, people)
+clubsG = nx.bipartite.projected_graph(G, clubs)
+
+
+import matplotlib.pyplot as plt 
+
+# Plot the degree centrality distribution of both node partitions from the original graph
+plt.figure()
+original_dc = nx.bipartite.degree_centrality(G, people)
+plt.hist(list(original_dc.values()), alpha=0.5)
+plt.yscale('log')
+plt.title('Bipartite degree centrality')
+# plt.show()
+
+
+# Plot the degree centrality distribution of the peopleG graph
+plt.figure()  
+people_dc = nx.degree_centrality(peopleG)
+plt.hist(list(people_dc.values()))
+plt.yscale('log')
+plt.title('Degree centrality of people partition')
+# plt.show()
+
+
+# Plot the degree centrality distribution of the clubsG graph
+plt.figure() 
+clubs_dc = nx.degree_centrality(clubsG)
+plt.hist(list(clubs_dc.values()))
+plt.yscale('log')
+plt.title('Degree centrality of clubsG partition')
+# plt.show()
+
+
+# Copied function from above
+# Define get_nodes_from_partition()
+def get_nodes_from_partition(G, partition):
+    # Initialize an empty list for nodes to be returned
+    nodes = []
+    # Iterate over each node in the graph G
+    for n in G.nodes():
+        # Check that the node belongs to the particular partition
+        if G.node[n]['bipartite'] == partition:
+            # If so, append it to the list of nodes
+            nodes.append(n)
+    return nodes
+
+# Get the list of people and list of clubs from the graph: people_nodes, clubs_nodes
+people_nodes = get_nodes_from_partition(G, "people")
+clubs_nodes = get_nodes_from_partition(G, "clubs")
+
+
+# Requires scipy::sparse
+# Compute the biadjacency matrix: bi_matrix
+# bi_matrix = nx.bipartite.biadjacency_matrix(G, row_order=people_nodes, column_order=clubs_nodes)
+
+# Compute the user-user projection: user_matrix
+# user_matrix = bi_matrix @ bi_matrix.T
+
+# print(user_matrix)
+
+
+import numpy as np
+
+# Find out the names of people who were members of the most number of clubs
+# diag = user_matrix.diagonal() 
+# indices = np.where(diag == diag.max())[0]  
+# print('Number of clubs: {0}'.format(diag.max()))
+# print('People with the most number of memberships:')
+# for i in indices:
+#     print('- {0}'.format(people_nodes[i]))
+
+# Set the diagonal to zero and convert it to a coordinate matrix format
+# user_matrix.setdiag(0)
+# users_coo = user_matrix.tocoo()
+
+# Find pairs of users who shared membership in the most number of clubs
+# indices = np.where(users_coo.data == users_coo.data.max())[0]
+# print('People with most number of shared memberships:')
+# for idx in indices:
+#     print('- {0}, {1}'.format(people_nodes[users_coo.row[idx]], people_nodes[users_coo.col[idx]]))  
+
+
+# Initialize a list to store each edge as a record: nodelist
+nodelist = []
+for n, d in peopleG.nodes(data=True):
+    # nodeinfo stores one "record" of data as a dict
+    nodeinfo = {'person': n} 
+    
+    # Update the nodeinfo dictionary 
+    nodeinfo.update(d)
+    
+    # Append the nodeinfo to the node list
+    nodelist.append(nodeinfo)
+    
+
+# Create a pandas DataFrame of the nodelist: node_df
+node_df = pd.DataFrame(nodelist)
+print(node_df.head())
+
+
+# Initialize a list to store each edge as a record: edgelist
+edgelist = []
+for n1, n2, d in peopleG.edges(data=True):
+    # Initialize a dictionary that shows edge information: edgeinfo
+    edgeinfo = {'node1':n1, 'node2':n2}
+    
+    # Update the edgeinfo data with the edge metadata
+    edgeinfo.update(d)
+    
+    # Append the edgeinfo to the edgelist
+    edgelist.append(edgeinfo)
+
+# Create a pandas DataFrame of the edgelist: edge_df
+edge_df = pd.DataFrame(edgelist)
+print(edge_df.head())
+
+```
+  
+  
+***
+  
+Chapter 3 - Comparing Graphs and Time-Dynamics  
+  
+  
+  
+  
+	
 
 
 	
