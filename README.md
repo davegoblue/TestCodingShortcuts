@@ -567,4 +567,9 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Introduction to Databases in Python - Chapter 5 (Case Study)  
 * DataCamp_PythonNotes_v001 captures Introduction to Databases in Python - added graphs  
 * DataCamp_PythonNotes_v001 captures Network Analysis in Python (Part II) - Chapter 1 (Bipartite Graphs and Recommendation Systems)    
+
+### Expansions week of 10-JUL-2017  
+* DataCamp_PythonNotes_v001 captures Network Analysis in Python (Part II) - Chapter 2 (Graph Projections)  
   
+  
+
