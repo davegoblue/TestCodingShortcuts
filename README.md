@@ -571,6 +571,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 10-JUL-2017  
 * DataCamp_PythonNotes_v001 captures Network Analysis in Python (Part II) - Chapter 2 (Graph Projections)  
 * DataCamp_PythonNotes_v001 captures Network Analysis in Python (Part II) - Chapter 3 (Comparing Graphs and Time Dynamics)  
+* DataCamp_PythonNotes_v001 captures Network Analysis in Python (Part II) - Chapter 4 (Case Study)  
   
   
 
