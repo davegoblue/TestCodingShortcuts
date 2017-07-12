@@ -10925,7 +10925,291 @@ plt.legend()
   
 Chapter 4 - Case Study (Tying Together)  
   
+Introduction to the dataset - 6 months worth of student postings to college forums:  
+  
+* The nodes are bipartite (students and forums), with edges existing when a student posts to a forum  
+	* Constructing a graph from a pandas DataFrame  
+    * Constructing unipartite projections of a bipartite graph  
+    * Visualization using CircosPlot  
+    * Time series filtering and analysis  
+* Graphs from DataFrames - G = nx.Graph() ; G.add_nodes_from(df["products"], bipartite="products")  
+	* G.add_edges_from(zip(df["customers"], df["products"]))  
+* Bipartite projections to unipartite - cust_nodes = [n for n in G.nodes() if G.node[n]["bipartite"] == "customers"]  
+	* nx.bipartite.projected_graph(g, nodes = cust_nodes)  
+  
+Time-based filtering - including the datetime module:  
+  
+* Filtering edges - for example, [(u, v) for u, v, d in G.edges(data=True) if d["sale count"] >= 10]  
+* Using datetime - from datetime import datetime, timedelta  
+	* date1 = datetime(2011, 11, 6)  # will form 2011-11-6  
+* Plotting - c = CircosPlot(G, node_grouping="bipartite", node_color="bipartite") ; c.draw() ; plt.show()  
+  
+Time series analysis - global vs. local (point in time) analysis:  
+  
+* The timedelta object from datetime allows for calculating time between two datetime  
+	* td=timedelta(4) ; datetime.datetime(2011, 11, 10, 0, 0) + td = datetime.datetime(2011, 11, 14, 0, 0)  
+* Degree centrality is nx.degree_centrality(G)  
+	* For the bipartite (denominator only the OTHER partition), use nx.bipartite.degree_centrality(G, nodeType1List)  
+  
+Example code includes:  
+```{r engine='python'}
 
+myPath = "./PythonInputFiles/"
+
+
+
+import pickle
+import pandas as pd
+import networkx as nx
+
+
+# Downloaded key file "uci-forum.p" from DataCamp
+with open(myPath + "uci-forum.p", "rb") as pFile: tmpGraph = pickle.load(pFile)
+
+# Convert to a DataFrame with student-forum-date
+# Grab the student-forum-date matches from the edges
+edgeData = tmpGraph.edges(data=True)
+studentData = [x[0] if x[0][0]=="s" else x[1] for x in edgeData]
+forumData = [x[1] if x[0][0]=="s" else x[0] for x in edgeData]
+dateData = pd.to_datetime([x[2]["date"] for x in edgeData])
+
+# Check that the student data matches the nodes with bipartite="student"
+studentNodes = set([x for x in tmpGraph.nodes() if tmpGraph.node[x]["bipartite"]=="student"])
+forumNodes = set([x for x in tmpGraph.nodes() if tmpGraph.node[x]["bipartite"]=="forum"])
+
+studentNodes.difference(set(studentData))
+forumNodes.difference(set(forumData))
+set(studentData).difference(studentNodes)
+set(forumData).difference(forumNodes)
+
+# Create the DataFrame
+data = pd.DataFrame( {"student":studentData, "forum":forumData, "date":dateData} )
+data.info()
+data.head(10)
+
+
+
+
+# Instantiate a new Graph: G
+G = nx.Graph()
+
+# Add nodes from each of the partitions
+G.add_nodes_from(data["student"], bipartite="student")
+G.add_nodes_from(data["forum"], bipartite="forum")
+
+# Add in each edge along with the date the edge was created
+for r, d in data.iterrows():
+    G.add_edge(d["student"], d["forum"], date=d["date"])
+
+
+# Import necessary modules
+import matplotlib.pyplot as plt
+import networkx as nx
+
+# Get the student partition's nodes: student_nodes
+student_nodes = [n for n, d in G.nodes(data=True) if d['bipartite'] == 'student']
+
+# Create the students nodes projection as a graph: G_students
+G_students = nx.bipartite.projected_graph(G, nodes=student_nodes)
+
+# Calculate the degree centrality using nx.degree_centrality: dcs
+dcs = nx.degree_centrality(G_students)
+
+# Plot the histogram of degree centrality values
+plt.hist(list(dcs.values()))
+plt.yscale('log')  
+# plt.show() 
+
+
+# Import necessary modules
+import matplotlib.pyplot as plt 
+import networkx as nx
+
+# Get the forums partition's nodes: forum_nodes
+forum_nodes = [n for n, d in G.nodes(data=True) if d["bipartite"] == "forum"]
+
+# Create the forum nodes projection as a graph: G_forum
+G_forum = nx.bipartite.projected_graph(G, forum_nodes)
+
+# Calculate the degree centrality using nx.degree_centrality: dcs
+dcs = nx.degree_centrality(G_forum)
+
+# Plot the histogram of degree centrality values
+plt.hist(list(dcs.values()))
+plt.yscale('log') 
+# plt.show()  
+
+
+import networkx as nx
+from datetime import datetime
+
+# Instantiate a new graph: G_sub
+G_sub = nx.Graph()
+
+# Add nodes from the original graph
+G_sub.add_nodes_from(G.nodes(data=True))
+
+# Add edges using a list comprehension with one conditional on the edge dates, that the date of the edge is earlier than 2004-05-16.
+G_sub.add_edges_from([(u, v, d) for u, v, d in G.edges(data=True) if d['date'] < datetime(2004, 5, 16)])
+
+
+# Import necessary modules
+from nxviz import CircosPlot
+import networkx as nx
+import matplotlib.pyplot as plt
+
+# Compute degree centrality scores of each node
+dcs = nx.bipartite.degree_centrality(G, nodes=forum_nodes)
+for n, d in G_sub.nodes(data=True):
+    G_sub.node[n]['dc'] = dcs[n]
+
+# Create the CircosPlot object: c
+c = CircosPlot(G_sub, node_color = "bipartite", node_grouping="bipartite", node_order="dc")
+
+# Draw c to screen
+c.draw()
+
+# Display the plot
+# plt.show() 
+
+from datetime import datetime
+dayone = datetime(2004, 5, 14, 0, 0)
+lastday = datetime(2004, 10, 26, 0, 0)
+
+# Import necessary modules
+from datetime import timedelta  
+import matplotlib.pyplot as plt
+
+# Define current day and timedelta of 2 days
+curr_day = dayone
+td = timedelta(days=2)
+
+# Initialize an empty list of posts by day
+n_posts = []
+while curr_day < lastday:
+    if curr_day.day == 1:
+        print(curr_day) 
+    # Filter edges such that they are within the sliding time window: edges
+    edges = [(u, v, d) for u, v, d in G.edges(data=True) if d['date'] >= curr_day and d['date'] < curr_day + td]
+    
+    # Append number of edges to the n_posts list
+    n_posts.append(len(edges))
+    
+    # Increment the curr_day by the time delta
+    curr_day += td
+
+# Create the plot
+plt.plot(n_posts)  
+plt.xlabel('Days elapsed')
+plt.ylabel('Number of posts')
+# plt.show()  
+
+
+from datetime import datetime, timedelta
+import numpy as np
+import networkx as nx
+import matplotlib.pyplot as plt
+
+# Initialize a new list: mean_dcs
+mean_dcs = []
+curr_day = dayone
+td = timedelta(days=2)
+
+while curr_day < lastday:
+    if curr_day.day == 1:
+        print(curr_day)  
+    # Instantiate a new graph containing a subset of edges: G_sub
+    G_sub = nx.Graph()
+    # Add nodes from G
+    G_sub.add_nodes_from(G.nodes(data=True))
+    # Add in edges that fulfill the criteria
+    G_sub.add_edges_from([(u, v, d) for u, v, d in G.edges(data=True) if d['date'] >= curr_day and d['date'] < curr_day + td])
+    
+    # Get the students projection
+    G_student_sub = nx.bipartite.projected_graph(G_sub, student_nodes)
+    # Compute the degree centrality of the students projection
+    dc = nx.degree_centrality(G_student_sub)
+    # Append mean degree centrality to the list mean_dcs
+    mean_dcs.append(np.mean(list(dc.values())))
+    # Increment the time
+    curr_day += td
+
+plt.plot(mean_dcs)
+plt.xlabel('Time elapsed')
+plt.ylabel('Degree centrality.')
+# plt.show()
+
+
+# Import necessary modules
+from datetime import timedelta
+import networkx as nx
+import matplotlib.pyplot as plt
+
+# Instantiate a list to hold the list of most popular forums by day: most_popular_forums
+most_popular_forums = []
+# Instantiate a list to hold the degree centrality scores of the most popular forums: highest_dcs
+highest_dcs = []
+curr_day = dayone  
+td = timedelta(days=1)  
+
+while curr_day < lastday:  
+    if curr_day.day == 1: 
+        print(curr_day) 
+    # Instantiate new graph: G_sub
+    G_sub = nx.Graph()
+    
+    # Add in nodes from original graph G
+    G_sub.add_nodes_from(G.nodes(data=True))
+    
+    # Add in edges from the original graph G that fulfill the criteria
+    G_sub.add_edges_from([(u, v, d) for u, v, d in G.edges(data=True) if d['date'] >= curr_day and d['date'] < curr_day + td])
+    
+    # CODE CONTINUES ON NEXT EXERCISE
+    curr_day += td
+
+
+# Import necessary modules
+from datetime import timedelta
+import networkx as nx
+import matplotlib.pyplot as plt
+
+most_popular_forums = []
+highest_dcs = []
+curr_day = dayone 
+td = timedelta(days=1)  
+
+while curr_day < lastday:  
+    if curr_day.day == 1:  
+        print(curr_day)  
+    G_sub = nx.Graph()
+    G_sub.add_nodes_from(G.nodes(data=True))   
+    G_sub.add_edges_from([(u, v, d) for u, v, d in G.edges(data=True) if d['date'] >= curr_day and d['date'] < curr_day + td])
+    
+    # Get the degree centrality 
+    dc = nx.bipartite.degree_centrality(G_sub, forum_nodes)
+    # Filter the dictionary such that there's only forum degree centralities
+    forum_dcs = {n:dc for n, dc in dc.items() if n in forum_nodes}
+    # Identify the most popular forum(s) 
+    most_popular_forum = [n for n, dc in forum_dcs.items() if dc == max(forum_dcs.values()) and dc != 0] 
+    most_popular_forums.append(most_popular_forum)
+    # Store the highest dc values in highest_dcs
+    highest_dcs.append(max(forum_dcs.values()))
+    
+    curr_day += td  
+
+plt.figure(1) 
+plt.plot([len(forums) for forums in most_popular_forums], color='blue', label='Forums')
+plt.ylabel('Number of Most Popular Forums')
+# plt.show()
+
+plt.figure(2)
+plt.plot(highest_dcs, color='orange', label='DC Score')
+plt.ylabel('Top Degree Centrality Score')
+# plt.show()
+
+```
+  
+  
 
 	
 	
@@ -10936,7 +11220,3 @@ Chapter 4 - Case Study (Tying Together)
 	
 
 
-	
-	
-
-	
