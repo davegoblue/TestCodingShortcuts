@@ -573,6 +573,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Network Analysis in Python (Part II) - Chapter 3 (Comparing Graphs and Time Dynamics)  
 * DataCamp_PythonNotes_v001 captures Network Analysis in Python (Part II) - Chapter 4 (Case Study)  
 * DataCamp_PythonNotes_v001 captures graphs for Network Analysis in Python (Part II)  
+* DataCamp_PythonNotes_v001 includes outline and updated module summary ordering  
   
   
 
