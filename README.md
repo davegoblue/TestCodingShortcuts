@@ -580,5 +580,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 17-JUL-2017  
 * DataCamp_PythonNotes_v001 captures Python Data Types for Data Science - Chapter 3 (Collections Module)  
 * DataCamp_PythonNotes_v001 captures Python Data Types for Data Science - Chapter 4 (Handling Dates and Times)  
+* DataCamp_PythonNotes_v001 captures Python Data Types for Data Science - Chapter 5 (Case Study)  
   
   
