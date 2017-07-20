@@ -581,5 +581,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures Python Data Types for Data Science - Chapter 3 (Collections Module)  
 * DataCamp_PythonNotes_v001 captures Python Data Types for Data Science - Chapter 4 (Handling Dates and Times)  
 * DataCamp_PythonNotes_v001 captures Python Data Types for Data Science - Chapter 5 (Case Study)  
+* DataCamp_PythonNotes_v001 captures additional CTA data exploration (rides per month, rides by daytype)  
   
   
