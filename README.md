@@ -584,5 +584,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures additional CTA data exploration (rides per month, rides by daytype)  
 * DataCamp_PythonNotes_v001 captures additional CTA data exploration (rides by station and daytype)  
 * DataCamp_PythonNotes_v001 captures additional CTA data exploration (relative popularity by station and daytype)  
+* DataCamp_PythonNotes_v001 captures additional CTA data exploration (consistency and inconsistency by station and daytype)  
   
   
