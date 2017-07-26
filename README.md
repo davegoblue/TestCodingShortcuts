@@ -589,5 +589,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 24-JUL-2017  
 * DataCamp_PythonNotes_v001 captures additional CTA data exploration (seasonality by station)  
 * DataCamp_PythonNotes_v001 captures additional CTA data exploration (updated axis labels, titles, legends)  
+* DataCamp_PythonNotes_v001 captures additional CTA data exploration (weekday patterns by day of week)  
   
   
