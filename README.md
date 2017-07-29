@@ -592,5 +592,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures additional CTA data exploration (weekday patterns by day of week)  
 * DataCamp_PythonNotes_v001 captures additional CTA data exploration (saved plots as figures)  
 * DataCamp_PythonNotes_v001 captures additional Chicago crime data exploration (trends by day and month, types by district)  
+* DataCamp_PythonNotes_v001 captures additional Chicago crime data exploration (clearance rate and # cleared by crime type)  
   
   
