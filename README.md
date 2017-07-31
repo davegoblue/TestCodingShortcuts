@@ -596,5 +596,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v001 captures additional Chicago crime data exploration (crime by location description and district)  
   
 ### Expansions week of 31-JUL-2017  
+* DataCamp_PythonNotes_v001 captures additional Chicago crime data exploration (saved plots as figures)  
 
   
