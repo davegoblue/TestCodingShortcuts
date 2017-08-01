@@ -597,5 +597,9 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 31-JUL-2017  
 * DataCamp_PythonNotes_v001 captures additional Chicago crime data exploration (saved plots as figures)  
+* DataCamp_PythonNotes_v001 saved for a final time  
+* DataCamp_Python_ImportClean_v002 created as a stand-alone version of import and clean data  
+* DataCamp_Python_Programming_v002 created as a stand-alone version of programming  
+* DataCamp_PythonNotes_v002 created for additional usage  
 
   
