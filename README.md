@@ -603,4 +603,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v002 created for additional usage  
 * DataCamp_PythonNotes_v002 captures Introduction to Python Visualization - Chapter 1 (Data Ingestion and Inspection)  
 * DataCamp_PythonNotes_v002 - plots as figures for Introduction to Python Visualization - Chapter 1 (Data Ingestion and Inspection)  
+* DataCamp_PythonNotes_v002 captures Introduction to Python Visualization - Chapter 2 (Plotting 2D Arrays - Raster Data)  
   
