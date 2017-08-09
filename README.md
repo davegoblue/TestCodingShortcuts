@@ -610,4 +610,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 07-AUG-2017  
 * DataCamp_PythonNotes_v002 - plots as figures for Introduction to Python Visualization - Chapter 3 (Seaborn)  
 * DataCamp_PythonNotes_v002 captures Introduction to Python Visualization - Chapter 4 (Time Series) - text notes  
+* DataCamp_PythonNotes_v002 captures Introduction to Python Visualization - Chapter 4 (Time Series) - stock plots  
   
