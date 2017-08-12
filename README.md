@@ -613,4 +613,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v002 captures Introduction to Python Visualization - Chapter 4 (Time Series) - stock plots  
 * DataCamp_PythonNotes_v002 captures Introduction to Python Visualization - Chapter 4 (Time Series) - image processing  
 * DataCamp_PythonNotes_v002 - plots as figures for Introduction to Python Visualization - Chapter 4 (Time Series)  
+* DataCamp_PythonNotes_v002 captures Interactive Data Visualization with Bokeh - Chapter 1 (Basic Plotting with Bokeh) - text notes  
   
