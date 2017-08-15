@@ -618,4 +618,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 14-AUG-2017  
 * DataCamp_PythonNotes_v002 captures Interactive Data Visualization with Bokeh - Chapter 2 (Layouts, Annotations, Interactions) - text notes  
+* DataCamp_PythonNotes_v002 captures Interactive Data Visualization with Bokeh - Chapter 2 (Layouts, Annotations, Interactions) - coding  
   
