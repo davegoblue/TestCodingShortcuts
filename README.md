@@ -621,4 +621,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v002 captures Interactive Data Visualization with Bokeh - Chapter 2 (Layouts, Annotations, Interactions) - coding  
 * DataCamp_PythonNotes_v002 captures Interactive Data Visualization with Bokeh - Chapter 3 (High-Level Charts)  
 * DataCamp_PythonNotes_v002 captures Interactive Data Visualization with Bokeh - Chapter 4 (Building Interactivity)  
+* DataCamp_PythonNotes_v002 captures Interactive Data Visualization with Bokeh - Chapter 5 (Case Study)  
   
