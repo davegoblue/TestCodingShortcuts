@@ -625,3 +625,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v002 captures Statistical Thinking in Python (Part I) - Chapter 1 (Graphical EDA)  
 * DataCamp_PythonNotes_v002 captures Statistical Thinking in Python (Part I) - Chapter 2 (Quantitative EDA)  
   
+### Expansions week of 21-AUG-2017  
+* DataCamp_PythonNotes_v002 captures Statistical Thinking in Python (Part I) - Chapter 3 (Discrete Variables)  
+  
