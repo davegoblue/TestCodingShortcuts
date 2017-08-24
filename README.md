@@ -629,4 +629,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v002 captures Statistical Thinking in Python (Part I) - Chapter 3 (Discrete Variables)  
 * DataCamp_PythonNotes_v002 captures Statistical Thinking in Python (Part I) - Chapter 4 (Continuous Variables)  
 * DataCamp_PythonNotes_v002 captures Statistical Thinking in Python (Part I) - plots as figures for Chapters 1/2  
+* DataCamp_PythonNotes_v002 captures Statistical Thinking in Python (Part I) - plots as figures for Chapters 3/4  
   
