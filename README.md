@@ -634,3 +634,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v002 captures Statistical Thinking in Python (Part II) - Chapter 2 (Bootstrap Confidence Intervals)  
 * DataCamp_PythonNotes_v002 captures Statistical Thinking in Python (Part II) - plots as figures for Chapters 1/2  
   
+### Expansions week of 28-AUG-2017  
+* DataCamp_PythonNotes_v002 captures Statistical Thinking in Python (Part II) - Chapter 3 (Hypothesis Testing)  
+  
