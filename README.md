@@ -637,4 +637,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 28-AUG-2017  
 * DataCamp_PythonNotes_v002 captures Statistical Thinking in Python (Part II) - Chapter 3 (Hypothesis Testing)  
 * DataCamp_PythonNotes_v002 captures Statistical Thinking in Python (Part II) - Chapter 4 (Hypothesis Testing Examples)  
+* DataCamp_PythonNotes_v002 captures Statistical Thinking in Python (Part II) - plots as figures for Chapters 3/4  
   
