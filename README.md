@@ -642,4 +642,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v002 updated for accurate outline and introduction  
 * DataCamp_Python_DataManipulation_v003 created as a stand-alone version of data manipulation  
 * DataCamp_Python_Visualization_v003 created as a stand-alone version of visualization  
+* DataCamp_PythonNotes_v003 created for additional usage  
   
