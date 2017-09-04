@@ -644,3 +644,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Python_Visualization_v003 created as a stand-alone version of visualization  
 * DataCamp_PythonNotes_v003 created for additional usage  
   
+### Expansions week of 04-SEP-2017  
+* DataCamp_PythonNotes_v003 captures Supervised Learning with scikit-learn - Chapter 1 (Classification)  
+  
