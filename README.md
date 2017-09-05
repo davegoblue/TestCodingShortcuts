@@ -646,4 +646,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 04-SEP-2017  
 * DataCamp_PythonNotes_v003 captures Supervised Learning with scikit-learn - Chapter 1 (Classification)  
+* DataCamp_PythonNotes_v003 captures Supervised Learning with scikit-learn - Chapter 2 (Regression)  
   
