@@ -650,4 +650,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v003 captures Supervised Learning with scikit-learn - plots as figures for Chapters 1/2  
 * DataCamp_PythonNotes_v003 captures Supervised Learning with scikit-learn - Chapter 3 (Model Fine-Tuning)  
 * DataCamp_PythonNotes_v003 captures Supervised Learning with scikit-learn - Chapter 4 (Pre-Processing and Pipelines)  
+* DataCamp_PythonNotes_v003 captures Supervised Learning with scikit-learn - plots as figures for Chapters 3/4  
   
