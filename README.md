@@ -653,3 +653,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v003 captures Supervised Learning with scikit-learn - plots as figures for Chapters 3/4  
 * DataCamp_PythonNotes_v003 captures Unsupervised Learning in Python - Chapter 1 (Clustering for Dataset Exploration)  
   
+### Expansions week of 11-SEP-2017  
+* DataCamp_PythonNotes_v003 captures Unsupervised Learning in Python - Chapter 2 (Visualize with Hierarchical Clustering and t-SNE)  
+  
