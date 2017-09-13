@@ -656,4 +656,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 11-SEP-2017  
 * DataCamp_PythonNotes_v003 captures Unsupervised Learning in Python - Chapter 2 (Visualize with Hierarchical Clustering and t-SNE)  
 * DataCamp_PythonNotes_v003 captures Unsupervised Learning in Python - plots as figures for Chapters 1/2  
+* DataCamp_PythonNotes_v003 captures Unsupervised Learning in Python - Chapter 3 (Decorrelating Data and Dimension Reduction)  
   
