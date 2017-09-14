@@ -3960,8 +3960,11 @@ print(words)
 
 
 rawWiki = pd.read_csv(myPath + "wikipedia-vectors.csv", index_col=0, encoding="utf-8")
-titles = rawWiki.columns
+rawTitles = rawWiki.columns
 articles = rawWiki.values.transpose()
+
+# Throws an error otherwise on Ibrahimovic, which cannot recode from utf-8 to cp1252 in script
+titles = [x.encode("cp1252", errors="replace").decode("cp1252") for x in rawTitles]
 
 
 # Create a TruncatedSVD instance: svd
@@ -3987,7 +3990,7 @@ df = pd.DataFrame({'label': labels, 'article': titles})
 # Display df sorted by cluster label
 import sys
 print(sys.stdout.encoding)
-# print(df.sort_values("label"))
+print(df.sort_values("label"))
 
 ```
   
@@ -3997,11 +4000,266 @@ print(sys.stdout.encoding)
   
 Chapter 4 - Discovering intepretable features  
   
+Non-negative matrix factorization (NMF):  
+  
+* NMF is another form of dimension reduction technique, but it is an "interpretable" model - easy to explain as a result  
+	* Caveat that all elements of the martix must be non-negative (though 0 is fine)  
+    * NMF expresses objects as weighted sums of components  
+* NMF is available in scikit-learn, using the familiar fit() / transform() methodology  
+	* Must always specify the number of components, such as NMF(n_components=2)  
+    * Can work with NumPy arrays or with csr_matrix objects  
+    * Can be applied to something created through TFIDF - "tf" is work frequency while "idf" is down-weighting for frequent words  
+* Running NMF in scikit-learn example  
+	* from sklearn.decomposition import NMF  
+    * model = NMF(n_components=2)  
+    * model.fit(samples)  
+    * nmf_features = model.transform(samples)  
+    * print(model.components_)  # will have the same dimension / shape as samples  
+    * print(nmf.features) # will have 2 columns, each reflecting one of the two requested by the n_components=2 argument  
+* Sample reconstruction gets very close to the original values - multiple components_ by features and sum  
+	* Can be run using matrix maths, though not in this course  
+  
+NMF learns interpretable parts - example of scientific articles with word frequencies (20,000 articles x 800 words):  
+  
+* Suppose that you fit an NMF with 10 components to this 20,000 x 800 raw data  
+	* Can then look at the sorted list of top words by components, and draw themes from them  
+    * More or less, the components applied to a word-frequency matrix will be the "topics" (groups of similar words)  
+    * For images, the NMF will separate images in to cells of commonly occurring pixels  
+* Grayscale images can be encoded solely by the brightness of a pixel - so, a non-negative array  
+	* Can represent with 0 as black, 1 as white, and fractions in between as various shades of gray  
+    * As a pre-processing step, it is often necessary to "flatten" images - make a single 1D array (vector)  
+    * Each row is then an image, while each column is a pixel position of an image  
+    * To "unflatten" an image, us .reshape((desiredRows, desiredColumns)), where the tuple is passed to the .reshape()  
+    * Can then run plt.imshow(myReshape, cmap="grey", interpolation="nearest")  
+  
+Building recommender systems using NMF:  
+  
+* Example of recommending articles similar to the article currently being read  
+	* General strategy is to apply NMF to the word-frequency array, and find articles with similar topics  
+* Suppose that you have a word-frequency array called "articles"  
+	* from sklearn.decomposition import NMF  
+    * nmf = NMF(n_components=6)  
+    * nmf_features = nmf.fit_transform(articles)  
+* Strategy for comparing outputs of NMF for similar topics - "cosine similarity"  
+	* Key is the general proportions, since otherwise a direct article may score higher than a wordy (weak) article which is diluted by filler  
+    * The "cosine similarity" measures the angle between two lines, with higher values meaning greater similarity  
+* Calculating cosine similarities on the existing features dataset  
+	* from sklearn.preprocessing import normalize  
+    * norm_features = normalize(nmf_features)  
+    * current_article = norm_features[23, :]  # assuming current article is in index 23 of norm_features  
+    * similarities = norm_features.dot(current_article)  
+* Alternately, can run this using pandas DataFrame  
+	* df = pd.DataFrame(norm_features, index=titles)  
+    * current_article = df.loc["Dog bites man"]  # assuming that is the title of the current article  
+    * similarities = df.dot(current_article)  
+    * similarities.nlargest()  # will print the 5 largest similarities by default; will include self as 1.00000  
+  
+Final thoughts:  
+  
+* scikit-learn and SciPy for unsupervised learning  
+* Clustering and dimension reduction techniques  
+  
+Example code includes:  
+```{r engine='python', engine.path=list(python="C:\\Users\\Dave\\Anaconda3\\python.exe")}
+
+myPath = "./PythonInputFiles/"
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+
+# Import modules
+from sklearn.decomposition import NMF
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import normalize
+from sklearn.preprocessing import Normalizer, MaxAbsScaler
+from sklearn.pipeline import make_pipeline
+
+
+
+rawWiki = pd.read_csv(myPath + "wikipedia-vectors.csv", index_col=0, encoding="utf-8")
+rawTitles = rawWiki.columns
+articles = rawWiki.values.transpose()
+titles = [x.encode("cp1252", errors="replace").decode("cp1252") for x in rawTitles]
+
+
+# Create an NMF instance: model
+model = NMF(n_components=6)
+
+# Fit the model to articles
+model.fit(articles)
+
+# Transform the articles: nmf_features
+nmf_features = model.transform(articles)
+
+# Print the NMF features
+print(nmf_features)
+
+
+# Create a pandas DataFrame: df
+df = pd.DataFrame(nmf_features, index=titles)
+
+# Print the row for 'Anne Hathaway'
+print(df.loc["Anne Hathaway", :])
+
+# Print the row for 'Denzel Washington'
+print(df.loc["Denzel Washington", :])
+
+
+words = []
+
+for word in open (myPath + "wikipedia-vocabulary-utf8.txt", "r"):
+    words.append(word.strip())
+
+
+# Create a DataFrame: components_df
+components_df = pd.DataFrame(model.components_, columns=words)
+
+# Print the shape of the DataFrame
+print(components_df.shape)
+
+# Select row 3: component
+component = components_df.iloc[3, :]
+
+# Print result of nlargest
+print(component.nlargest())
+
+
+rawDigits = pd.read_csv(myPath + "lcd-digits.csv", header=None)
+samples = rawDigits.values
+
+
+# Select the 0th row: digit
+digit = samples[0, :]
+
+# Print digit
+print(digit)
+
+# Reshape digit to a 13x8 array: bitmap
+bitmap = digit.reshape(13, 8)
+
+# Print bitmap
+print(bitmap)
+
+# Use plt.imshow to display bitmap
+plt.imshow(bitmap, cmap='gray', interpolation='nearest')
+plt.colorbar()
+# plt.show()
+plt.clf()
+
+
+def show_as_image(sample):
+    bitmap = sample.reshape((13, 8))
+    plt.figure()
+    plt.imshow(bitmap, cmap='gray', interpolation='nearest')
+    plt.colorbar()
+    # plt.show()
+    plt.clf()
+
+
+# Create an NMF model: model
+model = NMF(n_components=7)
+
+# Apply fit_transform to samples: features
+features = model.fit_transform(samples)
+
+# Call show_as_image on each component
+for component in model.components_:
+    show_as_image(component)
+
+# Assign the 0th row of features: digit_features
+digit_features = features[0, :]
+
+# Print digit_features
+print(digit_features)
+
+
+# Create a PCA instance: model
+model = PCA(n_components=7)
+
+# Apply fit_transform to samples: features
+features = model.fit_transform(samples)
+
+# Call show_as_image on each component
+for component in model.components_:
+    show_as_image(component)
+
+
+
+# Normalize the NMF features: norm_features
+norm_features = normalize(nmf_features)
+
+# Create a DataFrame: df
+df = pd.DataFrame(norm_features, index=titles)
+
+# Select the row corresponding to 'Cristiano Ronaldo': article
+article = df.loc['Cristiano Ronaldo']
+
+# Compute the dot products: similarities
+similarities = df.dot(article)
+
+# Display those with the largest cosine similarity
+print(similarities.nlargest())
+
+
+
+# Create a MaxAbsScaler: scaler
+scaler = MaxAbsScaler()
+
+# Create an NMF model: nmf
+nmf = NMF(n_components=20)
+
+# Create a Normalizer: normalizer
+normalizer = Normalizer()
+
+# Create a pipeline: pipeline
+pipeline = make_pipeline(scaler, nmf, normalizer)
+
+
+
+artist_names = [x for x in pd.read_csv(myPath + "artists.csv", header=None).iloc[:, 0]]
+rawSparse = pd.read_csv(myPath + "scrobbler-small-sample.csv")
+
+artists = np.zeros(shape=(111, 500))
+for ctr in range(rawSparse.shape[0]):
+    artists[rawSparse["artist_offset"][ctr], rawSparse["user_offset"][ctr]] = rawSparse["playcount"][ctr]
+
+
+
+# Apply fit_transform to artists: norm_features
+norm_features = pipeline.fit_transform(artists)
+
+
+# Create a DataFrame: df
+df = pd.DataFrame(norm_features, index=artist_names)
+
+# Select row of 'Bruce Springsteen': artist
+artist = df.loc['Bruce Springsteen']
+
+# Compute cosine similarities: similarities
+similarities = df.dot(artist)
+
+# Display those with highest cosine similarity
+print(similarities.nlargest())
+
+
+```
+  
+  
+  
+  
+###_Deep Learning in Python_#
+
+Chapter 1 - Basics of Deep Learning and Neural Networks  
+  
 
 
 	
 	
-	
 
 
 
@@ -4011,5 +4269,3 @@ Chapter 4 - Discovering intepretable features
 
 	
 	
-	
-
