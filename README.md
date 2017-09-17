@@ -660,4 +660,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v003 captures Unsupervised Learning in Python - Chapter 4 (Discovering Interpretable Features)  
 * DataCamp_PythonNotes_v003 captures Unsupervised Learning in Python - plots as figures for Chapters 3/4  
 * DataCamp_PythonNotes_v003 captures Deep Learning in Python - Chapter 1 (Basics of Deep Learning and Neural Networks)  
+* DataCamp_PythonNotes_v003 captures Deep Learning in Python - Chapter 2 (Optimizing with Backward Propagation)  
   
