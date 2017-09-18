@@ -662,3 +662,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v003 captures Deep Learning in Python - Chapter 1 (Basics of Deep Learning and Neural Networks)  
 * DataCamp_PythonNotes_v003 captures Deep Learning in Python - Chapter 2 (Optimizing with Backward Propagation)  
   
+### Expansions week of 18-SEP-2017  
+* DataCamp_PythonNotes_v003 captures Deep Learning in Python - plots as figures for Chapters 1/2  
+  
