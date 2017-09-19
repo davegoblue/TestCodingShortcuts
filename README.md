@@ -664,4 +664,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 18-SEP-2017  
 * DataCamp_PythonNotes_v003 captures Deep Learning in Python - plots as figures for Chapters 1/2  
+* DataCamp_PythonNotes_v003 captures Deep Learning in Python - Chapter 3 (Building Deep Learning Modules)  
   
