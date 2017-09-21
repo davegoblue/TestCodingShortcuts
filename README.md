@@ -666,4 +666,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v003 captures Deep Learning in Python - plots as figures for Chapters 1/2  
 * DataCamp_PythonNotes_v003 captures Deep Learning in Python - Chapter 3 (Building Deep Learning Modules)  
 * DataCamp_PythonNotes_v003 captures Deep Learning in Python - Chapter 4 (Fine-Tuning keras Modules)  
+* DataCamp_PythonNotes_v003 captures Machine Learning: School Budgets - Chapter 1 (Exploring Raw Data)  
   
