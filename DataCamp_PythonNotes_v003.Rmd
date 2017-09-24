@@ -5762,6 +5762,248 @@ print("\nAccuracy on budget dataset: ", accuracy)
   
 Chapter 4 - Learning from Experts  
   
+Learning from experts (pre-processing) - text processing, statistical methods, computational efficiency:  
+  
+* NLP tips for text data  
+	* Tokenize on punctuation (hyphens, underscores, etc.)  
+    * Include both unigrams and bi-grams as tokens -- vec = CountVectorizer(token_pattern=TOKENS_ALPHANUMERIC, ngram_range=(1, 2))  
+  
+Learning from experts (stats trick) - interaction terms:  
+  
+* Idea is to identify that "English teacher for 2nd grade" and "2nd grade - budget for English teacher" are probably the same thing  
+* Interaction terms allow for accounting for when certain tokens appear together - for example, both "2nd grade" and "English teacher"  
+	* Basically, the model moves fro y ~ x1, x2 to y ~ x1, x2, x1*x2  
+* Can implement the interaction terms directly from scikit-learn  
+	* from sklearn.preprocessing import PolynomialFeatures  
+    * interaction = PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)   # degree=2 will manage two columns; interaction_only=True means do not multipley by self  
+    * The "bias term" is an offset for the model -- include a non-zero y even when there is a zero x  
+* The process is much more computationally efficient with a SparseMatrix, which is not supported by PolynomialFeatures  
+	* SparseInteractions() is a replacement option for this expercise  
+    * SparseInteractions(degree=2).fit_transform(x).toarray()  # just pass it the degree  
+  
+Learning from experts (computational trick and winning model) - hashing trick:  
+  
+* Adding new features may cause enromus increases in array size  
+* Hashing is a way of increasing memory efficiency  
+	* Hashing takes an input and returns an associated hash value  
+    * The hash function can be defined to have a maximum size; for example, 250 hash values total, which explicitly limits feature size  
+    * Published papers show that even though 2+ tokens are mapped to the same hash, there is very little real-world loss of predictive power  
+* The hashing trick is a form of dimension reduction - particularly for large quantities of text  
+	* from sklearn.feature_extraction.text import HashingVectorizer  
+    * vec = HashingVectorizer(norm=None, non_negative=True, toekn_pattern=TOKENS-ALPHANUMERIC, ngram_range=(1, 2))  
+* Class of model used by winner - logistic regression  
+	* Carefully create features, and implement clever tricks  
+* See https://github.com/datacamp/course-resources-ml-with-experts-budgets/blob/master/notebooks/1.0-full-model.ipynb for Jupyter notebook  
+  
+Wrap up and next steps:  
+  
+* Volume of data is growing - opportunity to make improvements  
+* Flexibility of the pipeline process in scikit-learn  
+* Quickly test ways of improving submissions  
+* Can continue to improve the model  
+	* Stemming, stop-words  
+    * Random Forest, Naïve Bayes, k-NN  
+    * Numeric Processing, Imputation  
+    * Grid-search optimization  
+    * Additional scikit-learn techniques  
+* DrivenData has the full dataset (www.drivendata.org)  
+  
+Example code includes:  
+```{r engine='python', engine.path=list(python="C:\\Users\\Dave\\Anaconda3\\python.exe"), eval=FALSE}
+
+myPath = "./PythonInputFiles/"
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+
+# combine_text_columns() is available in previous chapters
+def combine_text_columns(data_frame, to_drop=NUMERIC_COLUMNS + LABELS):
+    """ converts all text in each row of data_frame to single vector """
+    
+    # Drop non-text columns that are in the df
+    to_drop = set(to_drop) & set(data_frame.columns.tolist())
+    text_data = data_frame.drop(to_drop, axis=1)
+    
+    # Replace nans with blanks
+    text_data.fillna("", inplace=True)
+    
+    # Join all text items in a row that have a space in between
+    return text_data.apply(lambda x: " ".join(x), axis=1)
+
+
+
+# Import the CountVectorizer
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.preprocessing import Imputer
+from sklearn.feature_selection import chi2, SelectKBest
+from sklearn.preprocessing import FunctionTransformer, MaxAbsScaler
+from sklearn.pipeline import FeatureUnion
+from sklearn.feature_extraction.text import HashingVectorizer
+
+
+
+# Create the text vector
+text_vector = combine_text_columns(X_train)
+
+# Create the token pattern: TOKENS_ALPHANUMERIC
+TOKENS_ALPHANUMERIC = '[A-Za-z0-9]+(?=\\s+)'
+
+# Instantiate the CountVectorizer: text_features
+text_features = CountVectorizer(token_pattern=TOKENS_ALPHANUMERIC)
+
+# Fit text_features to the text vector
+text_features.fit(text_vector)
+
+# Print the first 10 tokens
+print(text_features.get_feature_names()[:10])
+
+
+
+# Select 300 best features
+chi_k = 300
+
+# Perform preprocessing
+get_text_data = FunctionTransformer(combine_text_columns, validate=False)
+get_numeric_data = FunctionTransformer(lambda x: x[NUMERIC_COLUMNS], validate=False)
+
+# Create the token pattern: TOKENS_ALPHANUMERIC
+TOKENS_ALPHANUMERIC = '[A-Za-z0-9]+(?=\\s+)'
+
+# Instantiate pipeline: pl
+pl = Pipeline([
+        ('union', FeatureUnion(
+            transformer_list = [
+                ('numeric_features', Pipeline([
+                    ('selector', get_numeric_data),
+                    ('imputer', Imputer())
+                ])),
+                ('text_features', Pipeline([
+                    ('selector', get_text_data),
+                    ('vectorizer', CountVectorizer(token_pattern=TOKENS_ALPHANUMERIC,
+                                                   ngram_range=(1, 2))),
+                    ('dim_red', SelectKBest(chi2, chi_k))
+                ]))
+             ]
+        )),
+        ('scale', MaxAbsScaler()),
+        ('clf', OneVsRestClassifier(LogisticRegression()))
+    ])
+
+
+# Code for SpareInteractions available at https://github.com/drivendataorg/box-plots-sklearn/blob/master/src/features/SparseInteractions.py
+from itertools import combinations
+import numpy as np
+from scipy import sparse
+from sklearn.base import BaseEstimator, TransformerMixin
+
+
+class SparseInteractions(BaseEstimator, TransformerMixin):
+    def __init__(self, degree=2, feature_name_separator="_"):
+        self.degree = degree
+        self.feature_name_separator = feature_name_separator
+    def fit(self, X, y=None):
+        return self
+    def transform(self, X):
+        if not sparse.isspmatrix_csc(X):
+            X = sparse.csc_matrix(X)
+        if hasattr(X, "columns"):
+            self.orig_col_names = X.columns
+        else:
+            self.orig_col_names = np.array([str(i) for i in range(X.shape[1])])
+        spi = self._create_sparse_interactions(X)
+        return spi
+    def get_feature_names(self):
+        return self.feature_names
+    def _create_sparse_interactions(self, X):
+        out_mat = []
+        self.feature_names = self.orig_col_names.tolist()
+        for sub_degree in range(2, self.degree + 1):
+            for col_ixs in combinations(range(X.shape[1]), sub_degree):
+                # add name for new column
+                name = self.feature_name_separator.join(self.orig_col_names[list(col_ixs)])
+                self.feature_names.append(name)
+                # get column multiplications value
+                out = X[:, col_ixs[0]]
+                for j in col_ixs[1:]:
+                    out = out.multiply(X[:, j])
+                out_mat.append(out)
+
+        return sparse.hstack([X] + out_mat)
+
+
+
+# Instantiate pipeline: pl
+pl = Pipeline([
+        ('union', FeatureUnion(
+            transformer_list = [
+                ('numeric_features', Pipeline([
+                    ('selector', get_numeric_data),
+                    ('imputer', Imputer())
+                ])),
+                ('text_features', Pipeline([
+                    ('selector', get_text_data),
+                    ('vectorizer', CountVectorizer(token_pattern=TOKENS_ALPHANUMERIC,
+                                                   ngram_range=(1, 2))),  
+                    ('dim_red', SelectKBest(chi2, chi_k))
+                ]))
+             ]
+        )),
+        ("int", SparseInteractions(degree=2)),
+        ('scale', MaxAbsScaler()),
+        ('clf', OneVsRestClassifier(LogisticRegression()))
+    ])
+
+
+
+# Get text data: text_data
+text_data = combine_text_columns(X_train)
+
+# Create the token pattern: TOKENS_ALPHANUMERIC
+TOKENS_ALPHANUMERIC = '[A-Za-z0-9]+(?=\\s+)' 
+
+# Instantiate the HashingVectorizer: hashing_vec
+hashing_vec = HashingVectorizer(token_pattern=TOKENS_ALPHANUMERIC)
+
+# Fit and transform the Hashing Vectorizer
+hashed_text = hashing_vec.fit_transform(text_data)
+
+# Create DataFrame and print the head
+hashed_df = pd.DataFrame(hashed_text.data)
+print(hashed_df.head())
+
+
+# Instantiate the winning model pipeline: pl
+pl = Pipeline([
+        ('union', FeatureUnion(
+            transformer_list = [
+                ('numeric_features', Pipeline([
+                    ('selector', get_numeric_data),
+                    ('imputer', Imputer())
+                ])),
+                ('text_features', Pipeline([
+                    ('selector', get_text_data),
+                    ("vectorizer", HashingVectorizer(token_pattern=TOKENS_ALPHANUMERIC,
+                                                     non_negative=True, norm=None, binary=False,
+                                                     ngram_range=(1, 2))),
+                    ('dim_red', SelectKBest(chi2, chi_k))
+                ]))
+             ]
+        )),
+        ('int', SparseInteractions(degree=2)),
+        ('scale', MaxAbsScaler()),
+        ('clf', OneVsRestClassifier(LogisticRegression()))
+    ])
+
+
+```
 
 
 
