@@ -672,3 +672,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v003 captures Machine Learning: School Budgets - Chapter 3 (Improving Models)  
 * DataCamp_PythonNotes_v003 captures Machine Learning: School Budgets - Chapter 4 (Learning from Experts)  
   
+### Expansions week of 25-SEP-2017  
+* DataCamp_PythonNotes_v003 captures Deep Learning in Python - Chapter 4 (Fine-Tuning keras Modules) with keras installed  
