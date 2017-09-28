@@ -676,5 +676,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v003 captures Deep Learning in Python - Chapter 4 (Fine-Tuning keras Modules) with keras installed  
 * DataCamp_PythonNotes_v003 captures Deep Learning in Python - plots as figures for Chapters 3/4  
 * DataCamp_PythonNotes_v003 captures NLP Fundamentals in Python - Chapter 1 (Regular Expressions and Word Tokenization)  
+* DataCamp_PythonNotes_v003 captures NLP Fundamentals in Python - Chapter 2 (Simple Topic Identification)  
   
   
