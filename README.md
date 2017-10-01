@@ -679,5 +679,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v003 captures NLP Fundamentals in Python - Chapter 2 (Simple Topic Identification)  
 * DataCamp_PythonNotes_v003 captures NLP Fundamentals in Python - plots as figures for Chapters 1/2  
 * DataCamp_PythonNotes_v003 captures NLP Fundamentals in Python - Chapter 3 (Named Entity Recognition)  
+* DataCamp_PythonNotes_v003 captures NLP Fundamentals in Python - notes for Chapter 4 (Fake News Classifier)  
   
   
