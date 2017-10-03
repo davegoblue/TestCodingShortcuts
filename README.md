@@ -683,4 +683,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 02-OCT-2017  
 * DataCamp_PythonNotes_v003 captures NLP Fundamentals in Python - sample data for Chapter 4 (Fake News Classifier)  
+* DataCamp_PythonNotes_v003 captures NLP Fundamentals in Python - plots as figures for Chapters 3/4  
   
