@@ -6891,9 +6891,181 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+# Import the dc_stat_think module as dcst
+# import dc_stat_think as dcst
+# Copy relevant functions from previous
+def ecdf(data):
+    """Compute ECDF for a one-dimensional array of measurements."""
+    n = len(data)
+    x = np.sort(data)
+    y = np.arange(1, n+1) / n
+    return x, y
+
+def bootstrap_replicate_1d(data, func):
+    return func(np.random.choice(data, size=len(data)))
+
+def draw_bs_reps(data, func, size=1):
+    """Draw bootstrap replicates."""
+    bs_replicates = np.empty(size)
+    for i in range(size):
+        bs_replicates[i] = bootstrap_replicate_1d(data, func)
+    return bs_replicates
+
+def permutation_sample(data1, data2):
+    """Generate a permutation sample from two data sets."""
+    data = np.concatenate((data1, data2))
+    permuted_data = np.random.permutation(data)
+    perm_sample_1 = permuted_data[:len(data1)]
+    perm_sample_2 = permuted_data[len(data1):]
+    return perm_sample_1, perm_sample_2
+
+def draw_perm_reps(data_1, data_2, func, size=1):
+    """Generate multiple permutation replicates."""
+    perm_replicates = np.empty(size)
+    for i in range(size):
+        perm_sample_1, perm_sample_2 = permutation_sample(data_1, data_2)
+        perm_replicates[i] = func(perm_sample_1, perm_sample_2)
+    return perm_replicates
+
+def diff_of_means(data_1, data_2):
+    """Difference in means of two arrays."""
+    diff = np.mean(data_1) - np.mean(data_2)
+    return diff
+
+def draw_bs_pairs_linreg(x, y, size=1):
+    """Perform pairs bootstrap for linear regression."""
+    inds = np.arange(len(x))
+    bs_slope_reps = np.empty(size)
+    bs_intercept_reps = np.empty(size)
+    for i in range(size):
+        bs_inds = np.random.choice(inds, size=len(inds))
+        bs_x, bs_y = x[bs_inds], y[bs_inds]
+        bs_slope_reps[i], bs_intercept_reps[i] = np.polyfit(bs_x, bs_y, 1)
+    return bs_slope_reps, bs_intercept_reps
+
+
+
+
+rawFish = pd.read_csv(myPath + "gandhi_et_al_bouts.csv", header=4)
+bout_lengths_wt = rawFish.loc[rawFish["genotype"] == "wt", "bout_length"]
+bout_lengths_mut = rawFish.loc[rawFish["genotype"] == "mut", "bout_length"]
+bout_lengths_het = rawFish.loc[rawFish["genotype"] == "het", "bout_length"]
+
+
+# Generate x and y values for plotting ECDFs
+x_wt, y_wt = ecdf(bout_lengths_wt)
+x_mut, y_mut = ecdf(bout_lengths_mut)
+
+# Plot the ECDFs
+_ = plt.plot(x_wt, y_wt, marker='.', linestyle='none')
+_ = plt.plot(x_mut, y_mut, marker='.', linestyle='none')
+
+# Make a legend, label axes, and show plot
+_ = plt.legend(('wt', 'mut'))
+_ = plt.xlabel('active bout length (min)')
+_ = plt.ylabel('ECDF')
+# plt.show()
+plt.clf()
+
+
+
+# Compute mean active bout length
+mean_wt = np.mean(bout_lengths_wt)
+mean_mut = np.mean(bout_lengths_mut)
+
+# Draw bootstrap replicates
+bs_reps_wt = draw_bs_reps(bout_lengths_wt, np.mean, size=10000)
+bs_reps_mut = draw_bs_reps(bout_lengths_mut, np.mean, size=10000)
+
+# Compute 95% confidence intervals
+conf_int_wt = np.percentile(bs_reps_wt, [2.5, 97.5])
+conf_int_mut = np.percentile(bs_reps_mut, [2.5, 97.5])
+
+# Print the results
+print("wt:  mean = {0:.3f} min., conf. int. = [{1:.1f}, {2:.1f}] min. \nmut: mean = {3:.3f} min., conf. int. = [{4:.1f}, {5:.1f}] min.".format(mean_wt, *conf_int_wt, mean_mut, *conf_int_mut))
+
+
+# Compute the difference of means: diff_means_exp
+diff_means_exp = np.mean(bout_lengths_het) - np.mean(bout_lengths_wt)
+
+# Draw permutation replicates: perm_reps
+perm_reps = draw_perm_reps(bout_lengths_het, bout_lengths_wt, diff_of_means, size=10000)
+
+# Compute the p-value: p-val
+p_val = sum(perm_reps >= diff_means_exp) / len(perm_reps)
+
+# Print the result
+print('p =', p_val)
+
+
+# Concatenate arrays: bout_lengths_concat
+bout_lengths_concat = np.concatenate((bout_lengths_wt, bout_lengths_het))
+
+# Compute mean of all bout_lengths: mean_bout_length
+mean_bout_length = np.mean(bout_lengths_concat)
+
+# Generate shifted arrays
+wt_shifted = bout_lengths_wt - np.mean(bout_lengths_wt) + mean_bout_length
+het_shifted = bout_lengths_het - np.mean(bout_lengths_het) + mean_bout_length
+
+# Compute 10,000 bootstrap replicates from shifted arrays
+bs_reps_wt = draw_bs_reps(wt_shifted, np.mean, 10000)
+bs_reps_het = draw_bs_reps(het_shifted, np.mean, 10000)
+
+# Get replicates of difference of means: bs_replicates
+bs_reps = bs_reps_het - bs_reps_wt
+
+# Compute and print p-value: p
+p = sum(bs_reps >= diff_means_exp) / len(bs_reps)
+print('p-value =', p)
+
+
+rawBacteria = pd.read_csv(myPath + "park_bacterial_growth.csv", header=2)
+bac_area = rawBacteria["bacterial area (sq. microns)"]
+t = rawBacteria["time (hr)"]
+
+# Compute logarithm of the bacterial area: log_bac_area
+log_bac_area = np.log(bac_area)
+
+# Compute the slope and intercept: growth_rate, log_a0
+growth_rate, log_a0 = np.polyfit(t, log_bac_area, 1)
+
+# Draw 10,000 pairs bootstrap replicates: growth_rate_bs_reps, log_a0_bs_reps
+growth_rate_bs_reps, log_a0_bs_reps = draw_bs_pairs_linreg(t, log_bac_area, size=10000)
+    
+# Compute confidence intervals: growth_rate_conf_int
+growth_rate_conf_int = np.percentile(growth_rate_bs_reps, [2.5, 97.5])
+
+# Print the result to the screen
+print("Growth rate: {0:.4f} sq. µm/hour\n95% conf int: [{1:.4f}, {2:.4f}] sq. µm/hour".format(growth_rate, *growth_rate_conf_int))
+
+
+# Plot data points in a semilog-y plot with axis labeles
+_ = plt.semilogy(t, bac_area, marker='.', linestyle='none')
+
+# Generate x-values for the bootstrap lines: t_bs
+t_bs = np.array([0, 14])
+
+# Plot the first 100 bootstrap lines
+for i in range(100):
+    y = np.exp(growth_rate_bs_reps[i] * t_bs + log_a0_bs_reps[i])
+    _ = plt.semilogy(t_bs, y, linewidth=0.5, alpha=0.05, color="red")
+    
+# Label axes and show plot
+_ = plt.xlabel('time (hr)')
+_ = plt.ylabel('area (sq. µm)')
+# plt.show()
+plt.clf()
 
 
 ```
+  
+  
+  
+***
+  
+Chapter 2 - 2015 FINA Results  
+  
 
 	
 
