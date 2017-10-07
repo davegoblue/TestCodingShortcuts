@@ -687,4 +687,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - notes for Chapter 1 (Fish Sleep and Bacteria Growth)  
 * DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - code for Chapter 1 (Fish Sleep and Bacteria Growth)  
 * DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - plots for Chapter 1 (Fish Sleep and Bacteria Growth)  
+* DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - notes for Chapter 2 (2015 FINA Results)  
   
