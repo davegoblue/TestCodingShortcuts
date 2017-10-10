@@ -692,4 +692,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 09-OCT-2017  
 * DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - remainder of code for Chapter 2 (2015 FINA Results)  
+* DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - plots as figures for Chapter 2 (2015 FINA Results)  
   
