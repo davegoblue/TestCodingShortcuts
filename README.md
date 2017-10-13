@@ -695,4 +695,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - plots as figures for Chapter 2 (2015 FINA Results)  
 * DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - notes for Chapter 3 (Current Controversy - 2013 FINA)  
 * DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - first code chunk for Chapter 3 (Current Controversy - 2013 FINA)  
+* DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - second code chunk for Chapter 3 (Current Controversy - 2013 FINA)  
   
