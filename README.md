@@ -701,5 +701,7 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 16-OCT-2017  
 * DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - first code chunk for for Chapter 4 (Statistical Seismology and the Parkfield Experiment)  
+* DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - second code chunk for for Chapter 4 (Statistical Seismology and the Parkfield Experiment)  
+
   
   
