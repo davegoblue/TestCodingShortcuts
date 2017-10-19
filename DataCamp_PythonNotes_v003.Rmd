@@ -8021,6 +8021,233 @@ print('p =', p_val)
   
 Chapter 5 - Earthquakes and Oil Mining in Oklahoma  
   
+Variations in earthquake frequency and seismicity:  
+  
+* Geological events can change seismicity, in addition to traditional tectonic plate movements  
+	* Mt St Helens is an example - eruptions lead to more frequent earthquakes due to movement of magma  
+* Hydraulic fracturing (fracking) may impact seismicity by way of wastewater injections  
+  
+Earthquake magnitudes in Oklahoma:  
+  
+* Analogous to the Mt St Helens example, where the ECDF look very different (many more large earthquakes) around the time of the 2004 eruption  
+* Analysis is to look at the frequency of earthquakes before/after the beginning of wastewater injections  
+  
+Closing comments:  
+  
+* Swimmers do not typically swim faster in the finals  
+* There was a current in the 2013 FINA swimming pool  
+* Parkfield earthquakes follow a Poisson process  
+* OK has more earthquakes but a similar frequency distribution after the start of fracking  
+* Melatonin helps zebrafish to sleep  
+* Statistical inference pipeline (EDA - Parameter estimation - Hypothesis testing)  
+  
+Example code includes:  
+```{r engine='python', engine.path=list(python="C:\\Users\\Dave\\Anaconda3\\python.exe")}
+
+myPath = "./PythonInputFiles/"
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+# Import the dc_stat_think module as dcst
+# import dc_stat_think as dcst
+# Copy relevant functions from previous
+def ecdf(data):
+    """Compute ECDF for a one-dimensional array of measurements."""
+    n = len(data)
+    x = np.sort(data)
+    y = np.arange(1, n+1) / n
+    return x, y
+
+def bootstrap_replicate_1d(data, func):
+    return func(np.random.choice(data, size=len(data)))
+
+def draw_bs_reps(data, func, size=1):
+    """Draw bootstrap replicates."""
+    bs_replicates = np.empty(size)
+    for i in range(size):
+        bs_replicates[i] = bootstrap_replicate_1d(data, func)
+    return bs_replicates
+
+def permutation_sample(data1, data2):
+    """Generate a permutation sample from two data sets."""
+    data = np.concatenate((data1, data2))
+    permuted_data = np.random.permutation(data)
+    perm_sample_1 = permuted_data[:len(data1)]
+    perm_sample_2 = permuted_data[len(data1):]
+    return perm_sample_1, perm_sample_2
+
+def draw_perm_reps(data_1, data_2, func, size=1):
+    """Generate multiple permutation replicates."""
+    perm_replicates = np.empty(size)
+    for i in range(size):
+        perm_sample_1, perm_sample_2 = permutation_sample(data_1, data_2)
+        perm_replicates[i] = func(perm_sample_1, perm_sample_2)
+    return perm_replicates
+
+def diff_of_means(data_1, data_2):
+    """Difference in means of two arrays."""
+    diff = np.mean(data_1) - np.mean(data_2)
+    return diff
+
+def draw_bs_pairs_linreg(x, y, size=1):
+    """Perform pairs bootstrap for linear regression."""
+    inds = np.arange(len(x))
+    bs_slope_reps = np.empty(size)
+    bs_intercept_reps = np.empty(size)
+    for i in range(size):
+        bs_inds = np.random.choice(inds, size=len(inds))
+        bs_x, bs_y = x[bs_inds], y[bs_inds]
+        bs_slope_reps[i], bs_intercept_reps[i] = np.polyfit(bs_x, bs_y, 1)
+    return bs_slope_reps, bs_intercept_reps
+
+def pearson_r(x, y):
+    """Compute Pearson correlation coefficient between two arrays."""
+    corr_mat = np.corrcoef(x, y)
+    return corr_mat[0,1]
+
+def _ecdf_formal(x, data):
+    output = np.empty_like(x)
+    for i, x_val in enumerate(x):
+        j = 0
+        while j < len(data) and x_val >= data[j]:
+            j += 1
+        output[i] = j
+    return output / len(data)
+
+def _convert_data(data, inf_ok=False, min_len=1):
+    # If it's scalar, convert to array
+    if np.isscalar(data):
+        data = np.array([data], dtype=np.float)
+    # Convert data to NumPy array
+    data = np.array(data, dtype=np.float)
+    # Make sure it is 1D
+    if len(data.shape) != 1:
+        raise RuntimeError('Input must be a 1D array or Pandas series.')
+    # Remove NaNs
+    data = data[~np.isnan(data)]
+    # Check for infinite entries
+    if not inf_ok and np.isinf(data).any():
+        raise RuntimeError('All entries must be finite.')
+    # Check to minimal length
+    if len(data) < min_len:
+        raise RuntimeError('Array must have at least {0:d} non-NaN entries.'.format(min_len))
+    return data
+
+def ecdf_formal(x, data):
+    if np.isscalar(x):
+        return_scalar = True
+    else:
+        return_scalar = False
+    if np.isnan(x).any():
+        raise RuntimeError('Input cannot have NaNs.')
+    x = _convert_data(x, inf_ok=True)
+    data = _convert_data(data, inf_ok=True)
+    out = _ecdf_formal(x, np.sort(data))
+    if return_scalar:
+        return out[0]
+    return out
+
+def _ecdf_dots(data):
+    return np.sort(data), np.arange(1, len(data)+1) / len(data)
+
+def _ecdf_formal_for_plotting(data, buff=0.1, min_x=None, max_x=None):
+    x, y = _ecdf_dots(data)
+    # Set defaults for min and max tails
+    if min_x is None:
+        min_x = x[0] - (x[-1] - x[0])*buff
+    if max_x is None:
+        max_x = x[-1] + (x[-1] - x[0])*buff
+    # Set up output arrays
+    x_formal = np.empty(2*(len(x) + 1))
+    y_formal = np.empty(2*(len(x) + 1))
+    # y-values for steps
+    y_formal[:2] = 0
+    y_formal[2::2] = y
+    y_formal[3::2] = y
+    # x- values for steps
+    x_formal[0] = min_x
+    x_formal[1] = x[0]
+    x_formal[2::2] = x
+    x_formal[3:-1:2] = x[1:]
+    x_formal[-1] = max_x
+    return x_formal, y_formal
+
+def fancyEcdf(data, formal=False, buff=0.1, min_x=None, max_x=None):
+    if formal and buff is None and (min_x is None or max_x is None):
+        raise RunetimeError('If `buff` is None, `min_x` and `max_x` must be specified.')
+    data = _convert_data(data)
+    if formal:
+        return _ecdf_formal_for_plotting(data, buff=buff, min_x=min_x, max_x=max_x)
+    else:
+        return _ecdf_dots(data)
+
+def b_value(mags, mt, perc=[2.5, 97.5], n_reps=None):
+    """Compute the b-value and optionally its confidence interval."""
+    # Extract magnitudes above completeness threshold: m
+    m = mags[mags >= mt]
+    # Compute b-value: b
+    b = (np.mean(m) - mt) * np.log(10)
+    # Draw bootstrap replicates
+    if n_reps is None:
+        return b
+    else:
+        m_bs_reps = draw_bs_reps(m, np.mean, size=n_reps)
+        # Compute b-value from replicates: b_bs_reps
+        b_bs_reps = (m_bs_reps - mt) * np.log(10)
+        # Compute confidence interval: conf_int
+        conf_int = np.percentile(b_bs_reps, perc)
+        return b, conf_int
+
+def ks_stat(data1, data2):
+    # Compute ECDF from data: x, y
+    x, y = ecdf(data1)
+    # Compute corresponding values of the target CDF
+    cdf = ecdf_formal(x, data2)
+    # Compute distances between concave corners and CDF
+    D_top = y - cdf
+    # Compute distance between convex corners and CDF
+    D_bottom = cdf - y + 1/len(data1)
+    return np.max((D_top, D_bottom))
+
+
+def draw_ks_reps(n, f, args=(), size=10000, n_reps=10000):
+    # Generate samples from target distribution
+    x_f = f(*args, size=size)
+    # Initialize K-S replicates
+    reps = np.empty(n_reps)
+    # Draw replicates
+    for i in range(n_reps):
+        # Draw samples for comparison
+        x_samp = f(*args, size=n)
+        # Compute K-S statistic
+        reps[i] = ks_stat(x_samp, x_f)
+    return reps
+
+
+rawQuakesOK = pd.read_csv(myPath + "oklahoma_earthquakes_1950-2017.csv", header=2)
+mags = rawQuakesOK["mag"]
+
+from datetime import datetime
+time = [datetime.strptime(x, "%Y-%m-%d %H:%M:%S.%f") for x in rawQuakesOK["time"]]
+
+# Plot time vs. magnitude
+_ = plt.plot(time, mags, marker=".", linestyle="none", alpha=0.1)
+
+# Label axes and show the plot
+_ = plt.xlabel('time (year)')
+_ = plt.ylabel('magnitude')
+# plt.show()
+plt.clf()
+
+
+```
+  
+  
 
 
 
@@ -8037,7 +8264,3 @@ Chapter 5 - Earthquakes and Oil Mining in Oklahoma
 
 
 
-
-	
-	
-	
