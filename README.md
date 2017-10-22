@@ -706,5 +706,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - notes for Chapter 5 (Earthquakes and Oil Mining in Oklahoma)  
 * DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - first code chunk for Chapter 5 (Earthquakes and Oil Mining in Oklahoma)  
 * DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - second code chunk for Chapter 5 (Earthquakes and Oil Mining in Oklahoma)  
+* DataCamp_PythonNotes_v003 captures Case Studies in Statistical Thinking - plots as figures for Chapter 5 (Earthquakes and Oil Mining in Oklahoma)  
   
   
