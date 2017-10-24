@@ -710,4 +710,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 23-OCT-2017  
 * DataCamp_Insights_v003 captures R for SAS - Chapter 1 (Introduction)  
+* DataCamp_Insights_v003 captures R for SAS - Chapter 2 (Installing and Maintaining R)  
   
