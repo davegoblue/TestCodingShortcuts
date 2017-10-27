@@ -713,4 +713,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 captures R for SAS - Chapter 2 (Installing and Maintaining R)  
 * DataCamp_Insights_v003 captures R for SAS - Chapter 3 (Help and Documentation)  
 * DataCamp_Insights_v003 captures R for SAS - Chapter 4 (R Studio Basics)  
+* DataCamp_Insights_v003 captures R for SAS - Chapter 5 (Programming Language Basics)  
   
