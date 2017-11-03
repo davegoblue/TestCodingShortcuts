@@ -722,4 +722,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 captures R for SAS - Chapter 9 (Data Acquisition)  
 * DataCamp_Insights_v003 captures R for SAS - Chapter 10 (Missing Values)  
 * DataCamp_Insights_v003 captures R for SAS - Chapter 11 (Selecting Variables)  
+* DataCamp_Insights_v003 captures R for SAS - Chapter 12 (Selecting Observations)  
   
