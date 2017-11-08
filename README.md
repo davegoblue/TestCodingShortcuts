@@ -729,5 +729,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 06-NOV-2017  
 * DataCamp_Insights_v003 captures R for SAS - Chapter 15 (Graphics)  
 * DataCamp_Insights_v003 captures R for SAS - Chapter 16 (Writing Functions)  
+* DataCamp_Insights_v003 captures R for SAS - Chapter 17 (Basic Statistics)  
 
   
