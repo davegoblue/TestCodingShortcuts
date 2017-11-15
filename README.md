@@ -738,4 +738,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 13-NOV-2017  
 * DataCamp_Insights_v003 captures R for SAS - added datasets for Chapter 17 (Basic Statistics)  
 * DataCamp_Insights_v003 captures R for SAS - added datasets for Chapter 18 (Correlation and Regression)  
+* DataCamp_Insights_v003 captures R for SAS - added datasets for Chapter 19 (Comparing Groups)  
   
