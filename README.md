@@ -740,5 +740,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 captures R for SAS - added datasets for Chapter 18 (Correlation and Regression)  
 * DataCamp_Insights_v003 captures R for SAS - added datasets for Chapter 19 (Comparing Groups)  
 * AdditionalCoding_HCF_v001 created to start looking at a card game (High Card Flush)  
+* AdditionalCoding_HCF_v001 makes a simplifying first order approximation to reduce calculations by ~450x  
 
   
