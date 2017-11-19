@@ -742,5 +742,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_HCF_v001 created to start looking at a card game (High Card Flush)  
 * AdditionalCoding_HCF_v001 makes a simplifying first order approximation to reduce calculations by ~450x  
 * AdditionalCoding_HCF_v001 creates all the potential sub-hands of length 1, 2, 3, 4, 5, 6, and 7  
+* AdditionalCoding_HCF_v001 creates ranks for the main game for all the potential sub-hands  
 
   
