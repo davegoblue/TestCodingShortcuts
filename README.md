@@ -744,4 +744,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_HCF_v001 creates all the potential sub-hands of length 1, 2, 3, 4, 5, 6, and 7  
 * AdditionalCoding_HCF_v001 creates ranks for the main game for all the potential sub-hands  
 
+### Expansions week of 20-NOV-2017  
+* AdditionalCoding_HCF_v001 creates scores for the straight flush side bet for all the potential sub-hands  
   
