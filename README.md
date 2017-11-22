@@ -747,4 +747,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 20-NOV-2017  
 * AdditionalCoding_HCF_v001 creates scores for the straight flush side bet for all the potential sub-hands  
 * AdditionalCoding_HCF_v001 creates a dummy hand for assessing impact on other possible hands  
+* AdditionalCoding_HCF_v001 runs pre-work for cross-hand assessment  
   
