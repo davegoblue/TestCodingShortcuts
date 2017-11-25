@@ -750,4 +750,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_HCF_v001 runs pre-work for cross-hand assessment  
 * AdditionalCoding_HCF_v001 creates routine for calculating number of potential hands    
 * AdditionalCoding_HCF_v001 runs routine on dummy hand    
+* AdditionalCoding_HCF_v001 compares likelihoods of other hand categories based on dummy hand  
   
