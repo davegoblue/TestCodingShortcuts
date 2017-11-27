@@ -753,3 +753,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_HCF_v001 compares likelihoods of other hand categories based on dummy hand  
 * AdditionalCoding_HCF_v001 makes initial assessment of qualification rules  
   
+### Expansions week of 27-NOV-2017  
+* AdditionalCoding_HCF_v001 compares likelihoods of other hand categories based on multiple dummy hands  
+  
