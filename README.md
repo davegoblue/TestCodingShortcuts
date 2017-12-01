@@ -758,4 +758,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_HCF_v001 compares likelihoods of other hand categories based on additional dummy hands  
 * AdditionalCoding_HCF_v001 creates card deck and random draw  
 * AdditionalCoding_HCF_v001 creates multiple random draws  
+* AdditionalCoding_HCF_v001 scores and ranks a selection of hands  
   
