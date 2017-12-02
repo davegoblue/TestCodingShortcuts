@@ -759,4 +759,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_HCF_v001 creates card deck and random draw  
 * AdditionalCoding_HCF_v001 creates multiple random draws  
 * AdditionalCoding_HCF_v001 scores and ranks a selection of hands  
+* AdditionalCoding_HCF_v001 plays out a selection of hand pairs  
   
