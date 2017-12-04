@@ -762,3 +762,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_HCF_v001 plays out a selection of hand pairs  
 * AdditionalCoding_HCF_v001 plays out 10,000 hand pairs  
   
+### Expansions week of 04-DEC-2017  
+* AdditionalCoding_HCF_v001 plays out 50,000 hand pairs  
+  
