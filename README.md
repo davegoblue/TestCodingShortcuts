@@ -766,4 +766,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_HCF_v001 plays out 50,000 hand pairs  
 * AdditionalCoding_HCF_v001 plays out 100,000 hand pairs  
 * AdditionalCoding_HCF_v001 includes proc.time() benchmarking  
+* AdditionalCoding_HCF_v001 plays out 500,000 hand pairs  
   
