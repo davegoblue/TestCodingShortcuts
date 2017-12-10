@@ -600,23 +600,29 @@ for (intCtr in 1:7) {
 
 hndScore <- vector("list", 7)
 # Score for straight flush, flush, overall rank, and qualification
-hndRank <- 1L
+hndRank <- sum(sapply(hndType, FUN=nrow))
 for (intCtr in 7:1) {
     coreData <- hndType[[intCtr]]
     maxCard <- apply(coreData, 1, FUN=max)
     outData <- matrix(data=NA, nrow=nrow(coreData), ncol=4)
     outData[, 1] <- intCtr  # Number of Flushes
     outData[, 2] <- sfCheck(coreData)  # Number of Straight Flushes
-    outData[, 3] <- hndRank:(hndRank + nrow(coreData) - 1)  # Rank (lower is better) since hands already sorted
+    outData[, 3] <- hndRank:(hndRank - nrow(coreData) + 1)  # Rank (higher better) since hands already sorted
     outData[, 4] <- FALSE  # Set the qualification
     if (intCtr > 3) {
         outData[, 4] <- TRUE
     } else if (intCtr == 3) {
         outData[, 4] <- (maxCard >= 9)
     }
-    hndRank <- hndRank + nrow(coreData)
+    hndRank <- hndRank - nrow(coreData)
     hndScore[[intCtr]] <- outData
 }
+
+# Check that ranks make sense
+sapply(hndScore, FUN=function(x) { y=x[, 1]; return(c(x[1, 1], min(y), max(y))) } )
+sapply(hndScore, FUN=function(x) { y=x[, 2]; return(c(x[1, 1], min(y), max(y))) } )
+sapply(hndScore, FUN=function(x) { y=x[, 3]; return(c(x[1, 1], min(y), max(y))) } )
+sapply(hndScore, FUN=function(x) { y=x[, 4]; return(c(x[1, 1], sum(y==1), sum(y==0))) } )
 
 proc.time() - startTime
 
@@ -651,6 +657,41 @@ And, the sample of hands are then scored and ranked:
 ```{r}
 
 startTime <- proc.time()
+
+# Pick out a single hand
+getCards <- function(x) {
+    tmpVec <- numeric(0)
+    for (y in x) {
+        if (y == 0) { tmpVec <- c(tmpVec, 0, 0, 0, 0) }
+        else {
+            useScore <- hndScore[[y]]
+            tmpVec <- c(tmpVec, useScore[sample(nrow(useScore), 1), ])
+        }
+    }
+    return(tmpVec)
+}
+
+nTest <- nDeal
+nPick <- sort(sample(nDeal, nTest, replace=FALSE))
+storeStat <- matrix(data=NA_integer_, nrow=nTest, ncol=4)
+tgtPrint <- 20
+tgtQuin <- qnorm(tgtPrint/nTest, lower.tail=FALSE)
+intCtr <- 1L
+for (hndNum in nPick) {
+    thisData <- suitNums[hndNum, ]
+    thisHand <- matrix(getCards(thisData), nrow=4, ncol=4, byrow=FALSE)
+    thisStat <- apply(thisHand, 1, FUN=max)
+    if (rnorm(1) >= tgtQuin) { print(cbind(thisHand, thisStat)) }
+    storeStat[intCtr, ] <- thisStat
+    intCtr <- intCtr + 1
+}
+
+table(storeStat[, 1], storeStat[, 4])
+table(storeStat[, 2])
+summary(storeStat[, 3])
+plot(y=log10(quantile(storeStat[, 3], (0:1000)/1000)), x=(0:1000)/1000, 
+     pch=19, col="blue", xlab="Quantile", ylab="Log10 of Rank (Higher is Better)"
+     )
 
 proc.time() - startTime
 
