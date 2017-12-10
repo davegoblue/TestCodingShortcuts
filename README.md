@@ -769,4 +769,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_HCF_v001 plays out 500,000 hand pairs  
 * AdditionalCoding_HCF_v001 fixes numSF() error and re-plays out 500,000 hand pairs  
 * AdditionalCoding_HCF_v001 first pass at alternate hand drawing and scoring methodology  
+* AdditionalCoding_HCF_v001 refines alternate hand drawing and scoring methodology  
   
