@@ -773,4 +773,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 11-DEC-2017  
 * AdditionalCoding_HCF_v001 runs alternate methodology for 500,000 hand pairs  
+* AdditionalCoding_HCF_v001 runs alternate methodology for 5 permutations of 1,000,000 hand pairs  
   
