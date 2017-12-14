@@ -775,4 +775,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_HCF_v001 runs alternate methodology for 500,000 hand pairs  
 * AdditionalCoding_HCF_v001 runs alternate methodology for 5 permutations of 1,000,000 hand pairs  
 * AdditionalCoding_HCF_v001 optimizes suit drawing component by ~100x    
+* AdditionalCoding_HCF_v001 optimizes hand playing component by ~20x    
   
