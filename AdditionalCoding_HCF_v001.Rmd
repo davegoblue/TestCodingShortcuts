@@ -453,6 +453,7 @@ proc.time() - startTime
   
 As well, the likelihood of a qualifying hand (3-card 9-high or better) can be assessed:  
 ```{r}
+
 startTime <- proc.time()
 
 baseNinesData <- sapply(n1234List, FUN=function(x) { 
@@ -786,24 +787,66 @@ for (intCtr in 1:nSims) {
     # Sort the hands for playing two at a time
     playOrder <- sample(nTest, nTest, replace=FALSE)
     playNum <- seq_len(floor(length(playOrder) / 2))
-    sfTrack[[intCtr]] <- integer(length(playNum))
-    flTrack[[intCtr]] <- integer(length(playNum))
-    resTrack[[intCtr]] <- integer(length(playNum))
-    for (thisPlay in playNum) {
-        scrD <- storeStat[playOrder[2*thisPlay - 1], ]
-        scrP <- storeStat[playOrder[2*thisPlay], ]
-        flTrack[[intCtr]][thisPlay] <- scrP[1]
-        sfTrack[[intCtr]][thisPlay] <- scrP[2]
-        if (scrP[3] < keyScore) { tmpRes <- -1L }
-        else if (scrD[4] < 1) { tmpRes <- 1L }
-        else if (scrP[3] == scrD[3]) { tmpRes <- 0L }
-        else { 
-            thisBet <- (2 + ifelse(scrP[1] >= 5, 1, 0) + ifelse(scrP[1] >= 6, 1, 0))
-            tmpRes <- ifelse(scrP[3] > scrD[3], 1, -1) * thisBet 
-        }
-        resTrack[[intCtr]][thisPlay] <- tmpRes
-    }
+
+    # Extract the player and dealer hands
+    playStat <- storeStat[playOrder[rep(c(FALSE, TRUE), length(playNum))], ]
+    dealStat <- storeStat[playOrder[rep(c(TRUE, FALSE), length(playNum))], ]
+    
+    # Extract the flushes and straight flushes for the player
+    flPlay <- playStat[, 1]
+    sfPlay <- playStat[, 2]
+    
+    # Extract whether the hands are playable for each of Dealer and Player
+    qualPlay <- playStat[, 3] >= keyScore
+    qualDeal <- dealStat[, 4] > 0
+    
+    # Determine the bet amount and results, assuming both sides have played (ignore qualification)
+    betPlay <- 2 + ifelse(flPlay >= 5, 1, 0) + ifelse(flPlay >= 6, 1, 0)
+    resGame <- integer(length(playNum))
+    resWin <- playStat[, 3] > dealStat[, 3]
+    resLose <- playStat[, 3] < dealStat[, 3]
+    resTie <- playStat[, 3] == dealStat[, 3]
+    
+    # First, set the ties, wins, and losses, ignoring qualification and playability
+    resGame[resTie] <- 0L
+    resGame[resWin] <- betPlay[resWin]
+    resGame[resLose] <- -betPlay[resLose]
+    
+    # Then, replace (over-write) any non-qualifiers with a +1 for the player
+    resGame[!qualDeal] <- 1L
+    
+    # Then, replace (over-write) any non-playable hands with a -1 for the player
+    resGame[!qualPlay] <- -1L
+
+    # Store the data
+    flTrack[[intCtr]] <- flPlay
+    sfTrack[[intCtr]] <- sfPlay
+    resTrack[[intCtr]] <- resGame
+
 }
+
+# for (intCtr in 1:nSims) {
+#     # Sort the hands for playing two at a time
+#     playOrder <- sample(nTest, nTest, replace=FALSE)
+#     playNum <- seq_len(floor(length(playOrder) / 2))
+#     sfTrack[[intCtr]] <- integer(length(playNum))
+#     flTrack[[intCtr]] <- integer(length(playNum))
+#     resTrack[[intCtr]] <- integer(length(playNum))
+#     for (thisPlay in playNum) {
+#         scrD <- storeStat[playOrder[2*thisPlay - 1], ]
+#         scrP <- storeStat[playOrder[2*thisPlay], ]
+#         flTrack[[intCtr]][thisPlay] <- scrP[1]
+#         sfTrack[[intCtr]][thisPlay] <- scrP[2]
+#         if (scrP[3] < keyScore) { tmpRes <- -1L }
+#         else if (scrD[4] < 1) { tmpRes <- 1L }
+#         else if (scrP[3] == scrD[3]) { tmpRes <- 0L }
+#         else { 
+#             thisBet <- (2 + ifelse(scrP[1] >= 5, 1, 0) + ifelse(scrP[1] >= 6, 1, 0))
+#             tmpRes <- ifelse(scrP[3] > scrD[3], 1, -1) * thisBet 
+#         }
+#         resTrack[[intCtr]][thisPlay] <- tmpRes
+#     }
+# }
 
 resTab <- t(sapply(resTrack, FUN=function(x) { tabulate(5+x, nbins=9) }))
 colnames(resTab) <- -4:4
