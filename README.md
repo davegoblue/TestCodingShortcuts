@@ -778,4 +778,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_HCF_v001 optimizes hand playing component by ~20x    
 * AdditionalCoding_HCF_v001 optimizes hand scoring component by ~5x  
 * AdditionalCoding_HCF_v001 adds split/partition capability for hand scoring component  
+* AdditionalCoding_HCF_v001 includes initial prep for cross-hand eliminations  
   
