@@ -780,3 +780,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_HCF_v001 adds split/partition capability for hand scoring component  
 * AdditionalCoding_HCF_v001 includes initial prep for cross-hand eliminations  
   
+### Expansions week of 18-DEC-2017  
+* AdditionalCoding_HCF_v001 further optimizes hand scoring component  
+  
