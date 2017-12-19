@@ -782,4 +782,6 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 18-DEC-2017  
 * AdditionalCoding_HCF_v001 further optimizes hand scoring component  
+* AdditionalCoding_HCF_v001 doubles number of hands played  
+
   
