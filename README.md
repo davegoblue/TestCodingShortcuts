@@ -786,5 +786,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_HCF_v001 codifies former hard-coding for suit permutations  
 * DataCamp_Insights_v003 captures Introduction to Tidyverse - Chapter 1 (Data Wrangling)  
 * DataCamp_Insights_v003 captures Introduction to Tidyverse - Chapter 2 (Data Visualization)  
+* DataCamp_Insights_v003 captures Introduction to Tidyverse - Chapter 3 (Grouping and Summarizing)  
 
   
