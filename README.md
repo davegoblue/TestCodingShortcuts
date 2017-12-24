@@ -787,5 +787,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 captures Introduction to Tidyverse - Chapter 1 (Data Wrangling)  
 * DataCamp_Insights_v003 captures Introduction to Tidyverse - Chapter 2 (Data Visualization)  
 * DataCamp_Insights_v003 captures Introduction to Tidyverse - Chapter 3 (Grouping and Summarizing)  
+* DataCamp_Insights_v003 captures Introduction to Tidyverse - Chapter 4 (Types of Visualizations)  
 
   
