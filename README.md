@@ -791,3 +791,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 25-DEC-2017  
 * DataCamp_Insights_v003 captures Building Web Applications in R with Shiny - Chapter 1 (Introduction and Shiny Basics) - notes  
+* DataCamp_Insights_v003 captures Building Web Applications in R with Shiny - Chapter 1 (Introduction and Shiny Basics) - code for Shiny App #1  
+  
