@@ -800,4 +800,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 01-JAN-2018  
 * DataCamp_Insights_v003 captures Building Web Applications in R with Shiny - Chapter 2 (Inputs, Outputs, Rendering) - code for Shiny App #2.3  
+* DataCamp_Insights_v003 captures Building Web Applications in R with Shiny - Chapter 2 (Inputs, Outputs, Rendering) - code for Shiny App #2.4  
   
