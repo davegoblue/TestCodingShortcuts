@@ -812,4 +812,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 captures Building Web Applications in R with Shiny - Chapter 2 (Inputs, Outputs, Rendering) - code for Shiny App #2.11  
 * DataCamp_Insights_v003 captures Building Web Applications in R with Shiny - Chapter 3 (Reactive Programming) - notes  
 * DataCamp_Insights_v003 captures Building Web Applications in R with Shiny - Chapter 3 (Reactive Programming) - code for Shiny App #3.1  
+* DataCamp_Insights_v003 captures Building Web Applications in R with Shiny - Chapter 3 (Reactive Programming) - code for Shiny App #3.2  
   
