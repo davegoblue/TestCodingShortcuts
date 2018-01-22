@@ -825,3 +825,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 captures Building Web Applications in R with Shiny - Chapter 4 (Customizing Appearance) - code for Shiny App #4.2  
 * DataCamp_Insights_v003 captures Building Web Applications in R with Shiny - Chapter 4 (Customizing Appearance) - code for Shiny App #4.3  
   
+### Expansions week of 22-JAN-2018  
+* DataCamp_Insights_v003 captures Building Web Applications in R with Shiny - Chapter 4 (Customizing Appearance) - code for Shiny App #4.4  
+  
