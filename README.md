@@ -836,4 +836,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 29-JAN-2018  
 * DataCamp_Insights_v003 captures Writing Efficient R Code - Chapter 2 (Fine Tuning: Efficient Base R)  
+* DataCamp_Insights_v003 captures Writing Efficient R Code - Chapter 3 (Diagnosing Problems: Code Profiling)  
   
