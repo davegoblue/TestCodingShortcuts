@@ -840,4 +840,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 captures Writing Efficient R Code - Chapter 4 (Turbo-Charged Code: Parallel Programming)  
 * DataCamp_Insights_v003 captures String Manipulation in R with stringr - Chapter 1 (String Basics)  
 * DataCamp_Insights_v003 captures String Manipulation in R with stringr - Chapter 2 (Introduction to stringr)  
+* DataCamp_Insights_v003 captures String Manipulation in R with stringr - Chapter 3 (Pattern Matching with Regualar Expressions)  
   
