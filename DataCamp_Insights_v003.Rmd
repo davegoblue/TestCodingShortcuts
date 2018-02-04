@@ -3524,7 +3524,7 @@ plot(model)
 # Fit random forest: model
 model <- caret::train(
   quality ~ .,
-  tuneGrid = data.frame(mtry=c(2, 3, 7)),
+  tuneGrid = data.frame(mtry=c(2, 3, 7), splitrule=c("extratrees"), min.node.size=5),
   data = wine, method = "ranger",
   trControl = caret::trainControl(method = "cv", number = 5, verboseIter = TRUE)
 )
@@ -3972,10 +3972,13 @@ coffee_corpus[[15]]$content
 example_text <- data.frame(num=1:3, Author1=c('Text mining is a great time.', 'Text analysis provides insights', 'qdap and tm are used in text mining'), Author2=c('R is a great language', 'R has many uses', 'DataCamp is cool!'), stringsAsFactors=FALSE)
 
 # Print example_text to the console
+names(example_text)[1:2] = c("doc_id", "text")  # required now for DataFrameSource
 example_text
 
+
 # Create a DataframeSource on columns 2 and 3: df_source
-df_source <- tm::DataframeSource(example_text[,-1])
+# df_source <- tm::DataframeSource(example_text[,-1])
+df_source <- tm::DataframeSource(example_text)
 
 # Convert df_source to a corpus: df_corpus
 df_corpus <- tm::VCorpus(df_source)
@@ -4501,7 +4504,7 @@ associations_df <- list_vect2df(associations)[, 2:3]
 ggplot(associations_df, aes(y = associations_df[, 1])) + 
   geom_point(aes(x = associations_df[, 2]), 
              data = associations_df, size = 3) + 
-  theme_gdocs()
+  ggthemes::theme_gdocs()
 
 
 # DOES NOT WORK ON MY MACHINE
@@ -4561,11 +4564,11 @@ tf_tdm_m[508:509, 5:10]
 
 # DO NOT HAVE dataframe tweets
 # Add author to custom reading list
-custom_reader <- readTabular(mapping = list(content = "text", 
-                                            id = "num",
-                                            author = "screenName",
-                                            date = "created"
-                                            ))
+# custom_reader <- readTabular(mapping = list(content = "text", 
+#                                             id = "num",
+#                                             author = "screenName",
+#                                             date = "created"
+#                                             ))
 
 # Make corpus with custom reading
 # text_corpus <- VCorpus(DataframeSource(tweets), readerControl = list(reader = custom_reader))
@@ -11749,6 +11752,236 @@ ages_years
   
 Chapter 4 - Advanced matching and manipulation  
   
+Capturing - grouping parts of a pattern together, for use in extraction or later matching:  
+  
+* For example, capture(ANY_CHAR) %R% "a" resolves to regex (.)a and means extract the character that comes before an "a"  
+* The capture() will not change what is matches, so if it is used in an extract (or whatever), the result will be identical as the non=captured equivalent  
+* The str_match() command will return a matrix with a single row per element of the character vector  
+	* The first column will be the result that would come from str_extract  
+    * The second (and more) column will be the captured aspect(s), with one column per capture  
+    * Captures go from left to right, with the left-most capture being in column two  
+* The ?: inside of () means non-capturing group  
+	* (?:dog|cat) means to match "dog" or "cat"  
+    * A pure dog|cat would mean to match "dogat" or "docat", thus the need for a (?:) regex instead  
+    * These distinctions are handled by the rebus package  
+    * If you want rebus to do a capture, you can either 1) add capture=TRUE inside a function like or(), or 2) surround the whole thing by capture()  
+* If you wanted to extract beyond the first phone number, e.g. The second phone number in the last string, you could use str_match_all()  
+	* But, like str_split() it will return a list with one component for each input string, and you'll need to use lapply() to handle the result  
+  
+Back-references are the process of referring to part of a captured pattern:  
+  
+* The first back-reference is REF1 in rebus, standing for \1 in regex and meaning the first captured item  
+	* These work for REF2 up through REF9, though you cannot use REF10 (or above)  
+* For example, SPC %R% capture(one_ore_more(WRD)) %R% SPC %R% REF1 will extract repeated words  
+	* REF1 will be the last thing captured, so this is asking for " word word" where 'word' can be any word  
+* The back-reference can be very helpful in a str_replace, with replacement=str_c(" ", REF1) solving the repeated word problem  
+  
+Unicode and pattern matching - unicode associates every character literal with a hexadecimal code:  
+  
+* The character "a" has code point 61 while the character mu has code point 3BC while the smiley-faced emoji has code point 1F600  
+* Can add unicode in R using either \u or \U  
+	* The \u allows for up to 4 hexadecimal characters ("\u03BC")  
+    * The \U allows for up to 8 hexadecimal characters ("\U0001F600") - typically, emoji need this  
+* Note that the 5+ character set is handled incorrectly by Windows, so results on a Windows machine may differ from results elsewhere (e.g., DataCamp servers)  
+* Can find the unicode equivalent with as.hexmode(utf8ToInt("<myChar>"))  
+* Matching unicode is basically the same as any other match  
+	* x <- "Normal(\u03BC = 0, \u03C3 = 1)"  
+    * str_view(x, pattern="\u03BC") will work fine  
+* Google searches typically work fine for finding a specific unicode point  
+* Can use rebus commands such as str_view_all(x, greek_and_coptic())  
+* Things can get tricky when some characters can be specified two ways, for example è, an e with a grave accent, can be specified either with the single code point \u00e8 or the combination of a \u0065 and a combining grave accent \u0300  
+	* x <- c("\u00e8", "\u0065\u0300")  
+    * writeLines(x)  
+    * But, specifying the single code point only matches that version: str_view(x, "\u00e8")  
+* The stringi package that stringr is built on contains functions for converting between the two forms  
+	* stri_trans_nfc() composes characters with combining accents into a single character   
+stri_trans_nfd() decomposes character with accents into separate letter and accent characters  
+    * You can see how the characters differ by looking at the hexadecimal codes  
+    * as.hexmode(utf8ToInt(stri_trans_nfd("\u00e8")))  
+    * as.hexmode(utf8ToInt(stri_trans_nfc("\u0065\u0300")))  
+* In Unicode, an accent is known as a diacritic Unicode Property, and you can match it using the rebus value UP_DIACRITIC  
+	* Vietnamese makes heavy use of diacritics to denote the tones in its words  
+* A related problem is matching a single character. You've used ANY_CHAR to do this up until now, but it will only match a character represented by a single code point. Take these three names:  
+	* x <- c("Adele", "Ad\u00e8le", "Ad\u0065\u0300le")  
+    * writeLines(x)  
+    * They look the similar, but this regular expression only matches two of them: str_view(x, "Ad" %R% ANY_CHAR %R% "le") because in the third name è is represented by two code points  
+    * The unicode standard has a concept of a grapheme that represents a display character, but may be composed of many code points. To match any grapheme you can use GRAPHEME.
+    * str_view(x, "Ad" %R% GRAPHEME %R% "le")  
+  
+Example code includes:  
+```{r}
+
+hero_contacts <- c("(wolverine@xmen.com)", "wonderwoman@justiceleague.org", "wonderwoman@justiceleague.org")
+# Capture part between @ and . and after .
+email <- capture(one_or_more(WRD)) %R% 
+  "@" %R% capture(one_or_more(WRD)) %R% 
+  DOT %R% capture(one_or_more(WRD))
+
+# Check match hasn't changed
+str_view(hero_contacts, pattern=email)
+
+# Pull out match and captures
+email_parts <- str_match(hero_contacts, pattern=email)
+
+# Print email_parts
+email_parts
+
+# Save host
+host <- email_parts[, 3]
+host
+
+
+# View text containing phone numbers
+contact
+
+# Add capture() to get digit parts
+phone_pattern <- capture(three_digits) %R% zero_or_more(separator) %R% 
+           capture(three_digits) %R% zero_or_more(separator) %R%
+           capture(four_digits)
+           
+# Pull out the parts with str_match()
+phone_numbers <- str_match(contact, pattern=phone_pattern)
+
+# Put them back together
+str_c(
+  "(",
+  phone_numbers[, 2],
+  ") ",
+  phone_numbers[, 3],
+  "-",
+  phone_numbers[, 4])
+
+
+# narratives has been pre-defined
+narratives
+
+# Add capture() to get age, unit and sex
+pattern <- capture(optional(DGT) %R% DGT) %R%  
+  optional(SPC) %R% capture(or("YO", "YR", "MO")) %R%
+  optional(SPC) %R% capture(or("M", "F"))
+
+# Pull out from narratives
+str_match(narratives, pattern=pattern)
+
+# Edit to capture just Y and M in units
+pattern2 <- capture(optional(DGT) %R% DGT) %R%  
+  optional(SPC) %R% capture(or("Y", "M")) %R% optional(or("O","R")) %R%
+  optional(SPC) %R% capture(or("M", "F"))
+
+# Check pattern
+str_view(narratives, pattern=pattern2)
+
+# Pull out pieces
+str_match(narratives, pattern=pattern2)
+
+
+# See names with three repeated letters
+repeated_three_times <- capture(LOWER) %R% REF1 %R% REF1
+str_view(boy_names, 
+  pattern = repeated_three_times, 
+  match = TRUE)
+
+# See names with a pair of repeated letters
+pair_of_repeated <- capture(LOWER %R% LOWER) %R% REF1
+str_view(boy_names, 
+  pattern = pair_of_repeated, 
+  match = TRUE)
+
+# See names with a pair that reverses
+pair_that_reverses <- capture(LOWER) %R% capture(LOWER) %R% REF2 %R% REF1
+str_view(boy_names, 
+  pattern = pair_that_reverses, 
+  match = TRUE)
+
+# See four letter palindrome names
+four_letter_palindrome <- exactly(pair_that_reverses)
+str_view(boy_names, 
+  pattern = four_letter_palindrome, 
+  match = TRUE)
+
+# See six letter palindrome names
+six_letter_palindrome <- exactly(capture(LOWER) %R% capture(LOWER) %R% capture(LOWER) %R% REF3 %R% REF2 %R% REF1)
+str_view(boy_names, 
+  pattern = six_letter_palindrome, 
+  match = TRUE)
+
+
+# View text containing phone numbers
+contact
+
+# Replace digits with "X"
+str_replace(contact, pattern = DGT, replacement = "X")
+
+# Replace all digits with "X"
+str_replace_all(contact, pattern = DGT, replacement = "X")
+
+# Replace all digits with different symbol
+str_replace_all(contact, pattern = DGT, 
+  replacement = c("X", ".", "*", "_"))
+
+
+adverbs <- c('ABNORMALLY', 'ABSENTMINDEDLY', 'ACCIDENTALLY', 'ACIDLY', 'ACTUALLY', 'ADVENTUROUSLY', 'AFTERWARDS', 'ALMOST', 'ALWAYS', 'ANGRILY', 'ANNUALLY', 'ANXIOUSLY', 'ARROGANTLY', 'AWKWARDLY', 'BADLY', 'BASHFULLY', 'BEAUTIFULLY', 'BITTERLY', 'BLEAKLY', 'BLINDLY', 'BLISSFULLY', 'BOASTFULLY', 'BOLDLY', 'BRAVELY', 'BRIEFLY', 'BRIGHTLY', 'BRISKLY', 'BROADLY', 'BUSILY', 'CALMLY', 'CAREFULLY', 'CARELESSLY', 'CAUTIOUSLY', 'CERTAINLY', 'CHEERFULLY', 'CLEARLY', 'CLEVERLY', 'CLOSELY', 'COAXINGLY', 'COLORFULLY', 'COMMONLY', 'CONTINUALLY', 'COOLLY', 'CORRECTLY', 'COURAGEOUSLY', 'CROSSLY', 'CRUELLY', 'CURIOUSLY', 'DAILY', 'DAINTILY', 'DEARLY', 'DECEIVINGLY', 'DEEPLY', 'DEFIANTLY', 'DELIBERATELY', 'DELIGHTFULLY', 'DILIGENTLY', 'DIMLY', 'DOUBTFULLY', 'DREAMILY', 'EASILY', 'ELEGANTLY', 'ENERGETICALLY', 'ENORMOUSLY', 'ENTHUSIASTICALLY', 'EQUALLY', 'ESPECIALLY', 'EVEN', 'EVENLY', 'EVENTUALLY', 'EXACTLY', 'EXCITEDLY', 'EXTREMELY', 'FAIRLY', 'FAITHFULLY', 'FAMOUSLY', 'FAR', 'FAST', 'FATALLY', 'FEROCIOUSLY', 'FERVENTLY', 'FIERCELY', 'FONDLY', 'FOOLISHLY', 'FORTUNATELY', 'FRANKLY', 'FRANTICALLY', 'FREELY', 'FRENETICALLY', 'FRIGHTFULLY', 'FULLY', 'FURIOUSLY', 'GENERALLY', 'GENEROUSLY', 'GENTLY', 'GLADLY', 'GLEEFULLY', 'GRACEFULLY', 'GRATEFULLY', 'GREATLY', 'GREEDILY', 'HAPPILY', 'HASTILY', 'HEALTHILY', 'HEAVILY', 'HELPFULLY', 'HELPLESSLY', 'HIGHLY', 'HONESTLY', 'HOPELESSLY', 'HOURLY', 'HUNGRILY', 'IMMEDIATELY', 'INNOCENTLY', 'INQUISITIVELY', 'INSTANTLY', 'INTENSELY', 'INTENTLY', 'INTERESTINGLY', 'INWARDLY', 'IRRITABLY', 'JAGGEDLY', 'JEALOUSLY', 'JOSHINGLY', 'JOVIALLY', 'JOYFULLY', 'JOYOUSLY', 'JUBILANTLY', 'JUDGEMENTALLY', 'JUSTLY', 'KEENLY', 'KIDDINGLY', 'KINDHEARTEDLY', 'KINDLY', 'KISSINGLY', 'KNAVISHLY', 'KNOTTILY', 'KNOWINGLY', 'KNOWLEDGEABLY', 'KOOKILY', 'LAZILY', 'LESS', 'LIGHTLY', 'LIKELY', 'LIMPLY', 'LIVELY', 'LOFTILY', 'LONGINGLY', 'LOOSELY', 'LOUDLY', 'LOVINGLY', 'LOYALLY', 'MADLY', 'MAJESTICALLY', 'MEANINGFULLY', 'MECHANICALLY', 'MERRILY', 'MISERABLY', 'MOCKINGLY', 'MONTHLY', 'MORE', 'MORTALLY', 'MOSTLY', 'MYSTERIOUSLY', 'NATURALLY', 'NEARLY', 'NEATLY', 'NEEDILY', 'NERVOUSLY', 'NEVER', 'NICELY', 'NOISILY', 'NOT', 'OBEDIENTLY', 'OBNOXIOUSLY', 'ODDLY', 'OFFENSIVELY', 'OFFICIALLY', 'OFTEN', 'ONLY', 'OPENLY', 'OPTIMISTICALLY', 'OVERCONFIDENTLY', 'OWLISHLY', 'PAINFULLY', 'PARTIALLY', 'PATIENTLY', 'PERFECTLY', 'PHYSICALLY', 'PLAYFULLY', 'POLITELY', 'POORLY', 'POSITIVELY', 'POTENTIALLY', 'POWERFULLY', 'PROMPTLY', 'PROPERLY', 'PUNCTUALLY', 'QUAINTLY', 'QUARRELSOMELY', 'QUEASILY', 'QUEERLY', 'QUESTIONABLY', 'QUESTIONINGLY', 'QUICKER', 'QUICKLY', 'QUIETLY', 'QUIRKILY', 'QUIZZICALLY', 'RAPIDLY', 'RARELY', 'READILY', 'REALLY', 'REASSURINGLY', 'RECKLESSLY', 'REGULARLY', 'RELUCTANTLY', 'REPEATEDLY', 'REPROACHFULLY', 'RESTFULLY', 'RIGHTEOUSLY', 'RIGHTFULLY', 'RIGIDLY', 'ROUGHLY', 'RUDELY', 'SADLY', 'SAFELY', 'SCARCELY', 'SCARILY', 'SEARCHINGLY', 'SEDATELY', 'SEEMINGLY', 'SELDOM', 'SELFISHLY', 'SEPARATELY', 'SERIOUSLY', 'SHAKILY', 'SHARPLY', 'SHEEPISHLY', 'SHRILLY', 'SHYLY', 'SILENTLY', 'SLEEPILY', 'SLOWLY', 'SMOOTHLY', 'SOFTLY', 'SOLEMNLY', 'SOLIDLY', 'SOMETIMES', 'SOON', 'SPEEDILY', 'STEALTHILY', 'STERNLY', 'STRICTLY', 'SUCCESSFULLY', 'SUDDENLY', 'SURPRISINGLY', 'SUSPICIOUSLY', 'SWEETLY', 'SWIFTLY', 'SYMPATHETICALLY', 'TENDERLY', 'TENSELY', 'TERRIBLY', 'THANKFULLY', 'THOROUGHLY', 'THOUGHTFULLY', 'TIGHTLY', 'TOMORROW', 'TOO', 'TREMENDOUSLY', 'TRIUMPHANTLY', 'TRULY', 'TRUTHFULLY', 'ULTIMATELY', 'UNABASHEDLY', 'UNACCOUNTABLY', 'UNBEARABLY', 'UNETHICALLY', 'UNEXPECTEDLY', 'UNFORTUNATELY', 'UNIMPRESSIVELY', 'UNNATURALLY', 'UNNECESSARILY', 'UPBEAT', 'UPLIFTINGLY', 'UPRIGHT', 'UPSIDE-DOWN', 'UPWARD', 'UPWARDLY', 'URGENTLY', 'USEFULLY', 'USELESSLY', 'USUALLY', 'UTTERLY', 'VACANTLY', 'VAGUELY', 'VAINLY', 'VALIANTLY', 'VASTLY', 'VERBALLY', 'VERY', 'VICIOUSLY', 'VICTORIOUSLY', 'VIOLENTLY', 'VIVACIOUSLY', 'VOLUNTARILY', 'WARMLY', 'WEAKLY', 'WEARILY', 'WELL', 'WETLY', 'WHOLLY', 'WILDLY', 'WILLFULLY', 'WISELY', 'WOEFULLY', 'WONDERFULLY', 'WORRIEDLY', 'WRONGLY', 'YAWNINGLY', 'YEARLY', 'YEARNINGLY', 'YESTERDAY', 'YIELDINGLY', 'YOUTHFULLY')
+# Build pattern to match words ending in "ING"
+pattern <- capture(one_or_more(WRD) %R% "ING")
+str_view(narratives, pattern)
+
+# Test replacement
+str_replace(narratives, pattern=pattern, replacement=str_c("CARELESSLY", REF1, sep = " "))
+
+# One adverb per narrative
+adverbs_10 <- sample(adverbs, 10, replace=FALSE)
+
+# Replace "***ing" with "adverb ***ing"
+str_replace(narratives, pattern=pattern, replacement=str_c(adverbs_10, REF1, sep = " "))
+
+
+# Names with builtin accents
+(tay_son_builtin <- c(
+  "Nguy\u1ec5n Nh\u1ea1c", 
+  "Nguy\u1ec5n Hu\u1ec7",
+  "Nguy\u1ec5n Quang To\u1ea3n"
+))
+
+# Convert to separate accents
+tay_son_separate <- stringi::stri_trans_nfd(tay_son_builtin)
+
+# Verify that the string prints the same
+tay_son_separate
+
+# Match all accents
+str_view_all(tay_son_separate, pattern=UP_DIACRITIC)
+
+
+# tay_son_separate has been pre-defined
+tay_son_separate
+
+# View all the characters in tay_son_separate
+str_view_all(tay_son_separate, pattern=ANY_CHAR)
+
+# View all the graphemes in tay_son_separate
+str_view_all(tay_son_separate, pattern=GRAPHEME)
+
+# Combine the diacritics with their letters
+tay_son_builtin <- stringi::stri_trans_nfc(tay_son_separate)
+
+# View all the graphemes in tay_son_builtin
+str_view_all(tay_son_builtin, pattern=GRAPHEME)
+
+```
+  
+  
+  
+***
+  
+Chapter 5 - Case Studies  
+  
+
+	
+	
+	
+	
+	
+	
 
 
 
