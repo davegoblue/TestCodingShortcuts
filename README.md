@@ -843,3 +843,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 captures String Manipulation in R with stringr - Chapter 3 (Pattern Matching with Regualar Expressions)  
 * DataCamp_Insights_v003 captures String Manipulation in R with stringr - Chapter 4 (Advanced Mapping and Manipulation)  
   
+### Expansions week of 05-FEB-2018  
+* DataCamp_Insights_v003 captures String Manipulation in R with stringr - Chapter 5 (Case Studies)  
+  
