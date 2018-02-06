@@ -845,4 +845,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 05-FEB-2018  
 * DataCamp_Insights_v003 captures String Manipulation in R with stringr - Chapter 5 (Case Studies)  
+* DataCamp_Insights_v003 captures Working with Dates and Times in R - Chapter 1 (Dates and Times in R)  
   
