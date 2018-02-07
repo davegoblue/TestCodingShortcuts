@@ -12322,6 +12322,243 @@ ggplot(logs, aes(x = datetime)) +
   
 Chapter 2 - Parsing and Manipulating Dates with lubridate  
   
+Parsing dates with lubridate:  
+  
+* lubridate::ymd() will manage dates in format ymd, even if they are not properly ISO formatted (have separators, English abbreviations, and the like)  
+	* Analogous behaviors from ydm(), mdy(), myd(), dmy(), dym(), day_hm()  
+    * Assumes UTC unless otherwise specified  
+    * All the functions with y, m and d in any order exist  
+    * If your dates have times as well, you can use the functions that start with ymd, dmy, mdy or ydm and are followed by any of _h, _hm or _hms  
+    * To see all the functions available look at ymd() for dates and ymd_hms() for datetimes  
+* lubridate::parse_date_time(x=, orders=)  
+	* The orders = argument is a sequence of characters, reflecting the order in the input  
+    * y-year with century, Y-year without century, m-month, d-day, H-hours (24-hour), M-minutes, S-seconds, and many others  
+    * a-abbreviated weekday, A-full weekday, b-abbreviate month, B-full month, I-hours (12-hour), p-AM/PM, z-timezone (offset in minutes/seconds from UTC)  
+    * Can pass a vector of sequences to orders=, such as orders=c("ymd", "dmy"), if some of the dates are formatted differently than others  
+  
+Weather in Auckland (data from Weather Underground, METAR from Auckland airport):  
+  
+* Data are available in akl_weather_daily.csv and akl_weather_hourly_2016.csv  
+* The lubridate::make_date(year, month, date) will produce a date from its components (these components can be vectors, such as columns in a frame  
+	* There is also a lubridate::make_datetime(year, month, day, hour, min, sec)  
+  
+Extracting parts of a datetime:  
+  
+* The lubridate::year() will pull out the year from a datetime object  
+	* month(), day(), hour(), minute(), second() will do the same  
+    * wday() is the weekday (1-7), while yday() is the Julian date (1-366) and tz() is the timezone  
+* The extractors can also be used to set a component of the datetime object  
+* Several functions return booleans, more or less answers to "is this a" questions  
+	* leap_year(), am(), pm(), dst(), quarter() will return 1-4, semester() will return 1-2  
+    * Months of course are different lengths so we should really correct for that, take a look at days_in_month() for helping with that  
+  
+Rounding datetimes:  
+  
+* The lubridate::floor_date(unit=) will round-down to the requested unit, such as "hour"  
+	* round_date() for nearest  
+    * ceiling_date() for round-up  
+* Units can be specified as "second", "minute", "hour", "day", "week", "month", "bimonth", "quarter", "halfyear", "year"  
+  
+Example code includes:  
+```{r}
+
+library(lubridate)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(ggridges)
+
+
+# Parse x 
+x <- "2010 September 20th" # 2010-09-20
+ymd(x)
+
+# Parse y 
+y <- "02.01.2010"  # 2010-01-02
+dmy(y)
+
+# Parse z 
+z <- "Sep, 12th 2010 14:00"  # 2010-09-12T14:00
+mdy_hm(z)
+
+
+# Specify an order string to parse x
+x <- "Monday June 1st 2010 at 4pm"
+parse_date_time(x, orders = "AmdyIp")
+
+# Specify order to include both "mdy" and "dmy"
+two_orders <- c("October 7, 2001", "October 13, 2002", "April 13, 2003", 
+  "17 April 2005", "23 April 2017")
+parse_date_time(two_orders, orders = c("mdy", "dmy"))
+
+# Specify order to include "dOmY", "OmY" and "Y"
+short_dates <- c("11 December 1282", "May 1372", "1253")
+parse_date_time(short_dates, orders = c("dOmY", "OmY", "Y"))
+
+
+# Import CSV with read_csv()
+akl_daily_raw <- read_csv("./RInputFiles/akl_weather_daily.csv")
+
+# Print akl_daily_raw
+akl_daily_raw
+
+# Parse date 
+akl_daily <- akl_daily_raw %>%
+  mutate(date = ymd(date))
+
+# Print akl_daily
+akl_daily
+
+# Plot to check work
+ggplot(akl_daily, aes(x = date, y = max_temp)) +
+  geom_line() 
+
+
+# Import "akl_weather_hourly_2016.csv"
+akl_hourly_raw <- read_csv("./RInputFiles/akl_weather_hourly_2016.csv")
+
+# Print akl_hourly_raw
+akl_hourly_raw
+
+# Use make_date() to combine year, month and mday 
+akl_hourly  <- akl_hourly_raw  %>% 
+  mutate(date = make_date(year = year, month = month, day = mday))
+
+# Parse datetime_string 
+akl_hourly <- akl_hourly  %>% 
+  mutate(
+    datetime_string = paste(date, time, sep = "T"),
+    datetime = ymd_hms(datetime_string)
+  )
+
+# Print date, time and datetime columns of akl_hourly
+akl_hourly %>% select(date, time, datetime)
+
+# Plot to check work
+ggplot(akl_hourly, aes(x = datetime, y = temperature)) +
+  geom_line()
+
+
+# Examine the head() of release_time
+releases <- read_csv("./RInputFiles/rversions.csv")
+release_time <- releases %>% pull(datetime)
+head(release_time)
+
+# Examine the head() of the months of release_time
+head(month(release_time))
+
+# Extract the month of releases 
+month(release_time) %>% table()
+
+# Extract the year of releases
+year(release_time) %>% table()
+
+# How often is the hour before 12 (noon)?
+mean(hour(release_time) < 12)
+
+# How often is the release in am?
+mean(am(release_time))
+
+
+# Use wday() to tabulate release by day of the week
+wday(releases$datetime) %>% table()
+
+# Add label = TRUE to make table more readable
+wday(releases$datetime, label=TRUE) %>% table()
+
+# Create column wday to hold labelled week days
+releases$wday <- wday(releases$datetime, label=TRUE)
+
+# Plot barchart of weekday by type of release
+ggplot(releases, aes(x=wday)) +
+  geom_bar() +
+  facet_wrap(~ type, ncol = 1, scale = "free_y")
+
+
+# Add columns for year, yday and month
+akl_daily <- akl_daily %>%
+  mutate(
+    year = year(date),
+    yday = yday(date),
+    month = month(date, label=TRUE))
+
+# Plot max_temp by yday for all years
+ggplot(akl_daily, aes(x = yday, y = max_temp)) +
+  geom_line(aes(group = year), alpha = 0.5)
+
+# Examine distribtion of max_temp by month
+ggplot(akl_daily, aes(x = max_temp, y = month, height = ..density..)) +
+  geom_density_ridges(stat = "density")
+
+
+# Create new columns hour, month and rainy
+akl_hourly <- akl_hourly %>%
+  mutate(
+    hour = hour(datetime),
+    month = month(datetime, label=TRUE),
+    rainy = (weather == "Precipitation")
+  )
+
+# Filter for hours between 8am and 10pm (inclusive)
+akl_day <- akl_hourly %>% 
+  filter(hour >= 8, hour <= 22)
+
+# Summarise for each date if there is any rain
+rainy_days <- akl_day %>% 
+  group_by(month, date) %>%
+  summarise(
+    any_rain = any(rainy)
+  )
+
+# Summarise for each month, the number of days with rain
+rainy_days %>% 
+  summarise(
+    days_rainy = sum(any_rain)
+  )
+
+
+r_3_4_1 <- ymd_hms("2016-05-03 07:13:28 UTC")
+
+# Round down to day
+floor_date(r_3_4_1, unit = "day")
+
+# Round to nearest 5 minutes
+round_date(r_3_4_1, unit = "5 minutes")
+
+# Round up to week 
+ceiling_date(r_3_4_1, unit = "week")
+
+# Subtract r_3_4_1 rounded down to day
+r_3_4_1 - floor_date(r_3_4_1, unit = "day")
+
+
+# Create day_hour, datetime rounded down to hour
+akl_hourly <- akl_hourly %>%
+  mutate(
+    day_hour = floor_date(datetime, unit = "hour")
+  )
+
+# Count observations per hour  
+akl_hourly %>% 
+  count(day_hour) 
+
+# Find day_hours with n != 2  
+akl_hourly %>% 
+  count(day_hour) %>%
+  filter(n != 2) %>% 
+  arrange(desc(n))
+
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Arithmetic with Dates and Times  
+  
+
+	
 
 	
 
