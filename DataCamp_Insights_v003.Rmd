@@ -12763,10 +12763,162 @@ monarchs %>%
   
 Chapter 4 - Problems in Practice  
   
+Time zones - ways to keep track of times in different locations (can pose analysis challenges):  
+  
+* Typically captured as an offset from GMT, but specified in R using tz= since the offset to GMT can change during the year (DST for example)  
+	* Sys.timezone() gives the timezone on your computer  
+    * OlsonNames() gives all the timezones that R is aware of  
+    * The OlsonNames() function matches with an international standard as to which cities are included  
+    * The lubridate::tz() will extract the timezone from a specific datetime  
+* Can change the timezone without changing the underlying clock time components by using lubridate::force_tz()  
+	* force_tz(ymd_hm("2017-12-12 12:00", tz="America/Los_Angeles"), tzone="America/Boston") will produce 2017-12-12 12:00 EST (note that the 12:00 is held, with ONLY time-zone changed)  
+* Can view the time in a different zone by using lubridate::with_tz()  
+	* with_tz(ymd_hm("2017-12-12 12:00", tz="America/Los_Angeles"), tzone="America/Boston") will produce 2017-12-12 15:00 EST (note that 15:00 EST and 12:00 PST are the same)  
+* For this entire course, if you've ever had a time, it's always had an accompanying date, i.e. a datetime. But sometimes you just have a time without a date  
+	* If you find yourself in this situation, the hms package provides an hms class of object for holding times without dates, and the best place to start would be with as.hms()  
+    * readr knows the hms class, so if it comes across something that looks like a time it will use it  
+  
+Importing and exporting datetimes:  
+  
+* The parse_date_time() function is designed to be forgiving and flexible, but at the expense of being slow (since it considers many possible formats)
+	* The fasttime::fastPOSIXct() is designed to very quickly read a proper ISO formatting of "YYYY-MM-DD"  
+    * The lubridate::fast_strptime(x=, format=) is also fast, but it requires a valid strptime format like "%Y-%m-%d" rather than the more flexible/forgiving parse_date_time(x=, order="ymd")  
+    * See help for strptime() for the valid strings  
+* The readr::write_csv() will write datetime objects in a proper ISO format, making for easy read-in  
+* Can also use the lubridate::stamp() capability to build a function that will format things based on an example you provide  
+	* my_stamp <- stamp("Tuesday October 10 2017")  
+    * my_stamp has been created by lubridate::stamp() as function(x) format(x, format="%A %B %d %Y") to match the example given  
+  
+Wrap-up:  
+  
+* Chapter 1: base R objects Date, POSIXct  
+	* lubridate, zoo, xts, and the like all work together with each other and these  
+* Chapter 2: importing and manipulating datetime obects  
+* Chapter 3: challenges of arithmetic with datetimes  
+	* periods, durations, intervals  
+* Chapter 4: time zones, and import/outputs  
+  
+Example code includes:  
+```{r}
 
-	
+# Game2: CAN vs NZL in Edmonton
+game2 <- mdy_hm("June 11 2015 19:00")
 
-	
+# Game3: CHN vs NZL in Winnipeg
+game3 <- mdy_hm("June 15 2015 18:30")
+
+# Set the timezone to "America/Edmonton"
+game2_local <- force_tz(game2, tzone = "America/Edmonton")
+game2_local
+
+# Set the timezone to "America/Winnipeg"
+game3_local <- force_tz(game3, tzone = "America/Winnipeg")
+game3_local
+
+# How long does the team have to rest?
+as.period(game2_local %--% game3_local)
+
+
+# What time is game2_local in NZ?
+with_tz(game2_local, tzone = "Pacific/Auckland")
+
+# What time is game2_local in Corvallis, Oregon?
+with_tz(game2_local, tzone = "America/Los_Angeles")
+
+# What time is game3_local in NZ?
+with_tz(game3_local, tzone = "Pacific/Auckland")
+
+
+# Examine datetime and date_utc columns
+head(akl_hourly$datetime)
+head(akl_hourly$date_utc)
+  
+# Force datetime to Pacific/Auckland
+akl_hourly <- akl_hourly %>%
+  mutate(
+    datetime = force_tz(datetime, tzone = "Pacific/Auckland"))
+
+# Reexamine datetime
+head(akl_hourly$datetime)
+  
+# Are datetime and date_utc the same moments
+table(akl_hourly$datetime - akl_hourly$date_utc)
+
+
+# Import auckland hourly data 
+akl_hourly <- read_csv("./RInputFiles/akl_weather_hourly_2016.csv")
+
+# Examine structure of time column
+str(akl_hourly$time)
+
+# Examine head of time column
+head(akl_hourly$time)
+
+# A plot using just time
+ggplot(akl_hourly, aes(x = time, y = temperature)) +
+  geom_line(aes(group = make_date(year, month, mday)), alpha = 0.2)
+
+
+library(microbenchmark)
+library(fasttime)
+
+# Examine structure of dates
+dates <- paste0(gsub(" ", "T", as.character(akl_hourly$date_utc)), "Z")
+
+str(dates)
+
+# Use fastPOSIXct() to parse dates
+fastPOSIXct(dates) %>% str()
+
+# Compare speed of fastPOSIXct() to ymd_hms()
+microbenchmark(
+  ymd_hms = ymd_hms(dates),
+  fasttime = fastPOSIXct(dates),
+  times = 20)
+
+
+# Head of dates
+head(dates)
+
+# Parse dates with fast_strptime
+fast_strptime(dates, 
+    format = "%Y-%m-%dT%H:%M:%SZ") %>% str()
+
+# Comparse speed to ymd_hms() and fasttime
+microbenchmark(
+  ymd_hms = ymd_hms(dates),
+  fasttime = fastPOSIXct(dates),
+  fast_strptime = fast_strptime(dates, 
+    format = "%Y-%m-%dT%H:%M:%SZ"),
+  times = 20)
+
+
+finished <- "I finished 'Dates and Times in R' on Thursday, September 20, 2017!"
+# Create a stamp based on "Sep 20 2017"
+date_stamp <- stamp("September 20, 2017", orders="mdy")
+
+# Print date_stamp
+date_stamp
+
+# Call date_stamp on today()
+date_stamp(today())
+
+# Create and call a stamp based on "09/20/2017"
+stamp("09/20/2017", orders="mdy")(today())
+
+# Use string finished for stamp()
+stamp(finished, orders="amdy")(today())
+
+```
+  
+  
+  
+***
+  
+###_Scalable Data Processing in R_  
+  
+Chapter 1 - Working with Increasingly Large Data Sets  
+  
 	
 	
 	
