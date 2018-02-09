@@ -848,4 +848,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 captures Working with Dates and Times in R - Chapter 1 (Dates and Times in R)  
 * DataCamp_Insights_v003 captures Working with Dates and Times in R - Chapter 2 (Parsing and Manipulating Dates with lubridate)  
 * DataCamp_Insights_v003 captures Working with Dates and Times in R - Chapter 3 (Arithmetic with Dates and Times)  
+* DataCamp_Insights_v003 captures Working with Dates and Times in R - Chapter 4 (Problems in Practice)  
   
