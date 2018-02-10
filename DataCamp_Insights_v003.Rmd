@@ -12919,6 +12919,160 @@ stamp(finished, orders="amdy")(today())
   
 Chapter 1 - Working with Increasingly Large Data Sets  
   
+What is scalable data processing?:  
+  
+* Working with data that is too large for one computer  
+* Scalable code lets you work in parallel, and use resources as they become available  
+* Data sets are frequently much bigger than available RAM, which is a challenge since R by default runs using R  
+    * "R is not well suited to working with data larger than 10%-20% of a computer's RAM" - The R Installation and Administration Manual  
+    * When a computer runs out of RAM, it "swaps" to the hard drive, vastly slowing down the calculations  
+* A more scalable solution is as follows  
+	* Move a subset of data in to RAM  
+    * Process the subset  
+    * Keep the results and discard the subset  
+* Code may be slow due to complexity of calculations  
+	* Consider the disk operations needed  
+* Benchmarking using microbenchmark() can be critical  
+  
+Working with "out of core" objects using the Bigmemory Project:  
+  
+* Package "bigmemory" was written by Kane (instructor for this course) to store, manipulate, and process matrices exceeding RAM  
+	* Core object is a big.matrix and it is designed to manage situations where disk space is much greater than RAM  
+    * The process of moving data to RAM only when needed is called "out of core" processing  
+* By default, a big.matrix keeps data on the disk, only moving the data to RAM as needed  
+	* The movements to/from RAM are implicit, which is to say that they are managed by the package  
+    * Only a single import is needed  
+* The big.matrix is created using big.matrix(nrow=, ncol=, init=, type=, backingfile=, descriptorfile=)  
+	* The nrow, ncol are the same as matrix(), while init is the initial value to assign everywhere and type is a quoted type such as "double" or "integer"  
+    * The backingfile is a quoted file name that will hold the binary representation of the big.matrix on the disk, with extension .bin  
+    * The descriptorfile is a quoted file name that will hold some metadata such as the number of rows/columns, name, and the like  
+* Supposing that x is a big,matrix, then the default print(x) obtained by x on the command line is to show a few slots/pointers  
+	* To have contents of x printed, use x[ , ]  
+    * Assignments can be made using x[myRow, myColumn] <- myValue  
+* The read.big.matrix() function is meant to look similar to read.table() but, in addition, needs to know:  
+	* what type of numeric values you want to read ("char", "short", "integer", "double")  
+    * name of the file that will hold the matrix's data (the backing file)  
+    * name of the file to hold information about the matrix (a descriptor file)   
+    * Result will be a file on the disk holding the value read in along with a descriptor file which holds extra information (like the number of columns and rows) about the resulting big.matrix object  
+* A final advantage to using big.matrix is that if you know how to use R's matrices, then you know how to use a big.matrix  
+	* You can subset columns and rows just as you would a regular matrix, using a numeric or character vector and the object returned is an R matrix  
+    * Likewise, assignments are the same as with R matrices and after those assignments are made they are stored on disk and can be used in the current and future R sessions  
+    * One thing to remember is that $ is not valid for getting a column of either a matrix or a big.matrix  
+  
+References vs. Copies:  
+  
+* Can subset and make assignments to a big.matrix much like a matrix  
+* There are a few key differences between a big.matrix and a matrix  
+	* big.matrix is stored on the disk (persists across R sessions, can be shared across R sessions)  
+    * R typically makes copies during assignment, which is why changing a variable inside a function (playing with the copy) has no impact on the variable outside the function  
+    * However, some objects such as environments are not copied, so modifying them inside a function modified them globally (outside the function) also  
+    * The big.matrix is not copied, and is instead a reference object; thus, you have to explicitly request a copy, which means 1) you have more control, but 2) you need to be more careful  
+* The reference vs. copy for big.matrix objects seems in some ways similar to Python  
+	* a <- b will set a to reference the same data as b; changing a or changing b means changing both  
+    * a <- deepcopy() will produce a copy of a and assign it to b; much like a = b[:] in Python  
+  
+Example code includes:  
+```{r}
+
+# Load the microbenchmark package
+library(microbenchmark)
+
+# Compare the timings for sorting different sizes of vector
+mb <- microbenchmark(
+  # Sort a random normal vector length 1e5
+  "1e5" = sort(rnorm(1e5)),
+  # Sort a random normal vector length 2.5e5
+  "2.5e5" = sort(rnorm(2.5e5)),
+  # Sort a random normal vector length 5e5
+  "5e5" = sort(rnorm(5e5)),
+  "7.5e5" = sort(rnorm(7.5e5)),
+  "1e6" = sort(rnorm(1e6)),
+  times = 10
+)
+
+# Plot the resulting benchmark object
+plot(mb)
+
+
+# Load the bigmemory package
+library(bigmemory)
+
+# Create the big.matrix object: x
+x <- read.big.matrix("./RInputFiles/mortgage-sample.csv", header = TRUE, 
+                     type = "integer", 
+                     backingfile = "mortgage-sample.bin", 
+                     descriptorfile = "mortgage-sample.desc")
+    
+# Find the dimensions of x
+dim(x)
+
+
+# Attach mortgage-sample.desc
+mort <- attach.big.matrix("mortgage-sample.desc")
+
+# Find the dimensions of mort
+dim(mort)
+
+# Look at the first 6 rows of mort
+head(mort)
+
+
+# Create mort
+mort <- attach.big.matrix("mortgage-sample.desc")
+
+# Look at the first 3 rows
+mort[1:3, ]
+
+# Create a table of the number of mortgages for each year in the data set
+table(mort[, "year"])
+
+
+# Load the biganalytics package (error in loading to Knit file, works OK otherwise)
+# library(biganalytics)
+
+# Get the column means of mort
+# colmean(mort)
+
+# Use biganalytics' summary function to get a summary of the data
+# summary(mort)
+
+
+# Use deepcopy() to create first_three
+first_three <- deepcopy(mort, cols = 1:3, 
+                        backingfile = "first_three.bin", 
+                        descriptorfile = "first_three.desc")
+
+# Set first_three_2 equal to first_three
+first_three_2 <- first_three
+
+# Set the value in the first row and first column of first_three to NA
+first_three[1, 1] <- NA
+
+# Verify the change shows up in first_three_2
+first_three_2[1, 1]
+
+# but not in mort
+mort[1, 1]
+
+
+# Quirky fix so that the files can be used again later
+rm(mort)
+rm(x)
+rm(first_three)
+rm(first_three_2)
+gc()
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Processing and Analyzing Data with bigmemory  
+  
+
+
+	
 	
 	
 	
