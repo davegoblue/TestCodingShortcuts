@@ -850,4 +850,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003 captures Working with Dates and Times in R - Chapter 3 (Arithmetic with Dates and Times)  
 * DataCamp_Insights_v003 captures Working with Dates and Times in R - Chapter 4 (Problems in Practice)  
 * DataCamp_Insights_v003 captures Scalable Data Processing in R - Chapter 1 (Working with Increasingly Large Datasets)  
+* Split DataCamp_Insights_v003 so new components can go in DataCamp_Insights_v003_a to stay under DLL limit  
   
