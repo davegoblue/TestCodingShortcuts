@@ -925,6 +925,165 @@ first_three_2[1, 1]
 mort[1, 1]
 
 
+```
+  
+  
+  
+***
+  
+Chapter 2 - Processing and Analyzing Data with bigmemory  
+  
+The Bigmemory Suite of Packages:  
+  
+* Many packages have been designed to work together with a big.matrix object  
+	* biganalytics - summarizing  
+    * bigtabulate - split and tabulate (includes the bigtable(x, quotedColumnVector))  
+    * bigalgebra - linear algenra  
+    * bigpca - PCA  
+    * bigFastLM - linear regressions  
+    * biglasso - lasso regressions  
+    * bigrf - random forests  
+  
+* FHFA Dataset has data about millions of mortgages - difference in ownership rates, defaults, etc.  
+	* Course will use a 70,000 record subset  
+    * Raw data (full 2.5 GB dataset) available at FHFA (fhfa.gov)  
+    * Code works the same on subsets and full data sets  
+  
+Split-Apply-Combine (aka Split-Compute-Combine), run in this course using split() Map() Reduce():  
+  
+* The split() function partitions the data, whether randomly or based on a factor variable  
+	* split(myData, myFactor) will produce a list, with each element of the list containing the requested data (one per myFactor)  
+* The Map() function processes each of the partitions  
+	* Map(myFunction, mySplitList) will apply the myFunction to each of the items in the mySplitList, with the output a list named like mySplitList  
+* The Reduce() function combines the (typically processed) data from a list  
+	* Reduce(myFunction, myMapList) will apply the myFunction while combining the items in myMapList  
+    * A common function might be rbind or '+' (add them up)  
+  
+Visualize results using tidyverse:  
+  
+* The pipe (%>%) operator works well with many of the big.matrix functions, since the first argument is a dataset  
+* Can combine some of big.matrix processing outputs with standard packages like dplyr and tidyr and ggplot  
+  
+Limitations of bigmemory - process is useful for dense, numeric matrices that can be stored on hard disk:  
+  
+* Underlying structures are compatible with low-level linear algebra libraries for fast fitting  
+* If you have different column types, you can try the ff package (similar to bigmemory but includes structures like a data.frame)  
+* The bigmemory object is said to be "random access", which means it is equally easy to get access to any specific component  
+* There are some big drawbacks to the "random access" capabilities, however  
+	* Cannot add rows or columns - need to create an entirely new object and port over the relevant data  
+    * Need enough disk space to hold the entire matrix in a block  
+    * Can instead use other tools to process data using a "continuous chunks" approach - discussed in the next chapter  
+  
+Example code includes:  
+```{r}
+
+library(bigtabulate)
+library(tidyr)
+library(ggplot2)
+library(biganalytics)
+library(dplyr)
+
+
+race_cat <- c('Native Am', 'Asian', 'Black', 'Pacific Is', 'White', 'Two or More', 'Hispanic', 'Not Avail')
+
+# Call bigtable to create a variable called race_table
+race_table <- bigtable(mort, "borrower_race")
+
+# Rename the elements of race_table
+names(race_table) <- race_cat
+race_table
+
+
+# Create a table of the borrower race by year
+race_year_table <- bigtable(mort, c("borrower_race", "year"))
+
+# Convert rydf to a data frame
+rydf <- as.data.frame(race_year_table)
+
+# Create the new column Race
+rydf$Race <- race_cat
+
+# Let's see what it looks like
+rydf
+
+
+female_residence_prop <- function(x, rows) {
+    x_subset <- x[rows, ]
+    # Find the proporation of female borrowers in urban areas
+    prop_female_urban <- sum(x_subset[, "borrower_gender"] == 2 & 
+                                 x_subset[, "msa"] == 1) / 
+        sum(x_subset[, "msa"] == 1)
+    # Find the proporation of female borrowers in rural areas
+    prop_female_rural <- sum(x_subset[, "borrower_gender"] == 2 & 
+                                 x_subset[, "msa"] == 0) / 
+        sum(x_subset[, "msa"] == 0)
+    
+    c(prop_female_urban, prop_female_rural)
+}
+
+# Find the proportion of female borrowers in 2015
+female_residence_prop(mort, mort[, "year"] == 2015)
+
+
+# Split the row numbers of the mortage data by year
+spl <- split(1:nrow(mort), mort[, "year"])
+
+# Call str on spl
+str(spl)
+
+
+# For each of the row splits, find the female residence proportion
+all_years <- Map(function(rows) female_residence_prop(mort, rows), spl)
+
+# Call str on all_years
+str(all_years)
+
+
+# Collect the results as rows in a matrix
+prop_female <- Reduce(rbind, all_years)
+
+# Rename the row and column names
+dimnames(prop_female) <- list(names(all_years), c("prop_female_urban", "prop_femal_rural"))
+
+# View the matrix
+prop_female
+
+
+# Convert prop_female to a data frame
+prop_female_df <- as.data.frame(prop_female)
+
+# Add a new column Year
+prop_female_df$Year <- row.names(prop_female_df)
+
+# Call gather on prop_female_df
+prop_female_long <- gather(prop_female_df, Region, Prop, -Year)
+
+# Create a line plot
+ggplot(prop_female_long, aes(x = Year, y = Prop, group = Region, color = Region)) + 
+    geom_line()
+
+
+# Call summary on mort
+summary(mort)
+
+bir_df_wide <- bigtable(mort, c("borrower_income_ratio", "year")) %>% 
+    as.data.frame() %>% 
+    tibble::rownames_to_column() %>% 
+    filter(rowname %in% c(1, 2, 3)) %>% 
+    select(-rowname) %>%
+    # Create a new column called BIR with the corresponding table categories
+    mutate(BIR = c(">=0,<=50%", ">50, <=80%", ">80%"))
+
+bir_df_wide
+
+bir_df_wide %>% 
+    # Transform the wide-formatted data.frame into the long format
+    gather(Year, Count, -BIR) %>%
+    # Use ggplot to create a line plot
+    ggplot(aes(x = Year, y = Count, group = BIR, color = BIR)) + 
+    geom_line()
+
+
 # Quirky fix so that the files can be used again later
 rm(mort)
 rm(x)
@@ -938,8 +1097,10 @@ gc()
   
 ***
   
-Chapter 2 - Processing and Analyzing Data with bigmemory  
+Chapter 3 - Working with iotools  
   
+
+	
 
 
 	
