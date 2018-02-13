@@ -1083,6 +1083,179 @@ bir_df_wide %>%
     ggplot(aes(x = Year, y = Count, group = BIR, color = BIR)) + 
     geom_line()
 
+```
+  
+  
+  
+***
+  
+Chapter 3 - Working with iotools  
+  
+Introduction to chunk-wise processing - solution to challenges from bigmemory:  
+  
+* The iotools allows for processing the data in "chunks", allowing for data frames, data across many machines, and the like  
+* Can process chunks either sequentially (keep as needed after each chunk runs) or independently  
+	* Independent processing is typically harder to code (final result must be combined), but allows for parallel processing  
+* Sometimes Split-Apply-Combine cannot be made to work, such as trying to find a median (even keeping some extra data per chunk -- such as sum and count when end goal is mean -- will not work)  
+	* Fortunately, most regressions can be successfully run using the Split-Apply-Combine methodology  
+* An operation that gives the same answer whether you apply it to an entire data set or to chunks of a data set and then on the results on the chunks is sometimes called foldable  
+	* The max() and min() operations are an example of this  
+  
+First look at iotools: Importing data:  
+  
+* Basic components of chunk-wise processing include 1) load pieces of data, 2) convert to native objects, 3) perform computation and store results, and 4) repeated as needed until finished  
+* Loading data often takes more time than processing the data (retrieval from disk and conversion to readable formats)  
+* The iotools package is designed to separate the physical loading of data and the parsing of data in to R objects for better flexibility and performance  
+	* readAsRaw() reads the entire data in to a raw vector  
+    * read.chunk() reads the data in chunks in to a raw vector  
+* The iotools can then parse the data in to either a matrix or a data frame  
+	* mstrsplit() converts raw data in to a matrix  
+    * dstrsplit() converts raw data in to a data frame  
+    * read.delim.raw() = readAsRaw() + dstrsplit()  
+* Processing contiguous chunks means there is no need to have read all the data in advance (such as to create the spl vector by 1:nrows by myVar)  
+* When processing a sequence of contiguous chunks of data on a hard drive, iotools can turn a raw object into a data.frame or matrix while - at the same time - retrieving the next chunk of data  
+    * These optimizations allow iotools to quickly process very large files  
+  
+Using chunk.apply - effectively moves away from what is functionally a "for loop" to allow better parallel processing:  
+  
+* iotools is the basis of hmr which allows for running R on TB of data using Hadoop  
+* The general usage is chunk.apply(myFile=, myFunction=, CH.MAX.SIZE=)  # this will apply myFunction across chunks of size CH.MAX.SIZE in myFile  
+	* Output will be a matrix where each row is one of the chunks and each column is one of (or the only) output from myFunction for that chunk  
+    * There is an optional parallel= option; the argument supplied is the number of parallel clusters to be used  
+* By default, chunk.apply() aggregates the processed data using the rbind() function  
+	* This means that you can create a table from each of the chunks and then add up the rows of the resulting matrix to get the total counts for the table  
+* When the parallel parameter is set to a value greater than one on Linux and Unix machine (including the Mac) multiple processes read and process data at the same time thereby reducing the execution time  
+	* On Windows the parallel parameter is ignored  
+  
+Example code includes:  
+```{r}
+
+foldable_range <- function(x) {
+  if (is.list(x)) {
+    # If x is a list then reduce it by the min and max of each element in the list
+    c(Reduce(min, x), Reduce(max, x))
+  } else {
+    # Otherwise, assume it's a vector and find it's range
+    range(x)
+  }
+}
+
+# Verify that foldable_range() works on the record_number column
+foldable_range(mort[, "record_number"])
+
+
+# Split the mortgage data by year
+spl <- split(1:nrow(mort), mort[, "year"])
+
+# Use foldable_range() to get the range of the record numbers
+foldable_range(Map(function(s) foldable_range(mort[s, "record_number"]), spl))
+
+
+# Load the iotools and microbenchmark packages
+library(iotools)
+library(microbenchmark)
+
+# Time the reading of files
+microbenchmark(
+    # Time the reading of a file using read.delim five times
+    read.delim("./RInputFiles/mortgage-sample.csv", header = FALSE, sep = ","),
+    # Time the reading of a file using read.delim.raw five times
+    read.delim.raw("./RInputFiles/mortgage-sample.csv", header = FALSE, sep = ","),
+    times = 5
+)
+
+
+# Read mortgage-sample.csv as a raw vector
+raw_file_content <- readAsRaw("./RInputFiles/mortgage-sample.csv")
+
+# Convert the raw vector contents to a matrix
+mort_mat <- mstrsplit(raw_file_content, sep = ",", type = "integer", skip = 1)
+
+# Look at the first 6 rows
+head(mort_mat)
+
+# Convert the raw file contents to a data.frame
+mort_df <- dstrsplit(raw_file_content, sep = ",", col_types = rep("integer", 16), skip = 1)
+
+# Look at the first 6 rows
+head(mort_df)
+
+
+# We have created a file connection fc to the "mortgage-sample.csv" file and read in the first line to get rid of the header.
+# Define the function to apply to each chunk
+make_table <- function(chunk) {
+    # Read each chunk as a matrix
+    x <- mstrsplit(chunk, type = "integer", sep = ",")
+    # Create a table of the number of borrowers (column 3) for each chunk
+    table(x[, 3])
+}
+
+# Create a file connection to mortgage-sample.csv
+fc <- file("./RInputFiles/mortgage-sample.csv", "rb")
+
+# Read the first line to get rid of the header
+(col_names <- readLines(fc, n = 1))
+(col_names <- lapply(str_split(col_names, '\\",\\"'), FUN=function(x) { str_replace(x, '\\"', '') })[[1]])
+
+# Read the data in chunks
+counts <- chunk.apply(fc, make_table, CH.MAX.SIZE = 1e5)
+
+# Close the file connection
+close(fc)
+
+# Print counts
+counts
+
+# Sum up the chunks
+colSums(counts)
+
+
+msa_map <- c("rural", "urban")
+# Define the function to apply to each chunk
+make_msa_table <- function(chunk) {
+    # Read each chunk as a data frame
+    x <- dstrsplit(chunk, col_types = rep("integer", length(col_names)), sep = ",")
+    # Set the column names of the data frame that's been read
+    colnames(x) <- col_names
+    # Create new column, msa_pretty, with a string description of where the borrower lives
+    x$msa_pretty <- msa_map[x$msa + 1]
+    # Create a table from the msa_pretty column
+    table(x$msa_pretty)
+}
+
+# Create a file connection to mortgage-sample.csv
+fc <- file("./RInputFiles/mortgage-sample.csv", "rb")
+
+# Read the first line to get rid of the header
+readLines(fc, n = 1)
+
+# Read the data in chunks
+counts <- chunk.apply(fc, make_msa_table, CH.MAX.SIZE = 1e5)
+
+# Close the file connection
+close(fc)
+
+# Aggregate the counts as before
+colSums(counts)
+
+
+iotools_read_fun <- function(parallel) {
+    fc <- file("./RInputFiles/mortgage-sample.csv", "rb")
+    readLines(fc, n = 1)
+    chunk.apply(fc, make_msa_table,
+                CH.MAX.SIZE = 1e5, parallel = parallel)
+    close(fc)
+}
+
+# Benchmark the new function
+microbenchmark(
+    # Use one process
+    iotools_read_fun(1), 
+    # Use three processes
+    iotools_read_fun(3), 
+    times = 20
+)
+
 
 # Quirky fix so that the files can be used again later
 rm(mort)
@@ -1097,8 +1270,9 @@ gc()
   
 ***
   
-Chapter 3 - Working with iotools  
+Chapter 4 - Case Study: Preliminary Analysis of Housing Data  
   
+
 
 	
 
