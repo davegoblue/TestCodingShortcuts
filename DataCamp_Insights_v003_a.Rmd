@@ -924,7 +924,6 @@ first_three_2[1, 1]
 # but not in mort
 mort[1, 1]
 
-
 ```
   
   
@@ -1257,6 +1256,212 @@ microbenchmark(
 )
 
 
+```
+  
+  
+  
+***
+  
+Chapter 4 - Case Study: Preliminary Analysis of Housing Data  
+  
+Overview of types of analysis for this chapter:  
+  
+* Compare proportions of people receiving mortgages  
+* Amount of "missingness" in the data  
+* Changes in 1) mortgage demographic proportions over time, and 2) city vs. rural mortgages, and 3) proportions of federally insured loans  
+  
+Are the data missing at random?  
+  
+* Missing data is pervasive, including in this housing dataset  
+* Three components of missing data  
+	* Missing Completely at Random (MCAR) - no way to predict where/what, meaning rows with missing data can just be dropped  
+    * Missing at Random (MAR) - missingness is dependent on variables in the dataset, meaning that multiple imputation can be successful  
+    * Missing Not At Random (MNAR) - typically due to deterministic relationships between missing data and other variables, beyond the scope of this course  
+* Assumption for this exercise will be that data are checked for MAR and assumed to be MCAR if they are not MAR  
+	* For each column, recode the column as a 1/0 for missing, then run a logit on all the other variables  
+    * If the other variables have a statistically significant prediction effect on the 1/0 column, then that column is MAR rather than MCAR  
+    * Need to have a smart p-value for significance depending on number of regressions that have been run  
+  
+Analyzing the Housing Data:  
+  
+* Adjusted counts - adjusting group sizes allows you to compare different groups as though they were the same size  
+* Proportional change can show growth (or decline) of groups over time  
+  
+Borrower Lending Trends: City vs. Rural:  
+  
+* Looking at city (MSA == 1) vs rural  
+* Looking at federally guaranteed loans  
+	* Can use Borrower Income Ratio (borrower income divided by median income in the area)  
+  
+Wrap up:  
+  
+* Split-Compute-Combine (aka Split-Apply-Combine) as enabled by bigmemory and iotools  
+* Operations can be run on a single machine in series, a single machine in parallel, or across multiple machines  
+* Summary of the bigmemory approach  
+    * Good for dense, large matrices that might otherwise overhwlem RAM  
+    * Looks like a regular R matrix  
+* Summary of the iotools approach:  
+    * Good for much larger data that can be processed in sequential chunks  
+    * More flexible than bigmemory in that it can handle data frames and files saved on multiple disks  
+  
+Example code includes:  
+```{r}
+
+# Create a table of borrower_race column
+race_table <- bigtable(mort, "borrower_race")
+
+# Rename the elements
+names(race_table) <- race_cat[as.numeric(names(race_table))]
+
+# Find the proportion
+race_table[1:7] / sum(race_table[1:7])
+
+mort_names <- col_names
+
+# Create table of the borrower_race 
+race_table_chunks <- chunk.apply(
+    "./RInputFiles/mortgage-sample.csv", function(chunk) { 
+        x <- mstrsplit(chunk, sep = ",", type = "integer") 
+        colnames(x) <- mort_names 
+        table(x[, "borrower_race"])
+}, CH.MAX.SIZE = 1e5)
+
+# Add up the columns
+race_table <- colSums(race_table_chunks)
+
+# Find the proportion
+borrower_proportion <- race_table[1:7] / sum(race_table[1:7])
+
+pop_proportion <- c(0.009, 0.048, 0.126, 0.002, 0.724, 0.029, 0.163)
+names(pop_proportion) <- race_cat[1:7]
+# Create the matrix
+matrix(c(pop_proportion, borrower_proportion), byrow = TRUE, nrow = 2,
+  dimnames = list(c("Population Proportion", "Borrower Proportion"), race_cat[1:7]))
+
+
+# Create a variable indicating if borrower_race is missing in the mortgage data
+borrower_race_ind <- mort[, "borrower_race"] == 9
+
+# Create a factor variable indicating the affordability
+affordability_factor <- factor(mort[, "affordability"])
+
+# Perform a logistic regression
+summary(glm(borrower_race_ind ~ affordability_factor, family = binomial))
+
+
+# Open a connection to the file and skip the header
+fc <- file("./RInputFiles/mortgage-sample.csv", "rb")
+readLines(fc, n = 1)
+
+# Create a function to read chunks
+make_table <- function(chunk) {
+    # Create a matrix
+    m <- mstrsplit(chunk, sep = ",", type = "integer")
+    colnames(m) <- mort_names
+    # Create the output table
+    bigtable(m, c("borrower_race", "year"))
+}
+
+# Import data using chunk.apply
+race_year_table <- chunk.apply(fc, make_table)
+
+# Close connection
+close(fc)
+
+# Cast it to a data frame
+rydf <- as.data.frame(race_year_table)
+
+# Create a new column Race with race/ethnicity
+rydf$Race <- race_cat
+
+
+# Note: We removed the row corresponding to "Not Avail".
+# View rydf
+rydf <- 
+    rydf %>% 
+    filter(Race !="Not Avail")
+rydf 
+
+# View pop_proportion
+pop_proportion
+
+# Gather on all variables except Race
+rydfl <- gather(rydf, Year, Count, -Race)
+
+# Create a new adjusted count variable
+rydfl$Adjusted_Count <- rydfl$Count / pop_proportion[rydfl$Race]
+
+# Plot
+ggplot(rydfl, aes(x = Year, y = Adjusted_Count, group = Race, color = Race)) + 
+    geom_line()
+
+
+# View rydf
+rydf
+
+# Normalize the columns
+for (i in seq_len(nrow(rydf))) {
+  rydf[i, 1:8] <- rydf[i, 1:8] / rydf[i, 1]
+}
+
+# Convert the data to long format
+rydf_long <- gather(rydf, Year, Proportion, -Race)
+
+# Plot
+ggplot(rydf_long, aes(x = Year, y = Proportion, group = Race, color = Race)) + 
+    geom_line()
+
+
+# Open a connection to the file and skip the header
+fc <- file("./RInputFiles/mortgage-sample.csv", "rb")
+readLines(fc, n = 1)
+
+# Create a function to read chunks
+make_table <- function(chunk) {
+    # Create a matrix
+    m <- mstrsplit(chunk, sep = ",", type = "integer")
+    colnames(m) <- mort_names
+    # Create the output table
+    bigtable(m, c("msa", "year"))
+}
+
+# Import data using chunk.apply
+msa_year_table <- chunk.apply(fc, make_table)
+
+# Close connection
+close(fc)
+
+# Convert to a data frame
+df_msa <- as.data.frame(msa_year_table)
+
+# Rename columns
+df_msa$MSA <- c("rural", "city")
+
+# Gather on all columns except Year
+df_msa_long <- gather(df_msa, Year, Count, -MSA)
+
+# Plot 
+ggplot(df_msa_long, aes(x = Year, y = Count, group = MSA, color = MSA)) + 
+    geom_line()
+
+
+# Tabulate borrower_income_ratio and federal_guarantee
+ir_by_fg <- bigtable(mort, c("borrower_income_ratio", "federal_guarantee"))
+
+# Label the columns and rows of the table
+income_cat <- c('0 <= 50', '50 < 80', '> 80', 'Not Applicable')
+guarantee_cat <- c('FHA/VA', 'RHS', 'HECM', 'No Guarantee')
+dimnames(ir_by_fg) <- list(income_cat, guarantee_cat)
+
+# For each row in ir_by_fg, divide by the sum of the row
+for (i in seq_len(nrow(ir_by_fg))) {
+  ir_by_fg[i, ] = ir_by_fg[i, ] / sum(ir_by_fg[i, ])
+}
+
+# Print
+ir_by_fg
+
+
 # Quirky fix so that the files can be used again later
 rm(mort)
 rm(x)
@@ -1270,8 +1475,13 @@ gc()
   
 ***
   
-Chapter 4 - Case Study: Preliminary Analysis of Housing Data  
+###_Working with Web Data in R_  
   
+Chapter 1 - Downloading Files and Using API Clients  
+  
+
+  
+
 
 
 	
