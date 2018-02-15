@@ -856,4 +856,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Scalable Data Processing in R - Chapter 2 (Processing and Analyzing Data with bigmemory)  
 * DataCamp_Insights_v003_a captures Scalable Data Processing in R - Chapter 3 (Working with iotools)  
 * DataCamp_Insights_v003_a captures Scalable Data Processing in R - Chapter 4 (Case Study: Preliminary Analysis of Housing Data)  
+* DataCamp_Insights_v003_a captures Working with Web Data in R - Chapter 1 (Downloading Files and Using API Clients)  
   
