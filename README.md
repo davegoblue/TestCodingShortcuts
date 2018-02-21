@@ -864,4 +864,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 19-FEB-2018  
 * DataCamp_Insights_v003_a captures Working with Web Data in R - Chapter 5 (CSS Web Scraping and Final Case Study)  
 * DataCamp_Insights_v003_a captures Data Visualization in R with lattice - Chapter 1 (Basic Plotting with lattice)  
+* DataCamp_Insights_v003_a captures Data Visualization in R with lattice - Chapter 2 (Conditioning and the Formula Interface)  
   
