@@ -2692,6 +2692,218 @@ densityplot(~ Ozone, data = airquality, groups = Month.Name,
   
 ***
   
+Chapter 4 - Customizing plots using panel functions  
+  
+Panel functions:  
+  
+* Declarative approach (you provide specifications, system figures out requirements) is used by ggplot2  
+* Procedural approach (you provide step-by-step) is used by lattice and base R  
+* Custom displays in lattice cannot be created directly by faceting; instead, function build-up is needed  
+	* panel.histdens <- function(x, .) { panel.histogram(x, .) ; panel.lines(density(x, na.rm=TRUE)) }  # overlay a density with a density histogram  
+    * The panel.histdens is then used inside the function, such as panel=panel.histdens inside a call to histogram()  
+    * The base R functions like lines and points need to be replaced by their lattice equivalents like panel.lines and panel.points for the lattice code to work  
+* Rather than customizing a default display, sometimes you may want to replace it entirely  
+	* An example of this is a violin plot, which is structured like a box and whisker plot, but instead of the boxes and whiskers, it uses kernel density estimates to summarize a distribution  
+    * The resulting plot retains the compactness of a box and whisker plot, but also shows features like bimodality  
+    * The built-in function panel.violin() in the lattice package implements the display of violin plots  
+* When there are a large number of points in the data, there may be substantial overplotting in a standard scatter plot  
+	* Another built-in panel function available in the lattice package that can serve as a replacement for panel.xyplot() in such cases is panel.smoothScatter()
+    * Instead of plotting the points directly, it uses a color gradient to show a 2-D kernel density estimate obtained from the data  
+    * xyplot(rate.female ~ rate.male, data = USCancerRates, panel = panel.smoothScatter, scales = list(log = TRUE, equispaced.log = FALSE), main = "County-wise deaths due to cancer")  
+  
+Prepanel Functions to control limits:  
+  
+* Controlling the x/y axis limits is enabled within lattice  
+	* prepanel.histdens.1 <- function(x, ...) { d <- density(x, na.rm = TRUE); list(ylim = c(0, max(d$y))) }  
+    * histogram(~ rate.male + rate.female, USCancerRates, type = "density", scales = list(x = list(log = 10)), xlab = "Rate", panel = panel.histdens, prepanel = prepanel.histdens.1)  
+  
+Optional arguments of default panel functions:  
+  
+* Some optional arguments are common to all high-level functions in lattice - xlab, ylab, main, layout, between, scales  
+* Some optional arguments are specific to a single high-level function  
+	* nint, type - histogram()  
+    * plot.points, ref - densityplot()  
+    * grad, abline - xyplot()  
+    * col, cwd, cex, pch  
+* The high-level functions will handle the general arguments, while sweeping up all the others for passage to the panel functions  
+	* For example, passing grid=TRUE in xyplot() passes the argument to panel.xyplot()  
+* The type argument for xyplot adds a number of arguments  
+	* "p" - points  
+    * "l" - lines  
+    * "r" - regresion by way of panel.lmline()  
+    * "smooth" - LOESS smooth by way of panel.loess()  
+    * "a" - join average y values for each unique x value by way of panel.average()  
+    * Multiple types can be specified as a vector  
+* Note a few following features for an xyplot() 
+	* grid = list(h=-1, v=0) # draws horizontal reference lines  
+    * type = c("p", "a") draws the points and a line connecting their averages  
+    * jitter.x = TRUE will apply a jitter on the x-axis only  
+* The default panel function for bwplot() has two additional arguments that you have not used before:  
+	* pch = "|" replaces the black dot representing the median inside the box by a line segment dividing the box into two smaller rectangles  
+    * notch = TRUE puts "notches" on the side of the boxes that indicate a confidence interval for median  
+    * the overlapping of notches for two subgroups suggests that the true medians of the two subgroups are not significantly different  
+* For the last exercise in this chapter, your task is to recreate a grouped dot plot you have seen before, but replace the plotting characters by emoji images  
+	* To do so, you will use the panel.xyimage() function in the latticeExtra package, which is similar to the panel.xyplot() function,  
+    * except that plotting symbols are replaced by images whose locations (file names or URLs of JPEG or PNG image files) are specified as the pch argument  
+  
+Example code includes:  
+```{r}
+
+panel.xyrug <- function(x, y, ...)
+{
+  # Reproduce standard scatter plot
+  panel.xyplot(x, y, ...)
+  
+  # Identify observations with x-value missing
+  x.missing <- is.na(x)
+  
+  # Identify observations with y-value missing
+  y.missing <- is.na(y)
+  
+  # Draw rugs along axes
+  panel.rug(x = x[y.missing], y = y[x.missing])
+}
+
+airquality$Month.Name <- 
+    factor(month.name[airquality$Month], levels = month.name)
+    
+xyplot(Ozone ~ Solar.R | Month.Name, data = airquality,
+       panel = panel.xyrug, as.table = TRUE)
+
+
+# Create factor variable with month names
+airquality$Month.Name <- 
+  factor(month.name[airquality$Month], levels = month.name)
+
+# Create box-and-whisker plot
+bwplot(Month.Name ~ Ozone + Temp, airquality, 
+       # Specify outer
+       outer=TRUE, 
+       # Specify x-axis relation
+       scales = list(x = list(relation="free")),
+       # Specify layout
+       layout=c(2, 1),
+       # Specify x-axis label
+       xlab="Measured value")
+
+# Create violin plot
+bwplot(Month.Name ~ Ozone + Temp, airquality, 
+       # Specify outer
+       outer = TRUE, 
+       # Specify x-axis relation
+       scales = list(x = list(relation="free")),
+       # Specify layout
+       layout=c(2, 1),
+       # Specify x-axis label
+       xlab="Measured value",
+       # Replace default panel function
+       panel = panel.violin)
+
+
+# Create panel function
+panel.ss <- function(x, y, ...) {
+  # Call panel.smoothScatter()
+  panel.smoothScatter(x, y, ...)
+  # Call panel.loess()
+  panel.loess(x, y, col = "red")
+  # Call panel.abline()
+  panel.abline(0, 1)
+}
+
+# Create plot
+xyplot(rate.female ~ rate.male, data = USCancerRates,
+       panel = panel.ss,
+       main = "County-wise deaths due to cancer")
+
+
+# Define prepanel function
+prepanel.histdens.2 <- function(x, ...) {
+    h <- prepanel.default.histogram(x, ...)
+    d <- density(x, na.rm = TRUE)
+    list(xlim = quantile(x, c(0.005, 0.995), na.rm = TRUE),
+         # Calculate upper y-limit
+         ylim = c(0, max(d$y, h$ylim[2])))
+}
+
+panel.histdens <- function(x, ...) {
+    panel.histogram(x, ...)
+    panel.lines(density(x, na.rm = TRUE))
+}
+
+# Create a histogram of rate.male and rate.female
+histogram(~ rate.male + rate.female,
+          data = USCancerRates, outer = TRUE,
+          type = "density", nint = 50,
+          border = "transparent", col = "lightblue",
+          # The panel function: panel.histdens
+          panel = panel.histdens, 
+          # The prepanel function: prepanel.histdens.2
+          prepanel = prepanel.histdens.2,
+          # Ensure that the x-axis is log-transformed
+          # and has relation "sliced"
+          scales = list(x = list(log = TRUE,
+                                 equispaced.log = FALSE,
+                                 relation = "sliced")),
+          xlab = "Rate (per 100,000)")
+
+
+# Create the box and whisker plot
+bwplot(division.ordered ~ rate.male, 
+       data = USCancerRates,
+       # Indicate median by line instead of dot
+       pch = "|", 
+       # Include notches for confidence interval
+       notch = TRUE,
+       # The x-axis should plot log-transformed values
+       scales = list(x = list(log=TRUE, equispaced.log=FALSE)),
+       xlab = "Death Rate in Males (per 100,000)")
+
+
+# Load the 'latticeExtra' package
+library(latticeExtra)
+
+# Create summary dataset
+USCancerRates.state <- 
+   with(USCancerRates, {
+     rmale <- tapply(rate.male, state, median, na.rm = TRUE)
+     rfemale <- tapply(rate.female, state, median, na.rm = TRUE)
+     data.frame(Rate = c(rmale, rfemale),
+                State = rep(names(rmale), 2),
+                Gender = rep(c("Male", "Female"), 
+                             each = length(rmale)))
+  })
+
+# Reorder levels
+library(dplyr)
+USCancerRates.state <- 
+   mutate(USCancerRates.state, State = reorder(State, Rate))
+head(USCancerRates.state)
+
+# URLs for emojis
+emoji.man <- "https://twemoji.maxcdn.com/72x72/1f468.png"
+emoji.woman <- "https://twemoji.maxcdn.com/72x72/1f469.png"
+
+# Create dotplot
+# dotplot(State ~ Rate, data = USCancerRates.state, 
+        # Specify grouping variable
+#         groups = Gender, 
+        # Specify panel function
+#         panel = panel.xyimage, 
+        # Specify emoji URLs
+#         pch = c(emoji.woman, emoji.man),
+        # Make symbols smaller
+#         cex = 0.75)
+
+```
+  
+  
+  
+***
+  
+Chapter 5 - Extensions and the lattice ecosystem  
+  
+
+	
 
 
 	
