@@ -866,4 +866,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Data Visualization in R with lattice - Chapter 1 (Basic Plotting with lattice)  
 * DataCamp_Insights_v003_a captures Data Visualization in R with lattice - Chapter 2 (Conditioning and the Formula Interface)  
 * DataCamp_Insights_v003_a captures Data Visualization in R with lattice - Chapter 3 (Controlling Scales and Graphical Parameters)  
+* DataCamp_Insights_v003_a captures Data Visualization in R with lattice - Chapter 4 (Customizing Plots Using Panel Functions)  
   
