@@ -2283,6 +2283,7 @@ densityplot(~ Ozone, data = airquality,
 
 data(USCancerRates, package="latticeExtra")
 str(USCancerRates)
+rn_USCR <- row.names(USCancerRates)
 
 # Create reordered variable
 library(dplyr)
@@ -2902,8 +2903,217 @@ emoji.woman <- "https://twemoji.maxcdn.com/72x72/1f469.png"
   
 Chapter 5 - Extensions and the lattice ecosystem  
   
+New methods - lattice is used by many packages because it is highly extensible:  
+  
+* High-level lattice functions are "generic functions", and the first argument need not be a formula  
+* For example, dotplot() can be applied directly to a table  
+	* For example, dotPlot(worldPhones[-1, ], scales=list(x=list(log=2)), groups=FALSE, layout=c(1, NA),  strip=FALSE, strip.left=TRUE)  
+* The xyplot() function has a suitable method for time series objects  
+	* The function to create the time-series plot is simply xyplot()  
+    * Instead of a formula and a data frame, the only mandatory argument is a time series object, which must be the first argument  
+    * The default value of type is "l", so that data points are joined by lines  
+    * The argument superpose, which can take values TRUE or FALSE, is used to control whether multiple time series are plotted within the same panel or in separate panels, respectively
+    * The default is to plot them separately  
+    * The argument cut, which should be a list of the form list(number = , overlap = ), is used to produce so-called "cut-and-stack" plots, by splitting the time axis into multiple overlapping periods which are then used to condition  
+    * This makes it easier to see parts of a long series  
+* One innovative display design for time series data, known as horizon graphs, is implemented in the panel.horizonplot() function in the latticeExtra package  
+	* Horizon plots allow you to visualize many time series in a small amount of space  
+    * The main motivation for this design is to reduce the vertical space occupied by a single time series, without the loss of resolution that would result from simply flattening the usual line graph display  
+    * This is achieved in two ways. First, negative values are mirrored to lie above the x-axis, but distinguished from positive values by shading using different colors  
+    * Second, values are divided into bands with progressively higher saturation, and the bands are collapsed to wrap them around lower bands  
+  
+New high-level functions can be created:  
+  
+* Completely new high-level functions are built when the panel options are insufficient  
+	* The horizonplot() for above is one example  
+    * The chloropleth (colored map) is another - see mapplot() in the latticeExtra() package  
+* Since the earth is three dimensional but the plot is two dimensional, a projection is required to reduce the number of dimensions  
+	* The list of available projections is given in the Details section of the mapproject() help page  
+* Map plots are drawn in two stages. First, a map object is created using the map() function from the maps package with plot = FALSE  
+	* the_map <- map("a_map_dataset", plot = FALSE, projection = "some_projection")  
+* Second, mapplot() is called with a formula, a data frame, and a map  
+	* mapplot(region ~ value, data, map = the_map)  
+* It is common to have statistical estimates in the form of confidence intervals in addition to point estimates  
+    * Such data can be displayed using segment plots via the segplot() function in the latticeExtra package  
+	segplot(
+    * categories ~ lower_limit + upper_limit, data = some_data, centers = point_estimates)  
+    * Notice that the categories are displayed on the y-axis, and the confidence intervals are displayed on the x-axis  
+    * The point estimates, usually a mean or median value for that category, are specified using the centers argument, not the formula  
+    * An optional argument, draw.bands, let's you choose between confidence bands and confidence intervals  
+    * This argument is passed to the default panel function panel.segplot()  
+* One common approach is to plot some form of bivariate density estimate instead of the raw data, as is done with histograms and kernel density plots for univariate data  
+	* Hexagonal binning and plotting is implemented in the R package hexbin, which also includes the high-level function hexbinplot() for creating conditional hexbin plots using the lattice framework  
+    * The formula and data argument in a hexbinplot() call is interpreted in the same way as xyplot()  
+    * The type argument can be set to "r" to add a regression line  
+    * The trans argument can be a function that is applied to the observed counts before creating bands for different colors  
+    * By default, the range of counts is divided up evenly into bands, but taking the square root of the counts, for example, emphasizes differences in the lower range of counts more  
+    * The inv argument gives the inverse function of trans, so that transformed counts can be converted back before being shown in the legend  
+  
+Manipulation (extension) of trellis objects:  
+  
+* latticeExtra::useOuterStrip(latticeObject) will make the strips show only on the top and the left  
+* The directlabels package tackles an interesting problem: instead of having a separate legend associating graphical parameters and levels of a grouping variable, it tries to indicate the grouping by placing text labels within the panel  
+	* This is generally a tricky thing to do automatically. directlabels relies on heuristics, and also allows the user to provide their own heuristics. It works with both lattice and ggplot2 plots  
+* Once a lattice plot object is created, it can be modified using the update() method  
+    * Among other things, a new panel function can be provided as the panel argument, to change or enhance the panel display  
+	* Specifying the display in the form of a function can be cumbersome, especially for minor changes  
+    * An alternative approach, implemented in the latticeExtra package, is to add so-called layers to the existing display. This is modeled on the approach used by the ggplot2 package  
+* There are two kinds of layers  
+	* Layers that go below the default display (i.e., are drawn before it) are created by the layer_() function  
+    * Those that go above are created using layer()  
+    * There are also corresponding versions glayer_() and glayer() for grouped displays  
+    * A layer is created by putting a function call, as it would appear inside a panel function, inside a call to layer_() or layer()  
+* Suppose you want to create a layer with a call to panel.grid that goes under the display, and a call to panel.lmline() that goes above, and then add it to an existing lattice plot p  
+	* under_layer <- layer_(panel.grid())
+    * over_layer <- layer(panel.lmline(x, y))
+    * p + under_layer + over_layer
+* Layers are added to a plot using the + operator  
+  
+Example code includes:  
+```{r}
 
-	
+# Use 'EuStockMarkets' time series data
+data(EuStockMarkets)
+str(EuStockMarkets)
+
+# Create time series plot
+xyplot(EuStockMarkets, 
+       # Plot all series together
+       superpose = TRUE,
+       # Split up the time axis into parts
+       cut = list(number = 3, overlap = 0.25))
+
+
+# Create time series plot
+xyplot(EuStockMarkets,
+       # Specify panel function
+       panel=panel.horizonplot,
+       # Specify prepanel function
+       prepanel=prepanel.horizonplot)
+
+
+# Load required packages
+library(maps)
+
+
+# Create map object for US counties
+county.map <- map("county", plot = FALSE, fill = TRUE, 
+                  # Specify projection
+                  projection = "sinusoidal")
+
+# Create choropleth map
+row.names(USCancerRates) <- rn_USCR
+
+mapplot(row.names(USCancerRates) ~ log10(rate.male) + log10(rate.female), 
+        data = USCancerRates, 
+        xlab = "", scales = list(draw = FALSE),
+        # Specify map
+        map = county.map)
+
+
+# Create subset for Louisiana
+LACancerRates1 <- filter(USCancerRates, state == "Louisiana")
+str(LACancerRates1)
+
+# Reorder levels of county
+LACancerRates2 <- 
+    mutate(LACancerRates1, 
+           county = reorder(county, rate.male))
+
+# Draw confidence intervals
+segplot(county ~ LCL95.male + UCL95.male,
+        data = LACancerRates2,
+        # Add point estimates
+        centers = rate.male,
+        # Draw segments rather than bands
+        draw.bands = FALSE)
+
+
+# The 'USCancerRates' dataset
+str(USCancerRates)
+
+# Load the 'hexbin' package 
+library(hexbin)
+
+# Create hexbin plot
+hexbinplot(rate.female ~ rate.male, 
+           data = USCancerRates, 
+           # Add a regression line
+           type = "r",
+           # function to transform counts
+           trans = sqrt,
+           # function to invert transformed counts
+           inv = function(x) x^2
+           )
+
+
+# Load the 'directlabels' package
+library(directlabels)
+
+# Use the 'airquality' dataset
+str(airquality)
+
+# Create factor variable
+airquality$Month.Name <- 
+    factor(month.name[airquality$Month], levels = month.name)
+
+# Create density plot object
+tplot2 <- 
+    densityplot(~ Ozone + Temp, data = airquality, 
+                # Variables should go in different panels
+                outer = TRUE,
+                # Specify grouping variable
+                groups = Month.Name,
+                # Suppress display of data points
+                plot.points = FALSE, 
+                # Add reference line
+                ref = TRUE,
+                # Specify layout
+                layout = c(2, 1),
+                # Omit strip labels
+                strip = FALSE,
+                # Provide column-specific x-axis labels
+                xlab = c("Ozone (ppb)", "Temperature (F)"),
+                # Let panels have independent scales 
+                scales = list(relation="free"))
+
+# Produce plot with direct labels
+direct.label(tplot2)
+
+
+# 'USCancerRates' is pre-loaded
+str(USCancerRates)
+
+# Create scatter plot
+p <- xyplot(rate.female ~ rate.male, data = USCancerRates, 
+            # Change plotting character
+            pch = 16, 
+            # Make points semi-transparent
+            alpha = 0.25)
+
+# Create layer with reference grid
+l0 <- layer_(panel.grid())
+
+# Create layer with reference line
+l1 <- layer(panel.abline(0, 1))
+
+# Create layer with regression fit
+l2 <- layer(panel.smoother(x, y, method="lm"))
+
+# Combine and plot
+p + l0 + l1 + l2
+
+```
+  
+  
+  
+***
+  
+###_Visualizing Time Series Data in R_  
+  
+Chapter 1 - R Time Series Visualization Tools  
+  
+
 
 
 	
