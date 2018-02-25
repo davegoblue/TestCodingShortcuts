@@ -868,4 +868,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Data Visualization in R with lattice - Chapter 3 (Controlling Scales and Graphical Parameters)  
 * DataCamp_Insights_v003_a captures Data Visualization in R with lattice - Chapter 4 (Customizing Plots Using Panel Functions)  
 * DataCamp_Insights_v003_a captures Data Visualization in R with lattice - Chapter 5 (Extensions and the lattice Ecosystem)  
+* DataCamp_Insights_v003_a captures Visualizing Time Series Data in R - Chapter 1 (R Time Series Visualization Tools)  
   
