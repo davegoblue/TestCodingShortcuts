@@ -873,4 +873,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 26-FEB-2018  
 * DataCamp_Insights_v003_a captures Visualizing Time Series Data in R - Chapter 2 (Univariate Time Series)  
 * DataCamp_Insights_v003_a captures Visualizing Time Series Data in R - Chapter 3 (Multivariate Time Series)  
+* DataCamp_Insights_v003_a captures Visualizing Time Series Data in R - Chapter 4 (Case Study: Stock Picking for Portfolios)  
   
