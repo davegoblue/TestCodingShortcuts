@@ -877,4 +877,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Communicating with the Tidyverse - Chapter 1 (Custom ggplot2 Themes)  
 * DataCamp_Insights_v003_a captures Communicating with the Tidyverse - Chapter 2 (Creating Custom and Unique Visualization)  
 * DataCamp_Insights_v003_a captures Communicating with the Tidyverse - Chapter 3 (Introduction to R Markdown)  
+* DataCamp_Insights_v003_a captures Communicating with the Tidyverse - Chapter 4 (Customizing R Markdown Reports)  
   
