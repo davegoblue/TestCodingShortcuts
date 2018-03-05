@@ -879,3 +879,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Communicating with the Tidyverse - Chapter 3 (Introduction to R Markdown)  
 * DataCamp_Insights_v003_a captures Communicating with the Tidyverse - Chapter 4 (Customizing R Markdown Reports)  
   
+### Expansions week of 05-MAR-2018  
+* DataCamp_Insights_v003_a captures Foundations of Probability in R - Chapter 1 (Binomial Distribution)  
+  
