@@ -883,4 +883,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Foundations of Probability in R - Chapter 1 (Binomial Distribution)  
 * DataCamp_Insights_v003_a captures Foundations of Probability in R - Chapter 2 (Laws of Probability)  
 * DataCamp_Insights_v003_a captures Foundations of Probability in R - Chapter 3 (Bayesian Statistics)  
+* DataCamp_Insights_v003_a captures Foundations of Probability in R - Chapter 4 (Related Distributions)  
   
