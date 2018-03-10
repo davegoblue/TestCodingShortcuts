@@ -885,4 +885,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Foundations of Probability in R - Chapter 3 (Bayesian Statistics)  
 * DataCamp_Insights_v003_a captures Foundations of Probability in R - Chapter 4 (Related Distributions)  
 * DataCamp_Insights_v003_a captures Inference for Numerical Data - Chapter 1 (Bootstrapping for Parameter Estimates)  
+* DataCamp_Insights_v003_a captures Inference for Numerical Data - Chapter 2 (Introducing the t-distribution)  
   
