@@ -4812,8 +4812,184 @@ scorediff_med_ht %>%
   
 ***
   
-Chapter 3 - Inference for difference in two parameters  
+Chapter 3 - Inference for Difference in Two Parameters  
   
+Hypothesis testing for comparing two means:  
+  
+* Data stem.cell are available in the openintro package - question of whether stem cells help with heart recovery in sheep  
+	* Question is the impact of test vs. control, with each sheep having change measured, but only some having the stem cell therapy  
+* For the hacker statistics approach, can randomly assign the sheep (multiple times) as test vs. control, and plot the ECDF (or similar) of the changes  
+	* Can then compare how extreme our actual sample is relative to the hacker statitistics simulation  
+* The library(infer) is built to help with problems like this  
+	* library(infer) diff_ht_mean <- stem.cell %>%  
+    * specify(__) %>% # y ~ x  
+    * hypothesize(null = __) %>% # "independence" or "point"  
+    * generate(reps = __, type = __) %>% # "bootstrap", "permute", or "simulate"  
+    * calculate(stat="diff in means") %>%  
+    * .  
+* For problems like this, the null hypothesis is "independence" and the generation type is "permute"  
+  
+Bootstrap CI for difference in two means:  
+  
+* Take a bootstrap sample from each of the two groups  
+* Calculate the bootstrap statistic of interest  
+* Repeat as needed to calculate a bootstrap interval  
+  
+Comparing means with a t-test:  
+  
+* Looking at the average hourly rate vs. citizenship from the ACS data  
+	* t.test(hrly_rate ~ citizen, data=acs12, null=0, alternative="two.sided")  
+* Review of conditions required for the t-test  
+	* Independence of observations (usually assumed with proper randomization and a sample size that is small relative to the population)  
+    * Independence of observations across the samples (not paired)  
+    * Skewed samples require larger sample sizes for the normality approximations to be valid  
+  
+Example code includes:  
+```{r}
+
+data(stem.cell, package="openintro")
+str(stem.cell)
+
+
+# Calculate difference between before and after
+stem.cell <- stem.cell %>%
+  mutate(change = after - before)
+
+# Calculate observed difference in means
+diff_mean <- stem.cell %>%
+  # Group by treatment group
+  group_by(trmt) %>%       
+  # Calculate mean change for each group
+  summarize(mean_change = mean(change)) %>%
+  # Extract
+  pull() %>% 
+  # Calculate difference
+  diff()                      
+
+
+# Generate 1000 differences in means via randomization
+diff_ht_mean <- stem.cell %>%
+  # y ~ x
+  specify(change ~ trmt) %>% 
+  # Null = no difference between means
+  hypothesize(null = "independence") %>% 
+  # Shuffle labels 1000 times
+  generate(reps = 1000, type = "permute") %>% 
+  # Calculate test statistic
+  calculate(stat = "diff in means", order=rev(levels(stem.cell$trmt)))
+
+# Calculate p-value
+diff_ht_mean %>%
+  # Identify simulated test statistics at least as extreme as observed
+  filter(stat > diff_mean) %>%
+  # Calculate p-value
+  summarize(p_val = (n() / 1000))
+
+
+# Remove subjects with missing habit
+ncbirths_complete_habit <- ncbirths %>%
+  filter(!is.na(habit))
+
+# Calculate observed difference in means
+diff_mean <- ncbirths_complete_habit %>%
+  # Group by habit group
+  group_by(habit) %>%
+  # Calculate mean weight for each group
+  summarize(mean_weight = mean(weight)) %>%
+  # Extract
+  pull() %>%
+  # Calculate difference
+  diff()                             
+  
+# Generate 1000 differences in means via randomization
+diff_ht_mean <- ncbirths_complete_habit %>%
+  # y ~ x
+  specify(weight ~ habit) %>%
+  # Null = no difference between means
+  hypothesize(null = "independence") %>%  
+  # Shuffle labels 1000 times
+  generate(reps = 1000, type = "permute") %>%
+  # Calculate test statistic
+  calculate(stat = "diff in means", order=rev(levels(ncbirths_complete_habit$habit)))
+
+# Calculate p-value
+diff_ht_mean %>%
+  # Identify simulated test statistics at least as extreme as observed
+  filter(stat < diff_mean) %>%
+  # Calculate p-value
+  summarize(p_val = (n()/1000) * 2)
+
+
+# Generate 1500 bootstrap difference in means
+diff_mean_ci <- ncbirths_complete_habit %>%
+  specify(weight ~ habit) %>%
+  generate(reps = 1500, type = "bootstrap") %>%
+  calculate(stat = "diff in means", order=rev(levels(ncbirths_complete_habit$habit)))
+
+# Calculate the 95% CI via percentile method
+diff_mean_ci %>%
+  summarize(l=quantile(stat, 0.025), 
+            u=quantile(stat, 0.975))
+
+
+# Remove subjects with missing habit and weeks
+ncbirths_complete_habit_weeks <- ncbirths %>%
+  filter(!is.na(habit) & !is.na(weeks))
+
+# Generate 1500 bootstrap difference in medians
+diff_med_ci <- ncbirths_complete_habit_weeks %>%
+  specify(weeks ~ habit) %>%
+  generate(reps = 1500, type = "bootstrap") %>%
+  calculate(stat="diff in medians", order=rev(levels(ncbirths_complete_habit_weeks$habit)))
+
+# Calculate the 92% CI via percentile method
+diff_med_ci %>%
+  summarize(l=quantile(stat, 0.04), 
+            u=quantile(stat, 0.96))
+
+
+# Create hrly_pay and filter for non-missing hrly_pay and citizen
+acs12_complete_hrlypay_citizen <- acs12 %>%
+  mutate(hrly_pay = income / (hrs_work * 52)) %>%
+  filter(
+    !is.na(hrly_pay),
+    !is.na(citizen)
+  )
+
+# Calculate percent missing
+new_n <- nrow(acs12_complete_hrlypay_citizen)
+old_n <- nrow(acs12)
+(perc_missing <- (old_n - new_n) / old_n) 
+
+# Calculate summary statistics
+acs12_complete_hrlypay_citizen %>%
+  group_by(citizen) %>%
+  summarize(
+    x_bar = mean(hrly_pay),
+    s = sd(hrly_pay),
+    n = n()
+  )
+
+# Plot the distributions
+ggplot(data = acs12_complete_hrlypay_citizen, mapping = aes(x = hrly_pay)) +
+  geom_histogram(binwidth = 5) +
+  facet_grid(. ~ citizen, labeller = labeller(citizen = c(no  = "Non citizen", 
+                                                          yes = "Citizen"))) 
+
+# Construct 95% CI
+t.test(hrly_pay ~ citizen, data=acs12_complete_hrlypay_citizen, null=0, alternative="two.sided")
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Comparing Many Means  
+  
+
+	
+	
 
 	
 
