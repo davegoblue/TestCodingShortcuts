@@ -888,3 +888,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Inference for Numerical Data - Chapter 2 (Introducing the t-distribution)  
 * DataCamp_Insights_v003_a captures Inference for Numerical Data - Chapter 3 (Inference for Difference in Two Parameters)  
   
+### Expansions week of 12-MAR-2018  
+* DataCamp_Insights_v003_a captures Inference for Numerical Data - Chapter 4 (Comparing Many Means)  
+  
