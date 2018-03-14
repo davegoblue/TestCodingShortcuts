@@ -891,4 +891,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 12-MAR-2018  
 * DataCamp_Insights_v003_a captures Inference for Numerical Data - Chapter 4 (Comparing Many Means)  
 * DataCamp_Insights_v003_a captures Introduction to Statistics with R: Correlation and Linear Regression - Chapter 1 (Introduction to Correlation Coefficients)  
+* DataCamp_Insights_v003_a captures Introduction to Statistics with R: Correlation and Linear Regression - Chapter 2 (Introduction to Linear Regression)  
   
