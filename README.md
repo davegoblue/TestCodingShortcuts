@@ -895,4 +895,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Introduction to Statistics with R: Correlation and Linear Regression - Chapter 3 (Linear Regression cont.)  
 * DataCamp_Insights_v003_a captures Inference for Linear Regression - Chapter 1 (Inferential Ideas)  
 * DataCamp_Insights_v003_a captures Inference for Linear Regression - Chapter 2 (Simulation Based Inference for Slope)  
+* DataCamp_Insights_v003_a captures Inference for Linear Regression - Chapter 3 (t-Based Inference for Slope)  
   
