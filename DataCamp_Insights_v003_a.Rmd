@@ -5653,21 +5653,212 @@ summarize(low = quantile(stat, alpha/2),
   
 Chapter 3 - t-Based Inference for the Slope Parameter  
   
+Mathematical approximation for testing and estimating slope parameters (based on the t-distribution):  
+  
+* Continuing with the Starbucks data for the relationships between fat and calories  
+* Can look at the histogram of 1) simulation slopes for the permuted null hypothesis, and 2) t-distribution for df=n-2; should see very good overlaps  
+	* The dt function is the density of the t-distribution; this is used by R behind the scenese to select the p-value  
+* Sometimes, the t-distribution is not such a good match to the histograms of the null hypothesis  
+	* R will use the t-distribution even if it is not a perfect fit; further reinforcement of the value of plotting the data  
+    * The differences between the mathematical model and the data is only really important in the edge cases (minor, low-power impact)  
+* In thinking about the scientific research question, if IQ is caused only by genetics, then we would expect the slope of the line between the two sets of twins to be 1  
+	* Testing the hypothesized slope value of 1 can be done by making a new test statistic which evaluates how far the observed slope is from the hypothesized value of 1  
+    * newt=(slope−1) / SE  
+    * If the hypothesis that the slope equals one is true, then the new test statistic will have a t-distribution which we can use for calculating a p-value  
+* When technical conditions (see next chapter) hold, the inference from the randomization test and the t-distribution test should give equivalent conclusions  
+	* They will not provide the exact same answer because they are based on different methods  
+    * But they should give p-values and confidence intervals that are reasonably close  
+  
+Intervals in regression - estimating the coefficients by way of confidence intervals (CI):  
+  
+* CI = point-estimate +/- critical_value * SE_estimate  
+* Can use the tidy() call to get the CI, such as tidy(lm(…), conf.int=TRUE, conf.level=1-alpha)  
+  
+Different types of intervals - often of interest to know the variability in the predicted value, not just the parameter estimates:  
+  
+* There is greater uncertainty in predicted values as you get further away from the "center of mass" of the x-data  
+* Can use the broom::augment() call to get the range of predicted values for a new set of data  
+	* alpha <- .05  
+    * crit_val <- qt((1-alpha/2), df = nrow(starbucks) - 2)  
+    * newfood <- data.frame(Fat = c(0,10,20,30))  
+    * augment(lm(Calories ~ Fat, data=starbucks), newdata = newfood) %>%  
+    * mutate(lowMean = .fitted - crit_val*.se.fit, upMean = .fitted + crit_val*.se.fit)  
+* Can create plots for the population estimate error using ggplot  
+	* ggplot(predMeans, aes(x = Fat, y = Calories)) +  
+    * geom_point() +  
+    * stat_smooth(method = "lm", se = FALSE) +   # can alternately set se=TRUE to get a similar plot  
+    * geom_ribbon(aes(ymin = lowMean, ymax = upMean), alpha=.2)  
+* The prediction interval can also be requested to give the CI on the individual (rather than population mean) members of the population given a specific X variable  
+	* This is a combination of both the error in the population mean predictions AND the natural variability in the population on the y-metric  
+    * FatCal_pred <- augment(FatCal_lm) %>%  
+    * mutate(.se.pred = sqrt(FatCal_sig^2 + .se.fit^2))  
+    * predResp <- FatCal_pred %>%  
+    * mutate(lowResp = .fitted - crit_val*.se.pred, upResp = .fitted + crit_val*.se.pred)  
+    * ggplot(predResp, aes(x = Fat, y = Calories)) +  
+    * geom_point() +  
+    * stat_smooth(method = "lm", se = FALSE) +  
+    * geom_ribbon(aes(ymin = lowResp, ymax = upResp), alpha = .2)  
+  
+Example code includes:  
+```{r}
+
+# twins_perm <- twins %>%
+#   specify(Foster ~ Biological) %>%
+#   hypothesize(null="independence") %>%
+#   generate(reps = 10, type = "permute") %>%
+#   calculate(stat = "slope") 
+
+# The randomized slopes are given in the twins_perm dataframe
+# Look at the head of the data
+# head(twins_perm)
+
+# Plot the histogram with the t distribution
+# twins_perm %>%
+#   filter(term == "Biological_perm") %>%
+#   ggplot(aes(x=statistic)) + 
+#   geom_histogram(aes(y = ..density..), bins = 50) + 
+#   stat_function(fun = dt, color = "red", args = list(df=nrow(twins)-2))
+
+
+# Tidy the model
+lm(Foster ~ Biological, data=twins) %>% broom::tidy()
+
+# Create a one-sided p-value
+lm(Foster ~ Biological, data=twins) %>%
+  broom::tidy() %>% 
+  filter(term == "Biological") %>%
+  select(p.value) %>%
+  mutate(p_value_1side = p.value/2)
+
+
+# Test the new hypothesis
+lm(Foster ~ Biological, data = twins) %>% 
+  broom::tidy() %>% 
+  filter(term == "Biological") %>%
+  mutate(statistic_test1 = (estimate - 1) / std.error, 
+      p_value_test1 = 2 * pt(abs(statistic_test1), df=nrow(twins)-2, lower.tail=FALSE))
+
+
+# Find the p-value
+# perm_slope %>%
+#   mutate(abs_perm_slope = abs(stat)) %>%
+#   summarize(p_value = mean(abs_perm_slope > abs(obs_slope)))
+
+
+# Set alpha
+alpha <- 0.05
+
+# Find the critical value
+crit_val <- qt(0.975, df = nrow(twins)-2)
+
+# Tidy the model with the confidence level alpha
+lm(Foster ~ Biological, data=twins) %>% 
+   broom::tidy(conf.int=TRUE, conf.level=1-alpha)
+
+# Find the lower and upper bounds of the confidence interval
+lm(Foster ~ Biological, data=twins) %>%
+    broom::tidy() %>%
+    mutate(lower = estimate - crit_val * std.error,
+           upper = estimate + crit_val * std.error)
+
+
+# Create the bootstrap confidence interval
+BS_slope %>% 
+    summarize(low = quantile(stat, alpha/2), 
+              high = quantile(stat, 1 - alpha/2))
+
+
+# Set alpha
+alpha <- 0.05
+
+# Find the critical value
+crit_val <- qt(1-alpha/2, nrow(twins)-2)
+
+
+# Create a dataframe of new observations
+newtwins <- data.frame(Biological = c(80, 90, 100, 110))
+
+# Find prediction intervals
+lm(Foster ~ Biological, data=twins) %>% 
+  broom::augment(newdata = newtwins) %>%
+  mutate(lowMean = .fitted - crit_val * .se.fit,
+         upMean = .fitted + crit_val * .se.fit)
+
+
+# Set alpha and find the critical value
+alpha <- 0.05
+crit_val <- qt(1-alpha/2, df=nrow(twins)-2)
+
+# Find confidence intervals for the response
+predMeans <- lm(Foster ~ Biological, data=twins) %>%
+  broom::augment() %>%  
+  mutate(lowMean = .fitted - crit_val*.se.fit,
+      upMean = .fitted + crit_val*.se.fit) 
+
+# Examine the intervals
+head(predMeans)
+
+# Plot the data with geom_ribbon()
+ggplot(predMeans, aes(x=Biological, y=Foster)) + 
+  geom_point() +
+  stat_smooth(method="lm", se=FALSE) + 
+  geom_ribbon(aes(ymin = lowMean, ymax = upMean), alpha=.2)
+
+# Plot the data with stat_smooth()
+ggplot(twins, aes(x = Biological, y = Foster)) + 
+  geom_point() +
+  stat_smooth(method="lm", se=TRUE) 
+
+
+# Set alpha and find the critical value
+alpha <- 0.05
+crit_val <- qt(1-alpha/2, nrow(twins)-2)
+
+# Fit a model and use glance to find sigma
+twin_lm <- lm(Foster ~ Biological, data=twins)
+twin_gl <- broom::glance(twin_lm)
+
+# Pull sigma
+twin_sig <- pull(twin_gl, sigma)
+
+# Augment the model to find the prediction standard errors
+twin_pred <- broom::augment(twin_lm) %>%
+  mutate(.se.pred = sqrt(twin_sig ** 2 + .se.fit ** 2))
+
+# Create prediction intervals  
+predResp <- twin_pred %>%
+  mutate(lowResp = .fitted - crit_val * .se.pred,
+      upResp = .fitted + crit_val * .se.pred)
+
+# Plot the intervals using geom_ribbon()
+ggplot(predResp, aes(x=Biological, y=Foster)) + 
+  geom_point() +
+  stat_smooth(method="lm", se=FALSE) + 
+  geom_ribbon(aes(ymin = lowResp, ymax = upResp), alpha = .2) +
+  geom_ribbon(data = predMeans, aes(ymin = lowMean, ymax = upMean), alpha = .2, fill = "red")
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Technical Conditions in Linear Regression  
+  
+
+	
+	
+	
+	
+	
+	
+	
+	
 
 
 
 
 	
-
-
-	
-	
-
-	
-
-	
-	
-
 
 
 	
