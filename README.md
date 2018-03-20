@@ -896,5 +896,8 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Inference for Linear Regression - Chapter 1 (Inferential Ideas)  
 * DataCamp_Insights_v003_a captures Inference for Linear Regression - Chapter 2 (Simulation Based Inference for Slope)  
 * DataCamp_Insights_v003_a captures Inference for Linear Regression - Chapter 3 (t-Based Inference for Slope)  
+  
+### Expansions week of 19-MAR-2018  
 * DataCamp_Insights_v003_a captures Inference for Linear Regression - Chapter 4 (Technical Conditions in Linear Regression)  
+* DataCamp_Insights_v003_a captures Inference for Linear Regression - Chapter 5 (Building on Inference in Simple Regression)  
   
