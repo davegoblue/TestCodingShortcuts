@@ -901,4 +901,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Inference for Linear Regression - Chapter 4 (Technical Conditions in Linear Regression)  
 * DataCamp_Insights_v003_a captures Inference for Linear Regression - Chapter 5 (Building on Inference in Simple Regression)  
 * DataCamp_Insights_v003_a captures Multiple and Logistic Regression - Chapter 1 (Parallel Slopes)  
+* DataCamp_Insights_v003_a captures Multiple and Logistic Regression - Chapter 2 (Evaluating and Extending Parallel Slopes)  
   
