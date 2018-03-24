@@ -6415,6 +6415,185 @@ p <- p %>%
   
 Chapter 4 - Logistic Regression  
   
+What is logistic regression?  
+  
+* When graphing a categorical variable as the response, geom_jitter() can be much more helpful than geom_point()  
+* With a categorical variable as a response, it is important to convert the variable to a numeric  
+* A straight linear regression with a numeric predictor and a categorical response can make non-sensical predictions  
+	* Might predict a -20% chance of death or a 120% chance of death even for reasonable values of the predictor variable, for example  
+* The GLM (Generalized Linear Model) formalizes a modeling technique for predicting categorical variables  
+	* The logistic regression (logit) is frequently used to model a binary response  
+    * The basic idea is that a link function is added - logit in the case of the logistic regression  
+* Fitting a GLM in R is very similar to fitting an LM  
+	* glm(myFactor ~ myNumeric, family=binomial)  # will run the logistic regression  
+* Note that the mathematical model is now:  
+	* log(y / (1−y))=β0+β1⋅x+ϵ  
+    * where ϵ is the error term  
+  
+Visualizing logistic regression:  
+  
+* Can use geom_smooth(method="glm", se=0, color="red", method.args=list(family="binomial")) to add a logit smooth to a plot  
+* The logistic regression can never precisely predict the categorical variable, since the data are all 0 or 1 while the logit is between 0 and 1  
+* Can bin the underlying data, look at aggregate probabilities (mean x, mean y) by bin, and compare with the logit outcomes  
+* Here we are plotting y as a function of x, where that function is  
+	* y = exp(β^0+β^1⋅x) / (1+exp(β^0+β^1⋅x))  
+  
+Three scales approach to visualization:  
+  
+* Generating the predicted values comes from myGLM %>% augment(type.predict="response") %>% mutate(y_hat = .fitted)  
+* Can no longer interpret the coefficients as slopes  
+	* odds = y-hat / (1 - y-hat) = exp(B0 + B1 * X1)  
+    * log(odds) = log( (y-hat / (1 - y-hat)) ) = B0 + B1 * X1  
+    * So, the coefficients do represent the slope of the log-odds function  
+* Comparison of the three potential scales for visualizing a logistic regression  
+	* Probability - positives (intuitive and easy to interpret scale) and negatives (non-linear and challenging to interpret function)  
+    * Odds - a bit of a middle ground between Probability and Log-Odds  
+    * Log-Odds - positive (linear, easy-to-interpret function) and negative (very hard to interpret scale)  
+* Can also calculate the odds-ratio, as well as the change in odds-ratio with respect to a key variable  
+	* OR = odds(y | x + 1) / odds(y | x) = exp(B1)  
+    * If the exp(coef(myGLM)) has a coefficient greater than 1, then the odds increase with that variable; otherwise, they decrease  
+  
+Using a logistical model - objective is to gain better understanding in to the underlying process:  
+  
+* Can augment the GLM to add a variable for heart transplant - will be very meaningful!  
+* Note that the default for the augment() function is to give back .fitted that represents log-odds scale  
+	* Can instead set the type.predict = "response" to get back the normal probability scale  
+* Additional goal is to make out-of-sample predictions based on the results of the model  
+	* Since the study was performed in 1973, it is likely that the coefficients have changed  
+* Can also convert the predictions by rounding the probabilities (less than 0.5 is death, greater than 0.5 is life) and then running the confusion matrix  
+	* Can experiment with different rounding thresholds than 0.5, and see whether the confusion matrix is improved  
+  
+Example code includes:  
+```{r}
+
+# To see this in action, we'll fit a linear regression model to data about 55 students who applied to medical school
+# We want to understand how their undergraduate GPAGPA relates to the probability they will be accepted by a particular school (Acceptance)
+# The medical school acceptance data is loaded in your workspace as MedGPA
+# scatterplot with jitter
+# tmpSAT <- readr::read_csv("./RInputFiles/SAT.csv")
+
+tmpAccept <- c(0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0)
+tmpGPA <- c(3.62, 3.84, 3.23, 3.69, 3.38, 3.72, 3.89, 3.34, 3.71, 3.89, 3.97, 3.49, 3.77, 3.61, 3.3, 3.54, 3.65, 3.54, 3.25, 3.89, 3.71, 3.77, 3.91, 3.88, 3.68, 3.56, 3.44, 3.58, 3.4, 3.82, 3.62, 3.09, 3.89, 3.7, 3.24, 3.86, 3.54, 3.4, 3.87, 3.14, 3.37, 3.38, 3.62, 3.94, 3.37, 3.36, 3.97, 3.04, 3.29, 3.67, 2.72, 3.56, 3.48, 2.8, 3.44)
+MedGPA <- data.frame(Acceptance=tmpAccept, GPA=tmpGPA)
+str(MedGPA)
+
+data_space <- ggplot(MedGPA, aes(x=GPA, y=Acceptance)) + 
+  geom_jitter(width = 0, height = 0.05, alpha = 0.5)
+
+# linear regression line
+data_space + 
+  geom_smooth(method="lm", se=FALSE)
+
+
+# filter
+MedGPA_middle <- MedGPA %>%
+  filter(GPA >= 3.375, GPA <= 3.77)
+
+# scatterplot with jitter
+data_space <- ggplot(MedGPA_middle, aes(x=GPA, y=Acceptance)) + 
+  geom_jitter(width = 0, height = 0.05, alpha = 0.5)
+
+# linear regression line
+data_space + 
+  geom_smooth(method="lm", se=FALSE)
+
+
+# fit model
+(mod <- glm(Acceptance ~ GPA, data = MedGPA, family = binomial))
+
+
+# scatterplot with jitter
+data_space <- ggplot(MedGPA, aes(x=GPA, y=Acceptance)) + 
+  geom_jitter(width=0, height=0.05, alpha = .5)
+
+# add logistic curve
+data_space +
+  geom_smooth(method="glm", se=FALSE, method.args=structure(list(family = "binomial"), .Names = "family"))
+
+
+# We have created a data.frame called MedGPA_binned that aggregates the original data into separate bins for each 0.25 of GPA. It also contains the fitted values from the logistic regression model
+MedGPA$bin <- round(MedGPA$GPA*4, 0) / 4
+str(MedGPA)
+
+MedGPA_binned <- MedGPA %>% 
+    group_by(bin) %>% 
+    summarize(mean_GPA=mean(GPA), acceptance_rate=mean(Acceptance), ct=n())
+MedGPA_binned
+
+# binned points and line
+data_space <- ggplot(MedGPA_binned, aes(x=mean_GPA, y=acceptance_rate)) + 
+  geom_point() + 
+  geom_line()
+
+# augmented model
+MedGPA_plus <- broom::augment(mod, type.predict="response")
+
+# logistic model on probability scale
+data_space +
+  geom_line(data = MedGPA_plus, aes(x=GPA, y=.fitted), color = "red")
+
+
+# The MedGPA_binned data frame contains the data for each GPA bin, while the MedGPA_plus data frame records the original observations after being augment()-ed by mod
+# compute odds for bins
+MedGPA_binned <- MedGPA_binned %>%
+  mutate(odds = acceptance_rate / (1 - acceptance_rate))
+
+# plot binned odds
+data_space <- ggplot(MedGPA_binned, aes(x=mean_GPA, y=odds)) + 
+  geom_point() + 
+  geom_line()
+
+# compute odds for observations
+MedGPA_plus <- MedGPA_plus %>%
+  mutate(odds_hat = .fitted / (1 - .fitted))
+
+# logistic model on odds scale
+data_space +
+  geom_line(data=MedGPA_plus, aes(x=GPA, y=odds_hat), color = "red")
+
+
+# compute log odds for bins
+MedGPA_binned <- MedGPA_binned %>%
+  mutate(log_odds = log(acceptance_rate / (1 - acceptance_rate)))
+
+# plot binned log odds
+data_space <- ggplot(MedGPA_binned, aes(x=mean_GPA, y=log_odds)) + 
+  geom_point() + 
+  geom_line()
+
+# compute log odds for observations
+MedGPA_plus <- MedGPA_plus %>%
+  mutate(log_odds_hat = log(.fitted / (1 - .fitted)))
+
+# logistic model on log odds scale
+data_space +
+  geom_line(data=MedGPA_plus, aes(x=GPA, y=log_odds_hat), color = "red")
+
+
+# create new data frame
+new_data <- data.frame(GPA = 3.51)
+
+# make predictions
+broom::augment(mod, newdata=new_data, type.predict="response")
+
+
+# data frame with binary predictions
+tidy_mod <- broom::augment(mod, type.predict="response") %>%
+  mutate(Acceptance_hat = round(.fitted))
+  
+# confusion matrix
+tidy_mod %>%
+  select(Acceptance, Acceptance_hat) %>%
+  table()
+
+```
+  
+  
+  
+***
+  
+Chapter 5 - Case Study: Italian Restaurants in NYC  
+  
 
 
 
