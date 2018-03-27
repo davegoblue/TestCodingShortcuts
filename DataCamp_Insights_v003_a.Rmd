@@ -6667,7 +6667,7 @@ lm(Price ~ Food + Service + East, data=nyc)
   
 ###_Forecasting Using R_  
   
-Chapter 1 - Explroing and Visualizing Time Series in R  
+Chapter 1 - Exploring and Visualizing Time Series in R  
   
 Introduction and overview:  
   
@@ -6855,6 +6855,158 @@ Box.test(diff(goog), lag = 10, type = "Ljung")
   
 Chapter 2 - Benchmark methods and forecast accuracy  
   
+Forecasts and potential futures:  
+  
+* Can build up a distribution of potential futures based on multiple simulations (NOT forecasts - each is a simulated future)  
+	* The point forecast ("forecast") is the average of these multiple simulations  
+    * The shaded regions are typically the 80% / 95% CI intervals around the point forecasts  
+* The very simplest forecasting method is to use the most recent observation; this is called a naive forecast and can be implemented in a namesake function  
+	* This is the best that can be done for many time series including most stock price data  
+    * Even if it is not a good forecasting method, it provides a useful benchmark for other forecasting methods  
+* This is implemented in the snaive() function, meaning, seasonal naive  
+	* For both forecasting methods, you can set the second argument h, which specifies the number of values you want to forecast  
+    * naive(y, h = 10)  
+    * snaive(y, h = 2 * frequency(x))  
+  
+Fitted values and residuals:  
+  
+* Frequent validation method is to forecast using historical data ON TO data that you already know  
+	* Allows for both fitted values and residuals to be calculated - residuals should look like white noise in a good forecast  
+    * Sometimes, there is some "cheating", since the observed data point was also used in building the forecast model  
+* Four basic assumptions that are made about the residuals  
+	1.  Residuals should be uncorrelated (essential)  
+    2.  Residuals should have zero mean (essential - otherwise the model is biased)  
+    3.  Residuals have constant variance (convenirnce)  
+    4.  Residuals are normally distributed (convenience)  
+* Basically, the request is for the residuals to be Gaussian white noise, which can be checked using checkresiduals(myFCModel)  
+	* Checking residuals is an essential step prior to moving forward with the forecast  
+  
+Training and test sets help to validate the forecasting methodology:  
+  
+* Forecasts can be built using the training set, and then applied to the test set for validation  
+* Checking the forecasts on the test set helps solve the issues of over-fitting  
+* Forecast "errors" are the differences between the forecast values and the observed values in the test set  
+	* In contrast, residuals are the differences in fitted and actual on the training set  
+    * Further, residuals are based only on the one-step forecast (???)  
+* There are many metrics used for assessing the quality of the forecast  
+	* Mean Absolute Error (MAE)  
+    * Mean Squared Error (MSE)  
+    * Mean Absolute Percentage Error (MAPE)  
+    * Mean Absolute Scaled Error (MASE) = MAE / Q where Q is a scaling constant  
+* The accuracy() function calculates all of the key measures above - training set based on residuals, and test set based on errors  
+	* Useful for comparing multiple forecast models on the same data  
+* One function that can be used to create training and test sets is subset.ts(), which returns a subset of a time series where the optional start and end arguments are specified using index values.  
+	* > # To subset observations from 101 to 500  
+    * > train <- subset.ts(x, start = 101, end = 500, ...)  
+    * > # To subset the first 500 observations  
+    * > train <- subset.ts(x, end = 500, ...)  
+* The function meanf(), which gives forecasts equal to the mean of all observations  
+  
+Time series cross-validation attempts to solve some of the problems related to test-train:  
+  
+* A general process is to make each test set a single point following a training set of variable lengths  
+	* Analogous to cross-validation in non-time-series problems  
+* The tsCV() function does a lot of the work behind the scenes  
+	* myE <- tsCV(myTS, forecastfunction = naïve, h=1)  
+    * mean(myE ** 2, na.rm=TRUE)  
+* Generally, the MSE will increase as the window (h) increases  
+  
+Example code includes:  
+```{r cache=TRUE}
+
+# Use naive() to forecast the goog series
+fcgoog <- naive(goog, h=20)
+
+# Plot and summarize the forecasts
+autoplot(fcgoog)
+summary(fcgoog)
+
+
+# Use snaive() to forecast the ausbeer series
+fcbeer <- snaive(ausbeer, h=16)
+
+# Plot and summarize the forecasts
+autoplot(fcbeer)
+summary(fcbeer)
+
+
+# Check the residuals from the naive forecasts applied to the goog series
+goog %>% naive() %>% checkresiduals()
+
+# Do they look like white noise (TRUE or FALSE)
+googwn <- TRUE
+
+# Check the residuals from the seasonal naive forecasts applied to the ausbeer series
+ausbeer %>% snaive() %>% checkresiduals()
+
+# Do they look like white noise (TRUE or FALSE)
+beerwn <- FALSE
+
+
+# The pre-loaded time series gold comprises daily gold prices for 1108 days. Here, you'll use the first 1000 days as a training set, and compute forecasts for the remaining 108 days
+# Create the training data as train
+train <- subset(gold, end = 1000)
+
+# Compute naive forecasts and save to naive_fc
+naive_fc <- naive(train, h = 108)
+
+# Compute mean forecasts and save to mean_fc
+mean_fc <- meanf(train, h = 108)
+
+# Use accuracy() to compute RMSE statistics
+accuracy(naive_fc, gold)
+accuracy(mean_fc, gold)
+
+# Assign one of the two forecasts as bestforecasts
+# bestforecasts <- naive_fc
+
+
+# Here, you will use the Melbourne quarterly visitor numbers (vn[, "Melbourne"]) to create three different training sets, omitting the last 1, 2 and 3 years, respectively
+# Inspect the pre-loaded vn data in your console before beginning the exercise
+# This will help you determine the correct value to use for the keyword h (which specifies the number of values you want to forecast) in your forecasting methods
+melData <- c(4.865, 4.113, 4.422, 5.171, 5.55, 4.009, 3.986, 3.839, 5.8, 4.229, 4.157, 4.627, 5.691, 4.601, 4.742, 5.733, 5.397, 3.884, 4.996, 5.304, 5.222, 4.765, 4.146, 4.717, 4.88, 4.868, 4.182, 4.214, 5.438, 3.87, 4.394, 4.404, 5.716, 5.291, 4.19, 4.712, 4.709, 4.489, 4.698, 5.193, 5.216, 4.215, 5.042, 5.089, 4.688, 4.393, 4.626, 4.88, 4.844, 4.437, 4.833, 4.622, 5.164, 4.504, 4.976, 4.508, 4.759, 4.835, 5.009, 5.693, 5.224, 4.82, 4.688, 4.918, 5.936, 5.44, 5.134, 5.993, 6.654, 5.342, 5.471, 5.812)
+sydData <- c(7.319, 6.13, 6.284, 6.384, 6.602, 5.674, 5.715, 6.564, 6.602, 5.398, 7.172, 8.474, 7.012, 6.388, 6.073, 6.196, 5.633, 5.779, 5.869, 6.002, 6.202, 5.321, 5.161, 5.737, 6.168, 5.709, 5.057, 5.362, 5.902, 4.496, 5.093, 5.253, 6.832, 5.67, 5.008, 5.773, 6.529, 4.911, 4.784, 5.844, 6.252, 5.034, 5.263, 4.714, 5.362, 4.769, 4.125, 5.263, 6, 4.283, 5.256, 5.357, 6.194, 5.102, 5.596, 5.066, 6.684, 4.697, 5.366, 5.075, 5.499, 4.867, 5.71, 6.198, 6.416, 5.284, 5.483, 6.234, 6.938, 6.268, 5.562, 6.016)
+vnFrame <- data.frame(Melbourne=melData, Sydney=sydData)
+vn <- ts(vnFrame, start=c(1998, 1), frequency=4)
+str(vn)
+
+# Create three training series omitting the last 1, 2, and 3 years
+train1 <- window(vn[, "Melbourne"], end = c(2014, 4))
+train2 <- window(vn[, "Melbourne"], end = c(2013, 4))
+train3 <- window(vn[, "Melbourne"], end = c(2012, 4))
+
+# Produce forecasts using snaive()
+fc1 <- snaive(train1, h = 4)
+fc2 <- snaive(train2, h = 4)
+fc3 <- snaive(train3, h = 4)
+
+# Use accuracy() to compare the MAPE of each series
+accuracy(fc1, vn[, "Melbourne"])["Test set", "MAPE"]
+accuracy(fc2, vn[, "Melbourne"])["Test set", "MAPE"]
+accuracy(fc3, vn[, "Melbourne"])["Test set", "MAPE"]
+
+
+# Compute cross-validated errors for up to 8 steps ahead
+e <- matrix(NA_real_, nrow = 1000, ncol = 8)
+for (h in 1:8)
+  e[, h] <- tsCV(goog, forecastfunction = naive, h = h)
+  
+# Compute the MSE values and remove missing values
+mse <- colMeans(e^2, na.rm = TRUE)
+
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:8, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) + geom_point()
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Exponential smoothing  
+  
+
 
 
 	
@@ -6865,13 +7017,8 @@ Chapter 2 - Benchmark methods and forecast accuracy
 
 
 
-	
-	
-	
-	
-	
-	
-	
-	
+
+
+
 
 
