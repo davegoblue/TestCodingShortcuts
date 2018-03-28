@@ -909,4 +909,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 26-MAR-2018  
 * DataCamp_Insights_v003_a captures Forecasting Using R - Chapter 1 (Exploring and Visualizing Time Series in R)  
 * DataCamp_Insights_v003_a captures Forecasting Using R - Chapter 2 (Benchmark Methods and Forecast Accuracy)  
+* DataCamp_Insights_v003_a captures Forecasting Using R - Chapter 3 (Exponential Smoothing)  
   
