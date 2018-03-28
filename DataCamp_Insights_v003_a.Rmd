@@ -7006,6 +7006,230 @@ data.frame(h = 1:8, MSE = mse) %>%
   
 Chapter 3 - Exponential smoothing  
   
+Exponentially weighted forecasts (simple exponential smoothing):  
+  
+* The point estimates are represented as y-hat(i)  
+* The point estimate for y-hat(y) = alpha * y-hat(t-1) + alpha * (1 - alpha) * y-hat(t-2) + alpha * (1 - alpha)^2 * y-hat(t-3) + … where the extent of the looking back can be user-specified  
+	* Smaller alpha leads to slower decay  
+* Can instead think of the forecast as y-hat(t) = alpha * y(t) + (1 - alpha) * y(t-1)  
+	* Basically, need to estimate both alpha and the starting point  
+* Can run these models using myFC <- ses(myTS, h=)  
+	* Behind the scenes, this is a non-linear optimization  
+    * The h is the number of years for the forecast to project forwards  
+* While a simple method, this typically forms the starting point for future models  
+* Process for review for test-train analysis with time series data  
+	1.  First, import and load your data. Determine how much of your data you want to allocate to training, and how much to testing; the sets should not overlap  
+    2.  Subset the data to create a training set, which you will use as an argument in your forecasting function(s). Optionally, you can also create a test set to use later  
+    3.  Compute forecasts of the training set using whichever forecasting function(s) you choose, and set h equal to the number of values you want to forecast, which is also the length of the test set  
+    4.  To view the results, use the accuracy() function with the forecast as the first argument and original data (or test set) as the second  
+    5.  Pick a measure in the output, such as RMSE or MAE, to evaluate the forecast(s); a smaller error indicates higher accuracy  
+  
+Exponential smoothing methods with trend:  
+  
+* Forecast is now level(t) + h * slope(t)  
+* Level is now alpha * y(t) + (1 - alpha) * (level(t-1) + slope(t-1))  
+* Trend (local linear trend) is allowed to change over time and is Beta * (level(t) - level(t-1)) + (1 - Beta) * slope(t-1)  
+	* A smaller Beta means the slope changes just a little, while a higher Beta means the slope can change very quickly  
+* There are now four parameters to estimate - alpha and Beta, plus starting conditions level-0 and slope-0  
+	* Parameters are again created to minimize SSE, using a methodology first developed by Holt  
+    * myTS %>% holt(h=) %>% autoplot()  
+* Alternately, can add a damping feature so that the data level off over time - Damped Trend Method  
+	* There is an additional parameter 0 <= phi <= 1 where phi determines the damping (phi=1 is Holt)  
+    * The damped=TRUE argument to holt() will find the parameter phi, in addition to the other Holt function outputs  
+  
+Exponential smoothing methods with trend and seasonality (commonly known as the Holt-Winters method):  
+  
+* There is an additive version and a multiplicative version of the formula  
+	* In the additive component, the seasoanl components average to zero  
+    * In the multiplicative component, the seasoanl components average to one  
+* Can run the models using hw(myTS, seasonal=)  # seasonal can be "additive" or "multiplicative"  
+* Can think of a 3x3 grid of the potential forecast models  
+	* Trend - N (None), A (Additive), Ad (Additive Damped)  
+    * Seasonal - N (None), A (Additive), M (Multiplicative)  
+* Model can be thought of as handling various portions of the grid, using(Trend, Seasonal) notation  
+	* (N, N) - ses()  
+    * (A, N) - holt()  
+    * (Ad, N) - hw()  
+    * (A, A) - hw()  
+    * (A, M) - hw()  
+    * (Ad, M) - hw()  
+    * The other patterns, especially seasonality absent trend, will be considered later in the course  
+* The Holt-Winters method can also be used for daily type of data, where the seasonal pattern is of length 7, and the appropriate unit of time for h is in days  
+  
+State space models for exponential smoothing:  
+  
+* There are 18 possible "innovations state space" models - Trend (3) x Seasonal (3) x Error (2)  
+	* Error can be (A, M) for Additive or Multiplicative  
+    * Multiplicative errors means that the error increases as the value increases (error tends to a fixed percentage rather than a fixed value)  
+* Overall, these are referred to as ETS models, for "Error, Trend, Seasonality"  
+	* Parameters can be estimated using the likelihhod method, the probability of data arising from the specified model  
+    * For additive errors, the goal is to minimize SSE  
+    * Can choose the best model by minimizing a corrected version of Akaike's Information Criteria (AICc), roughly the same as cross-validation but much faster  
+* By running ets(myTS), all of the work is done behind the scenes, and the function reports the best model based on minimizing AICc  
+	* Maximizes likelihood rather than minimizing errors  
+    * To produce a forecast, the model created by ets() must be piped to the forecast() function  
+    * The biggest advantage of ets() is that the model is chosen for you  
+* The second argument for tsCV() must return a forecast object, so you need a function to fit a model and return forecasts. Recall:  
+	* args(tsCV)  
+    * function (y, forecastfunction, h = 1, ...)  
+  
+Example code includes:  
+```{r cache=TRUE}
+
+# You will also use summary() and fitted(), along with autolayer() for the first time, which is like autoplot() but it adds a "layer" to a plot rather than creating a new plot.
+# Here, you will apply these functions to marathon, the annual winning times in the Boston marathon from 1897-2016. The data are available in your workspace.
+# Use ses() to forecast the next 10 years of winning times
+data(marathon, package="fpp2")
+str(marathon)
+
+fc <- ses(marathon, h = 10)
+
+# Use summary() to see the model parameters
+summary(fc)
+
+# Use autoplot() to plot the forecasts
+autoplot(fc)
+
+# Add the one-step forecasts for the training data to the plot
+autoplot(fc) + autolayer(fitted(fc))
+
+
+# Create a training set using subset.ts()
+train <- subset(marathon, end = length(marathon) - 20)
+
+# Compute SES and naive forecasts, save to fcses and fcnaive
+fcses <- ses(train, h = 20)
+fcnaive <- naive(train, h = 20)
+
+# Calculate forecast accuracy measures
+accuracy(fcses, marathon)
+accuracy(fcnaive, marathon)
+
+# Save the best forecasts as fcbest
+# fcbest <- fcnaive
+
+
+# Here, you will apply it to the austa series, which contains annual counts of international visitors to Australia from 1980-2015 (in millions). The data has been pre-loaded into your workspace.
+# Produce 10 year forecasts of austa using holt()
+data(austa, package="fpp2")
+str(austa)
+
+fcholt <- holt(austa, h=10)
+
+# Look at fitted model using summary()
+summary(fcholt)
+
+# Plot the forecasts
+autoplot(fcholt)
+
+# Check that the residuals look like white noise
+checkresiduals(fcholt)
+
+
+# Here, you will apply hw() to a10, the monthly sales of anti-diabetic drugs in Australia from 1991 to 2008. The data are available in your workspace.
+# Plot the data
+data(a10, package="fpp2")
+str(a10)
+
+autoplot(a10)
+
+# Produce 3 year forecasts
+fc <- hw(a10, seasonal = "multiplicative", h = 3)
+
+# Check if residuals look like white noise
+checkresiduals(fc)
+whitenoise <- FALSE
+
+# Plot forecasts
+autoplot(fc)
+
+
+# Here, you will compare an additive Holt-Winters method and a seasonal naive() method for the hyndsight data, which contains the daily pageviews on the Hyndsight blog for one year starting April 30, 2014
+# Create training data with subset()
+train <- subset(hyndsight, end = length(hyndsight) - 28)
+
+# Holt-Winters additive forecasts as fchw
+fchw <- hw(train, seasonal = "additive", h = 28)
+
+# Seasonal naive forecasts as fcsn
+fcsn <- snaive(train, h=28)
+
+# Find better forecasts with accuracy()
+accuracy(fchw, hyndsight)
+accuracy(fcsn, hyndsight)
+
+# Plot the better forecasts
+autoplot(fchw)
+
+
+# Fit ETS model to austa in fitaus
+fitaus <- ets(austa)
+
+# Check residuals
+checkresiduals(fitaus)
+
+# Plot forecasts
+autoplot(forecast(fitaus))
+
+# Repeat for hyndsight data in fiths
+fiths <- ets(hyndsight)
+checkresiduals(fiths)
+autoplot(forecast(fiths))
+
+# Which model(s) fails test? (TRUE or FALSE)
+fitausfail <- FALSE
+fithsfail <- TRUE
+
+
+# Function to return ETS forecasts
+fets <- function(y, h) {
+  forecast(ets(y), h = h)
+}
+
+data(qcement, package="fpp2")
+str(qcement)
+
+cement <- window(qcement, start=1994)
+str(cement)
+
+# Apply tsCV() for both methods
+e1 <- tsCV(cement, fets, h = 4)
+e2 <- tsCV(cement, snaive, h = 4)
+
+# Compute MSE of resulting errors (watch out for missing values)
+mean(e1^2, na.rm=TRUE)
+mean(e2^2, na.rm=TRUE)
+
+# Copy the best forecast MSE
+bestmse <- mean(e2^2, na.rm=TRUE)
+
+
+# Computing the ETS does not work well for all series
+# Here, you will observe why it does not work well for the annual Canadian lynx population available in your workspace as lynx
+# Plot the lynx series
+data(lynx)
+str(lynx)
+autoplot(lynx)
+
+# Use ets() to model the lynx series
+fit <- ets(lynx)
+
+# Use summary() to look at model and parameters
+summary(fit)
+
+# Plot 20-year forecasts of the lynx series
+fit %>% forecast(h=20) %>% autoplot()
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Forecasting with ARIMA Models  
+  
+
+	
 
 
 
