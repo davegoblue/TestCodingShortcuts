@@ -910,4 +910,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Forecasting Using R - Chapter 1 (Exploring and Visualizing Time Series in R)  
 * DataCamp_Insights_v003_a captures Forecasting Using R - Chapter 2 (Benchmark Methods and Forecast Accuracy)  
 * DataCamp_Insights_v003_a captures Forecasting Using R - Chapter 3 (Exponential Smoothing)  
+* DataCamp_Insights_v003_a captures Forecasting Using R - Chapter 4 (Forecasting with ARIMA Models)  
   
