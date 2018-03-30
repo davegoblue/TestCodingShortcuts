@@ -7451,6 +7451,195 @@ accuracy(fc2, qcement)
   
 Chapter 5 - Advanced Methods  
   
+Dynamic Regression - could include factors like advertising or competition in a single model:  
+  
+* In dynamic regression, the error term is an ARIMA series rather than a normal iid  
+* Example of forecasting personal consumption using personal income as one of the predictor variables  
+* Fitting a dynamic regression model is fairly straightforward with the auto.arima()  
+	* fit <- auto.arima(myTS, xreg=myExplanatory)  # note that xreg should be a matrix  
+    * The forecast is then based on the predictors - forecast(fit, xreg=myPredictedExplanatory)  # allows for scenario modeling  
+  
+Dynamic Harmonic Regression - handling periodic seasonality with Fourier terms:  
+  
+* Fourier terms are of the form sin or cos of (2 * pi * k * t / m)  
+	* m is the seasonal component  
+    * k drives the harmonic frequencies  
+    * Most types of seasonality can be modeled by the sin() and cos() pairing of the Fourier terms, properly tuned  
+    * The error terms can then be assumed to be a non-seasonal ARIMA model  
+* One difference with the Fourier model is that it requires constant and un-changing seasonality  
+	* Can run these models using auto.arima(myTS, xreg = fourier(myTS, K=), seasonal=FALSE, lambda=)  # lambda to solve the variance issue, K to tune how deep the Fourier goes  
+    * Can then do forecast(myModel, xreg=fourier(myTS, K=, h=))  # use the same K as for modeling, and use h as desired for time horizon periods (h= tells Fourier to look forward rather than backward)  
+* Can add even more terms to the xreg; the main analyst duty is to test various K (never more than half the seasonal period) and pick the best (lowest) AICc  
+	* The higher the order (K), the more "wiggly" the seasonal pattern is allowed to be  
+    * With K=1, it is a simple sine curve  
+    * You can select the value of KK by minimizing the AICc value  
+* With weekly data, it is difficult to handle seasonality using ETS or ARIMA models as the seasonal length is too large (approximately 52)  
+	* Instead, you can use harmonic regression which uses sines and cosines to model the seasonality  
+* Harmonic regressions are also useful when time series have multiple seasonal patterns  
+	* For example, taylor contains half-hourly electricity demand in England and Wales over a few months in the year 2000  
+    * The seasonal periods are 48 (daily seasonality) and 7 x 48 = 336 (weekly seasonality)  
+* auto.arima() would take a long time to fit a long time series such as this one, so instead you will fit a standard regression model with Fourier terms using the tslm() function  
+	* This is very similar to lm() but is designed to handle time series  
+    * With multiple seasonality, you need to specify the order KK for each of the seasonal periods  
+    * # The formula argument is a symbolic description of the model to be fitted  
+    * > args(tslm)  
+    * function (formula, ...)  
+  
+TBATS models - combines many models in to a single model:  
+  
+* Integrated model includes many core features  
+	* Trigonometric terms for seasonality  
+    * Box-Cox for heterogeneity  
+    * ARMA for short-term dynamics  
+    * Trend (possibly damped)  
+    * Seasonal (including multiple and non-integer periods)  
+* These models can be powerful but dangerous - sometimes, the automated choices are not so good  
+	* Model will output TBATS(BoxCoxTerm, {p, q}, dampParam, {<mFourier, kFourier>})  
+* The models are especially useful when the seasonal components are comples (many of them, interspersed with each other, etc.)  
+	* Downside is model run time, and the potential for getting the wrong coefficients  
+  
+Wrap up:  
+  
+* Continual practice with methods to gain experience  
+	* Book "Forecasting Principles and Practice" by Hyndman is available  
+* Try various techniques with various types of time series  
+  
+Example code includes:  
+```{r cache=TRUE}
+
+# In this exercise, you will model sales data regressed against advertising expenditure, with an ARMA error to account for any serial correlation in the regression errors
+# The data are available in your workspace as advert and comprise 24 months of sales and advertising expenditure for an automotive parts company
+data(advert, package="fma")
+str(advert)
+
+# Time plot of both variables
+autoplot(advert, facets=TRUE)
+
+# Fit ARIMA model
+fit <- auto.arima(advert[, "sales"], xreg = advert[, "advert"], stationary = TRUE)
+
+# Check model. Increase in sales for each unit increase in advertising
+salesincrease <- coefficients(fit)[3]
+
+# Forecast fit as fc
+fc <- forecast(fit, xreg = rep(10, 6))
+
+# Plot fc with x and y labels
+autoplot(fc) + xlab("Month") + ylab("Sales")
+
+
+data(elecdaily, package="fpp2")
+str(elecdaily)
+
+elec <- elecdaily
+colnames(elec)[2] <- "Workday"
+
+# Time plots of demand and temperatures
+autoplot(elec[, c("Demand", "Temperature")], facets = TRUE)
+
+# Matrix of regressors
+xreg <- cbind(MaxTemp = elec[, "Temperature"], 
+              MaxTempSq = elec[, "Temperature"] ** 2, 
+              Workday = elec[, "Workday"])
+
+# Fit model
+fit <- auto.arima(elec[, "Demand"], xreg = xreg)
+
+# Forecast fit one day ahead
+forecast(fit, xreg = cbind(20, 20**2, 1))
+
+
+# The pre-loaded gasoline data comprises weekly data on US finished motor gasoline products
+# In this exercise, you will fit a harmonic regression to this data set and forecast the next 3 years
+data(gasoline, package="fpp2")
+str(gasoline)
+
+# Set up harmonic regressors of order 13
+harmonics <- fourier(gasoline, K = 13)
+
+# Fit regression model with ARIMA errors
+fit <- auto.arima(gasoline, xreg = harmonics, seasonal = FALSE)
+
+# Forecasts next 3 years
+newharmonics <- fourier(gasoline, K = 13, h = 156)
+fc <- forecast(fit, xreg = newharmonics)
+
+# Plot forecasts fc
+autoplot(fc)
+
+
+# Fit a harmonic regression using order 10 for each type of seasonality
+fit <- tslm(taylor ~ fourier(taylor, K = c(10, 10)))
+
+# Forecast 20 working days ahead
+fc <- forecast(fit, newdata = data.frame(fourier(taylor, K = c(10, 10), h = 20 * 48)))
+
+# Plot the forecasts
+autoplot(fc)
+
+# Check the residuals of fit
+checkresiduals(fit)
+
+
+# Another time series with multiple seasonal periods is calls, which contains 20 consecutive days of 5-minute call volume data for a large North American bank
+# There are 169 5-minute periods in a working day, and so the weekly seasonal frequency is 5 x 169 = 845
+# The weekly seasonality is relatively weak, so here you will just model daily seasonality. calls is pre-loaded into your workspace
+# The residuals in this case still fail the white noise tests, but their autocorrelations are tiny, even though they are significant
+# This is because the series is so long. It is often unrealistic to have residuals that pass the tests for such long series
+# The effect of the remaining correlations on the forecasts will be negligible
+data(calls, package="fpp2")
+calls <- window(calls, start=29.8)
+str(calls)
+
+
+# Plot the calls data
+autoplot(calls)
+
+# Set up the xreg matrix
+xreg <- fourier(calls, K = c(10, 0))
+
+# Fit a dynamic regression model
+fit <- auto.arima(calls, xreg = xreg, seasonal=FALSE, stationary=TRUE)
+
+# Check the residuals
+checkresiduals(fit)
+
+# Plot forecasts for 10 working days ahead
+fc <- forecast(fit, xreg =  fourier(calls, c(10, 0), h = 10 * 169))
+autoplot(fc)
+
+
+# The gas data contains Australian monthly gas production
+# A plot of the data shows the variance has changed a lot over time, so it needs a transformation
+# The seasonality has also changed shape over time, and there is a strong trend
+# This makes it an ideal series to test the tbats() function which is designed to handle these features
+# Plot the gas data
+autoplot(gas)
+
+# Fit a TBATS model to the gas data
+fit <- tbats(gas)
+
+# Forecast the series for the next 5 years
+fc <- forecast(fit, h=60)
+
+# Plot the forecasts
+autoplot(fc)
+
+# Record the Box-Cox parameter and the order of the Fourier terms
+lambda <- round(as.vector(fc$model$lambda), 3) # 0.082
+K <- fc$model$k.vector #5
+
+```
+  
+  
+  
+***
+  
+###_Network Analysis in R_  
+  
+Chapter 1 - Introduction to Networks  
+  
+
 
 	
 	
