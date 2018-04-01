@@ -913,4 +913,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Forecasting Using R - Chapter 4 (Forecasting with ARIMA Models)  
 * DataCamp_Insights_v003_a captures Forecasting Using R - Chapter 5 (Advanced Methods)  
 * DataCamp_Insights_v003_a captures Network Analysis in R - Chapter 1 (Introduction to Networks)  
+* DataCamp_Insights_v003_a captures Network Analysis in R - Chapter 2 (Identifying Important Vertices in a Network)  
   
