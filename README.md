@@ -915,3 +915,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Network Analysis in R - Chapter 1 (Introduction to Networks)  
 * DataCamp_Insights_v003_a captures Network Analysis in R - Chapter 2 (Identifying Important Vertices in a Network)  
   
+### Expansions week of 02-APR-2018  
+* DataCamp_Insights_v003_a captures Network Analysis in R - Chapter 3 (Characterizing Network Structures)  
+  
