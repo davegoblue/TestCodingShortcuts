@@ -9327,6 +9327,331 @@ moran.mc(london$spatial_resid, nb2listw(borough_nb), 999)
   
 Chapter 4 - Geostatistics  
   
+Geostatistical data:  
+  
+* The term "geostatistics" refers to a specific type of data, frequently of a specific format  
+	* The locations of the data (events) are typically not interesting; they just happen to be where a monitor was set up  
+    * Need to consider the variable - continuous (e.g., radiation), count (e.g., bacteria), boolean (e.g., presence of virus), etc.  
+* First, look for any large-scale trends, such as greater intensity to the northeast  
+	* Discontinuities?  Need to add barriers if so  
+    * Always start by plotting a map, so that the type of model to create is based on EDA  
+  
+Variogram:  
+  
+* Objective is often to look at similarity of items relative to distance between items (variogram shows y=difference, x=distance)  
+	* Typically, the distance is the Pythagorean distance  
+    * Typically, the difference in the items is 0.5 * (Ax - Bx)**2 where Ax and Bx are a key measurement, x, applied to each of A and B  
+    * The variogram can tend to become computationally intense as well as overly dense due to its inclusion of every possible pair-pair combination  
+    * Can instead bin the x-axis and plot mean for the y-axis, which then forms the traditional variogram  
+* There are several interepretations that can be drawn from the variogram  
+	* If y increases with x, then there is a spatial correlation (near points are more similar than distant points)  
+    * If the slope of y vs. x flattens out at a certain distance, then that distance may be part of an asymptote (distances beyond the critical distance no longer drive extra differences)  
+    * The "nugget" variance is frequently defined as what you would expect to see if two observations are at zero distance from each either  
+* The Matern class of model is frequently favored for putting a functional form to the variogram  
+  
+Kriging predictions:  
+  
+* Kriging is the study of making predictions based on variograms and other geostatistical data  
+	* The basic maths are based on matrix multiplications, and are implemented in the gstat package  
+    * Outputs include the prediction and the variance (uncertainty) associated with the prediction  
+    * Can also look at various probabilities of exceedance given certain fixed parameters  
+* Can predict at just a single location, or over an entire grid  
+  
+Automatic kriging:  
+  
+* Sometimes need to bound the predictions (e.g., percentages between 0-1)  
+* May have different gradients by direction due to slopes of terrain or the like  
+* Kriging remains the best model currently available, despite some of the challenges and drawbacks  
+* Can automatically run krigining using the automap::autoKrige() command  
+    * Requires that variable can be treated as Gaussian  
+    * Need to check variogram to see that it is reasonable  
+    * Useful one-step tool for getting started on analysis  
+  
+Wrap up:  
+  
+* Spatial randomness  
+* Point patterns  
+* Aereal data  
+* Geostatistics  
+  
+Example code includes:  
+```{r}
+
+# Your job is to study the acidity (pH) of some Canadian survey data. The survey measurements are loaded into a spatial data object called ca_geo
+# ca_geo has been pre-defined
+ca_geo <- readRDS("./RInputFiles/ca_geo.RDS")
+summary(ca_geo)
+str(ca_geo, 1)
+
+# See what measurements are at each location
+names(ca_geo)
+
+# Get a summary of the acidity (pH) values
+summary(ca_geo$pH)
+
+# Look at the distribution
+hist(ca_geo$pH)
+
+# Make a vector that is TRUE for the missing data
+miss <- is.na(ca_geo$pH)
+table(miss)
+
+# Plot a map of acidity
+spplot(ca_geo[!miss, ], "pH")
+
+
+# The acidity data shows pH broadly increasing from north-east to south-west. Fitting a linear model with the coordinates as covariates will interpolate a flat plane through the values
+# ca_geo has been pre-defined
+str(ca_geo, 1)
+
+# Are they called lat-long, up-down, or what?
+coordnames(ca_geo)
+
+# Complete the formula
+m_trend <- lm(pH ~ x + y, as.data.frame(ca_geo))
+
+# Check the coefficients
+summary(m_trend)
+
+
+# Your next task is to compute the pH at the locations that have missing data in the source. You can use the predict() function on the fitted model from the previous exercise for this
+# ca_geo, miss, m_trend have been pre-defined
+# ls.str()
+
+# Make a vector that is TRUE for the missing data
+miss <- is.na(ca_geo$pH)
+
+# Create a data frame of missing data
+ca_geo_miss <- as.data.frame(ca_geo)[miss, ]
+
+# Predict pH for the missing data
+predictions <- predict(m_trend, newdata = ca_geo_miss, se.fit = TRUE)
+
+# Compute the exceedence probability
+pAlkaline <- 1 - pnorm(7, mean = predictions$fit, sd = predictions$se.fit)
+hist(pAlkaline)
+
+
+# You can use the gstat package to plot variogram clouds and the variograms from data. Recall:
+# The variogram cloud shows the differences of the measurements against distance for all pairs of data points
+# The binned variogram divides the cloud into distance bins and computes the average difference within each bin
+# The y-range of the binned variogram is always much smaller than the variogram cloud because the cloud includes the full range of values that go into computing the mean for the binned variogram
+
+# The acidity survey data, ca_geo and the missing value index, miss have been pre-defined
+
+# The gstat variogram() function uses the cloud argument to plot a variogram cloud - the default cloud parameter is FALSE
+
+# ca_geo, miss have been pre-defined
+# ls.str()
+
+# Make a cloud from the non-missing data up to 10km
+plot(gstat::variogram(pH ~ 1, ca_geo[!miss, ], cloud = TRUE, cutoff = 10000))
+
+# Make a variogram of the non-missing data
+plot(gstat::variogram(pH ~ 1, ca_geo[!miss, ]))
+
+
+# You might imagine that if soil at a particular point is alkaline, then soil one metre away is likely to be alkaline too
+# But can you say the same thing about soil one kilometre away, or ten kilometres, or one hundred kilometres?
+
+# The shape of the previous variogram tells you there is a large-scale trend in the data
+# You can fit a variogram considering this trend with gstat
+# This variogram should flatten out, indicating there is no more spatial correlation after a certain distance with the trend taken into account
+
+# ca_geo, miss have been pre-defined
+# ls.str()
+
+# See what coordinates are called
+coordnames(ca_geo)
+
+# The pH depends on the coordinates
+ph_vgm <- gstat::variogram(pH ~ x + y, ca_geo[!miss, ])
+plot(ph_vgm)
+
+
+# Next you'll fit a model to your variogram
+# The gstat function fit.variogram() does this
+# You need to give it some initial values as a starting point for the optimization algorithm to fit a better model
+
+# The sill is the the upper limit of the model
+# That is, the long-range largest value, ignoring any outliers
+
+# A variogram has been plotted for you, and ph_vgm has been pre-defined
+# Estimate some parameters by eyeballing the plot
+# The nugget is the value of the semivariance at zero distance.
+# The partial sill, psill is the difference between the sill and the nugget.
+# Set the range to the distance at which the variogram has got about half way between the nugget and the sill
+
+# Fit a variogram model by calling fit.variogram()
+# The second argument should take the parameters you estimated, wrapped in a call to vgm()
+
+# ca_geo, miss, ph_vgm have been pre-defined
+# ls.str()
+
+# Eyeball the variogram and estimate the initial parameters
+nugget <- 0.16
+psill <- 0.15
+range <- 10000
+
+# Fit the variogram
+v_model <- gstat::fit.variogram(
+  ph_vgm, 
+  model = gstat::vgm(
+    model = "Ste",
+    nugget = nugget,
+    psill = psill,
+    range = range,
+    kappa = 0.5
+  )
+)
+
+# Show the fitted variogram on top of the binned variogram
+plot(ph_vgm, model = v_model)
+print(v_model)
+
+
+# The final part of geostatical estimation is kriging itself
+# This is the application of the variogram along with the sample data points to produce estimates and uncertainties at new locations
+
+# The computation of estimates and uncertainties, together with the assumption of a normal (Gaussian) response means you can compute any function of the estimates - for example the probability of a new location having alkaline soil
+
+# The acidity survey data, ca_geo, the missing value index, miss, and the variogram model, v_model, have been pre-defined
+
+# ca_geo, miss, v_model have been pre-defined
+# ls.str()
+
+# Set the trend formula and the new data
+km <- gstat::krige(pH ~ x + y, ca_geo[!miss, ], newdata = ca_geo[miss, ], model = v_model)
+names(km)
+
+# Plot the predicted values
+spplot(km, "var1.pred")
+
+# Compute the probability of alkaline samples, and map
+km$pAlkaline <- 1 - pnorm(7, mean = km$var1.pred, sd = sqrt(km$var1.var))
+spplot(km, "pAlkaline")
+
+
+# You have been asked to produce an alkaline probability map over the study area
+# To do this, you are going to do some kriging via the krige() function
+# This requires a SpatialPixels object which will take a bit of data manipulation to create
+# You start by defining a grid, creating points on that grid, cropping to the study region, and then finally converting to SpatialPixels
+# On the way, you'll meet some new functions
+
+# GridTopology() defines a rectangular grid. It takes three vectors of length two as inputs
+# The first specifies the position of the bottom left corner of the grid
+# The second specifies the width and height of each rectangle in the grid, and the third specifies the number of rectangles in each direction
+
+# To ensure that the grid and the study area have the same coordinates, some housekeeping is involved
+# SpatialPoints() converts the points to a coordinate reference system (CRS), or projection (different packages use different terminology for the same concept)
+# The CRS is created by wrapping the study area in projection(), then in CRS()
+# For the purpose of this exercise, you don't need to worry about exactly what these functions do, only that this data manipulation is necessary to align the grid and the study area
+
+# Now that you have that alignment, crop(), as the name suggests, crops the grid to the study area
+# Finally, SpatialPixels() converts the raster cropped gridpoints to the equivalent sp object
+
+# The acidity survey data, ca_geo, the missing value index, miss, the variogram, vgm, and the variogram model, v_model, have been pre-defined
+# A rough outline of the study area is in an object called geo_bounds
+
+# ca_geo, geo_bounds have been pre-defined
+# ls.str()
+
+# Plot the polygon and points
+geo_bounds <- readRDS("./RInputFiles/ca_geo_bounds.RDS")
+plot(geo_bounds)
+points(ca_geo)
+
+# Find the corners of the boundary
+bbox(geo_bounds)
+
+# Define a 2.5km square grid over the polygon extent. The first parameter is
+# the bottom left corner.
+# grid <- GridTopology(c(537853, 5536290), c(2500, 2500), c(72, 48))
+
+# Create points with the same coordinate system as the boundary
+# gridpoints <- SpatialPoints(grid, proj4string = CRS(projection(geo_bounds)))
+# plot(gridpoints)
+
+# Crop out the points outside the boundary
+# cropped_gridpoints <- crop(gridpoints, geo_bounds)
+# plot(cropped_gridpoints)
+
+# Convert to SpatialPixels
+# spgrid <- SpatialPixels(cropped_gridpoints)
+# coordnames(spgrid) <- c("x", "y")
+# plot(spgrid)
+
+
+# The spatial pixel grid of the region, spgrid, and the variogram model of pH, v_model have been pre-defined
+# spgrid, v_model have been pre-defined
+# ls.str()
+
+# Do kriging predictions over the grid
+# ph_grid <- krige(pH ~ x + y, ca_geo[!miss, ], newdata = spgrid, model = v_model)
+
+# Calc the probability of pH exceeding 7
+# ph_grid$pAlkaline <- 1 - pnorm(7, mean = ph_grid$var1.pred, sd = sqrt(ph_grid$var1.var))
+
+# Map the probability of alkaline samples
+# spplot(ph_grid, zcol = "pAlkaline")
+
+
+# The autoKrige() function in the automap package computes binned variograms, fits models, does model selection, and performs kriging by making multiple calls to the gstat functions you used previously
+# It can be a great time-saver but you should always check the results carefully.
+
+# autoKrige() can try several variogram model types
+# In the example, you'll use a Matern variogram model, which is commonly used in soil and forestry analyses
+# You can see a complete list of available models by calling vgm() with no arguments
+
+# The acidity survey data, ca_geo, and the missing value index, miss, have been pre-defined
+
+# ca_geo, miss are pre-defined
+# ls.str()
+
+# Kriging with linear trend, predicting over the missing points
+# ph_auto <- autoKrige(
+#   pH ~ x + y, 
+#   input_data = ca_geo[!miss, ], 
+#   new_data = ca_geo[miss, ], 
+#   model = "Mat"
+# )
+
+# Plot the variogram, predictions, and standard error
+# plot(ph_auto)
+
+
+# You can also use autoKrige() over the spgrid grid from the earlier exercise
+# This brings together all the concepts that you've learned in the chapter
+# That is, kriging is great for predicting missing data, plotting things on a grid is much clearer than plotting individual points, and automatic kriging is less hassle than manual kriging
+
+# The acidity survey data, ca_geo, the missing value index, miss, the spatial pixel grid of the region, spgrid, the manual kriging grid model, ph_grid, and the variogram model of pH, v_model have been pre-defined
+
+# ca_geo, miss, spgrid, ph_grid, v_model are pre-defined
+# ls.str()
+
+# Auto-run the kriging
+# ph_auto_grid <- autoKrige(pH ~ x + y, input_data = ca_geo[!miss, ], new_data = spgrid)
+
+# Remember predictions from manual kriging
+# plot(ph_grid)
+
+# Plot predictions and variogram fit
+# plot(ph_auto_grid)
+
+# Compare the variogram model to the earlier one
+# v_model
+# ph_auto_grid$var_model
+
+```
+  
+  
+  
+***
+  
+###_Spatial Analysis in R with sf and raster_  
+  
+Chapter 1 - Vector and Raster Spatial Data in R  
+  
 
 
 	
@@ -9343,6 +9668,3 @@ Chapter 4 - Geostatistics
 
 
 
-	
-	
-	
