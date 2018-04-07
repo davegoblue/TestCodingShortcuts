@@ -922,4 +922,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_a captures Spatial Statistics in R - Chapter 2 (Point Pattern Analysis)  
 * DataCamp_Insights_v003_a captures Spatial Statistics in R - Chapter 3 (Areal Statistics)  
 * DataCamp_Insights_v003_a captures Spatial Statistics in R - Chapter 4 (Geostatistics)  
+* Split DataCamp_Insights_v003_a so new components can go in DataCamp_Insights_v003_b to stay under DLL limit  
+* DataCamp_Insights_v003_a captures everything prior to Spatial Statistics in R  
+* DataCamp_Insights_v003_b captures everything starting with Spatial Statistics in R  
   
