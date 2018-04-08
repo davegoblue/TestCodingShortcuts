@@ -925,4 +925,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Split DataCamp_Insights_v003_a so new components can go in DataCamp_Insights_v003_b to stay under DLL limit  
 * DataCamp_Insights_v003_a captures everything prior to Spatial Statistics in R  
 * DataCamp_Insights_v003_b captures everything starting with Spatial Statistics in R  
+* DataCamp_Insights_v003_a captures Spatial Analysis in R with sf and raster - Chapter 1 (Vector and Raster Spatial Data in R)  
   
