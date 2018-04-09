@@ -1571,6 +1571,320 @@ detach("package:raster")
   
 Chapter 2 - Preparing Layers for Spatial Analysis  
   
+Quick refresher on coordinate reference systems (CRS):  
+  
+* Places on the earth defined by lat/lon or x/y are based on complex representations of the globe to a plane  
+	* An unprojected CRS uses latitude and longitude and references the earth as a 3D object  
+    * A projected CRS uses X and Y coordinates as a 2D representation of the earth  
+    * Best practice is to include metadata referencing the CRS used, though this does not always happen  
+    * Both sf and raster will read the CRS metadata if it has been provided and attach it to the R objects  
+* Can interpret the results of st_crs() as to what CRS has been used and whether it is projected  
+	* If the $projstring starts with "+proj=longlat . . . " then it is a projected CRS  
+* If the CRS is missing in vector data, it can typically be added using either EPSG or proj4string  
+	* EPSG is a numeric representation of a CRS  
+    * proj4string is a full set of parameters spelled out in a string  
+    * Need to do background research to find out what CRS should have been applied  
+    * Once the proper CRS has been located, it can be added using st_crs() <- anEPSGNum or st(crs() <- aCRSString  
+* Determining or adding the CRS to raster data is very similar  
+	* Use crs() rather than st_crs()  
+* Since all of the objects in a plot need to be on a consistent CRS, it is possible to run the conversions from/to  
+	* st_transform(myVec, myEPSGNum) for vectors  
+    * projectRaster(myRaster, myCRSString) for rasters  
+    * projectRaster(myRaster, "+init=epsg:nnnnn") where nnnnn is the EPSG numeric code is the proper format for raster CRS changes  
+  
+Manipulating vector layers with dplyr:  
+  
+* The dplyr::count(myVector, myVar) %>% dplyr::arrange(dplyr::desc(n)) will create a multi-point object of all the geometries in the list column  
+	* Can always get rid of geometry with x <- st_set_geometry(x, NULL)  
+    * The dplyr::inner_join() can be used with the vector data, provided that there are appropriate matching keys  
+* Vector data is often much more detailed than required for a plot or analysis  
+	* It is often valuable to simplify lines and polygons  
+    * Can run st_simplify(myVector, dTolerance=) where the units of dTolerance are as per the CRS and larger numbers mean more simplification  
+  
+Converting sf objects into sp objects and coordinates:  
+  
+* The sp package has had a long life and is frequently used in packages; conversions between sp and sf is critical  
+* Converting an sf object to sp can be done with the as() function  
+	* as(mySF, class="Spatial")  # will convert to an sp object  
+* Converting from an sp object to an sf object can be done with the st_as_sf() function  
+	* st_as_sf(mySP)  # will convert to an sf object  
+* Creating an sf object from a data frame and coordinate system can be done with the st_as_sf() function  
+	* st_as_sf(myDF, coords=c("long", "lat"), crs=)  # will use myDF$long and myDF$lat to create the CRS  
+* When writing to a CSV using st_write(), the CRS is not included by default  
+	* Can froce the CRS to be written using st_write(mySF, "myFile.csv", layer_options = "GEOMETRY=AS_XY")  
+  
+Manipulating raster layers:  
+  
+* Can reduce raster resolution using aggregate() and can reclassify values using reclassify()  
+* The aggregate() function helps reduce the size of a raster file by averaging across pixels to create larger pixels  
+	* aggregate(myRaster, fact=, fun=)  # the fact is a numeric that is the factor of aggregation while fun is the function to use (much like apply FUN, but lower-case)  
+    * Note that the raster is aggregated by fact in both dimensions, for a total reduction of approximately fact ** 2  
+* The reclassify() call can be used to eliminate missing values, make outliers in to missing values, and the like  
+	* reclassify(myRaster, rcl=aMatrix)  # where aMatrix can have 2-3 columns  
+    * The 3-column matrix (such as cbind(1, 3, NA)) would mean classify values between 1 and 3 to NA  
+    * The 2-column matrix (such as cbind(1, 3)) would mean classify all values as 1 to 3  
+    * Each row of the matrix represents a rule - can have multiple rows  
+  
+Example code includes:  
+```{r}
+
+library(sf)
+library(raster)
+
+# In order to perform any spatial analysis with more than one layer, your layers should share the same coordinate reference system (CRS) and the first step is determining what coordinate reference system your data has
+# To do this you can make use of the sf function st_crs() and the raster function crs()
+
+# When the geographic data you read in with sf already has a CRS defined both sf and raster will recognize and retain it
+# When the CRS is not defined you will need to define it yourself using either the EPSG number or the proj4string
+
+
+# Determine the CRS for the neighborhoods and trees vector objects
+st_crs(neighborhoods)
+st_crs(trees)
+
+# Assign the CRS to trees
+crs_1 <- "+proj=longlat +ellps=WGS84 +no_defs"
+st_crs(trees) <- crs_1
+
+# Determine the CRS for the canopy and manhattan rasters
+crs(canopy)
+crs(manhattan)
+
+# Assign the CRS to manhattan
+crs_2 <- "+proj=utm +zone=18 +ellps=GRS80 +datum=NAD83 +units=m +no_defs"
+crs(manhattan) <- crs_2
+
+
+# In this exercise you will transform (sometimes this is called "project") the objects so they share a single CRS
+# It is generally best to perform spatial analysis with layers that have a projected CRS (and some functions require this)
+# To determine if your object has a projected CRS you can look at the first part of the result from st_crs() or crs() -- if it begins with +proj=longlat then your CRS is unprojected
+
+# Note that you will use method = "ngb" in your call to projectRaster() to prevent distortion in the manhattan image
+
+# Get the CRS from the canopy object
+the_crs <- crs(canopy, asText = TRUE)
+
+# Project trees to match the CRS of canopy
+trees_crs <- st_transform(trees, crs = the_crs)
+
+# Project neighborhoods to match the CRS of canopy
+neighborhoods_crs <- st_transform(neighborhoods, crs = the_crs)
+
+# Project manhattan to match the CRS of canopy
+manhattan_crs <- projectRaster(manhattan, crs = the_crs, method = "ngb")
+
+# Look at the CRS to see if they match
+st_crs(trees_crs)
+st_crs(neighborhoods_crs)
+crs(manhattan_crs)
+
+
+# If the layers do not share a common CRS they may not align on a plot
+# To illustrate, in this exercise, you will initially create a plot with the plot() function and try to add two layers that do not share the same CRS
+# You will then transform one layer's CRS to match the other and you will plot this with both the plot() function and functions from the tmap package.
+
+# Note that for this exercise we returned all the layers to their original CRS and did not retain the changes you made in the last exercise
+
+# With the plot() function you can plot multiple layers on the same map by calling plot() multiple times
+# You'll need to add the argument add = TRUE to all calls to plot() after the first one and you need to run the code for all layers at once rather than line-by-line
+
+# Plot canopy and neighborhoods (run both lines together)
+# Do you see the neighborhoods?
+plot(canopy)
+plot(neighborhoods$geometry, add = TRUE)
+
+# See if canopy and neighborhoods share a CRS
+st_crs(neighborhoods)
+crs(canopy)
+
+# Save the CRS of the canopy layer
+the_crs <- crs(canopy, asText = TRUE)
+
+# Transform the neighborhoods CRS to match canopy
+neighborhoods_crs <- st_transform(neighborhoods, crs=the_crs)
+
+# Re-run plotting code (run both lines together)
+# Do the neighborhoods show up now?
+plot(canopy)
+plot(neighborhoods_crs$geometry, add = TRUE)
+
+# Simply run the tmap code
+tmap::tm_shape(canopy) + 
+    tmap::tm_rgb() + 
+    tmap::tm_shape(neighborhoods_crs) + 
+    tmap::tm_polygons(alpha = 0.5)
+
+
+# One of the great innovations of sf over sp is the use of data frames for storing spatial objects
+# This allows you to slice and dice your spatial data in the same way you do for non-spatial data
+# This means you can, for example, apply dplyr verbs directly to your sf object
+
+# One important difference between dplyr with and without spatial data is that the resulting data frames will include the geometry variable unless you explicitly drop it
+# If you want to force the geometry to be dropped you would use the sf function st_set_geometry() and you would set the geometry to NULL
+
+# The packages sf and dplyr, and the object trees are loaded in your workspace
+
+# Create a data frame of counts by species
+species_counts <- count(trees, species)
+
+# Arrange in descending order
+species_counts_desc <- arrange(species_counts, desc(n)) 
+
+# Use head to see if the geometry column is in the data frame
+head(species_counts_desc)
+
+# Drop the geometry column
+species_no_geometry <- st_set_geometry(species_counts_desc, NULL)
+
+# Confirm the geometry column has been dropped
+head(species_no_geometry)
+
+
+# In this exercise you will test joining spatial and non-spatial data. In particular, the trees data you have been working with has a full county name (the variable is called boroname) but does not have the county codes. The neighborhoods file has both a county name (the variable is called boro_name) and the county codes -- neighborhoods are nested within counties
+# In this exercise, you will create a non-spatial data frame of county name and county code from the neighborhoods object
+# Then you will join this data frame into the spatial trees object with inner_join()
+
+# The packages sf and dplyr and the objects neighborhoods and trees are loaded in your workspace
+
+# Limit to the fields boro_name, county_fip and boro_code
+boro <- dplyr::select(neighborhoods, boro_name, county_fip, boro_code)
+
+# Drop the geometry column
+boro_no_geometry <- st_set_geometry(boro, NULL)
+
+# Limit to distinct records
+boro_distinct <- distinct(boro_no_geometry)
+
+# Join the county detail into the trees object
+trees_with_county <- inner_join(trees, boro_distinct, by = c("boroname" = "boro_name"))
+
+# Confirm the new fields county_fip and boro_code exist
+head(trees_with_county)
+
+
+# In sf you can use the st_simplify() function to reduce line and polygon complexity
+# In this exercise you will measure the size of objects before and after st_simplify() in two ways
+# You will compute the size in megabytes using the handy object_size() function in the pryr package and you will count the number of vertices -- the number of points required to delineate a line or polygon
+
+# The packages sf and pryr are loaded in your workspace
+# Plot the neighborhoods geometry
+plot(st_geometry(neighborhoods), col = "grey")
+
+# Measure the size of the neighborhoods object
+utils::object.size(neighborhoods)
+
+# Compute the number of vertices in the neighborhoods object
+pts_neighborhoods <- st_cast(neighborhoods$geometry, "MULTIPOINT")
+cnt_neighborhoods <- sapply(pts_neighborhoods, length)
+sum(cnt_neighborhoods)
+
+# Simplify the neighborhoods object
+neighborhoods_simple <- st_simplify(neighborhoods, 
+                            preserveTopology = TRUE, 
+                            dTolerance = 0.0025)
+
+# Measure the size of the neighborhoods_simple object
+utils::object.size(neighborhoods_simple)
+
+# Compute the number of vertices in the neighborhoods_simple object
+pts_neighborhoods_simple <- st_cast(neighborhoods_simple$geometry, "MULTIPOINT")
+cnt_neighborhoods_simple <- sapply(pts_neighborhoods_simple, length)
+sum(cnt_neighborhoods_simple)
+
+# Plot the neighborhoods_simple object geometry
+plot(st_geometry(neighborhoods_simple), col = "grey")
+
+
+# Read in the trees data (done previously)
+# trees <- st_read("trees.shp")
+
+# Convert to Spatial class
+trees_sp <- as(trees, Class = "Spatial")
+
+# Confirm conversion, should be "SpatialPointsDataFrame"
+class(trees_sp)
+
+# Convert back to sf
+trees_sf <- st_as_sf(trees_sp)
+
+# Confirm conversion
+class(trees_sf)
+
+
+# In order to convert a data frame of coordinates into an sf object you can make use of the st_as_sf() function you used in the previous exercise
+# You can specify the coords argument with the names of the coordinate variables (with the X coordinate/longitude coordinate listed first) and, optionally, the crs argument if you know the CRS of your coordinates
+# The CRS can be specified as a proj4 string or EPSG code
+
+# If you want to convert your sf point objects to a data frame with coordinates, you can use the st_write() function with a 
+# hidden argument (these are arguments associated with an external utility called GDAL and so they're not in the R help) to force sf to include the coordinates in the output file
+# The argument you need is layer_options = "GEOMETRY=AS_XY"
+
+# Read in the CSV (done previously)
+# trees <- read.csv("trees.csv")
+
+# Convert the data frame to an sf object
+trees_sf <- st_as_sf(trees, coords = c("longitude", "latitude"), crs = 4326)
+
+# Plot the geometry of the points
+plot(st_geometry(trees_sf))
+
+# Write the file out with coordinates
+st_write(trees_sf, "./RInputFiles/new_trees.csv",  layer_options = "GEOMETRY=AS_XY", delete_dsn = TRUE)
+
+# Read in the file you just created and check coordinates
+new_trees <- read.csv("./RInputFiles/new_trees.csv")
+head(new_trees)
+
+
+# Read in the canopy layer (done previously)
+# canopy <- raster("canopy.tif")
+
+# Plot the canopy raster
+plot(canopy)
+
+# Determine the raster resolution
+res(canopy)
+
+# Determine the number of cells
+ncell(canopy)
+
+# Aggregate the raster
+canopy_small <- aggregate(canopy, fact = 10)
+
+# Plot the new canopy layer
+plot(canopy_small)
+
+# Determine the new raster resolution
+res(canopy_small)
+
+# Determine the number of cells in the new raster
+ncell(canopy_small)
+
+
+# Plot the canopy layer to see the values above 100
+plot(canopy)
+
+# Set up the matrix
+vals <- cbind(100, 300, NA)
+
+# Reclassify 
+canopy_reclass <- reclassify(canopy, rcl = vals)
+
+# Plot again and confirm that the legend stops at 100
+plot(canopy_reclass)
+
+# raster masks dplyr::select
+detach("package:raster")
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Conducting Spatial Analysis with sf and raster  
+  
+
 
 	
 	
