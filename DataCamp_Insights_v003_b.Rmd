@@ -2282,6 +2282,227 @@ detach("package:raster")
   
 Chapter 4 - Combine Skills in Mini-Analysis  
   
+Compute tree density and average tree canopy by neighborhood:  
+  
+* Street tree census (each point is a tree) - note that Central Park will have none, so it is not a street  
+* Tree canopy data (each grid cell is a percentage of canopy)  
+* Question is whether these greenery measures are correlated by NYC neighborhood  
+	* Tree density by neighborhood (total trees divided by total area)  
+    * Average tree canopy by neighborhood (average all grid cells per neighborhood)  
+  
+First look at results with ggplot2:  
+  
+* Note that ggplot2 and tmap, while more complex, make much nicer maps than plot()  
+	* The geom_sf() object is available in ggplot2, and does not require any aesthetic mappings if you just want to view the geometries  
+    * To make a chloropleth (areas filled by color), add aes(fill=) to the original ggplot call  
+    * Can improve the color scheme using scale_fill_gradient(low=, high=)  # low and high each being quoted strings referencing an R color  
+* As a reminder, it is generally best to plot using a projected CRS  
+  
+Create final, polished maps with tmap:  
+  
+* The basic usage for tmap() is like ggplot(), and it begins with tm_shape() with layers added by plus signs  
+	* tm_polygons()  
+    * tm_rgb()  
+    * tm_lines()  
+    * tm_bubbles() or tm_dots()  
+* Can add multiple data layers for the same data by just adding to the plus sign  
+* To use a different layer, add a call to tm_shape(newData); so, for example, you might have  
+	* tm_shape(firstData) + tm(polygons() + tm_shape(secondData) + tm_borders()  
+* For a chloropleth map, use the col="myVar" option inside the specified layer  
+* Can use tmap_arrange(maps…, nrow=) to get all the maps shown on the same pane, and with a specified number of nrows  
+  
+Wrap up:  
+  
+* Geoprocessing allows for automated and integrated processing  
+* The sf package makes use of data frames, which better integrated the process (similar to how raster works)  
+* Raster data defaults to being left on disk, though with access available as needed  
+* The CRS is particularly importanr  
+	* st_crs() and crs() to get or set the CRS  
+    * st_transform() or projectRaster() to change the CRS  
+* Can then run spatial analyses for sf and raster projects, as well as plotting them  
+	* plot(), plotRGB(), ggplot2, tmap  
+  
+Example code includes:  
+```{r}
+
+library(raster)
+
+
+# In order to compute tree density by neighborhood you need two things
+# You will need to know the area of the neighborhoods, which you will compute in the next exercise
+# And you need the tree counts by neighborhood which is the focus of this exercise
+
+# You will produce counts of all trees by neighborhood in NYC and create a single data frame with a column for total trees
+# The result should be a data frame with no geometry
+
+# sf and dplyr are loaded in the workspace
+
+# Compute the counts of all trees by hood (nta)
+tree_counts <- count(trees, nta)
+
+# Take a quick look
+head(tree_counts)
+
+# Remove the geometry
+tree_counts_no_geom <- st_set_geometry(tree_counts, NULL)
+
+# Rename the n variable to tree_cnt
+tree_counts_renamed <- rename(tree_counts_no_geom, tree_cnt = n)
+  
+# Create histograms of the total counts
+hist(tree_counts_renamed$tree_cnt)
+
+
+# We have the tree counts (from the previous exercise)
+# In this exercise you will compute neighborhood areas, add them to the neighborhood sf object and then you'll join in the non-spatial tree counts data frame from the previous exercise
+
+# Compute areas and unclass
+areas <- unclass(st_area(neighborhoods))
+
+# Add the areas to the neighborhoods object
+neighborhoods_area <- mutate(neighborhoods, area = areas)
+
+# Join neighborhoods and counts
+neighborhoods_counts <- left_join(neighborhoods_area, tree_counts_renamed, by = c("ntacode"="nta"))
+
+# Replace NA values with 0
+neighborhoods_counts <- mutate(neighborhoods_counts, 
+                            tree_cnt = ifelse(is.na(tree_cnt), 
+                                              0, tree_cnt))
+
+# Compute the density
+neighborhoods_counts <- mutate(neighborhoods_counts, 
+                               tree_density = tree_cnt/area)
+
+
+# In the previous exercises you computed tree density by neighborhood using tree counts
+# In this exercise you will compute average tree canopy by neighborhood as a percentage so that we can compare if the results are similar
+
+# Confirm that you have the neighborhood density results
+head(neighborhoods_counts)
+
+# Transform the neighborhoods CRS to match the canopy layer
+neighborhoods_crs <- st_transform(neighborhoods_counts, crs = crs(canopy, asText = TRUE))
+
+# Convert neighborhoods object to a Spatial object
+neighborhoods_sp <- as(neighborhoods_crs, "Spatial")
+
+# Compute the mean of canopy values by neighborhood
+canopy_neighborhoods <- extract(canopy_small, neighborhoods_sp, fun = mean)
+
+# Add the mean canopy values to neighborhoods
+neighborhoods_avg_canopy <- mutate(neighborhoods_counts, avg_canopy = as.vector(canopy_neighborhoods))
+
+
+# Create a histogram of tree density (tree_density)
+ggplot(neighborhoods_avg_canopy, aes(x = tree_density)) + 
+  geom_histogram(color = "white")
+
+# Create a histogram of average canopy (avg_canopy)
+ggplot(neighborhoods_avg_canopy, aes(x = avg_canopy)) + 
+  geom_histogram(color = "white")
+
+# Create a scatter plot of tree_density vs avg_canopy
+ggplot(neighborhoods_avg_canopy, aes(x = tree_density, y = avg_canopy)) + 
+    geom_point() + 
+    stat_smooth()
+
+# Compute the correlation between density and canopy
+cor(neighborhoods_avg_canopy$tree_density, neighborhoods_avg_canopy$avg_canopy)
+
+
+# The geom_sf() function operates like any other layer in ggplot2 where you can link variables to aesthetics on the plot through the aes() function
+# In a mapping context this might mean, for example, creating a choropleth map by color coding the polygons based on a variable
+# If you leave off the aesthetic mapping geom_sf() will map the geometry alone
+
+# Note: geom_sf() is still in the development version of ggplot2 on GitHub. If you want to use geom_sf() on your machine, you need to install the dev version
+# devtools::install_github("tidyverse/ggplot2")
+
+# Plot the tree density with default colors
+# ggplot(neighborhoods_avg_canopy) + 
+#   geom_sf(aes(fill = tree_density))
+
+# Plot the tree canopy with default colors
+# ggplot(neighborhoods) + 
+#   geom_sf(aes(fill = avg_canopy))
+  
+# Plot the tree density using scale_fill_gradient()
+# ggplot(neighborhoods) + 
+#   geom_sf(aes(fill = tree_density)) + 
+#   scale_fill_gradient(low = "#edf8e9", high = "#005a32")
+
+# Plot the tree canopy using the scale_fill_gradient()
+# ggplot(neighborhoods) + 
+#   geom_sf(aes(fill = avg_canopy)) +
+#   scale_fill_gradient(low = "#edf8e9", high = "#005a32")
+
+
+# Create a simple map of neighborhoods
+library(tmap)
+
+tm_shape(neighborhoods_avg_canopy) + 
+    tm_polygons()
+
+# Create a color-coded map of neighborhood tree density
+tm_shape(neighborhoods_avg_canopy) + 
+    tm_polygons(col="tree_density")
+
+# Style the tree density map
+tm_shape(neighborhoods_avg_canopy) + 
+    tm_polygons("tree_density", palette = "Greens", 
+        style = "quantile", n = 7, 
+        title = "Trees per sq. KM")
+
+# Create a similar map of average tree canopy
+tm_shape(neighborhoods_avg_canopy) + 
+    tm_polygons("avg_canopy", palette = "Greens", 
+        style = "quantile", n = 7, 
+        title = "Average tree canopy (%)")
+
+
+# Create a map of the manhattan aerial photo
+tm_shape(manhattan) + 
+    tm_rgb()
+
+# Create a map of the neighborhood polygons
+tm_shape(neighborhoods_avg_canopy) + 
+    tm_borders(col = "black", lwd = 0.5, alpha = 0.5)
+
+
+# Combine the aerial photo and neighborhoods into one map
+map1 <- tm_shape(manhattan) + 
+    tm_rgb() + 
+    tm_shape(neighborhoods_avg_canopy) + 
+    tm_borders(col = "black", lwd = 0.5, alpha = 0.5)
+
+# Create the second map of tree measures (bbox causing errors . . . )
+# map2 <- tm_shape(neighborhoods_avg_canopy, bbox = bbox(manhattan)) +
+map2 <- tm_shape(neighborhoods_avg_canopy) +
+        tm_polygons(c("tree_density", "avg_canopy"), 
+        style = "quantile",
+        palette = "Greens",
+        title = c("Tree Density", "Average Tree Canopy"))
+
+# Combine the two maps into one
+tmap_arrange(map1, map2, asp = NA)
+
+
+# raster masks dplyr::select
+detach("package:raster")
+
+
+```
+  
+  
+  
+***
+  
+###_Sentiment Analysis in R_  
+  
+Chapter 1 - Fast and Dirty - Polarity Scoring  
+  
+
+
 
 	
 
