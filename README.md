@@ -931,4 +931,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_b captures Spatial Analysis in R with sf and raster - Chapter 2 (Preparing Layers for Spatial Analysis)  
 * DataCamp_Insights_v003_b captures Spatial Analysis in R with sf and raster - Chapter 3 (Conducting Spatial Analysis)  
 * DataCamp_Insights_v003_b captures Spatial Analysis in R with sf and raster - Chapter 4 (Combine Skills in Mini-Analysis)  
+* DataCamp_Insights_v003_b captures Sentiment Analysis in R - Chapter 1 (Fast and Dirty - Polarity Scoring)  
   
