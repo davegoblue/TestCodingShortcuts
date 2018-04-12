@@ -2501,6 +2501,403 @@ detach("package:raster")
   
 Chapter 1 - Fast and Dirty - Polarity Scoring  
   
+Sentiment Analysis and Feelings:  
+  
+* Sentiment analysis is the process of extracting emotional intent from text - happy, sad, surprised, angry  
+* Emotion is often important metadata - sentiment analysis helps to extract this from data  
+	* By contrast, bag-of-words is just gathering the words as vectors, without regard to their sentiment  
+    * Polarity is defined as the degree of positivity and negativity in text  
+  
+Zipf's Law, Number of Words, Subjectivity Lexicon:  
+  
+* A subjectivity lexicon is a predefined list of words associated with emotional contect such as positive/negative, frustration, joy, etc.  
+	* The qdap::polarity() uses a lexicon from hash_sentiment_huliu  
+* The tidytext had a sentiments tibble with three different lexicons  
+	* NRC - words according to 8 emotions like "angry" or "joy" or Pos/Neg  
+    * Bing - words labelled positive or negative  
+    * AFINN - words scored from -5 to 5  
+* There is also a lexicon package with a number of additional pre-defined lexicons  
+* While the average person may know up to 50,000 words, the pre-defined lexicon typically have at most a few thousand words  
+	* Zipf's Law - frequency of any given word is inversely proportional to its rank (e.g., third most frequent word is used about 33% as much as first-ranked word)  
+    * Principle of Least Effort - if there are multiple ways to achieve the same goal, people generally choose the easiest way (e.g., people tend to be lazy in how they express themselves)  
+  
+Explore qdap - Polarity and Lexicon:  
+  
+* The default lexicon for polarity() comes from UIC researchers - roughly 7,000 words classified as positive or negative  
+	* For each word that polarity() identifies, it looks at the four words before and the two words after to form a context cluster  
+    * Therefore, removing stop words WILL change the polarity score, since the cluster will change  
+    * The words in the context cluster are classified as amplifier, negater, de-amplifier, etc.  
+    * The amplifiers and de-amplifier are considered valence shifters - words that effect the emotional context by way of additive or subtractive  
+    * The negator switches the polarity of the context cluster  
+    * Positive words default to +1 and negative words default to -1 (prior to any negation or amplification)  
+    * Amplifiers get a specified weight - for example, "very" is 0.8 if positive and -0.8 if negative  
+    * The final polarity score is divided by the square root of the number of words  
+* Can adjust the lexicon to be channel specific, so that it works properly for the specific context needed  
+  
+Example code includes:  
+```{r}
+
+# We created text_df representing a conversation with person and text columns
+
+# Use qdap's polarity() function to score text_df
+# polarity() will accept a single character object or data frame with a grouping variable to calculate a positive or negative score
+
+# In this example you will use the magrittr package's dollar pipe operator %$%
+# The dollar sign forwards the data frame into polarity() and you declare a text column name or the text column and a grouping variable without quotes
+# text_data_frame %$% polarity(text_column_name)
+
+# To create an object with the dollar sign operator:
+# polarity_object <- text_data_frame %$% 
+#     polarity(text_column_name, grouping_column_name)
+
+# More specifically, to make a quantitative judgement about the sentiment of some text, you need to give it a score
+# A simple method is a positive or negative value related to a sentence, passage or a collection of documents called a corpus
+# Scoring with positive or negative values only is called "polarity."
+# A useful function for extracting polarity scores is counts() applied to the polarity object
+# For a quick visual call plot() on the polarity() outcome
+
+# From http://magrittr.tidyverse.org/
+# Many functions accept a data argument, e.g. lm and aggregate, which is very useful in a pipeline where data is first processed and then passed into such a function
+# There are also functions that do not have a data argument, for which it is useful to expose the variables in the data
+# This is done with the %$% operator
+# iris %>%
+#   subset(Sepal.Length > mean(Sepal.Length)) %$%
+#   cor(Sepal.Length, Sepal.Width)
+
+library(magrittr)
+library(qdap)
+
+text_df <- data.frame(
+    person=c('Nick', 'Jonathan', 'Martijn', 'Nicole', 'Nick', 'Jonathan', 'Martijn', 'Nicole'), 
+    text=c('DataCamp courses are the best', 'I like talking to students', 'Other online data science curricula are boring.', 'What is for lunch?', 'DataCamp has lots of great content!', 'Students are passionate and are excited to learn', 'Other data science curriculum is hard to learn and difficult to understand', 'I think the food here is good.'), 
+    stringsAsFactors=TRUE
+)
+
+# Examine the text data
+text_df
+
+# Calc overall polarity score
+text_df %$% qdap::polarity(text)
+
+# Calc polarity score by person
+(datacamp_conversation <- text_df %$% qdap::polarity(text, person))
+
+# Counts table from datacamp_conversation
+qdap::counts(datacamp_conversation)
+
+# Plot the conversation polarity
+plot(datacamp_conversation)
+
+
+# In the Text Mining: Bag of Words course you learned that a corpus is a set of texts, and you studied some functions for preprocessing the text
+# To recap, one way to create a corpus is with the functions below
+# Even though this is a different course, sentiment analysis is part of text mining so a refresher can be helpful
+# Turn a character vector into a text source using VectorSource().
+# Turn a text source into a corpus using VCorpus().
+# Remove unwanted characters from the corpus using cleaning functions like removePunctuation() and stripWhitespace() from tm, and replace_abbreviation() from qdap
+
+# In this exercise a custom clean_corpus() function has been created using standard preprocessing functions for easier application
+# clean_corpus() accepts the output of VCorpus() and applies cleaning functions. For example:
+# processed_corpus <- clean_corpus(my_corpus)
+
+library(tm)
+
+clean_corpus <- function(corpus){
+  corpus <- tm_map(corpus, content_transformer(replace_abbreviation))
+  corpus <- tm_map(corpus, removePunctuation)
+  corpus <- tm_map(corpus, removeNumbers)
+  corpus <- tm_map(corpus, removeWords, c(stopwords("en"), "coffee"))
+  corpus <- tm_map(corpus, content_transformer(tolower))
+  corpus <- tm_map(corpus, stripWhitespace)
+  return(corpus)
+}
+
+# Your R session has a text vector, tm_define, containing two small documents and the function clean_corpus().
+tm_define <- c("Text mining is the process of distilling actionable insights from text.", "Sentiment analysis represents the set of tools to extract an author's feelings towards a subject.")
+
+# clean_corpus(), tm_define are pre-defined
+clean_corpus
+tm_define
+
+# Create a VectorSource
+tm_vector <- VectorSource(tm_define)
+
+# Apply VCorpus
+tm_corpus <- VCorpus(tm_vector)
+
+# Examine the first document's contents
+content(tm_corpus[[1]])
+
+# Clean the text
+tm_clean <- clean_corpus(tm_corpus)
+
+# Reexamine the contents of the first doc
+content(tm_clean[[1]])
+
+
+# Now let's create a Document Term Matrix (DTM). In a DTM
+# Each row of the matrix represents a document.
+# Each column is a unique word token.
+# Values of the matrix correspond to an individual document's word usage
+
+# The DTM is the basis for many bag of words analyses
+# Later in the course, you will also use the related Term Document Matrix (TDM)
+# This is the transpose; that is, columns represent documents and rows represent unique word tokens
+
+# You should construct a DTM after cleaning the corpus (using clean_corpus())
+# To do so, call DocumentTermMatrix() on the corpus object
+# tm_dtm <- DocumentTermMatrix(tm_clean)
+
+# If you need a more in-depth refresher check out the Text Mining: Bag of Words course
+# Hopefully these two exercises have prepared you well enough to embark on your sentiment analysis journey!
+
+# We've created a VCorpus() object called clean_text containing 1000 tweets mentioning coffee
+# The tweets have been cleaned with the previously mentioned preprocessing steps and your goal is to create a DTM from it
+
+# clean_text is pre-defined (do not have VCorpus)
+# clean_text
+
+# Create tf_dtm
+# tf_dtm <- DocumentTermMatrix(clean_text)
+
+# Create tf_dtm_m
+# tf_dtm_m <- as.matrix(tf_dtm)
+
+# Dimensions of DTM matrix
+# dim(tf_dtm_m)
+
+# Subset part of tf_dtm_m for comparison
+# tf_dtm_m[16:20, 2975:2985]
+
+
+# Although Zipf observed a steep and predictable decline in word usage you may not buy into Zipf's law
+# You may be thinking "I know plenty of words, and have a distinctive vocabulary"
+# That may be the case, but the same can't be said for most people!
+# To prove it, let's construct a visual from 3 million tweets mentioning "#sb"
+# Keep in mind that the visual doesn't follow Zipf's law perfectly, the tweets all mentioned the same hashtag so it is a bit skewed
+# That said, the visual you will make follows a steep decline showing a small lexical diversity among the millions of tweets
+# So there is some science behind using lexicons for natural language analysis!
+
+# In this exercise, you will use the package metricsgraphics
+# Although the author suggests using the pipe %>% operator, you will construct the graphic step-by-step to learn about the various aspects of the plot
+# The main function of the package metricsgraphics is the mjs_plot() function which is the first step in creating a JavaScript plot
+# Once you have that, you can add other layers on top of the plot
+
+# An example metricsgraphics workflow without using the %>% operator is below
+# metro_plot <- mjs_plot(data, x = x_axis_name, y = y_axis_name, show_rollover_text = FALSE)
+# metro_plot <- mjs_line(metro_plot)
+# metro_plot <- mjs_add_line(metro_plot, line_one_values)
+# metro_plot <- mjs_add_legend(metro_plot, legend = c('names', 'more_names'))
+# metro_plot
+
+
+rawWords <- c('sb', 'rt', 'the', 'to', 'a', 'for', 'esurancesweepstakes', 'you', 'broncos', 'esurance', 'in', 'is', 'of', 'on', 'win', 'and', 'panthers', 'nfl', 'i', 'super', 'at', 'with', 'bowl', 'this', 'your', 'superbowl', 'it', 'are', 'keeppounding', 'that', 'be', 'will', 'k', 'game', 'amp', 'we', 'our', 'my', 'got', 'cam', 'https\205', 'big', 'if', 'but', 'from', 'just', 'time', 'now', 'all', 'have', 'up', 'who', 'out', 'show', 'sbfanvote', 'peyton', 'so', 'chance', 'was', 'why', 'watch', 'see', 'like', 'winning', 'not', 'commercial', 'get', 'by', 'coldplay', 'more', 'think', 'what', 'go', 'one', 'do', 'over', 'here', 'halftime', 'away', 'good', 'me', 'gaga', 'lady', 'i\222ve', 'how', 'httpstco\205', 'ready', 'manning', 'pepsihalftime', 'could', 'wearing', 'ad', 'during', 'its', 'about', 'beyonce', 'doritos', 'httpst\205', 'an', 'day', 'going', 'anthem', 'after', 'national', 'than', 'team', 'want', 'gonna', 'some', 'his', 'denver', 'best', 'ladygaga', 'can', 'im', 'pass', 'today', 'enter', 'socks', 'avosinspace', 'shoes', 'sandals', 'reporter', 'jeans', 'biggame', 'httpstcoqdraydnsb', 'brunomars', 'tomorrow', 'sweepstakes', 'check', 'when', 'avosfrommexico', 'beyonc\351', 'sunday', 'great', 'seo', 'mvp', 'performance', 'as', 'love', 'they', 'new', 'field', 'did', 'congrats', 'tmobile', 'still', 'no', 'drake', 'tonight', 'special', 'yougotcarriered', 'he', 'last', 'has', 'too', 'superbowlsunday', 'lets', 'make')
+rawFreq <- c(1984423, 1700564, 1101899, 588803, 428598, 388390, 326464, 322154, 296673, 292468, 266847, 265392, 245718, 234509, 233618, 233157, 215919, 212620, 202765, 183808, 182673, 176209, 175996, 172636, 146487, 143345, 142812, 136649, 134436, 130056, 128878, 126930, 116187, 115213, 114805, 108680, 103023, 88247, 88099, 84442, 82291, 82116, 79843, 78986, 77616, 77562, 75405, 73245, 70581, 68565, 68325, 66217, 66030, 64489, 63026, 62986, 62878, 61111, 60982, 59658, 59629, 57424, 56911, 56585, 56455, 56182, 55496, 55237, 54729, 53962, 52840, 50489, 46303, 46216, 45832, 45569, 44364, 43338, 42667, 42008, 41743, 41566, 41473, 40003, 39888, 39808, 39421, 38575, 38498, 37085, 35345, 32997, 31292, 31018, 30832, 29258, 29183, 28980, 28908, 27361, 27283, 23367, 23183, 22575, 22456, 21964, 21095, 20530, 20213, 19514, 19428, 19115, 18887, 18483, 18120, 16901, 14239, 14110, 13475, 13424, 13329, 13326, 13304, 13231, 13221, 13194, 12641, 12225, 11635, 11502, 11362, 11341, 11293, 11102, 10986, 10660, 10637, 10331, 10136, 10040, 9963, 9745, 9616, 9495, 9468, 9397, 9384, 9368, 9284, 8914, 8732, 8719, 8697, 8629, 8536, 8379, 8316, 7977, 7970)
+rawRank <- c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159)
+
+sb_words <- data.frame(word=rawWords, freq=rawFreq, rank=rawRank)
+
+# Examine sb_words
+head(sb_words)
+
+# Create expectations
+# sb_words$expectations <- sb_words %$%
+#   {freq / rank}
+
+# Probably should be something more like this
+sb_words$expectations <- sb_words %$% 
+  {freq[1] / rank}
+
+# Create metrics plot
+sb_plot <- metricsgraphics::mjs_plot(sb_words, x = rank, y = freq, show_rollover_text = FALSE)
+
+# Add 1st line
+sb_plot <- metricsgraphics::mjs_line(sb_plot)
+
+# Add 2nd line
+sb_plot <- metricsgraphics::mjs_add_line(sb_plot, expectations)
+
+# Add legend
+sb_plot <- metricsgraphics::mjs_add_legend(sb_plot, legend = c("Frequency", "Expectation"))
+
+# Display plot
+sb_plot
+
+
+# So far you have learned the basic components needed for assessing positive or negative intent in text
+# Remember the following points so you can feel confident in your results.
+# The subjectivity lexicon is a predefined list of words associated with emotions or positive/negative feelings.
+# You don't have to list every word in a subjectivity lexicon because Zipf's law describes human expression.
+
+# A quick way to get started is to use the polarity() function which has a built-in subjectivity lexicon
+
+# The function scans the text to identify words in the lexicon
+# It then creates a word group around the identified positive or negative subjectivity word
+# Within the group valence shifters adjust the score
+# Valence shifters are words that amplify or negate the emotional intent of the subjectivity word
+# For example, "well known" is positive while "not well known" is negative
+# Here "not" is a negating term and reverses the emotional intent of "well known."
+# In contrast, "very well known" employs an amplifier increasing the positive intent
+
+# The polarity() function then calculates a score using subjectivity terms, valence shifters and the total number of words in the passage
+# This exercise demonstrates a simple polarity calculation
+# In the next video we look under the hood of polarity() for more detail
+
+# We've defined positive to denote a positive statement
+
+# Example statements
+positive <- "DataCamp courses are good for learning"
+
+# Calculate polarity of both statements
+(pos_score <- polarity(positive))
+
+# Get counts
+(pos_counts <- counts(pos_score))
+  
+# Number of positive words
+n_good <- length(pos_counts$pos.words[[1]])
+  
+# Total number of words
+n_words <- pos_counts$wc
+  
+# Verify polarity score
+n_good / sqrt(n_words)
+
+
+# Of course just positive and negative words aren't enough
+# In this exercise you will learn about valence shifters which tell you about the author's emotional intent
+# Previously you applied polarity() to text without valence shifters. In this example you will see amplifers and negating words in action
+
+# Recall that an amplifying word adds 0.8 to a positive word in polarity() so the positive score becomes 1.8
+# For negative words 0.8 is subtracted so the total becomes -1.8
+# Then the score is divided by the square root of the total number of words
+
+# Consider the following example from Frank Sinatra: "It was a very good year"
+# "Good" equals 1 and "very" adds another 0.8
+# So, 1.8/sqrt(6) results in 0.73 polarity
+
+# A negating word such as "not" will inverse the subjectivity score
+# Consider the following example from Bobby McFerrin: "Don't worry Be Happy"
+# "worry is now 1 due to the negation "don't."
+# Adding the "happy", +1, equals 2
+# With 4 total words, 2 / sqrt(4) equals a polarity score of 1
+
+conversation <- data.frame(student=c('Martijn', 'Nick', 'Nicole'), 
+                           text=c('This restaurant is never bad', 'The lunch was very good', 'It was awful I got food poisoning and was extremely ill'),
+                           stringsAsFactors=TRUE
+                           )
+# Examine conversation
+conversation
+
+# Polarity - All
+polarity(conversation$text)
+
+# Polarity - Grouped
+student_pol <- conversation %$%
+  polarity(text, student)
+
+# Student results
+scores(student_pol)
+
+# Sentence by sentence
+counts(student_pol)
+
+# qdap plot
+plot(student_pol)
+
+
+# Even with Zipf's law in action, you will still need to adjust lexicons to fit the text source (for example twitter versus legal documents) or the author's demographics (teenage girl versus middle aged man)
+# This exercise demonstrates the explicit components of polarity() so you can change it if needed
+
+# In Trey Songz "Lol :)" song there is a lyric "LOL smiley face, LOL smiley face."
+# In the basic polarity() function, "LOL" is not defined as positive
+# However, "LOL" stands for "Laugh Out Loud" and should be positive
+# As a result, you should adjust the lexicon to fit the text's context which includes pop-culture slang
+# If your analysis contains text from a specific channel (Twitter's "LOL"), location (Boston's "Wicked Good"), or age group (teenagers "sick") you will likely have to adjust the lexicon
+
+# In this exercise you are not adjusting the subjectivity lexicon or qdap dictionaries containing valence shifters
+# Instead you are examining the existing word data frame objects so you can change them in the following exercise
+
+# We've created text containing two excerpts from Beyoncé's "Crazy in Love" lyrics for the exercise
+
+# Examine the key.pol
+key.pol
+
+# Negators
+negation.words
+
+# Amplifiers
+amplification.words
+
+# De-amplifiers
+deamplification.words
+
+
+text <- data.frame(speaker=c("beyonce", "jay_z"),
+                   words=c("I know I dont understand Just how your love can do what no one else can", "They cant figure him out they like hey, is he insane"),
+                   stringsAsFactors=TRUE
+                   )
+
+# Examine
+text
+
+# Explicit polarity parameters
+polarity(
+  text.var       = text$words,
+  grouping.var   = text$speaker,
+  polarity.frame = key.pol,
+  negators       = negation.words,
+  amplifiers     = amplification.words,
+  deamplifiers   = deamplification.words 
+)
+
+
+# Here you will adjust the negative words to account for the specific text. You will then compare the basic and custom polarity() scores
+
+# A popular song from Twenty One Pilots is called "Stressed Out".
+# If you scan the lyrics of this song, you will observe the song is about youthful nostalgia
+# Overall, most people would say the polarity is negative
+# Repeatedly the lyrics mention stress, fears and pretending
+
+# Let's compare the song lyrics using the default subjectivity lexicon and also a custom one
+
+# To start, you need to verify the key.pol subjectivity lexicon does not already have the term you want to add
+# One way to check is with grep()
+# The grep() function returns the row containing characters that match a search pattern
+# data_frame[grep("search_pattern", data_frame$column), ]
+
+# After verifying the slang or new word is not already in the key.pol lexicon you need to add it
+# The code below uses sentiment_frame() to construct the new lexicon
+# Within the code sentiment_frame() accepts the original positive word vector, positive.words
+# Next, the original negative.words are concatenated to "smh" and "kappa", both considered negative slang
+# Although you can declare the positive and negative weights, the default is 1 and -1 so they are not included below
+# custom_pol <- sentiment_frame(positive.words, c(negative.words, "hate", "pain"))
+
+stressed_out <- "I wish I found some better sounds no ones ever heard\nI wish I had a better voice that sang some better words\nI wish I found some chords in an order that is new\nI wish I didnt have to rhyme every time I sang\nI was told when I get older all my fears would shrink\nBut now Im insecure and I care what people think\nMy names Blurryface and I care what you think\nMy names Blurryface and I care what you think\nWish we could turn back time, to the good old days\nWhen our momma sang us to sleep but now were stressed out\nWish we could turn back time to the good old days\nWhen our momma sang us to sleep but now were stressed out\nWere stressed out\nSometimes a certain smell will take me back to when I was young\nHow come Im never able to identify where its coming from\nId make a candle out of it if I ever found it\nTry to sell it never sell out of it Id probably only sell one\nItd be to my brother, cause we have the same nose\nSame clothes homegrown a stones throw from a creek we used to roam\nBut it would remind us of when nothing really mattered\nOut of student loans and tree-house homes we all would take the latter\nMy names Blurryface and I care what you think\nMy names Blurryface and I care what you think\nWish we could turn back time, to the good old days\nWhen our momma sang us to sleep but now were stressed out\nWish we could turn back time, to the good old days\nWhen our momma sang us to sleep but now were stressed out\nWe used to play pretend, give each other different names\nWe would build a rocket ship and then wed fly it far away\nUsed to dream of outer space but now theyre laughing at our face #\nSaying, Wake up you need to make money\nYeah\nWe used to play pretend give each other different names\nWe would build a rocket ship and then wed fly it far away\nUsed to dream of outer space but now theyre laughing at our face\nSaying, Wake up, you need to make money\nYeah\nWish we could turn back time, to the good old days\nWhen our momma sang us to sleep but now were stressed out\nWish we could turn back time, to the good old days\nWhen our momma sang us to sleep but now were stressed out\nUsed to play pretend, used to play pretend bunny\nWe used to play pretend wake up, you need the money\nUsed to play pretend used to play pretend bunny\nWe used to play pretend, wake up, you need the money\nWe used to play pretend give each other different names\nWe would build a rocket ship and then wed fly it far away\nUsed to dream of outer space but now theyre laughing at our face\nSaying, Wake up, you need to make money\nYeah"
+
+# stressed_out has been pre-defined
+head(stressed_out)
+
+# Basic lexicon score
+polarity(stressed_out)
+
+# Check the subjectivity lexicon
+key.pol[grep("stress", x)]
+
+# New lexicon
+custom_pol <- sentiment_frame(positive.words, c(negative.words, "stressed", "turn back"))
+
+# Compare new score
+polarity(stressed_out, polarity.frame = custom_pol)
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Sentiment Analysis the tidytext way  
+  
 
 
 
