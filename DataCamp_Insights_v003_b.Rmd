@@ -2896,23 +2896,330 @@ polarity(stressed_out, polarity.frame = custom_pol)
   
 ***
   
-Chapter 2 - Sentiment Analysis the tidytext way  
+Chapter 2 - Sentiment Analysis the tidytext Way  
+  
+Plutchik's wheel of emotion, polarity vs. sentiment:  
+  
+* Sentiment is much more complex than positive or negative  
+* One popular approach is to use Plutchik's wheel, which captures eight core human emotions  
+	* The basic theory is that these eight emotions are evolutionary, with all other emotions being derivative of them  
+    * The wheel generally has similar emotions next to each other and different emotions across from each other  
+    * Many emotions are a mix of two items on the wheel - remorse being a mix of sadness and disgust, for example  
+    * Further, the emotions tend to be more intense as you move towards the center of the wheel  
+* Kanjoya developed a more complex emotional framework for comparison, with much more diverse connections  
+	* Created by tracking user stories and interactions on experienceproject.com  
+  
+Bing lexicon with inner join:  
+  
+* The join functions are generic and will accept any two tables (need not be a relational SQL-like process)  
+	* The "by" parameter should be specified - can be by.x and by.y if the variable names disagree  
+    * For the joins to work, the data will need to be tables rather than vectors - one word per row per data source  
+* Can use many types of joins for analysis  
+	* The inner_join will find the words that are in both (for example) a text and a lexicon  
+    * The anti_join keeps only the words that do not appear in the table presented as the second argument  
+    * The anti_join is broadly the equivalent of the stop words approach in the tidyverse  
+  
+AFINN and NRC methodologies in more detail:  
+  
+* AFINN contains words labeled by researchers, and given scores of -5 to +5 (there are no neutral or 0-value words in this list)  
+* NRC was produced through crowd-sourcing, and contains positive, negative, and the Plutchik's wheel  
+	* The book has been tidied such that every word is its own row, including data about which line it was found on  
+* Can use dplyr::summarize() to get the scores by line  
+    * Can also use dplyr::filter() to get key results by a subset of interest  
+  
+Example code includes:  
+```{r}
+
+# There is a growing number of "tidyverse" R packages
+# The tidyverse is a collection of R packages that share common philosophies and are designed to work together
+# This chapter covers some tidy functions to manipulate data
+# In fact, in this exercise you will compare a DTM to a tidy text data frame called a tibble
+
+# Within the tidyverse each observation is a single row in a data frame
+# That makes working in different packages much easier since the fundamental data structure is the same
+# Parts of this course borrow heavily from the tidytext package which uses this data organization
+
+# To change a DTM to a tidy format use tidy() from the broom package.
+# tidy_format <- tidy(Document_Term_Matrix)
+
+# This exercise uses text from the Greek tragedy, Agamemnon
+# Agamemnon is a story about marital infidelity and murder
+# You can download a copy here (http://www.gutenberg.org/ebooks/14417?msg=welcome_stranger)
+
+# We've already created a clean DTM called ag_dtm for this exercise.
+
+clean_corpus <- function(corpus){
+  corpus <- tm_map(corpus, content_transformer(replace_abbreviation))
+  corpus <- tm_map(corpus, stripWhitespace)
+  corpus <- tm_map(corpus, removePunctuation)
+  corpus <- tm_map(corpus, removeNumbers)
+  corpus <- tm_map(corpus, content_transformer(tolower))
+  corpus <- tm_map(corpus, removeWords, c(stopwords("en")))
+  return(corpus)
+}
+
+agRawText <- readLines("./RInputFiles/pg14417.txt")
+agSource <- VectorSource(agRawText[318:3430])
+agCorpus <- VCorpus(agSource)
+agClean <- clean_corpus(agCorpus)
+ag_dtm <- DocumentTermMatrix(agClean)
+
+
+# As matrix
+ag_dtm_m <- as.matrix(ag_dtm)
+
+# Examine line 2206 and columns 245:250 (edited to 2206 and 308:313)
+ag_dtm_m[2206, 308:313]
+
+# Tidy up the DTM (function does not work here . . . )
+# ag_tidy <- broom::tidy(ag_dtm)
+ag_tidy <- tibble::tibble(document=ag_dtm$dimnames$Docs[ag_dtm$i], 
+                          term=ag_dtm$dimnames$Terms[ag_dtm$j], 
+                          count=ag_dtm$v
+                          )
+
+# Examine tidy with a word you saw
+ag_tidy[824:828, ]
+
+
+# So far you have used a single lexicon
+# Now we will transition to using three, each measuring sentiment in different ways
+
+# The tidytext package contains a data frame called sentiments
+# The data frame contains over 23000 terms from three different subjectivity lexicons with corresponding information
+# Here are some example rows from the sentiments data frame
+
+# Notice the tidy format
+# Each word is a row and NAs fill in columns that are not applicable
+# The "AFINN" lexicon scores words from 5 to -5
+# The "Bing" lexicon is the same lexicon used in qdap's polarity() function
+# "Bing" words are only labeled as positive or negative
+# The "NRC" lexicon has distinct emotional classes covering Plutchik's Wheel and positive and negative
+
+# Subset to AFINN
+afinn_lex <- tidytext::get_sentiments("afinn")
+
+# Count AFINN scores
+afinn_lex %>% 
+  count(score)
+  
+# Subset to nrc
+nrc_lex <- tidytext::get_sentiments("nrc")
+
+# Print nrc_lex
+nrc_lex
+
+# Make the nrc counts object
+nrc_counts <- nrc_lex %>% 
+  count(sentiment)
+        
+# Barplot
+ggplot(nrc_counts, aes(x = sentiment, y = n))+
+  geom_bar(stat = "identity") +
+  ggthemes::theme_gdocs()
+
+
+# The Bing lexicon labels words as positive or negative
+# The next three exercises let you interact with this specific lexicon
+# Instead of using filter() to extract a lexicon this exercise uses get_sentiments() which accepts a string such as "afinn", "bing", "nrc", or "loughran"
+
+# Now that you understand the basics of an inner join, let's apply this to the "Bing" lexicon
+# Keep in mind the inner_join() function comes from dplyr and the sentiments object is from tidytext
+
+# The inner join workflow:
+# Obtain the correct lexicon using either filter() or get_sentiments().
+# Pass the lexicon and the tidy text data to inner_join().
+# In order for inner_join() to work there must be a shared column name. If there are no shared column names, declare them with an additional parameter, by equal to c with column names like below
+# object <- x %>% 
+#     inner_join(y, by = c("column_from_x" = "column_from_y")
+
+# We've loaded ag_txt containing the first 100 lines from Agamemnon and ag_tidy which is the tidy version
+
+ag_txt <- agRawText[agRawText != ""][1:100]
+
+# Qdap polarity
+polarity(ag_txt)
+
+# Get Bing lexicon
+bing <- tidytext::get_sentiments("bing")
+
+# Join text to lexicon
+ag_bing_words <- inner_join(ag_tidy, bing, by = c("term" = "word"))
+
+# Examine
+ag_bing_words
+
+# Get counts by sentiment
+ag_bing_words %>%
+  count(sentiment)
+
+
+# The spread() function spreads a key-value pair across multiple columns
+# In this case key is the sentiment and the values are the frequency of positive or negative terms for each line
+# Using spread() changes the data so that each row now has positive and negative values, even if it is 0
+
+# In this exercise, your R session has m_dick_tidy which contains the book Moby Dick and bing, containing the lexicon similar to the previous exercise
+
+all_books <- readRDS("./RInputFiles/all_books.rds")
+m_dick_tidy <- all_books[all_books$book=="moby_dick", c("term", "document", "count")]
+m_dick_tidy
+
+# Inner join
+moby_lex_words <- inner_join(m_dick_tidy, bing, by = c("term" = "word"))
+
+moby_lex_words <- moby_lex_words %>%
+  # Set index to numeric document
+  mutate(index = as.numeric(document))
+
+moby_count <- moby_lex_words %>%
+  # Count by sentiment, index
+  count(sentiment, index)
+
+# Examine the counts
+moby_count
+
+moby_spread <- moby_count %>%
+  # Spread sentiments
+  tidyr::spread(sentiment, n, fill = 0)
+
+# Review the spread data
+moby_spread
+
+
+# The last Bing lexicon exercise!
+# We started with this lexicon since its similar to the results in Chapter 1
+# In this exercise you will use the pipe operator (%>%) to create a timeline of the sentiment in Moby Dick
+# In the end you will also create a simple visual following the code structure below
+# The next chapter goes into more depth for visuals
+
+# Your R session has moby as your text and bing as your lexicon
+# After this exercise you should know Is Moby Dick a happy or sad book?
+
+moby_polarity <- m_dick_tidy %>%
+  mutate(index = as.numeric(document)) %>%
+  # Inner join to lexicon
+  inner_join(bing, by = c("term" = "word")) %>%
+  # Count the sentiment scores
+  count(sentiment, index) %>% 
+  # Spread the sentiment into positive and negative columns
+  tidyr::spread(sentiment, n, fill = 0) %>%
+  # Add polarity column
+  mutate(polarity = positive - negative)
+
+# Plot polarity vs. index
+ggplot(moby_polarity, aes(x=index, y=polarity)) + 
+  # Add a smooth trend curve
+  geom_smooth()
+
+
+# Now we transition to the AFINN lexicon
+# The AFINN lexicon has numeric values from 5 to -5, not just positive or negative
+# Unlike the Bing lexicon's sentiment, the AFINN lexicon's sentiment score column is called score
+
+# As before, you apply inner_join() then count()
+# Next, to sum the scores of each line, we use dplyr's group_by() and summarize() functions
+# The group_by() function takes an existing data frame and converts it into a grouped data frame where operations are performed "by group"
+# Then, the summarize() function lets you calculate a value for each group in your data frame using a function that aggregates data, like sum() or mean()
+# So, in our case we can do something like
+# data_frame %>% 
+#     group_by(book_line) %>% 
+#     summarize(total_score = sum(book_line))
+
+# In the tidy version of Huckleberry Finn, line 9703 contains words "best", "ever", "fun", "life" and "spirit". "best" and "fun" have AFINN scores of 3 and 4 respectively
+# After aggregating, line 9703 will have a total score of 7
+
+# The afinn object contains the AFINN lexicon
+# The huck object is a tidy version of Mark Twain's Adventures of Huckleberry Finn for analysis
+
+# Line 5400 is All the loafers looked glad; I reckoned they was used to having fun out of Boggs
+# Stopwords and punctuation have already been removed in the dataset
+
+huck <- all_books[all_books$book=="huck_finn", c("term", "document", "count")] %>%
+    mutate(document=as.numeric(document)) %>%
+    rename(line=document)
+huck
+
+# See abbreviated line 5400
+huck %>% filter(line == 5400)
+
+# What are the scores of the sentiment words?
+afinn_lex %>% filter(word %in% c("fun", "glad"))
+
+huck_afinn <- huck %>% 
+  # Inner Join to AFINN lexicon
+  inner_join(afinn_lex, by = c("term" = "word")) %>%
+  # Count by score and line
+  count(score, line)
+
+huck_afinn_agg <- huck_afinn %>% 
+  # Group by line
+  group_by(line) %>%
+  # Sum scores by line
+  summarize(total_score = sum(score))
+
+# Filter huck_afinn_agg
+huck_afinn_agg %>% filter(line == 5400)
+
+# Plot total score vs. line
+ggplot(huck_afinn_agg, aes(x=line, y=total_score)) + 
+  # Add a smooth trend curve
+  geom_smooth()
+
+
+# Last but not least, you get to work with the NRC lexicon which labels words across multiple emotional states
+# Remember Plutchik's wheel of emotion? The NRC lexicon tags words according to Plutchik's 8 emotions plus positive/negative
+
+# In this exercise there is a new operator, %in%, which matches a vector to another
+# In the code below %in% will return FALSE, FALSE, TRUE
+# This is because within some_vec, 1 and 2 are not found within some_other_vector but 3 is found and returns TRUE
+# The %in% is useful to find matches
+
+# We've created oz which is the tidy version of The Wizard of Oz along with nrc containing the "NRC" lexicon with renamed columns
+# Switched to Julius Caesar since it is what is easily available in the dataset
+
+jc <- all_books[all_books$book=="julius_caesar", c("term", "document", "count")] %>%
+    mutate(document=as.numeric(document)) %>%
+    rename(line=document)
+jc
+
+# Join text and lexicon
+jc_nrc <- inner_join(jc, nrc_lex, by = c("term" = "word"))
+
+# DataFrame of tally
+jc_plutchik <- jc_nrc %>% 
+  # Only consider Plutchik sentiments
+  filter(!sentiment %in% c("positive", "negative")) %>%
+  # Group by sentiment
+  group_by(sentiment) %>% 
+  # Get total count by sentiment
+  summarize(total_count = sum(count))
+
+# Plot the counts
+ggplot(jc_plutchik, aes(x = sentiment, y = total_count)) +
+  # Add a column geom
+  geom_col()
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Visualizing Sentiment  
   
 
 
 
-	
-
-
-	
-	
-
-
-	
 
 	
 
 
+	
+	
+
 
 	
+
 	
+
+
