@@ -3207,6 +3207,432 @@ ggplot(jc_plutchik, aes(x = sentiment, y = total_count)) +
   
 Chapter 3 - Visualizing Sentiment  
   
+Parlor trick or worthwhile?  
+  
+* Good visualizations can aid in helping decision-makers  
+	* In general, avoid word clouds which are extremely cliché  
+    * Bar charts can be just as informative for showing frequency counts  
+    * Be careful not to be redundant - no need for sentiment analysis on text where the customer already got to answer how satisfied they are, for example  
+* Exercises will track sentiment over time - for example, Twitter mentions vs. new advertising  
+	* Example in this case will be scoring a book over line, to see whether it has a happy or a sad ending  
+  
+Introduction using sentiment analysis:  
+  
+* Reminder that comparison clouds show words in one text but not in the other  
+	* Can use polarity as a pre-filter - divide the corpus in to positive and negative components  
+* Exercise will inner join NRC and Moby Dick  
+	* Reminder that "or" is | in grepl() or grep()  
+    * Can create stacked bar charts of emotions, to better compare sentiment make-up by document  
+  
+Interpreting visualizations:  
+  
+* Kernel density plot - good for understanding densities  
+	* Like a histogram, but with smoothed data - less likely to misinterpret the results due to poor choice of binning  
+* Box plot - compare multiple sentiments simultaneously  
+	* Can be easier to compare multiple distributions - median, IQR, extra 1.5 * IQR length, outliers  
+* Radar chart - similar to Plutchik's wheel  
+	* Radar charts are also known as spider charts - idea of having multiple bars move in different directions, making for easier comparisons  
+* Tree map  
+	* The size of each square represents a property such as size or volume  
+    * A second dimension (color) represents polarity or sentiment  
+    * Similar boxes (either by time or author or sentiment or etc.) can be placed close together  
+  
+Example code includes:  
+```{r}
+
+# Sometimes you want to track sentiment over time
+# For example, during an ad campaign you could track brand sentiment to see the campaign's effect
+# You saw a few examples of this at the end of the last chapter
+
+# In this exercise you'll recap the workflow for exploring sentiment over time using the novel Moby Dick
+# One should expect that happy moments in the book would have more positive words than negative
+# Conversely dark moments and sad endings should use more negative language
+# You'll also see some tricks to make your sentiment time series more visually appealling
+
+moby_polarity <- m_dick_tidy %>%
+  mutate(index = as.numeric(document)) %>%
+  # Inner join to the lexicon
+  inner_join(bing, by=c("term" = "word")) %>%
+  # Count by sentiment, index
+  count(sentiment, index) %>%
+  # Spread sentiments
+  tidyr::spread(sentiment, n, fill=0) %>%
+  mutate(
+    # Add polarity field
+    polarity = positive - negative,
+    # Add line number field
+    line_number = row_number()
+  )
+
+# Plot
+ggplot(moby_polarity, aes(x=line_number, y=polarity)) + 
+  geom_smooth() +
+  geom_hline(yintercept = 0, color = "red") +
+  ggtitle("Moby Dick Chronological Polarity") +
+  ggthemes::theme_gdocs()
+
+
+# One of the easiest ways to explore data is with a frequency analysis
+# Although not difficult, in sentiment analysis this simple method can be surprisingly illuminating
+# Specifically, you will build a barplot. In this exercise you are once again working with moby and bing to construct your visual
+
+# Inner join without renamed columns
+moby_sents <- inner_join(m_dick_tidy, bing, by = c("term" = "word"))
+
+# Tidy sentiment calculation
+moby_tidy_sentiment <- moby_sents %>% 
+  count(term, sentiment, wt = count) %>%
+  tidyr::spread(sentiment, n, fill = 0) %>%
+  mutate(polarity = positive - negative)
+
+# Review
+moby_tidy_sentiment
+
+# Subset
+moby_tidy_small <- moby_tidy_sentiment %>% 
+  filter(abs(polarity) >= 50)
+
+# Add polarity
+moby_tidy_pol <- moby_tidy_small %>% 
+  mutate(
+    pol = ifelse(polarity > 0, "positive", "negative")
+  )
+
+# Plot
+ggplot(
+  moby_tidy_pol, 
+  aes(reorder(term, polarity), polarity, fill = pol)
+) +
+  geom_bar(stat = "identity") + 
+  ggtitle("Moby Dick: Sentiment Word Frequency") + 
+  ggthemes::theme_gdocs() +
+  theme(axis.text.x = element_text(angle = 90, vjust = -0.1))
+
+
+# Now that you have seen how polarity can be used to divide a corpus, let's do it!
+# This code will walk you through dividing a corpus based on sentiment so you can peer into the informaton in subsets instead of holistically
+
+# Your R session has oz_pol which was created by applying polarity() to "The Wonderful Wizard of Oz."
+
+# For simplicity's sake, we created a simple custom function called pol_subsections() which will divide the corpus by polarity score
+# First, the function accepts a data frame with each row being a sentence or document of the corpus
+# The data frame is subset anywhere the polarity values are greater than or less than 0
+# Finally, the positive and negative sentences, non-zero polarities, are pasted with parameter collapse so that the terms are grouped into a single corpus
+# Lastly, the two documents are concatenated into a single vector of two distinct documents
+
+pol_subsections <- function(df) {
+  x.pos <- subset(df$text, df$polarity > 0)
+  x.neg <- subset(df$text, df$polarity < 0)
+  x.pos <- paste(x.pos, collapse = " ")
+  x.neg <- paste(x.neg, collapse = " ")
+  all.terms <- c(x.pos, x.neg)
+  return(all.terms)
+}
+
+# At this point you have omitted the neutral sentences and want to focus on organizing the remaining text
+# In this exercise we use the %>% operator again to forward objects to functions
+# After some simple cleaning use comparison.cloud() to make the visual
+
+# Using Agamemnon instead since easily available
+ag_pol <- polarity(agRawText[318:3430])
+
+# Add scores to each document line in a data frame
+ag_df <- ag_pol$all %>%
+  select(text = text.var, polarity = polarity)
+
+# Custom function
+all_terms <- pol_subsections(ag_df)
+
+# Make a corpus
+all_corpus <- all_terms %>%
+  VectorSource() %>% 
+  VCorpus()
+
+# Basic TDM
+all_tdm <- TermDocumentMatrix(
+  all_corpus,
+  control = list(
+    removePunctuation = TRUE,
+    stopwords = stopwords(kind = "en")
+  )
+) %>%
+  as.matrix() %>%
+  set_colnames(c("positive", "negative"))
+
+# Make a comparison cloud
+wordcloud::comparison.cloud(
+  all_tdm,
+  max.words = 50,
+  colors = c("darkgreen", "darkred")
+)
+
+
+# In this exercise you go beyond subsetting on positive and negative language
+# Instead you will subset text by each of the 8 emotions in Plutchik's emotional wheel to construct a visual
+# With this approach you will get more clarity in word usage by mapping to a specific emotion instead of just positive or negative.
+
+# Using the tidytext subjectivity lexicon, "nrc", you perform an inner_join() with your text
+# The "nrc" lexicon has the 8 emotions plus positive and negative term classes
+# So you will have to drop positive and negative words after performing your inner_join()
+# One way to do so is with the negation, !, and grepl()
+
+# The "Global Regular Expression Print Logical," grepl(), function will return a True or False if a string pattern is identified in each row
+# In this exercise you will search for positive OR negative using the | operator, representing "or" as shown below
+# Often this straight line is above the enter key on a keyboard
+# Since the ! negation precedes grepl(), the T or F is switched so the "positive|negative" is dropped instead of kept
+
+# Next you apply count() on the identified words along with spread() to get the data frame organized
+
+# This exercise introduces rownames()
+# This function declares the names of rows in a data frame
+# It behaves a bit differently because rownames() is passed the object gaining the row names on the left side of <-
+# On the right side the character vector of names is declared such as data_frame[, 1]. For instance:
+# rownames(data_frame) <- vector_of_names
+
+# After setting row names you will create a more varied comparison.cloud()
+
+# NOTE - appears NRC is already converted to have 'term' rather than 'word'
+
+# Inner join
+moby_sentiment <- inner_join(m_dick_tidy, nrc_lex, by = c("term" = "word"))
+
+# Drop positive or negative
+moby_pos_neg <- moby_sentiment %>%
+  filter(!grepl("positive|negative", sentiment))
+
+# Count terms by sentiment then spread 
+moby_tidy <- moby_pos_neg %>% 
+  count(sentiment, term = term) %>% 
+  tidyr::spread(sentiment, n, fill = 0) %>%
+  as.data.frame()
+  
+# Set row names
+rownames(moby_tidy) <- moby_tidy[, 1]
+
+# Drop terms column
+moby_tidy[, 1] <- NULL
+
+# Examine
+head(moby_tidy)
+
+# Comparison cloud
+wordcloud::comparison.cloud(moby_tidy, max.words = 50, title.size = 1.5)
+
+
+# Another way to slice your text is to understand how much of the document(s) are made of positive or negative words
+# For example a restaurant review may have some positive aspects such as "the food was good" but then continue to add "the restaurant was dirty, the staff was rude and parking was awful."
+# As a result, you may want to understand how much of a document is dedicated to positive vs negative language
+# In this example it would have a higher negative percentage compared to positive
+
+# One method for doing so is to count() the positive and negative words then divide by the number of subjectivity words identified
+# In the restaurant review example, "good" would count as 1 positive and "dirty," "rude," and "awful" count as 3 negative terms
+# A simple calculation would lead you to believe the restaurant review is 25% positive and 75% negative since there were 4 subjectivity terms
+
+# Start by performing the inner_join() on a unified tidy data frame containing 4 books, Agamemnon, Oz, Huck Finn, and Moby Dick
+# Just like the previous exercise you will use filter() and grepl()
+
+# To perform the count() you have to group the data by book and then sentiment
+# For example all the positive words for Agamemnon have to be grouped then tallied so that positive words from all books are not mixed
+# Luckily, you can pass multiple variables into count() directly
+
+# Forward book_sents, which is the NRC inner join to all tidy books, to filter()
+
+# Review tail of all_books
+tail(all_books)
+
+# Inner join
+books_sents <- inner_join(all_books, nrc_lex, by=c("term"="word"))
+
+# Keep only positive or negative
+books_pos_neg <- books_sents %>%
+  filter(grepl("positive|negative", sentiment))
+
+# Review tail again
+tail(books_pos_neg)
+
+# Count by book & sentiment
+books_sent_count <- books_pos_neg %>%
+  count(book, sentiment)
+
+# Review entire object
+books_sent_count
+
+# Split, make proportional
+book_pos <- books_sent_count %>%
+  group_by(book) %>% 
+  mutate(percent_positive = n / sum(n) * 100)
+
+# Proportional bar plot
+ggplot(book_pos, aes(x = book, y = percent_positive, fill = sentiment)) +  
+  geom_bar(stat = "identity")
+
+
+# We've loaded ag as a tidy version of Agamemnon and created afinn as a subset of the tidytext "afinn" lexicon
+# Agamemnon inner join
+ag_afinn <- inner_join(ag_tidy, afinn_lex, by=c("term"="word")) %>%
+    mutate(line=as.numeric(document)) %>%
+    select(-document)
+
+# Add book
+ag_afinn$book <- "agamemnon"
+
+# Oz inner join (use jc instead)
+jc_afinn <- inner_join(jc, afinn_lex, by=c("term"="word"))
+
+# Add book
+jc_afinn$book <- "jc"
+
+# Combine
+all_df <- rbind(ag_afinn, jc_afinn)
+
+# Plot 2 densities
+ggplot(all_df, aes(x = score, fill = book)) + 
+  geom_density(alpha = 0.3) + 
+  ggthemes::theme_gdocs() +
+  ggtitle("AFINN Score Densities")
+
+
+# In this exercise the all_book_polarity object is already loaded
+# The data frame contains two columns, book and polarity
+# It comprises all books with qdap's polarity() function applied
+
+all_book_polarity <- readRDS("./RInputFiles/all_book_polarity.rds")
+
+# Examine
+str(all_book_polarity)
+
+# Summary by document
+tapply(all_book_polarity$polarity, all_book_polarity$book, FUN=summary)
+
+# Box plot
+ggplot(all_book_polarity, aes(x = book, y = polarity)) +
+  geom_boxplot(fill = c("#bada55", "#F00B42", "#F001ED", "#BA6E15"), col = "darkred") +
+  geom_jitter(position = position_jitter(width = 0.1, height = 0), alpha = 0.02) +
+  ggthemes::theme_gdocs() +
+  ggtitle("Book Polarity")
+
+
+# Remember Plutchik's wheel of emotion?
+# The NRC lexicon has the 8 emotions corresponding to the first ring of the wheel
+# Previously you created a comparison.cloud() according to the 8 primary emotions
+# Now you will create a radar chart similar to the wheel in this exercise
+
+# A radarchart is a two-dimensional representation of multidimensional data (at least 3)
+# In this case the tally of the different emotions for a book are represented in the chart
+# Using a radar chart, you can review all 8 emotions simultaneously
+
+# As before we've loaded the "nrc" lexicon as nrc and moby_huck which is a combined tidy version of both Moby Dick and Huck Finn
+
+bindMoby <- m_dick_tidy %>%
+    mutate(document=as.numeric(document), book="moby")
+bindHuck <- huck %>%
+    mutate(book="huck") %>%
+    rename(document=line)
+moby_huck <- rbind(bindMoby, bindHuck)
+moby_huck
+
+# Review tail of moby_huck
+tail(moby_huck)
+
+# Inner join
+books_sents <- inner_join(moby_huck, nrc_lex, by=c("term"="word"))
+
+# Drop positive or negative
+books_pos_neg <- books_sents %>%
+  filter(!grepl("positive|negative", sentiment))
+
+# Tidy tally
+books_tally <- books_pos_neg %>%
+  group_by(book, sentiment) %>%
+  tally()
+
+# Key value pairs
+scores <- books_tally %>%
+  tidyr::spread(book, n) 
+  
+# Review scores
+scores
+
+# JavaScript radar chart
+radarchart::chartJSRadar(scores)
+
+# Make the scores relatove to total
+scoresRelative <- scores %>%
+    mutate(huckRel = huck/sum(huck), mobyRel=moby/sum(moby))
+scoresRelative
+
+# JavaScript radar chart
+radarchart::chartJSRadar(scoresRelative[, c("sentiment", "huckRel", "mobyRel")])
+
+
+# Often you will find yourself working with documents in groups, such as author, product or by company
+# This exercise lets you learn about the text while retaining the groups in a compact visual
+# For example, with customer reviews grouped by product you may want to explore multiple dimensions of the customer reviews at the same time
+# First you could calculate the polarity() of the reviews. Another dimension may be length
+# Document length can demonstrate the emotional intensity
+# If a customer leaves a short "great shoes!" one could infer they are actually less enthusiastic compared to a lengthier positive review
+# You may also want to group reviews by product type such as women's, men's and children's shoes. A treemap lets you examine all of these dimensions
+
+# For text analysis, within a treemap each individual box represents a document such as a tweet
+# Documents are grouped in some manner such as author
+# The size of each box is determined by a numeric value such as number of words or letters
+# The individual colors are determined by a sentiment score
+
+# After you organize the tibble, you use the treemap library containing the function treemap() to make the visual
+# The code example below declares the data, grouping variables, size, color and other aesthetics
+# treemap(data_frame,
+#         index = c("group", "individual_document"),
+#         vSize = "V1",
+#         vColor = "avg_score",
+#         type = "value",
+#         title = "Book Sentiment Scores",
+#         palette = c("red", "white", "green"))
+
+# The pre-loaded all_books object contains a combined tidy format corpus with 4 Shakespeare, 3 Melville and 4 Twain books
+# Based on the treemap you should be able to tell who writes longer books, and the polarity of the author as a whole and for individual books
+
+books_score <- all_books %>% 
+  # Inner join with AFINN scores
+  inner_join(afinn_lex, by=c("term" = "word"))
+
+book_length <- books_score %>% 
+  # Count number of words per book
+  count(book)
+
+book_score <- books_score %>% 
+  # Group by author, book
+  group_by(author, book) %>%
+  # Calculate mean book score
+  summarize(mean_score = mean(score))
+
+book_tree <- book_score %>% 
+  # Inner join by book
+  inner_join(book_length, by=c("book"))
+
+# Examine the results
+book_tree
+
+# Make the visual
+treemap::treemap(book_tree,
+        index = c("author", "book"),
+        vSize = "n",
+        vColor = "mean_score",
+        type = "value",
+        title = "Book Sentiment Scores",
+        palette = c("red", "white", "green")
+        )
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Case Study: Airbnb  
+  
+
+	
+	
 
 
 
