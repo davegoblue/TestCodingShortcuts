@@ -938,4 +938,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 16-APR-2018  
 * DataCamp_Insights_v003_b captures Sentiment Analysis in R: The Tidy Way - Chapter 1 (Tweets Across the United States)  
+* DataCamp_Insights_v003_b captures Sentiment Analysis in R: The Tidy Way - Chapter 2 (Shakespeare Sentiments)  
   
