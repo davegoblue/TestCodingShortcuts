@@ -4163,6 +4163,195 @@ tweets_bing %>%
   
 Chapter 2 - Shakespeare Gets Sentimental  
   
+Tidying Shakespeare plays:  
+  
+* The shakespeare tibble is available with fields title-type-text  
+	* The text is in a fairly raw form (one row per line from the play), and requires some pre-processing to get to a usable form  
+* Need to transform raw text in to a tidy format - one row per word (or word cluster as the case may be)  
+	* The tidytext::unnest_tokens(myOutputCol, myInputCol)   # will tokenize myInputCol in to myOutputCol, considering each word to be a token  
+    * Defaults for unnest_tokens() are that punctuation will be removed, lower case will be created, and spaces/punctuations will be the word-splits  
+  
+Using count and mutate:  
+  
+* May want to create rations rather than just counts of positive and negative  
+* The dplyr::mutate() can calculate new variables, and they will be calculated by group if the group_by() is currently active  
+	* For example, a %>% group_by(b) %>% mutate(subTotal = sum(d))  # will sum d for each sub-group b  
+    * dfTemp <- data.frame(pet=rep(c("cat", "dog"), times=c(3, 4)), food=c(2:4, seq(1, 7, by=2)))  
+    * dfTemp %>% group_by(pet) %>% mutate(subFood = sum(food)) %>% ungroup() %>% mutate(totFood = sum(food))  # subFood is 9 for 3 cat records and 16 for 4 dog records while totFood is 25 for all 7 records  
+  
+Sentiment contributions by individual words:  
+  
+* Sometimes a word will be misidentified by the lexicon, which can be confirmed through SME (e.g., wilt used to be will in the 16th century but now it probably means fading)  
+	* shakespeare %>% filter(str_detect(text, "wilt")) %>% select(text)  # identify lines using the word  
+    * tidy_shakespeare %>% anti_join(data_frame(word = "wilt"))  # remove word prior to sentiment analysis  
+  
+Which words are important in each play?  
+  
+* Helpful to understand the most important words by sentiment and document; good for many purposes including sanity checks by SME  
+* Tidy data makes sentiment analysis easier and more intuitive  
+	* For example, can calculate the net sentiment (positive vs. negative) by chunk of lines - evolution over the course of the text  
+  
+Example code includes:  
+```{r}
+
+load("./RInputFiles/shakespeare.rda")
+
+# The data set shakespeare in available in the workspace
+shakespeare
+
+# Pipe the shakespeare data frame to the next line
+shakespeare %>% 
+  # Use count to find out how many titles/types there are
+  count(title, type)
+
+
+tidy_shakespeare <- shakespeare %>%
+  # Group by the titles of the plays
+  group_by(title) %>%
+  # Define a new column linenumber
+  mutate(linenumber=row_number()) %>%
+  # Transform the non-tidy text data to tidy text data
+  tidytext::unnest_tokens(word, text) %>%
+  ungroup()
+
+# Pipe the tidy Shakespeare data frame to the next line
+tidy_shakespeare %>% 
+  # Use count to find out how many times each word is used
+  count(word, sort = TRUE)
+
+
+shakespeare_sentiment <- tidy_shakespeare %>%
+  # Implement sentiment analysis with the "bing" lexicon
+  inner_join(tidytext::get_sentiments("bing"), by=c("word")) 
+
+shakespeare_sentiment %>%
+  # Find how many positive/negative words each play has
+  count(title, sentiment)
+
+
+sentiment_counts <- tidy_shakespeare %>%
+    # Implement sentiment analysis using the "bing" lexicon
+    inner_join(tidytext::get_sentiments("bing"), by=c("word")) %>%
+    # Count the number of words by title, type, and sentiment
+    count(title, type, sentiment)
+
+sentiment_counts %>%
+    # Group by the titles of the plays
+    group_by(title) %>%
+    # Find the total number of words in each play
+    mutate(total = sum(n),
+    # Calculate the number of words divided by the total
+           percent = n / total) %>%
+    # Filter the results for only negative sentiment
+    filter(sentiment == "negative") %>%
+    arrange(percent)
+
+
+# Notice what the line mutate(word = reorder(word, n)) does; it converts word from a character that would be plotted in alphabetical order to a factor that will be plotted in order of n
+word_counts <- tidy_shakespeare %>%
+  # Implement sentiment analysis using the "bing" lexicon
+  inner_join(tidytext::get_sentiments("bing"), by=c("word")) %>%
+  # Count by word and sentiment
+  count(word, sentiment)
+
+top_words <- word_counts %>%
+  # Group by sentiment
+  group_by(sentiment) %>%
+  # Take the top 10 for each sentiment
+  top_n(10) %>%
+  ungroup() %>%
+  # Make word a factor in order of n
+  mutate(word = reorder(word, n))
+
+# Use aes() to put words on the x-axis and n on the y-axis
+ggplot(top_words, aes(x=word, y=n, fill = sentiment)) +
+  # Make a bar chart with geom_col()
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free") +  
+  coord_flip()
+
+
+# Correct! The word “wilt” was used differently in Shakespeare's time and was not negative; the lexicon has misidentified it
+# For example, from Romeo and Juliet, “For thou wilt lie upon the wings of night”
+# It is important to explore the details of how words were scored when performing sentiment analyses
+
+
+tidy_shakespeare %>%
+  # Count by title and word
+  count(title, word, sort = TRUE) %>%
+  # Implement sentiment analysis using the "afinn" lexicon
+  inner_join(tidytext::get_sentiments("afinn"), by=c("word")) %>%
+  # Filter to only examine the scores for Macbeth that are negative
+  filter(title == "The Tragedy of Macbeth", score < 0)
+
+
+sentiment_contributions <- tidy_shakespeare %>%
+  # Count by title and word
+  count(title, word, sort = TRUE) %>%
+  # Implement sentiment analysis using the "afinn" lexicon
+  inner_join(tidytext::get_sentiments("afinn"), by=c("word")) %>%
+  # Group by title
+  group_by(title) %>%
+  # Calculate a contribution for each word in each title
+  mutate(contribution = n * score / sum(n)) %>%
+  ungroup()
+    
+sentiment_contributions
+
+
+sentiment_contributions %>%
+  # Filter for Hamlet
+  filter(title == "Hamlet, Prince of Denmark") %>%
+  # Arrange to see the most negative words
+  arrange(contribution)
+
+sentiment_contributions %>%
+  # Filter for The Merchant of Venice
+  filter(title == "The Merchant of Venice") %>%
+  # Arrange to see the most positive words
+  arrange(desc(contribution))
+
+
+# After these lines of code, you will have the number of positive and negative words used in each index-ed section of the play
+# These sections will be 70 lines long in your analysis here
+# You want a chunk of text that is not too small (because then the sentiment changes will be very noisy) and not too big (because then you will not be able to see plot structure)
+# In an analysis of this type you may need to experiment with what size chunks to make; sections of 70 lines works well for these plays
+
+tidy_shakespeare %>%
+  # Implement sentiment analysis using "bing" lexicon
+  inner_join(tidytext::get_sentiments("bing"), by=c("word")) %>%
+  # Count using four arguments
+  count(title, type, index = linenumber %/% 70, sentiment)
+
+tidy_shakespeare %>%
+  inner_join(tidytext::get_sentiments("bing")) %>%
+  count(title, type, index = linenumber %/% 70, sentiment) %>%
+  # Spread sentiment and n across multiple columns
+  tidyr::spread(sentiment, n, fill = 0) %>%
+  # Use mutate to find net sentiment
+  mutate(sentiment = positive - negative)
+
+
+tidy_shakespeare %>%
+  inner_join(tidytext::get_sentiments("bing")) %>%
+  count(title, type, index = linenumber %/% 70, sentiment) %>%
+  tidyr::spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative) %>%
+  # Put index on x-axis, sentiment on y-axis, and map comedy/tragedy to fill
+  ggplot(aes(x=index, y=sentiment, fill=type)) +
+  # Make a bar chart with geom_col()
+  geom_col() +
+  # Separate panels for each title with facet_wrap()
+  facet_wrap(~ title, scales = "free_x")
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Analyzing TV News  
+  
 
 
 	
