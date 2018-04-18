@@ -4352,6 +4352,176 @@ tidy_shakespeare %>%
   
 Chapter 3 - Analyzing TV News  
   
+That's the way it is:  
+  
+* Spoken text can be grabbed from TV shows based on archived closed captioning  
+* Snippets spoken about "climate change" over 7 years  
+	* The climate_text tibble has station-show-show_date-text  
+    * Text is initially fairly raw; unnest_tokens() will be needed  
+  
+Comparing TV stations:  
+  
+* Data from CNN, Fox, MSNBC - multiple shows that mentioned "climate change" over 7 years  
+* May want to compare proportions of negative words used by each station  
+	* When running count(), can use an integer that is constant by the other groups as one of the "by" variables, to keep the value of that integer for future analysis  
+  
+Sentiment changes with time:  
+  
+* Desire to look at changes in sentiment over time (time is a variable included in the initial tibble)  
+* Can use lubridate::floor_date() to convert every time to the next-lowest increment of units  
+	* floor_date(x, unit="3 months")  # will convert x to the start of the quarter  
+  
+Example code includes:  
+```{r}
+
+# Take a look at the dataset of TV news text about climate change you will use in this chapter. The climate_text dataset contains almost 600 closed captioning snippets and four columns
+# station, the TV news station where the text is from,
+# show, the show on that station where the text was spoken,
+# show_date, the broadcast date of the spoken text, and
+# text, the actual text spoken on TV
+# Type climate_text in the console to take a look at the dataset before getting started with transforming it to a tidy format.
+
+
+load("./RInputFiles/climate_text.rda")
+climate_text
+
+data(stop_words, package="tidytext")
+stop_words
+
+
+# Pipe the climate_text dataset to the next line
+tidy_tv <- climate_text %>%
+    # Transform the non-tidy text data to tidy text data
+    tidytext::unnest_tokens(word, text)
+
+
+tidy_tv %>% 
+    anti_join(stop_words) %>%
+    # Count by word with sort = TRUE
+    count(word, sort=TRUE)
+    
+tidy_tv %>%
+    # Count by station
+    count(station) %>%
+    # Rename the new column station_total
+    rename(station_total = n)
+
+
+tv_sentiment <- tidy_tv %>% 
+    # Group by station
+    group_by(station) %>% 
+    # Define a new column station_total
+    mutate(station_total = n()) %>%
+    ungroup() %>%
+    # Implement sentiment analysis with the NRC lexicon
+    inner_join(tidytext::get_sentiments("nrc"), by=c("word"))
+
+
+# Which stations use the most negative words?
+tv_sentiment %>% 
+    count(station, sentiment, station_total) %>%
+    # Define a new column percent
+    mutate(percent = n / station_total) %>%
+    # Filter only for negative words
+    filter(sentiment == "negative") %>%
+    # Arrange by percent
+    arrange(percent)
+    
+# Now do the same but for positive words
+tv_sentiment %>% 
+    count(station, sentiment, station_total) %>%
+    mutate(percent = n / station_total) %>%
+    filter(sentiment == "positive") %>%
+    arrange(percent)
+
+
+tv_sentiment %>%
+    # Count by word and sentiment
+    count(word, sentiment) %>%
+    # Group by sentiment
+    group_by(sentiment) %>%
+    # Take the top 10 words for each sentiment
+    top_n(10) %>%
+    ungroup() %>%
+    mutate(word = reorder(word, n)) %>%
+    # Set up the plot with aes()
+    ggplot(aes(x=word, y=n, fill=sentiment)) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~ sentiment, scales = "free") +
+    coord_flip()
+
+
+# Excellent!
+# Notice that you see proper names like Gore and Trump, which should be treated as neutral, and that “change” was a strong driver of fear sentiment, even though it is by definition part of these texts on climate change
+# It is important to see which words contribute to your sentiment scores so you can adjust the sentiment lexicons if appropriate
+
+tv_sentiment %>%
+    # Filter for only negative words
+    filter(sentiment == "negative") %>%
+    # Count by word and station
+    count(word, station) %>%
+    # Group by station
+    group_by(station) %>%
+    # Take the top 10 words for each station
+    top_n(10) %>%
+    ungroup() %>%
+    mutate(word = reorder(paste(word, station, sep = "__"), n)) %>%
+    # Set up the plot with aes()
+    ggplot(aes(x=word, y=n, fill=station)) +
+    geom_col(show.legend = FALSE) +
+    scale_x_discrete(labels = function(x) gsub("__.+$", "", x)) +
+    facet_wrap(~ station, nrow = 2, scales = "free") +
+    coord_flip()
+
+
+sentiment_by_time <- tidy_tv %>%
+    # Define a new column using floor_date()
+    mutate(date = lubridate::floor_date(show_date, unit = "6 months")) %>%
+    # Group by date
+    group_by(date) %>%
+    mutate(total_words = n()) %>%
+    ungroup() %>%
+    # Implement sentiment analysis using the NRC lexicon
+    inner_join(tidytext::get_sentiments("nrc"), by=c("word"))
+
+sentiment_by_time %>%
+    # Filter for positive and negative words
+    filter(sentiment == "positive" | sentiment == "negative") %>%
+    # Count by date, sentiment, and total_words
+    count(date, sentiment, total_words) %>%
+    ungroup() %>%
+    mutate(percent = n / total_words) %>%
+    # Set up the plot with aes()
+    ggplot(aes(x=date, y=percent, color=sentiment)) +
+    geom_line(size = 1.5) +
+    geom_smooth(method = "lm", se = FALSE, lty = 2) +
+    expand_limits(y = 0)
+
+
+tidy_tv %>%
+    # Define a new column that rounds each date to the nearest 1 month
+    mutate(date = lubridate::floor_date(show_date, unit="1 months")) %>%
+    filter(word %in% c("threat", "hoax", "denier",
+                       "real", "warming", "hurricane")) %>%
+    # Count by date and word
+    count(date, word) %>%
+    ungroup() %>%
+    # Set up your plot with aes()
+    ggplot(aes(x=date, y=n, color=word)) +
+    # Make facets by word
+    facet_wrap(~ word) +
+    geom_line(size = 1.5, show.legend = FALSE) +
+    expand_limits(y = 0)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Singing a Happy Song  
+  
+
 
 
 	
