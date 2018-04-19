@@ -940,4 +940,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_b captures Sentiment Analysis in R: The Tidy Way - Chapter 1 (Tweets Across the United States)  
 * DataCamp_Insights_v003_b captures Sentiment Analysis in R: The Tidy Way - Chapter 2 (Shakespeare Sentiments)  
 * DataCamp_Insights_v003_b captures Sentiment Analysis in R: The Tidy Way - Chapter 3 (Analyzing TV News)  
+* DataCamp_Insights_v003_b captures Sentiment Analysis in R: The Tidy Way - Chapter 4 (Happy Songs)  
   
