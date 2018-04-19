@@ -4521,6 +4521,223 @@ tidy_tv %>%
   
 Chapter 4 - Singing a Happy Song  
   
+Ranking pop songs through the years:  
+  
+* Texts are significantly different from each other, but the tidy approach is flexible to adapt to this  
+* The tibble song_lyrics is available, and contains rank-song-artist-year-lyrics  
+	* Will need to tidy using unnest_tokens()  
+    * Can run count(song, sentiment, total_words)  
+  
+Connecting sentiment to other quantities:  
+  
+* Other information is available about the songs, allowing for looking at sentiment by attribute  
+	* Billboard rank, year of release (1965 - 2015), etc.  
+* Can look at boxplots for distributions of interest  
+  
+Moving from song rank to year:  
+  
+* Sentiment content of pop songs by decade - count(song, year, total_words)  
+* Use mutate() to define proportions of sentiment words  
+* Plot as a box plot  
+* Build the linear model for sentiment vs. year using lm()  
+  
+Wrap up:  
+  
+* Text Mining with R is available at tidytextmining.com  
+  
+Example code includes:  
+```{r}
+
+# Let's take a look at the dataset you will use in this final chapter to practice your sentiment analysis skills
+# The song_lyrics dataset contains five columns
+# rank, the rank a song achieved on the Billboard Year-End Hot 100,
+# song, the song's title,
+# artist, the artist who recorded the song,
+# year, the year the song reached the given rank on the Billboard chart, and
+# lyrics, the lyrics of the song
+
+# This dataset contains over 5000 songs, from 1965 to the present
+# The lyrics are all in one column, so they are not yet in a tidy format, ready for analysis using tidy tools
+# It's your turn to tidy this text data!
+
+
+load("./RInputFiles/song_lyrics.rda")
+song_lyrics
+
+data(stop_words, package="tidytext")
+stop_words
+
+
+# Pipe song_lyrics to the next line
+tidy_lyrics <- song_lyrics %>% 
+  # Transform the lyrics column to a word column
+  tidytext::unnest_tokens(word, lyrics)
+
+# Print tidy_lyrics
+tidy_lyrics
+
+
+# For some next steps in this analysis, you need to know the total number of words sung in each song
+# Use count() to count up the words per song, and then left_join() these word totals to the tidy data set
+# You can specify exactly which column to use when joining the two data frames if you add by = "song"
+
+totals <- tidy_lyrics %>%
+  # Count by song to find the word totals for each song
+  count(song) %>%
+  # Rename the new column
+  rename(total_words = n)
+
+# Print totals    
+totals
+
+lyric_counts <- tidy_lyrics %>%
+  # Combine totals with tidy_lyrics using the "song" column
+  left_join(totals, by = c("song"))
+
+
+# You have been practicing how to implement sentiment analysis with a join throughout this course
+# After transforming the text of these songs to a tidy text dataset and preparing the data frame, the resulting data frame lyric_counts is ready for you to perform sentiment analysis once again
+# Once you have done the sentiment analysis, you can learn which songs have the most sentiment words from the NRC lexicon
+# Remember that the NRC lexicon has 10 categories of sentiment:
+# anger
+# anticipation
+# disgust
+# fear
+# joy
+# negative
+# positive
+# sadness
+# surprise
+# trust
+
+
+lyric_sentiment <- lyric_counts %>%
+    # Implement sentiment analysis with the "nrc" lexicon
+    inner_join(tidytext::get_sentiments("nrc"), by=c("word"))
+
+lyric_sentiment %>%
+    # Find how many sentiment words each song has
+    count(song, sentiment, sort = TRUE)
+
+
+# What songs have the highest proportion of negative words?
+lyric_sentiment %>%
+    # Count using three arguments
+    count(song, sentiment, total_words) %>%
+    ungroup() %>%
+    # Make a new percent column with mutate 
+    mutate(percent = n / total_words) %>%
+    # Filter for only negative words
+    filter(sentiment == "negative") %>%
+    # Arrange by descending percent
+    arrange(desc(percent))
+
+# What songs have the highest proportion of positive words?
+lyric_sentiment %>%
+    count(song, sentiment, total_words) %>%
+    ungroup() %>%
+    mutate(percent = n / total_words) %>%
+    filter(sentiment == "positive") %>%
+    arrange(desc(percent))
+
+
+# The lyric_sentiment data frame that you created earlier by using inner_join() is available in your environment
+# You can now explore how the sentiment score of a song is related to other aspects of that song
+# First, start with Billboard rank, how high on the annual Billboard chart the song reached
+# Do songs that use more positive or negative words achieve higher or lower ranks?
+# Start with positive words, and make a visualization to see how these characteristics are related
+
+lyric_sentiment %>%
+    filter(sentiment == "positive") %>%
+    # Count by song, Billboard rank, and the total number of words
+    count(song, rank, total_words) %>%
+    ungroup() %>%
+    # Use the correct dplyr verb to make two new columns
+    mutate(percent = n / total_words,
+           rank = 10 * floor(rank / 10)) %>%
+    ggplot(aes(as.factor(rank), percent)) +
+    # Make a boxplot
+    geom_boxplot()
+
+
+lyric_sentiment %>%
+    # Filter for only negative words
+    filter(sentiment == "negative") %>%
+    # Count by song, Billboard rank, and the total number of words
+    count(song, rank, total_words) %>%
+    ungroup() %>%
+    # Mutate to make a percent column
+    mutate(percent = n / total_words,
+           rank = 10 * floor(rank / 10)) %>%
+    # Use ggplot to set up a plot with rank and percent
+    ggplot(aes(x=as.factor(rank), y=percent)) +
+    # Make a boxplot
+    geom_boxplot()
+
+
+# How is negative sentiment changing over time?
+lyric_sentiment %>%
+    # Filter for only negative words
+    filter(sentiment == "negative") %>%
+    # Count by song, year, and the total number of words
+    count(song, year, total_words) %>%
+    ungroup() %>%
+    mutate(percent = n / total_words,
+           year = 10 * floor(year / 10)) %>%
+    # Use ggplot to set up a plot with year and percent
+    ggplot(aes(x=as.factor(year), y=percent)) +
+    geom_boxplot()
+    
+# How is positive sentiment changing over time?
+lyric_sentiment %>%
+    filter(sentiment == "positive") %>%
+    count(song, year, total_words) %>%
+    ungroup() %>%
+    mutate(percent = n / total_words,
+           year = 10 * floor(year / 10)) %>%
+    ggplot(aes(x=as.factor(year), y=percent)) +
+    geom_boxplot()
+
+
+negative_by_year <- lyric_sentiment %>%
+    # Filter for negative words
+    filter(sentiment == "negative") %>%
+    count(song, year, total_words) %>%
+    ungroup() %>%
+    # Define a new column: percent
+    mutate(percent = n/total_words)
+
+# Specify the model with percent as the response and year as the predictor
+model_negative <- lm(percent ~ year, data = negative_by_year)
+
+# Use summary to see the results of the model fitting
+summary(model_negative)
+
+
+positive_by_year <- lyric_sentiment %>%
+    filter(sentiment == "positive") %>%
+    # Count by song, year, and total number of words
+    count(song, year, total_words) %>%
+    ungroup() %>%
+    # Define a new column: percent
+    mutate(percent = n/total_words)
+
+# Fit a linear model with percent as the response and year as the predictor
+model_positive <- lm(percent ~ year, data=positive_by_year)
+
+# Use summary to see the results of the model fitting
+summary(model_positive)
+
+```
+  
+  
+  
+***
+
+###_Supervised Learning R: Regression_  
+  
+Chapter 1 - What is Regression?  
+  
 
 
 
