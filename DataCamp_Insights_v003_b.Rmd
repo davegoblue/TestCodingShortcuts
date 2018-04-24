@@ -5622,7 +5622,7 @@ ggplot(bikesAugust, aes(x = pred, y = cnt)) +
 # The data frame bikesAugust, with the predictions (bikesAugust$pred) is in the workspace.
 
 # Plot predictions and cnt by date/time
-bikesAugust %>% 
+quasipoisson_plot <- bikesAugust %>% 
   # set start to 0, convert unit to days
   mutate(instant = (instant - min(instant))/24) %>%  
   # gather cnt and pred into a value column
@@ -5636,6 +5636,7 @@ bikesAugust %>%
   scale_color_brewer(palette = "Dark2") + 
   ggtitle("Predicted August bike rentals, Quasipoisson model")
 
+quasipoisson_plot
 
 # In this exercise you will model the average leaf weight on a soybean plant as a function of time (after planting)
 # As you will see, the soybean plant doesn't grow at a steady rate, but rather has a "growth spurt" that eventually tapers off
@@ -5713,13 +5714,364 @@ soybean_long %>%
   
 Chapter 5 - Tree Based Models  
   
+The intuition behind tree-based models:  
+  
+* Decision trees learn rules to help find non-linear or non-additive relationships  
+	* Trees have an expressive concept space  
+    * However, trees give coarse-grained predictions (not that may predictive buckets)  
+* Ensemble models made up of many trees (random forests, gradient boosted) will typically perform better than just a simple tree  
+  
+Random forests:  
+  
+* Multiple trees from the training data, and then averaging the results together  
+	* Finer grained performance, with lower risk of over-fits  
+* The overall process for growing a random forest is to  
+	* Draw bootstrapped samples from the training data  
+    * For each sample, grow a tree, splitting on the best variable (from a random subset chosen for that tree), and continuing until the tree is grown  
+    * To score a datum, evaluate it with all the trees and average the results  
+* Bike rental data example - fit on data from January and predict to data in February  
+	* Can run using ranger::ranger(formula, data, num.trees=500, respect.unordered.factors= "order")  
+    * respect.unordered.factors= "order" will safely encode categorical variables and tends to run faster  
+    * The number of trees should be 200+, with the default being 500  
+* Printing a random forest model from ranger will show a projected OOB (out of bag) error  
+* Can get the predictions using predict(myRanger, myNewData)$predictions  
+  
+One-Hot-Encoding caregorical variables:  
+  
+* Most R functions manage the conversion of categorical variables to dummy variables easily using model.matrix()  
+	* However, xgboost() does NOT do this, and requires that categorical variables be converted to numerical variables prior to running the code  
+    * The conversion of a categorical variable to dummy variables is known as one-hot-encoding  
+* Can run the one-hot-encoding process using vtreat  
+	* designTreatmentsZ(dframe, varlist) to design a treatment plan for the training data  
+    * prepare() to create clean data - all numerical, no missing values, function can be used with all future data  
+    * Important to run the same prepare() with the same designTreatmentsZ() on both training and test data  
+  
+Gradient boosting machines:  
+  
+* Incremental improvement of existing models  
+	* Fit a shallow tree to a set of data  
+    * Fit a second tree to the residuals  
+    * Calculate a weighted average of the first tree and the second tree  
+    * Continue until a stopping condition is hit - number of iterations, error, test-set error  
+    * Learning rate (eta) can be between 0 and 1, with large rates associated with both faster learning and greater risk of overfits  
+* Best practices with xgboost include  
+	* Run xgb.cv() with a large number of rounds (trees)  
+    * Investigate xgb.cv()$evaluation_log (records estimated RMSE for each round)  
+    * Run xgboost(), setting nrounds equal to whatever parameter was best in the xgb.cv()$evaluation_log records  
+* Models frequently do much better on RMSE than even random forest models  
+  
+Example code includes:  
+```{r}
+
+# Since there are a lot of input variables, for convenience we will specify the outcome and the inputs in the variables outcome and vars, and use paste() to assemble a string representing the model formula.
+# The data frame bikesJuly is in the workspace. The sample code specifies the names of the outcome and input variables.
+
+# bikesJuly is in the workspace
+str(bikesJuly)
+
+# Random seed to reproduce results
+seed <- 1804240829
+
+# The outcome column
+(outcome <- "cnt")
+
+# The input variables
+(vars <- c("hr", "holiday", "workingday", "weathersit", "temp", "atemp", "hum", "windspeed"))
+
+# Create the formula string for bikes rented as a function of the inputs
+(fmla <- paste(outcome, "~", paste(vars, collapse = " + ")))
+
+# Load the package ranger
+library(ranger)
+
+# Fit and print the random forest model
+(bike_model_rf <- ranger(fmla, # formula 
+                         bikesJuly, # data
+                         num.trees = 500, 
+                         respect.unordered.factors = "order", 
+                         seed = seed))
+
+
+# In this exercise you will use the model that you fit in the previous exercise to predict bike rentals for the month of August.
+
+# The predict() function for a ranger model produces a list
+# One of the elements of this list is predictions, a vector of predicted values
+# You can access predictions with the $ notation for accessing named elements of a list: predict(model, data)$predictions
+
+# The model bike_model_rf and the dataset bikesAugust (for evaluation) are loaded into your workspace.
+
+# bikesAugust is in the workspace
+str(bikesAugust)
+
+# bike_model_rf is in the workspace
+bike_model_rf
+
+# Make predictions on the August data
+bikesAugust$pred <- predict(bike_model_rf, bikesAugust)$predictions
+
+# Calculate the RMSE of the predictions
+bikesAugust %>% 
+  mutate(residual = cnt - pred)  %>% # calculate the residual
+  summarize(rmse  = sqrt(mean(residual**2)))      # calculate rmse
+
+# Plot actual outcome vs predictions (predictions on x-axis)
+ggplot(bikesAugust, aes(x = pred, y = cnt)) + 
+  geom_point() + 
+  geom_abline()
+
+
+# The data frame bikesAugust (with predictions) is in the workspace
+# The plot quasipoisson_plot of quasipoisson model predictions as a function of time is also in the workspace
+
+# Print quasipoisson_plot
+plot(quasipoisson_plot)
+
+# Plot predictions and cnt by date/time
+randomforest_plot <- bikesAugust %>% 
+  mutate(instant = (instant - min(instant))/24) %>%  # set start to 0, convert unit to days
+  tidyr::gather(key = valuetype, value = value, cnt, pred) %>%
+  filter(instant < 14) %>% # first two weeks
+  ggplot(aes(x = instant, y = value, color = valuetype, linetype = valuetype)) + 
+  geom_point() + 
+  geom_line() + 
+  scale_x_continuous("Day", breaks = 0:14, labels = 0:14) + 
+  scale_color_brewer(palette = "Dark2") + 
+  ggtitle("Predicted August bike rentals, Random Forest plot")
+
+randomforest_plot
+
+# In this exercise you will use vtreat to one-hot-encode a categorical variable on a small example
+# vtreat creates a treatment plan to transform categorical variables into indicator variables (coded "lev"), and to clean bad values out of numerical variables (coded "clean").
+
+# To design a treatment plan use the function designTreatmentsZ()
+# treatplan <- designTreatmentsZ(data, varlist)
+# data: the original training data frame
+# varlist: a vector of input variables to be treated (as strings)
+
+# designTreatmentsZ() returns a list with an element scoreFrame: a data frame that includes the names and types of the new variables:
+# scoreFrame <- treatplan %>% magrittr::use_series(scoreFrame) %>% select(varName, origName, code)
+# varName: the name of the new treated variable
+# origName: the name of the original variable that the treated variable comes from
+# code: the type of the new variable.
+# "clean": a numerical variable with no NAs or NaNs
+# "lev": an indicator variable for a specific level of the original categorical variable
+# (magrittr::use_series() is an alias for $ that you can use in pipes.)
+
+# For these exercises, we want varName where code is either "clean" or "lev"
+# newvarlist <- scoreFrame %>% filter(code %in% c("clean", "lev") %>% magrittr::use_series(varName)
+# To transform the data set into all numerical and one-hot-encoded variables, use prepare(): data.treat <- prepare(treatplan, data, varRestrictions = newvarlist)
+# treatplan: the treatment plan
+# data: the data frame to be treated
+# varRestrictions: the variables desired in the treated data
+
+# The data frame dframe and the package magrittr are loaded in the workspace.
+
+# dframe is in the workspace
+dframe <- data.frame(color=c('b', 'r', 'r', 'r', 'r', 'b', 'r', 'g', 'b', 'b'), 
+                     size=c(13, 11, 15, 14, 13, 11, 9, 12, 7, 12), 
+                     popularity=c(1.079, 1.396, 0.922, 1.203, 1.084, 0.804, 1.104, 0.875, 0.695, 0.883), 
+                     stringAsFactors=TRUE
+                     )
+dframe
+
+# Create and print a vector of variable names
+(vars <- c("color", "size"))
+
+# Load the package vtreat
+# library(vtreat)
+
+# Create the treatment plan
+treatplan <- vtreat::designTreatmentsZ(dframe, vars)
+
+# Examine the scoreFrame
+(scoreFrame <- treatplan %>%
+    use_series(scoreFrame) %>%
+    select(varName, origName, code))
+
+# We only want the rows with codes "clean" or "lev"
+(newvars <- scoreFrame %>%
+    filter(code %in% c("clean", "lev")) %>%
+    use_series(varName))
+
+# Create the treated training data
+(dframe.treat <- vtreat::prepare(treatplan, dframe, varRestriction = newvars))
+
+
+# When a level of a categorical variable is rare, sometimes it will fail to show up in training data
+# If that rare level then appears in future data, downstream models may not know what to do with it
+# When such novel levels appear, using model.matrix or caret::dummyVars to one-hot-encode will not work correctly.
+
+# vtreat is a "safer" alternative to model.matrix for one-hot-encoding, because it can manage novel levels safely
+# vtreat also manages missing values in the data (both categorical and continuous).
+
+# In this exercise you will see how vtreat handles categorical values that did not appear in the training set
+# The treatment plan treatplan and the set of variables newvars from the previous exercise are still in your workspace
+# dframe and a new data frame testframe are also in your workspace
+
+# treatplan is in the workspace
+summary(treatplan)
+
+# newvars is in the workspace
+(newvars <- c('color_lev_x.b', 'color_lev_x.g', 'color_lev_x.r', 'size_clean'))
+
+# Print dframe and testframe
+testframe <- data.frame(color=c('g', 'g', 'y', 'g', 'g', 'y', 'b', 'g', 'g', 'r'), 
+                        size=c(7, 8, 10, 12, 6, 8, 12, 12, 12, 8), 
+                        popularity=c(0.973, 0.912, 1.422, 1.191, 0.987, 1.37, 1.096, 0.916, 1, 1.314), 
+                        stringAsFactors=TRUE
+                        )
+testframe
+
+# Use prepare() to one-hot-encode testframe
+(testframe.treat <- vtreat::prepare(treatplan, testframe, varRestriction = newvars))
+
+
+# The outcome column
+(outcome <- "cnt")
+
+# The input columns
+(vars <- c("hr", "holiday", "workingday", "weathersit", "temp", "atemp", "hum", "windspeed"))
+
+# Create the treatment plan from bikesJuly (the training data)
+treatplan <- vtreat::designTreatmentsZ(bikesJuly, vars, verbose = FALSE)
+
+# Get the "clean" and "lev" variables from the scoreFrame
+(newvars <- treatplan %>%
+  use_series(scoreFrame) %>%        
+  filter(code %in% c("clean", "lev")) %>%  # get the rows you care about
+  use_series(varName))           # get the varName column
+
+# Prepare the training data
+bikesJuly.treat <- vtreat::prepare(treatplan, bikesJuly, varRestriction = newvars)
+
+# Prepare the test data
+bikesAugust.treat <- vtreat::prepare(treatplan, bikesAugust, varRestriction = newvars)
+
+# Call str() on the treated data
+str(bikesJuly.treat)
+str(bikesAugust.treat)
+
+
+# In this exercise you will get ready to build a gradient boosting model to predict the number of bikes rented in an hour as a function of the weather and the type and time of day
+# You will train the model on data from the month of July.
+
+# The July data is loaded into your workspace
+# Remember that bikesJuly.treat no longer has the outcome column, so you must get it from the untreated data: bikesJuly$cnt
+
+# You will use the xgboost package to fit the random forest model
+# The function xgb.cv() uses cross-validation to estimate the out-of-sample learning error as each new tree is added to the model
+# The appropriate number of trees to use in the final model is the number that minimizes the holdout RMSE
+
+# For this exercise, the key arguments to the xgb.cv() call are:
+# data: a numeric matrix.
+# label: vector of outcomes (also numeric).
+# nrounds: the maximum number of rounds (trees to build).
+# nfold: the number of folds for the cross-validation. 5 is a good number.
+# objective: "reg:linear" for continuous outcomes.
+# eta: the learning rate.
+# max_depth: depth of trees.
+# early_stopping_rounds: after this many rounds without improvement, stop.
+# verbose: 0 to stay silent
+
+# The data frames bikesJuly and bikesJuly.treat are in the workspace
+
+
+# Load the package xgboost
+library(xgboost)
+
+# Run xgb.cv
+cv <- xgb.cv(data = as.matrix(bikesJuly.treat), 
+            label = bikesJuly$cnt,
+            nrounds = 100,
+            nfold = 5,
+            objective = "reg:linear",
+            eta = 0.3,
+            max_depth = 6,
+            early_stopping_rounds = 10,
+            verbose = 0    # silent
+)
+
+# Get the evaluation log 
+elog <- cv$evaluation_log
+
+# Determine and print how many trees minimize training and test error
+elog %>% 
+   summarize(ntrees.train = which.min(train_rmse_mean),   # find the index of min(train_rmse_mean)
+             ntrees.test  = which.min(test_rmse_mean))   # find the index of min(test_rmse_mean)
+
+
+# In this exercise you will fit a gradient boosting model using xgboost() to predict the number of bikes rented in an hour as a function of the weather and the type and time of day
+# You will train the model on data from the month of July and predict on data for the month of August
+
+# The datasets for July and August are loaded into your workspace
+# Remember the vtreat-ed data no longer has the outcome column, so you must get it from the original data (the cnt column)
+
+# For convenience, the number of trees to use, ntrees from the previous exercise is in the workspace
+
+# The data frames bikesJuly, bikesJuly.treat, bikesAugust and bikesAugust.treat are in the workspace. The number of trees ntrees (84) is in the workspace
+
+# The number of trees to use, as determined by xgb.cv
+(ntrees <- 84)
+
+# Run xgboost
+bike_model_xgb <- xgboost(data = as.matrix(bikesJuly.treat), # training data as matrix
+                   label = bikesJuly$cnt,  # column of outcomes
+                   nrounds = ntrees,       # number of trees to build
+                   objective = "reg:linear", # objective
+                   eta = 0.3,
+                   depth = 6,
+                   verbose = 0  # silent
+)
+
+# Make predictions
+bikesAugust$pred <- predict(bike_model_xgb, as.matrix(bikesAugust.treat))
+
+# Plot predictions (on x axis) vs actual bike rental count
+ggplot(bikesAugust, aes(x = pred, y = cnt)) + 
+  geom_point() + 
+  geom_abline()
+
+
+# bikesAugust is in the workspace
+str(bikesAugust)
+
+# Calculate RMSE
+bikesAugust %>%
+  mutate(residuals = cnt - pred) %>%
+  summarize(rmse = sqrt(mean(residuals**2)))
+
+
+# Print quasipoisson_plot
+quasipoisson_plot
+
+# Print randomforest_plot
+randomforest_plot
+
+# Plot predictions and actual bike rentals as a function of time (days)
+bikesAugust %>% 
+  mutate(instant = (instant - min(instant))/24) %>%  # set start to 0, convert unit to days
+  tidyr::gather(key = valuetype, value = value, cnt, pred) %>%
+  filter(instant < 14) %>% # first two weeks
+  ggplot(aes(x = instant, y = value, color = valuetype, linetype = valuetype)) + 
+  geom_point() + 
+  geom_line() + 
+  scale_x_continuous("Day", breaks = 0:14, labels = 0:14) + 
+  scale_color_brewer(palette = "Dark2") + 
+  ggtitle("Predicted August bike rentals, Gradient Boosting model")
+
+```
+  
+  
+  
+***
+  
+###_Machine Learning with Tree-Based Models in R_  
+  
+Chapter 1 - Classification Trees  
+  
 
 
 	
-
-
-
-
 
 
 
