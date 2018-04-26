@@ -6235,6 +6235,221 @@ Metrics::ce(actual = credit_test$default,
   
 Chapter 2 - Regression Trees  
   
+Introduction to regression trees:  
+  
+* The goal is regression is to predict a value based on inputs - for example, predicting weight  
+	* Can be a variable that is underlying continuous or underlying discrete (such as Poisson or count variables)  
+* Numeric decision trees are measured based on RMSE and other measures or variance or deviation from mean  
+* The regression tree can be run as rpart(formula=, data=, method=, control=)  
+	* The method="anova" will run a regression tree, in contrast to method="class"  
+* There is a somewhat modified process for the test-train process in this case - becomes test, train, validation  
+	* The validation set is used to help tune parameters, while the test set is used to give a final out-of-model error estimate (test set should only be used once)  
+  
+Performance metrics for regression:  
+  
+* Two popular metrics include Mean Absolute Error (MAE) and Root Mean Squared Error (RMSE)  
+	* RMSE is the sample standard deviation of the errors  
+    * Both metrics are indifferent to the direction (sign) of the errors, and both are in the units of the dependent variable  
+    * RMSE particularly punishes big misses, and is especially preferred when big misses are large problems  
+* The package Metrics has some useful functions for assessing model performance  
+	* All of the functions in Metrics take a vector of actuals and then a vector of predicted  
+    * Metrics::rmse(actual=, predicted=) will calculate the RMSE on a specified data set  
+  
+Hyper-parameters for a decision tree:  
+  
+* The default parameters are chosen to do a reasonable job on the average dataset, but they can often be improved  
+	* The main way to change hyper-parameters is to specify the control= argument, choosing from the list as available in ?rpart.control  
+    * minsplit: minimum number of data points to attempt a split (default 20)  
+    * cp: complexity parameter (default 0.1) - this is a penalty term to control tree size, so smaller values will drive more complex trees  
+    * maxdepth: maximum number of intermediate nodes (default 30 is already fairly liberal)  
+* Can identify the best cp parameter and prune the tree accordingly  
+	* print(model$cptable)  will show various cp options and the associated errors  
+    * prune(tree=model, cp=) will prune the tree based on the parameter entered for cp (often the lowest-error cp from the process descrbed above)  
+  
+Grid search for model selection:  
+  
+* Training a sequence of models, and identifying the best set, is a common process  
+	* Goal is to test a grid of hyper-parameters, and to choose the parameters that come back with the "winning" result  
+* Grid search is also called hyper-parameter search, and is a search through a list of potential hyper-parameter values  
+	* The "grid" is the set of hyper-parameter models that you iterate over during the process of model-building  
+    * Models are evaluated against a specified metrics, with CV and/or hold-out being used to assess the value for the metric  
+    * Some guesswork is needed to specify the grid; sometimes helpful to test a small grid, and expand around where there seems to be a minima  
+* While the grid search is available through the caret package, this course will build the equivalent using a for-loop structure  
+  
+Example code includes:  
+```{r}
+
+# These examples will use a subset of the Student Performance Dataset from UCI ML Dataset Repository
+
+# The goal of this exercise is to predict a student's final Mathematics grade based on the following variables:
+# sex, age, address, studytime (weekly study time), schoolsup (extra educational support), famsup (family educational support), paid (extra paid classes within the course subject) and absences
+
+# The response is final_grade (numeric: from 0 to 20, output target).
+
+# After the initial exploration, let's split the data into training, validation, test sets
+# In this chapter, we will introduce the idea of a validation set, which can be used to select a "best" model from a set of competing models
+
+# In Chapter 1, we demonstrated a simple way to split the data into two pieces using the sample() function
+# In this exercise, we will take a slightly different approach to splitting the data that allows us to split the data into more than two parts (here we want three parts: train, validation, test)
+# We still use the sample() function, but instead of sampling the indices themselves, we use the sample() function to assign each row to either the training, validation or test sets according to a probability distribution
+
+# The dataset grade is already in your workspace.
+grade <- read.csv("./RInputFiles/grade.csv")
+
+# Look/explore the data
+str(grade)
+
+# Randomly assign rows to ids (1/2/3 represents train/valid/test)
+# This will generate a vector of ids of length equal to the number of rows
+# The train/valid/test split will be approximately 70% / 15% / 15% 
+set.seed(1)
+assignment <- sample(1:3, size = nrow(grade), prob = c(0.7, 0.15, 0.15), replace = TRUE)
+
+# Create a train, validation and tests from the original data frame 
+grade_train <- grade[assignment == 1, ]    # subset the grade data frame to training indices only
+grade_valid <- grade[assignment == 2, ]  # subset the grade data frame to validation indices only
+grade_test <- grade[assignment == 3, ]   # subset the grade data frame to test indices only
+
+
+# In this exercise, we will use the grade_train dataset to fit a regression tree using rpart() and visualize it using rpart.plot()
+# A regression tree plot will look identical to a classification tree plot, with the exception that there will be numeric values in the leaf nodes instead of predicted classes.
+
+# This is very similar to what we did previously in Chapter 1
+# When fitting a classification tree, we should use method = "class", however, when fitting a regression tree, we need to set method = "anova"
+# By default, the rpart() function will make an intelligent guess as to what the method value should be based on the data type of your response column,
+# but it's recommened that you explictly set the method for reproducibility reasons (since the auto-guesser may change in the future)
+
+# The grade_train training set is loaded into the workspace
+
+# Train the model
+grade_model <- rpart::rpart(formula = final_grade ~ ., 
+                     data = grade_train, 
+                     method = "anova")
+
+# Look at the model output                      
+print(grade_model)
+
+# Plot the tree model
+rpart.plot::rpart.plot(x = grade_model, yesno = 2, type = 0, extra = 0)
+
+
+# Generate predictions on a test set
+pred <- predict(object = grade_model,   # model object 
+                newdata = grade_test)  # test dataset
+
+# Compute the RMSE
+Metrics::rmse(actual = grade_test$final_grade, 
+     predicted = pred)
+
+
+# Plot the "CP Table"
+rpart::plotcp(grade_model)
+
+# Print the "CP Table"
+print(grade_model$cptable)
+
+# Retreive optimal cp value based on cross-validated error
+opt_index <- which.min(grade_model$cptable[, "xerror"])
+cp_opt <- grade_model$cptable[opt_index, "CP"]
+
+# Prune the model (to optimized cp value)
+grade_model_opt <- rpart::prune(tree = grade_model, 
+                         cp = cp_opt)
+                          
+# Plot the optimized model
+rpart.plot::rpart.plot(x = grade_model_opt, yesno = 2, type = 0, extra = 0)
+
+
+# Establish a list of possible values for minsplit and maxdepth
+minsplit <- seq(1, 4, 1)
+maxdepth <- seq(1, 6, 1)
+
+# Create a data frame containing all combinations 
+hyper_grid <- expand.grid(minsplit = minsplit, maxdepth = maxdepth)
+
+# Check out the grid
+head(hyper_grid)
+
+# Print the number of grid combinations
+nrow(hyper_grid)
+
+
+# Number of potential models in the grid
+num_models <- nrow(hyper_grid)
+
+# Create an empty list to store models
+grade_models <- list()
+
+# Write a loop over the rows of hyper_grid to train the grid of models
+for (i in 1:num_models) {
+
+    # Get minsplit, maxdepth values at row i
+    minsplit <- hyper_grid$minsplit[i]
+    maxdepth <- hyper_grid$maxdepth[i]
+
+    # Train a model and store in the list
+    grade_models[[i]] <- rpart::rpart(formula = final_grade ~ ., 
+                               data = grade_train, 
+                               method = "anova",
+                               minsplit = minsplit,
+                               maxdepth = maxdepth)
+}
+
+
+# Earlier in the chapter we split the dataset into three parts: training, validation and test
+
+# A dataset that is not used in training is sometimes referred to as a "holdout" set
+# A holdout set is used to estimate model performance and although both validation and test sets are considered to be holdout data, there is a key difference:
+
+# Just like a test set, a validation set is used to evaluate the performance of a model
+# The difference is that a validation set is specifically used to compare the performance of a group of models with the goal of choosing a "best model" from the group
+# All the models in a group are evaluated on the same validation set and the model with the best performance is considered to the the winner.
+
+# Once you have the best model, a final estimate of performance is computed on the test set.
+
+# A test set should only ever be used to estimate model performance and should not be used in model selection
+# Typically if you use a test set more than once, you are probably doing something wrong.
+
+# Number of potential models in the grid
+num_models <- length(grade_models)
+
+# Create an empty vector to store RMSE values
+rmse_values <- c()
+
+# Write a loop over the models to compute validation RMSE
+for (i in 1:num_models) {
+
+    # Retreive the i^th model from the list
+    model <- grade_models[[i]]
+    
+    # Generate predictions on grade_valid 
+    pred <- predict(object = model,
+                    newdata = grade_valid)
+    
+    # Compute validation RMSE and add to the 
+    rmse_values[i] <- Metrics::rmse(actual = grade_valid$final_grade, 
+                           predicted = pred)
+}
+
+# Identify the model with smallest validation set RMSE
+best_model <- grade_models[[which.min(rmse_values)]]
+
+# Print the model paramters of the best model
+best_model$control
+
+# Compute test set RMSE on best_model
+pred <- predict(object = best_model, newdata = grade_test)
+Metrics::rmse(actual = grade_test$final_grade, predicted = pred)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Bagged Trees  
+  
+
 
 	
 
