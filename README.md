@@ -949,4 +949,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_b captures Supervised Learning in R: Regression - Chapter 4 (Dealing with Non-Linear Responses)  
 * DataCamp_Insights_v003_b captures Supervised Learning in R: Regression - Chapter 5 (Tree Based Models)  
 * DataCamp_Insights_v003_b captures Machine Learning with Tree-Based Models in R - Chapter 1 (Classification Trees)  
+* DataCamp_Insights_v003_b captures Machine Learning with Tree-Based Models in R - Chapter 2 (Regression Trees)  
   
