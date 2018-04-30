@@ -954,3 +954,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_b captures Machine Learning with Tree-Based Models in R - Chapter 4 (Random Forests)  
 * DataCamp_Insights_v003_b captures Machine Learning with Tree-Based Models in R - Chapter 5 (Boosted Trees)  
   
+### Expansions week of 30-APR-2018  
+* DataCamp_Insights_v003_b captures Supervised Learning in R: Classification - Chapter 1 (k-Nearest Neighbors kNN)  
+  
