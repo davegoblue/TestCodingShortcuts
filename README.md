@@ -956,4 +956,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 30-APR-2018  
 * DataCamp_Insights_v003_b captures Supervised Learning in R: Classification - Chapter 1 (k-Nearest Neighbors kNN)  
+* DataCamp_Insights_v003_b captures Supervised Learning in R: Classification - Chapter 2 (Naive Bayes)  
   
