@@ -7272,6 +7272,197 @@ predict(locmodel2, weekend_afternoon, type="prob")
   
 Chapter 3 - Logistic Regression  
   
+Making binary predictions with regression:  
+  
+* Logistic regression techniques for predicting "yes/no" as far as whether someone will make a certain decision  
+* Since straight lines do not fit well to binary outcome data, the goal is to fit an S-shaped curve (logit) to the data  
+	* Outcomes will always be between 0 and 1  
+    * glm(y ~ x, data=, family="binomial")  
+* Can convert the outcomes of a logistic regression to a categorical by setting a threshhold (e.g., 50% for yes/no)  
+  
+Model performance trade-offs:  
+  
+* Rare events frequently pose challenges for classification models - high accuracy can be gained by just betting against the rare outcome  
+* Sometimes it is better to give up some overall accuracy in exchange for imporved performance on one of the other diagnostic measures  
+* The ROC (receiver operator charcetristic) curve can help with the trade-offs; the 45-degree line is a model with no predictive power  
+	* AUC (area under the curve) is 0.5 for the 45-degree line, 1.0 for perfect predictive power, 0.0 for getting every prediction wrong  
+    * However, can get the same AUC with different shapes of the ROC curve; easy vs. hard cases, for example  
+  
+Dummy variables, missing data, and interactions:  
+  
+* The predictors need to all be numeric; categorical data must be converted to dummy (1/0) variables and missing data must be managed  
+* It is generally a good idea to convert any numerical variable (even a number masquerading for a category like 1=High) to a factor first  
+* Missing data can be addressed using imputation (mean, median, kNN, etc.)  
+	* Alternately, the missing indicator (1=missing, 0=present) can be very important in predicting  
+* Can also have interaction effects among the predictor variables - e.g., obesity and smoking  
+	* The full interaction is modeled as y ~ x*z (x alone, z alone, x*z together)  
+  
+Automatic feature selection:  
+  
+* Humans typically need to specify regression predictors ahead of time  
+* Can use the automatic feature selection, though there are caveats and cautions  
+* The general approach is called backward-deletion, where a model is run with all predictors first  
+	* At each step, the least important predictor is removed, and the new model accuracy is calculated  
+* The parallel approach is called forward-addition, where a model is run with just one predictor first  
+	* At each step, the next most important predictor is added, and the new model is calculated  
+* The backward-deletion and forward-addition models can find different solutions than each other, and also violate some statistical assumptions  
+	* The model may be much better for prediction than for explanation  
+    * The model can be built in the absence of theory or common sense, and the coefficients may be significantly misleading  
+  
+Example code includes:  
+```{r}
+
+# The donors dataset contains 93,462 examples of people mailed in a fundraising solicitation for paralyzed military veterans
+# The donated column is 1 if the person made a donation in response to the mailing and 0 otherwise
+# This binary outcome will be the dependent variable for the logistic regression model
+
+# The remaining columns are features of the prospective donors that may influence their donation behavior
+# These are the model's independent variables
+
+# When building a regression model, it it often helpful to form a hypothesis about which independent variables will be predictive of the dependent variable
+# The bad_address column, which is set to 1 for an invalid mailing address and 0 otherwise, seems like it might reduce the chances of a donation
+# Similarly, one might suspect that religious interest (interest_religion) and interest in veterans affairs (interest_veterans) would be associated with greater charitable giving
+
+# The dataset donors is available in your workspace.
+donorsRaw <- read.csv("./RInputFiles/donors.csv")
+str(donorsRaw)
+
+# Examine the dataset to identify potential independent variables
+donors <- donorsRaw
+str(donors)
+
+# Explore the dependent variable
+table(donors$donated)
+
+# Build the donation model
+donation_model <- glm(donated ~ bad_address + interest_religion + interest_veterans, 
+                      data = donors, family = "binomial")
+
+# Summarize the model results
+summary(donation_model)
+
+
+# By default, predict() outputs predictions in terms of log odds unless type = "response" is specified
+# This converts the log odds to probabilities
+
+# Because a logistic regression model estimates the probability of the outcome, it is up to you to determine the threshold at which the probability implies action
+# One must balance the extremes of being too cautious versus being too aggressive
+# For example, if you were to solicit only the people with a 99% or greater donation probability, you may miss out on many people with lower estimated probabilities that still choose to donate
+# This balance is particularly important to consider for severely imbalanced outcomes, such as in this dataset where donations are relatively rare
+
+# Estimate the donation probability
+donors$donation_prob <- predict(donation_model, type = "response")
+
+# Find the donation probability of the average prospect
+mean(donors$donated)
+
+# Predict a donation if probability of donation is greater than average (0.0504)
+donors$donation_pred <- ifelse(donors$donation_prob > 0.0504, 1, 0)
+
+# Calculate the model's accuracy
+mean(donors$donated == donors$donation_pred)
+
+
+# The dataset donors with the column of predicted probabilities, donation_prob ,is already loaded in your workspace.
+# Load the pROC package
+# library(pROC)
+
+# Create a ROC curve
+ROC <- pROC::roc(donors$donated, donors$donation_prob)
+
+# Plot the ROC curve
+plot(ROC, col = "blue")
+
+# Calculate the area under the curve (AUC)
+pROC::auc(ROC)
+
+
+# In the donors dataset, wealth_rating uses numbers to indicate the donor's wealth level:
+# 0 = Unknown
+# 1 = Low
+# 2 = Medium
+# 3 = High
+
+# Convert the wealth rating to a factor
+donors$wealth_rating <- factor(donors$wealth_rating, levels = c(0, 1, 2, 3), labels = c("Unknown", "Low", "Medium", "High"))
+
+# Use relevel() to change reference category
+donors$wealth_rating <- relevel(donors$wealth_rating, ref = "Medium")
+
+# See how our factor coding impacts the model
+summary(glm(donated ~ wealth_rating, data=donors, family="binomial"))
+
+
+# Find the average age among non-missing values
+summary(donors$age)
+
+# Impute missing age values with mean(age)
+donors$imputed_age <- ifelse(is.na(donors$age), round(mean(donors$age, na.rm=TRUE), 2), donors$age)
+
+# Create missing value indicator for age
+donors$missing_age <- ifelse(is.na(donors$age), 1, 0)
+
+
+# One of the best predictors of future giving is a history of recent, frequent, and large gifts. In marketing terms, this is known as R/F/M
+# Recency
+# Frequency
+# Money
+
+# Donors that haven given both recently and frequently may be especially likely to give again; in other words, the combined impact of recency and frequency may be greater than the sum of the separate effects
+
+# Because these predictors together have a greater impact on the dependent variable, their joint effect must be modeled as an interaction
+
+# Build a recency, frequency, and money (RFM) model
+rfm_model <- glm(donated ~ money + recency*frequency, data=donors, family="binomial")
+
+# Summarize the RFM model to see how the parameters were coded
+summary(rfm_model)
+
+# Compute predicted probabilities for the RFM model
+rfm_prob <- predict(rfm_model, type="response")
+
+# Plot the ROC curve and find AUC for the new model
+ROC <- pROC::roc(donors$donated, rfm_prob)
+plot(ROC, col = "red")
+pROC::auc(ROC)
+
+
+# In the absence of subject-matter expertise, stepwise regression can assist with the search for the most important predictors of the outcome of interest.
+# In this exercise, you will use a forward stepwise approach to add predictors to the model one-by-one until no additional benefit is seen
+
+donorsSmall <- donors[sample(seq_len(nrow(donors)), 20000, replace=FALSE), ] %>% 
+    select(-donation_prob, -donation_pred, -age)
+str(donorsSmall)
+
+# Specify a null model with no predictors
+null_model <- glm(donated ~ 1, data = donorsSmall, family = "binomial")
+
+# Specify the full model using all of the potential predictors
+full_model <- glm(donated ~ ., data=donorsSmall, family="binomial")
+
+# Use a forward stepwise algorithm to build a parsimonious model
+step_model <- step(null_model, scope = list(lower = null_model, upper = full_model), direction = "forward")
+
+# Estimate the stepwise donation probability
+step_prob <- predict(step_model, type="response")
+
+# Plot the ROC of the stepwise model
+ROC <- pROC::roc(donorsSmall$donated, step_prob)
+plot(ROC, col = "red")
+pROC::auc(ROC)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Classification Trees  
+  
+
+  
+
+	
 
 	
 
@@ -7283,12 +7474,4 @@ Chapter 3 - Logistic Regression
 	
 
 	
-
-
-	
-
-
-	
-
-
 
