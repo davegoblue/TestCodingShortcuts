@@ -7459,6 +7459,184 @@ pROC::auc(ROC)
   
 Chapter 4 - Classification Trees  
   
+Making decisions with trees:  
+  
+* Classification trees are helpful for if/else decision making - multiple branches leading to an outcome of interest  
+* Root nodes are the beginning, and leaf nodes are the final outcomes  
+	* Intermediate nodes may be in between the root nodes and the leaf nodes  
+    * Tree-based modeling is said to follow a "divide and conquer" methodology - starts with the most important charcateristic  
+    * Each split is designed to maximize homogeneity of the remaining groups  
+* One of the most widely-used tools for trees in R is called rpart  
+	* Generally, want to use method="class" since the goal is categorical prediction (rather than continuous prediction)  
+  
+Growing larger classification trees:  
+  
+* The first split is the split that produces the purest partitions  
+* As the tree grows, it creates better and better splits  
+	* The tree generally does not consider combinations of features all at once, meaning it misses things like a perfect diagonal line split  
+    * For some patterns, the decision tree can be extremely complex (needlessly so based on the actual structure of the data)  
+    * Further, there is a tendency for a large tree to over-fit the data (variance errors, fitting on noise)  
+* Due to the tendency for trees to over-fit, holding out a test set is important for assessing actual tree prediction performance  
+  
+Tending to classification trees:  
+  
+* Classification trees require pruning to keep them to a good performance on the test dataset  
+	* Can also pre-prune, the process of stopping growing trees once it hits a key parameter (maximum depth, maximum nodes, minimum node size, etc.)  
+    * There are trade-offs in that a tree that stops growing too soon can miss out on real signal in the data; post-pruning a large tree can help identify this  
+* The elbow in a plot of tree complexity vs. error rate is frequently a good point to post-prune the tree  
+* The rpart.control() function can handle the pre-pruning of the tree  
+	* maxdepth - maximum depth  
+    * minsplit - minimum points per split  
+* Processes are also available to handle post-pruning of the tree  
+	* The plotcp() call will help to identify the relationship between cp and accuracy  
+    * The best cp parameter can be fed in to the prune() call to prune the tree at this point  
+  
+Seeing the forest from the trees:  
+  
+* Root nodes growing to branches (intermediate nodes) to leaf nodes that need pruning  
+* Forests made from aggregations of trees (decision trees, random forests) can be very powerful for classification  
+	* Each of the underlying trees is typically both simple and diverse  
+    * Diversity of trees requires different conditions - resampled data with replacement, randomized subsets of data  
+    * Ensemble methods often incorporate the team's collective strengths, even if the individual members are not too strong  
+* Can use randomForest::randomForest(fmla, data=, ntree=, mtry=)  # defaults are for ntree=500 and mrty=sqrt(p) where p is the number of parameters  
+  
+Example code includes:  
+```{r}
+
+# The loans dataset contains 11,312 randomly-selected people who were applied for and later received loans from Lending Club, a US-based peer-to-peer lending company
+# You will use a decision tree to try to learn patterns in the outcome of these loans (either repaid or default) based on the requested loan amount and credit score at the time of application
+# Then, see how the tree's predictions differ for an applicant with good credit versus one with bad credit
+
+# The dataset loans is already in your workspace
+loansRaw <- read.csv("./RInputFiles/loans.csv")
+str(loansRaw)
+
+loans <- loansRaw %>% 
+    filter(keep == 1) %>% 
+    mutate(outcome=factor(default, levels=c(1, 0), labels=c("default", "repaid"))) %>%
+    select(-keep, -rand, -default)
+str(loans)
+
+
+# Build a lending model predicting loan outcome versus loan amount and credit score
+loan_model <- rpart::rpart(outcome ~ loan_amount + credit_score, data = loans, method = "class", control = rpart::rpart.control(cp = 0))
+
+good_credit_raw <- c(2, 1, 1, 1, 7, 1, 2, 1, 3, 3, 1, 2, 1, 2)
+bad_credit_raw <- c(2, 3, 4, 3, 1, 3, 3, 2, 3, 2, 1, 1, 1, 2)
+
+loansTest <- loans %>% filter(FALSE)
+for (intCtr in seq_len(ncol(loansTest))) {
+    loansTest[1, intCtr] <- levels(loansTest[, intCtr])[good_credit_raw[intCtr]]
+    loansTest[2, intCtr] <- levels(loansTest[, intCtr])[bad_credit_raw[intCtr]]
+}
+
+good_credit <- loansTest[1, ,drop=FALSE]
+bad_credit <- loansTest[2, ,drop=FALSE]
+
+# Make a prediction for someone with good credit
+predict(loan_model, good_credit, type = "class")
+
+# Make a prediction for someone with bad credit
+predict(loan_model, bad_credit, type = "class")
+
+
+# Due to government rules to prevent illegal discrimination, lenders are required to explain why a loan application was rejected
+# The structure of classification trees can be depicted visually, which helps to understand how the tree makes its decisions
+
+# Examine the loan_model object
+loan_model
+
+# Plot the loan_model with default settings
+rpart.plot::rpart.plot(loan_model)
+
+# Plot the loan_model with customized settings
+rpart.plot::rpart.plot(loan_model, type = 3, box.palette = c("red", "green"), fallen.leaves = TRUE)
+
+
+# Determine the number of rows for training
+nrow(loans) * 0.75
+
+# Create a random sample of row IDs
+sample_rows <- sample(1:nrow(loans), round(nrow(loans) * 0.75))
+
+# Create the training dataset
+loans_train <- loans[sample_rows, ]
+
+# Create the test dataset
+loans_test <- loans[-sample_rows, ]
+
+
+# The 'rpart' package is loaded into the workspace
+# The loans_train and loans_test datasets have been created
+
+# Grow a tree using all of the available applicant data
+loan_model <- rpart::rpart(outcome ~ ., data = loans_train, method = "class", control = rpart::rpart.control(cp = 0))
+
+# Make predictions on the test dataset
+loans_test$pred <- predict(loan_model, newdata=loans_test, type="class")
+
+# Examine the confusion matrix
+table(loans_test$pred, loans_test$outcome)
+
+# Compute the accuracy on the test dataset
+mean(loans_test$pred == loans_test$outcome)
+
+
+# The 'rpart' package is loaded into the workspace
+
+# Grow a tree with maxdepth of 6
+loan_model <- rpart::rpart(outcome ~ ., data = loans_train, method = "class", control = rpart::rpart.control(cp = 0, maxdepth=6))
+
+# Compute the accuracy of the simpler tree
+loans_test$pred <- predict(loan_model, newdata=loans_test, type="class")
+mean(loans_test$pred == loans_test$outcome)
+
+# Grow a tree with minsplit of 500
+loan_model2 <- rpart::rpart(outcome ~ ., data = loans_train, method = "class", control = rpart::rpart.control(cp = 0, minsplit=500))
+
+# Compute the accuracy of the simpler tree
+loans_test$pred2 <- predict(loan_model2, newdata=loans_test, type="class")
+mean(loans_test$pred2 == loans_test$outcome)
+
+
+# Stopping a tree from growing all the way can lead it to ignore some aspects of the data or miss important trends it may have discovered later
+# By using post-pruning, you can intentionally grow a large and complex then prune it to be smaller and more efficient later on
+# In this exercise, you will have the opportunity to construct a visualization of the tree's performance versus complexity, and use this information to prune the tree to an appropriate level
+
+# The 'rpart' package is loaded into the workspace
+
+# Grow an overly complex tree
+loan_model <- rpart::rpart(outcome ~ ., data = loans_train, method = "class", control = rpart::rpart.control(cp = 0))
+
+# Examine the complexity plot
+rpart::plotcp(loan_model)
+
+# Prune the tree
+loan_model_pruned <- rpart::prune(loan_model, cp = 0.0014)
+
+# Compute the accuracy of the pruned tree
+loans_test$pred <- predict(loan_model_pruned, newdata=loans_test, type="class")
+mean(loans_test$pred == loans_test$outcome)
+
+
+# Build a random forest model
+loan_model <- randomForest::randomForest(outcome ~ ., data = loans_train)
+
+# Compute the accuracy of the random forest
+loans_test$pred <- predict(loan_model, newdata=loans_test)
+mean(loans_test$pred == loans_test$outcome)
+
+```
+  
+  
+  
+***
+  
+###_Introduction to R Using sparklyr_  
+  
+Chapter 1 - Starting Spark with dplyr  
+  
+
 
   
 
@@ -7472,6 +7650,3 @@ Chapter 4 - Classification Trees
 	
 
 	
-
-	
-
