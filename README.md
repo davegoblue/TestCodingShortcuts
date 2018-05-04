@@ -959,4 +959,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_b captures Supervised Learning in R: Classification - Chapter 2 (Naive Bayes)  
 * DataCamp_Insights_v003_b captures Supervised Learning in R: Classification - Chapter 3 (Logistic Regression)  
 * DataCamp_Insights_v003_b captures Supervised Learning in R: Classification - Chapter 4 (Classification Trees)  
+* DataCamp_Insights_v003_b captures Introduction to R Using sparklyr - Chapter 1 (Starting Spark with dplyr)  
   
