@@ -7888,6 +7888,239 @@ track_metadata_tbl %>%
   
 Chapter 2 - Advanced dplyr  
   
+Levelling Up:  
+  
+* Can use some of the helpers like starts_with() inside the filter and select and the like  
+* SQL and database joins can be nice add-ons to the process  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# If your dataset has thousands of columns, and you want to select a lot of them, then typing the name of each column when you call select() can be very tedious
+# Fortunately, select() has some helper functions to make it easy to select multiple columns without typing much code
+
+# These helpers include starts_with() and ends_with(), that match columns that start or end with a certain prefix or suffix respectively
+# Due to dplyr's special code evaluation techniques, these functions can only be called from inside a call to select(); they don't make sense on their own
+
+# track_metadata_tbl has been pre-defined
+track_metadata_tbl
+
+track_metadata_tbl %>%
+  # Select columns starting with artist
+  select(starts_with("artist"))
+
+track_metadata_tbl %>%
+  # Select columns ending with id
+  select(ends_with("id"))
+
+
+# A more general way of matching columns is to check if their names contain a value anywhere within them (rather than starting or ending with a value)
+# As you may be able to guess, you can do this using a helper named contains()
+
+# Even more generally, you can match columns using regular expressions
+# Regular expressions ("regexes" for short) are a powerful language used for matching text
+# If you want to learn how to use regular expressions, take the String Manipulation in R with stringr course
+# For now, you only need to know three things
+
+# a: A letter means "match that letter".
+# .: A dot means "match any character, including letters, numbers, punctuation, etc.".
+# ?: A question mark means "the previous character is optional".
+
+# You can find columns that match a particular regex using the matches() select helper
+
+# track_metadata_tbl has been pre-defined
+track_metadata_tbl
+
+track_metadata_tbl %>%
+  # Select columns containing ti
+  select(contains("ti"))
+
+track_metadata_tbl %>%
+  # Select columns matching ti.?t
+  select(matches("ti.?t"))
+
+
+# If you have a categorical variable stored in a factor, it is often useful to know what the individual categories are; you do this with the levels() function
+# For a tibble, the more general concept is to find rows with unique data. Following the terminology from SQL, this is done using the distinct() function
+# You can use it directly on your dataset, so you find unique combinations of a particular set of columns
+# For example, to find the unique combinations of values in the x, y, and z columns, you would write the following: a_tibble %>% distinct(x, y, z)
+
+# track_metadata_tbl has been pre-defined
+track_metadata_tbl
+
+track_metadata_tbl %>%
+  # Only return rows with distinct artist_name
+  distinct(artist_name)
+
+
+# The distinct() function showed you the unique values
+# It can also be useful to know how many of each value you have
+# The base-R function for this is table(); that isn't supported in sparklyr since it doesn't conform to the tidyverse philosophy of keeping everything in tibbles
+# Instead, you must use count(). To use it, pass the unquoted names of the columns
+# For example, to find the counts of distinct combinations of columns x, y, and z, you would type the following: a_tibble %>% count(x, y, z)
+# The result is the same as a_tibble %>% distinct(x, y, z) except that you get an extra column, n, that contains the counts
+
+# A really nice use of count() is to get the most common values of something
+# To do this, you call count(), with the argument sort = TRUE which sorts the rows by descending values of the n column, then use top_n() to restrict the results to the top however-many values
+# (top_n() is similar to base-R's head(), but it works with remote datasets such as those in Spark.)
+# For example, to get the top 20 most common combinations of the x, y, and z columns, use the following a_tibble %>% count(x, y, z, sort = TRUE) %>% top_n(20)
+
+# track_metadata_tbl has been pre-defined
+track_metadata_tbl
+
+track_metadata_tbl %>%
+  # Count the artist_name values
+  count(artist_name, sort=TRUE) %>%
+  # Restrict to top 20
+  top_n(20)
+
+
+# To collect your data: that is, to move it from Spark to R, you call collect()
+
+# track_metadata_tbl has been pre-defined
+track_metadata_tbl
+
+results <- track_metadata_tbl %>%
+  # Filter where artist familiarity is greater than 0.9
+  filter(artist_familiarity > 0.9)
+
+# Examine the class of the results
+class(results)
+
+# Collect your results
+collected <- results %>%
+  collect()
+
+# Examine the class of the collected results
+class(collected)
+
+
+# You often want to store the results of intermediate calculations, but you don't want to collect them because it is slow
+# The solution is to use compute() to compute the calculation, but store the results in a temporary data frame on Spark
+# Compute takes two arguments: a tibble, and a variable name for the Spark data frame that will store the results
+
+# track_metadata_tbl has been pre-defined
+track_metadata_tbl
+
+computed <- track_metadata_tbl %>%
+  # Filter where artist familiarity is greater than 0.8
+  filter(artist_familiarity > 0.9) %>%
+  # Compute the results
+  compute("familiar_artists")
+
+# See the available datasets
+src_tbls(spark_conn)
+
+# Examine the class of the computed results
+class(computed)
+
+
+# track_metadata_tbl has been pre-defined
+track_metadata_tbl
+
+duration_by_artist <- track_metadata_tbl %>%
+  # Group by artist
+  group_by(artist_name) %>%
+  # Calc mean duration
+  summarize(mean_duration = mean(duration))
+
+duration_by_artist %>%
+  # Sort by ascending mean duration
+  arrange(mean_duration)
+
+duration_by_artist %>%
+  # Sort by descending mean duration
+  arrange(desc(mean_duration))
+
+
+# track_metadata_tbl has been pre-defined
+track_metadata_tbl
+
+track_metadata_tbl %>%
+  # Group by artist
+  group_by(artist_name) %>%
+  # Calc time since first release
+  mutate(time_since_first_release = year-min(year)) %>%
+  # Arrange by descending time since first release
+  arrange(desc(time_since_first_release))
+
+
+# As previously mentioned, when you use the dplyr interface, sparklyr converts your code into SQL before passing it to Spark
+# Most of the time, this is what you want
+# However, you can also write raw SQL to accomplish the same task
+# Most of the time, this is a silly idea since the code is harder to write and harder to debug
+# However, if you want your code to be portable – that is, used outside of R as well – then it may be useful
+# For example, a fairly common workflow is to use sparklyr to experiment with data processing, then switch to raw SQL in a production environment
+# By writing raw SQL to begin with, you can just copy and paste your queries when you move to production
+
+# SQL queries are written as strings, and passed to dbGetQuery() from the DBI package. The pattern is as follows.
+# query <- "SELECT col1, col2 FROM some_data WHERE some_condition"
+# a_data.frame <- dbGetQuery(spark_conn, query)
+
+# Note that unlike the dplyr code you've written, dbGetQuery() will always execute the query and return the results to R immediately
+# If you want to delay returning the data, you can use dbSendQuery() to execute the query, then dbFetch() to return the results
+# That's more advanced usage, not covered here
+# Also note that DBI functions return data.frames rather than tibbles, since DBI is a lower-level package
+
+# Write SQL query
+query <- "SELECT * FROM track_metadata WHERE year < 1935 AND duration > 300"
+
+# Run the query
+(results <- dbGetQuery(spark_conn, query))
+
+
+# A Spark connection has been created for you as spark_conn
+# Tibbles attached to the track metadata and artist terms stored in Spark have been pre-defined as track_metadata_tbl and artist_terms_tbl respectively
+
+# track_metadata_tbl and artist_terms_tbl have been pre-defined
+track_metadata_tbl
+artist_terms_tbl
+
+# Left join artist terms to track metadata by artist_id
+joined <- left_join(track_metadata_tbl, artist_terms_tbl, by = c("artist_id"))
+
+# How many rows and columns are in the joined table?
+dim(joined)
+
+
+# Anti joins are really useful for finding problems with other joins.
+# An anti join returns the rows of the first table where it cannot find a match in the second table. 
+
+# track_metadata_tbl and artist_terms_tbl have been pre-defined
+track_metadata_tbl
+artist_terms_tbl
+
+# Anti join artist terms to track metadata by artist_id
+joined <- anti_join(track_metadata_tbl, artist_terms_tbl, by=c("artist_id"))
+
+# How many rows and columns are in the joined table?
+dim(joined)
+
+
+# Semi joins are the opposite of anti joins: an anti-anti join, if you like
+# A semi join returns the rows of the first table where it can find a match in the second table
+
+# You may have spotted that the results of a semi join plus the results of an anti join give the orignial table
+# So, regardless of the table contents or how you join them, semi_join(A, B) plus anti_join(A, B) will return A (though maybe with the rows in a different order)
+
+# track_metadata_tbl and artist_terms_tbl have been pre-defined
+track_metadata_tbl
+artist_terms_tbl
+
+# Semi join artist terms to track metadata by artist_id
+joined <- semi_join(track_metadata_tbl, artist_terms_tbl, by=c("artist_id"))
+
+# How many rows and columns are in the joined table?
+dim(joined)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Native Interfaces to Manipulate Spark DataFrames  
+  
 
 
 
