@@ -963,3 +963,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_b captures Introduction to R Using sparklyr - Chapter 2 (Advanced dplyr)  
 * DataCamp_Insights_v003_b captures Introduction to R Using sparklyr - Chapter 3 (Native Interfaces to Manipulate Spark DataFrames)  
   
+### Expansions week of 07-MAY-2018  
+* DataCamp_Insights_v003_b captures Introduction to R Using sparklyr - Chapter 4 (Case Study)  
+  
