@@ -965,4 +965,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 07-MAY-2018  
 * DataCamp_Insights_v003_b captures Introduction to R Using sparklyr - Chapter 4 (Case Study)  
+* DataCamp_Insights_v003_b captures Building Web Applications in R with Shiny: Case Studies - Chapter 1 (Shiny Review) - notes  
   
