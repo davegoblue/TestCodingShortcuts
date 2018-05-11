@@ -968,4 +968,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_b captures Building Web Applications in R with Shiny: Case Studies - Chapter 1 (Shiny Review) - notes  
 * DataCamp_Insights_v003_b captures Building Web Applications in R with Shiny: Case Studies - Chapter 1 (Shiny Review) - code  
 * DataCamp_Insights_v003_b captures Building Web Applications in R with Shiny: Case Studies - Chapter 2 (Making good plots with Shiny) - notes  
+* DataCamp_Insights_v003_b captures Building Web Applications in R with Shiny: Case Studies - Chapter 2 (Making good plots with Shiny) - code  
   
