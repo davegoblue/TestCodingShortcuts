@@ -972,3 +972,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_b captures Building Web Applications in R with Shiny: Case Studies - Chapter 3 (Explore datasets interactively with Shiny) - notes  
 * DataCamp_Insights_v003_b captures Building Web Applications in R with Shiny: Case Studies - Chapter 3 (Explore datasets interactively with Shiny) - code  
   
+### Expansions week of 14-MAY-2018  
+* DataCamp_Insights_v003_b captures Building Web Applications in R with Shiny: Case Studies - Chapter 4 (Shiny Word Clouds) - notes  
+  
