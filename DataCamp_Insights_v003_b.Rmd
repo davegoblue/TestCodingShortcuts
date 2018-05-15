@@ -10286,6 +10286,574 @@ Wrap up:
 Examle code includes:  
 ```{r eval=FALSE}
 
+# You are provided with a sample dataset named artofwar, which contains the entire text of the Art of War book
+# You can inspect the given Art of War text by running head(artofwar) or tail(artofwar) to see the first and last few verses of the book
+
+# As mentioned in the video, since word clouds are not an output you saw before, they require a new pair of output and render functions: wordcloud2Output() and renderWordcloud2()
+# These output functions are available from the wordcloud2 package
+
+# The function create_wordcloud(), the dataset artofwar, and all the necessary packages are available in your workspace
+
+fileCon <- file("./RInputFiles/artofwar.txt", "r")
+fileLines <- readLines(fileCon)
+close(fileCon)
+
+length(fileLines)
+modLines <- fileLines[1564:6982]
+modLines <- modLines[modLines != "" & !grepl(pattern="^---", modLines)]
+length(modLines)
+
+artofwar <- modLines
+
+library(tm)
+library(wordcloud2)
+
+create_wordcloud <- function(data, num_words = 100, background = "white") {
+  # If text is provided, convert it to a dataframe of word frequencies
+  if (is.character(data)) {
+    corpus <- Corpus(VectorSource(data))
+    corpus <- tm_map(corpus, tolower)
+    corpus <- tm_map(corpus, removePunctuation)
+    corpus <- tm_map(corpus, removeNumbers)
+    corpus <- tm_map(corpus, removeWords, stopwords("english"))
+    tdm <- as.matrix(TermDocumentMatrix(corpus))
+    data <- sort(rowSums(tdm), decreasing = TRUE)
+    data <- data.frame(word = names(data), freq = as.numeric(data))
+  }
+  # Make sure a proper num_words is provided
+  if (!is.numeric(num_words) || num_words < 3) {
+    num_words <- 3
+  }  
+  # Grab the top n most common words
+  data <- head(data, n = num_words)
+  if (nrow(data) == 0) {
+    return(NULL)
+  }
+  wordcloud2(data, backgroundColor = background)
+}
+
+# Define UI for the application
+ui <- fluidPage(
+  h1("Word Cloud"),
+  # Add the word cloud output placeholder to the UI
+  wordcloud2Output(outputId = "cloud")
+)
+
+# Define the server logic
+server <- function(input, output) {
+  # Render the word cloud and assign it to the output list
+  output$cloud <- renderWordcloud2({
+    # Create a word cloud object
+    create_wordcloud(artofwar)
+  })
+}
+
+# Run the application
+shinyApp(ui = ui, server = server)
+
+
+# Recall that create_wordcloud() has two optional arguments: num_words, which is an integer specifying the maximum number of words to draw, and background, which specifies the background colour of the image
+
+# Right now, the Shiny app simply outputs a word cloud with the exact same parameters all the time
+# Since the word cloud generating function accepts these two parameters, it would be wasteful not to use them
+# The parameters should be adjustable by the user using Shiny inputs
+
+# You task is to add two inputs to the Shiny app, and use the values from these inputs as the num_words and background parameters of the word cloud
+
+# All the required packages, including colourpicker, have been loaded to your workspace
+
+library(colourpicker)
+
+ui <- fluidPage(
+  h1("Word Cloud"),
+  # Add a numeric input for the number of words
+  numericInput(inputId = "num", label = "Maximum number of words",
+      value = 100, min = 5),
+  # Add a colour input for the background colour
+  colourInput(inputId="col", label="Background colour", value="white"),
+  wordcloud2Output("cloud")
+)
+
+server <- function(input, output) {
+  output$cloud <- renderWordcloud2({
+    # Use the values from the two inputs as
+    # parameters to the word cloud
+    create_wordcloud(artofwar,
+                     num_words = input$num, background = input$col)
+  })
+}
+
+shinyApp(ui = ui, server = server)
+
+
+# The app currently has very few objects (one title, two inputs, one word cloud output) so it is still manageable without a layout
+# However, the app is going to grow in the next exercises and having a sidebar layout will be beneficial
+# It's a good idea to add a layout to your app earlier rather than later, because placing new Shiny UI elements into an existing layout is easier than rearranging a larger non-structured app later
+
+# As is commonly done with Shiny apps and other interactive applications, the inputs will be kept in the smaller sidebar, while the main output (the word cloud) will be in the larger main panel
+
+# Your next task is to add a sidebar layout to the current Shiny app. No new UI elements are to be added other than the structure for the layout
+
+ui <- fluidPage(
+  h1("Word Cloud"),
+  # Add a sidebar layout to the UI
+  sidebarLayout(
+    # Define a sidebar panel around the inputs
+    sidebarPanel(
+      numericInput("num", "Maximum number of words",
+                   value = 100, min = 5),
+      colourInput("col", "Background colour", value = "white")
+    ),
+    # Define a main panel around the output
+    mainPanel(
+      wordcloud2Output("cloud")
+    )
+  )
+)
+
+server <- function(input, output) {
+  output$cloud <- renderWordcloud2({
+    create_wordcloud(artofwar,
+                     num_words = input$num, background = input$col)
+  })
+}
+
+shinyApp(ui = ui, server = server)
+
+
+# The textAreaInput() is useful when you want to allow the user to enter much longer text than what a typical textInput() allows
+# Textareas span multiple rows and have a vertical scrollbar, as well as a rows parameter that can determine how many rows are visible
+
+# Except for being larger, textarea inputs behave very similar to text inputs in every other way
+
+ui <- fluidPage(
+  h1("Word Cloud"),
+  sidebarLayout(
+    sidebarPanel(
+      # Add a textarea input
+      textAreaInput(inputId="text", label="Enter text", rows=7),
+      numericInput("num", "Maximum number of words",
+                   value = 100, min = 5),
+      colourInput("col", "Background colour", value = "white")
+    ),
+    mainPanel(
+      wordcloud2Output("cloud")
+    )
+  )
+)
+
+server <- function(input, output) {
+  output$cloud <- renderWordcloud2({
+    # Use the textarea's value as the word cloud data source
+    create_wordcloud(input$text, num_words = input$num,
+                     background = input$col)
+  })
+}
+
+shinyApp(ui = ui, server = server)
+
+
+# Rather than typing a long piece of text into a box, it can be more convenient to upload a text file if the text is extremely long
+
+# Uploading files to a Shiny app is done using fileInput()
+
+ui <- fluidPage(
+  h1("Word Cloud"),
+  sidebarLayout(
+    sidebarPanel(
+      textAreaInput("text", "Enter text", rows = 7),
+      # Add a file input
+      fileInput(inputId="file", label="Select a file"),
+      numericInput("num", "Maximum number of words",
+                   value = 100, min = 5),
+      colourInput("col", "Background colour", value = "white")
+    ),
+    mainPanel(
+      wordcloud2Output("cloud")
+    )
+  )
+)
+
+server <- function(input, output) {
+  output$cloud <- renderWordcloud2({
+    create_wordcloud(input$text, num_words = input$num,
+                     background = input$col)
+  })
+}
+
+shinyApp(ui = ui, server = server)
+
+
+# After the user selects a file, that file gets uploaded to the computer that runs the Shiny app, and it becomes available in the server
+
+# If the input ID of a file input is "myfile", then you might expect input$myfile to give you access to the file that was uploaded, but that is not how file inputs actually work
+# input$myfile will return a data.frame that contains a few pieces of metadata about the selected file, with the main one to care about being datapath
+# Assuming the file input's ID is "myfile", input$myfile$datapath will be the path where the file is located
+
+# After getting the uploaded file's path (for example C:\Users\Dean\AppData\Local\Temp\path\to\file.txt), this path can be used to read the file in whatever way you need
+# You may use read.csv() if the uploaded file is a CSV file, or readLines() if you simply want to read all the lines in the file, or any other function that accepts a file path
+
+ui <- fluidPage(
+  h1("Word Cloud"),
+  sidebarLayout(
+    sidebarPanel(
+      textAreaInput("text", "Enter text", rows = 7),
+      fileInput("file", "Select a file"),
+      numericInput("num", "Maximum number of words",
+                   value = 100, min = 5),
+      colourInput("col", "Background colour", value = "white")
+    ),
+    mainPanel(
+      wordcloud2Output("cloud")
+    )
+  )
+)
+
+server <- function(input, output) {
+  # Define a reactive variable named `input_file`
+  input_file <- reactive({
+    if (is.null(input$file)) {
+      return("")
+    }
+    # Read the text in the uploaded file
+    readLines(input$file$datapath)
+  })
+
+  output$cloud <- renderWordcloud2({
+    # Use the reactive variable as the word cloud data source
+    create_wordcloud(input_file(), num_words = input$num,
+                     background = input$col)
+  })
+}
+
+shinyApp(ui = ui, server = server)
+
+
+# Over the last few exercises, you've used 3 different sources for the word cloud: the Art of War book, a text field, and a text file
+# However, only one source was working at any given time
+# In this exercise, you will provide the user with a way to select which data source to use for the word cloud
+
+# Your task is to add radio buttons to the app that will let the user select whether the word source should be the Art of War book, the textarea, or an uploaded file
+
+ui <- fluidPage(
+  h1("Word Cloud"),
+  sidebarLayout(
+    sidebarPanel(
+      # Add radio buttons input
+      radioButtons(
+        inputId = "source",
+        label = "Word source",
+        choices = c(
+          # First choice is "book", with "Art of War" displaying
+          "Art of War" = "book",
+          # Second choice is "own", with "Use your own words" displaying
+          "Use your own words" = "own",
+          # Third choice is "file", with "Upload a file" displaying
+          "Upload a file" = "file"
+        )
+      ),
+      textAreaInput("text", "Enter text", rows = 7),
+      fileInput("file", "Select a file"),
+      numericInput("num", "Maximum number of words",
+                   value = 100, min = 5),
+      colourInput("col", "Background colour", value = "white")
+    ),
+    mainPanel(
+      wordcloud2Output("cloud")
+    )
+  )
+)
+
+server <- function(input, output) {
+  input_file <- reactive({
+    if (is.null(input$file)) {
+      return("")
+    }
+    readLines(input$file$datapath)
+  })
+
+  output$cloud <- renderWordcloud2({
+    create_wordcloud(input_file(), num_words = input$num,
+                     background = input$col)
+  })
+}
+
+shinyApp(ui = ui, server = server)
+
+
+# When working with radio buttons, sometimes you need to use conditional logic (if-else statements) when accessing the radio button's value in the server
+# This is necessary when different actions are performed depending on the exact choice, and the chosen value needs to be inspected before deciding how to proceed
+
+# For example, with the radio buttons that select a data source, different code will need to run depending on which choice is selected
+
+# Your next task is to use the appropriate data source in the word cloud function, according to what radio button the user chooses
+
+ui <- fluidPage(
+  h1("Word Cloud"),
+  sidebarLayout(
+    sidebarPanel(
+      radioButtons(
+        inputId = "source",
+        label = "Word source",
+        choices = c(
+          "Art of War" = "book",
+          "Use your own words" = "own",
+          "Upload a file" = "file"
+        )
+      ),
+      textAreaInput("text", "Enter text", rows = 7),
+      fileInput("file", "Select a file"),
+      numericInput("num", "Maximum number of words",
+                   value = 100, min = 5),
+      colourInput("col", "Background colour", value = "white")
+    ),
+    mainPanel(
+      wordcloud2Output("cloud")
+    )
+  )
+)
+
+server <- function(input, output) {
+  # Create a "data_source" reactive variable
+  data_source <- reactive({
+    # Return the appropriate data source depending on
+    # the chosen radio button
+    if (input$source == "book") {
+      data <- artofwar
+    } else if (input$source == "own") {
+      data <- input$text
+    } else if (input$source == "file") {
+      data <- input_file()
+    }
+    return(data)
+  })
+
+  input_file <- reactive({
+    if (is.null(input$file)) {
+      return("")
+    }
+    readLines(input$file$datapath)
+  })
+
+  output$cloud <- renderWordcloud2({
+    # Use the data_source reactive variable as the data
+    # in the word cloud function
+    create_wordcloud(data_source(), num_words = input$num,
+                     background = input$col)
+  })
+}
+
+shinyApp(ui = ui, server = server)
+
+
+# The word cloud app now has three different ways to supply words to the word cloud
+# Two of these methods involve a specific UI element that is only useful for them: there is a textarea that is only used when the user selects the "own" word source, and there is a file input that is only relevant when the user chooses the "file" source
+# Ideally, only inputs that are needed would appear at any given moment
+
+# The textarea has already been wrapped in a conditionalPanel() so that it will only appear when the user chooses to input their own text
+# Your task is to conditionally show the file input only when the user selects the file upload as the data source
+
+ui <- fluidPage(
+  h1("Word Cloud"),
+  sidebarLayout(
+    sidebarPanel(
+      radioButtons(
+        inputId = "source",
+        label = "Word source",
+        choices = c(
+          "Art of War" = "book",
+          "Use your own words" = "own",
+          "Upload a file" = "file"
+        )
+      ),
+      conditionalPanel(
+        condition = "input.source == 'own'",
+        textAreaInput("text", "Enter text", rows = 7)
+      ),
+      # Wrap the file input in a conditional panel
+      conditionalPanel(
+        # The condition should be that the user selects
+        # "file" from the radio buttons
+        condition = "input.source == 'file'",
+        fileInput("file", "Select a file")
+      ),
+      numericInput("num", "Maximum number of words",
+                   value = 100, min = 5),
+      colourInput("col", "Background colour", value = "white")
+    ),
+    mainPanel(
+      wordcloud2Output("cloud")
+    )
+  )
+)
+
+server <- function(input, output) {
+  data_source <- reactive({
+    if (input$source == "book") {
+      data <- artofwar
+    } else if (input$source == "own") {
+      data <- input$text
+    } else if (input$source == "file") {
+      data <- input_file()
+    }
+    return(data)
+  })
+  
+  input_file <- reactive({
+    if (is.null(input$file)) {
+      return("")
+    }
+    readLines(input$file$datapath)
+  })
+  
+  output$cloud <- renderWordcloud2({
+    create_wordcloud(data_source(), num_words = input$num,
+                        background = input$col)
+  })
+}
+
+shinyApp(ui = ui, server = server)
+
+
+# The word cloud app now has several different inputs, and modifying each one of them causes the word cloud to redraw with the new set of parameters, just as expected
+
+# But this behaviour can also be annoying sometimes
+# For example, when typing text in the textarea, the word cloud keeps regenerating without waiting for you to finish typing
+# This can be controlled with isolate()
+
+# All the code inside renderWordcloud2() that renders the word cloud has been removed
+# Your task is to re-create the word cloud and isolate it so that changing the parameters will not automatically trigger a new word cloud
+
+ui <- fluidPage(
+  h1("Word Cloud"),
+  sidebarLayout(
+    sidebarPanel(
+      radioButtons(
+        inputId = "source",
+        label = "Word source",
+        choices = c(
+          "Art of War" = "book",
+          "Use your own words" = "own",
+          "Upload a file" = "file"
+        )
+      ),
+      conditionalPanel(
+        condition = "input.source == 'own'",
+        textAreaInput("text", "Enter text", rows = 7)
+      ),
+      conditionalPanel(
+        condition = "input.source == 'file'",
+        fileInput("file", "Select a file")
+      ),
+      numericInput("num", "Maximum number of words",
+                   value = 100, min = 5),
+      colourInput("col", "Background colour", value = "white")
+    ),
+    mainPanel(
+      wordcloud2Output("cloud")
+    )
+  )
+)
+
+server <- function(input, output) {
+  data_source <- reactive({
+    if (input$source == "book") {
+      data <- artofwar
+    } else if (input$source == "own") {
+      data <- input$text
+    } else if (input$source == "file") {
+      data <- input_file()
+    }
+    return(data)
+  })
+  
+  input_file <- reactive({
+    if (is.null(input$file)) {
+      return("")
+    }
+    readLines(input$file$datapath)
+  })
+  
+  output$cloud <- renderWordcloud2({
+    # Isolate the code to render the word cloud so that it will
+    # not automatically re-render on every parameter change
+    isolate({
+      # Render the word cloud using inputs and reactives
+      create_wordcloud(data_source(), num_words=input$num, background=input$col)
+    })
+  })
+}
+
+shinyApp(ui = ui, server = server)
+
+
+# After isolating the word cloud render code so that it wouldn't update too often, the last step is to provide a way to render the word cloud only when the user chooses to
+# This can be achieved with the help of an actionButton()
+
+ui <- fluidPage(
+  h1("Word Cloud"),
+  sidebarLayout(
+    sidebarPanel(
+      radioButtons(
+        inputId = "source",
+        label = "Word source",
+        choices = c(
+          "Art of War" = "book",
+          "Use your own words" = "own",
+          "Upload a file" = "file"
+        )
+      ),
+      conditionalPanel(
+        condition = "input.source == 'own'",
+        textAreaInput("text", "Enter text", rows = 7)
+      ),
+      conditionalPanel(
+        condition = "input.source == 'file'",
+        fileInput("file", "Select a file")
+      ),
+      numericInput("num", "Maximum number of words",
+                   value = 100, min = 5),
+      colourInput("col", "Background colour", value = "white"),
+      # Add a "draw" button to the app
+      actionButton(inputId = "draw", label = "Draw!")
+    ),
+    mainPanel(
+      wordcloud2Output("cloud")
+    )
+  )
+)
+
+server <- function(input, output) {
+  data_source <- reactive({
+    if (input$source == "book") {
+      data <- artofwar
+    } else if (input$source == "own") {
+      data <- input$text
+    } else if (input$source == "file") {
+      data <- input_file()
+    }
+    return(data)
+  })
+  
+  input_file <- reactive({
+    if (is.null(input$file)) {
+      return("")
+    }
+    readLines(input$file$datapath)
+  })
+  
+  output$cloud <- renderWordcloud2({
+    # Add the draw button as a dependency to
+    # cause the word cloud to re-render on click
+    input$draw
+    isolate({
+      create_wordcloud(data_source(), num_words = input$num,
+                       background = input$col)
+    })
+  })
+}
+
+shinyApp(ui = ui, server = server)
 
 ```
   
