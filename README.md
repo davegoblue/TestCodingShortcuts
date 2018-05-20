@@ -979,4 +979,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_b captures Introduction to Statistics with R: Moderation and Mediation - Chapter 2 (Introduction to Centering Predictors)  
 * DataCamp_Insights_v003_b captures Introduction to Statistics with R: Moderation and Mediation - Chapter 3 (Intro to Mediation)  
 * DataCamp_Insights_v003_b captures Introduction to Statistics with R: Multiple Regression - Chapter 1 (Introduction to Multiple Regression)  
+* DataCamp_Insights_v003_b captures Introduction to Statistics with R: Multiple Regression - Chapter 2 (Intuition Behind Estimation of Multiple Regression Coefficients)  
   
