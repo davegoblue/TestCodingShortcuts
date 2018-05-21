@@ -981,3 +981,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_b captures Introduction to Statistics with R: Multiple Regression - Chapter 1 (Introduction to Multiple Regression)  
 * DataCamp_Insights_v003_b captures Introduction to Statistics with R: Multiple Regression - Chapter 2 (Intuition Behind Estimation of Multiple Regression Coefficients)  
   
+### Expansions week of 21-MAY-2018  
+* DataCamp_Insights_v003_b captures Introduction to Statistics with R: Multiple Regression - Chapter 3 (Dummy Coding)  
+  
