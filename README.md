@@ -984,4 +984,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 21-MAY-2018  
 * DataCamp_Insights_v003_b captures Introduction to Statistics with R: Multiple Regression - Chapter 3 (Dummy Coding)  
 * DataCamp_Insights_v003_b captures Cluster Analysis in R - Chapter 1 (Calculating Distance Between Objects)  
+* DataCamp_Insights_v003_b captures Cluster Analysis in R - Chapter 2 (Hierarchical Clustering)  
   
