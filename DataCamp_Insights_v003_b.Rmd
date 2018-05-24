@@ -11867,6 +11867,181 @@ segment_customers %>%
   
 Chapter 3 - K-Means Clustering  
   
+Introduction to K-means:  
+  
+* General k-means algorithm is iterative, as follows:  
+	1.  Select k points from the data as centroids at random  
+    2.  Assign every observation to the centroid that is closest to them  
+    3.  Calculate the mean of the resulting clusters and call that the new centroids (will still be k)  
+    4.  Rinse and repeat  
+* The function can be run in R as kmeans(myDist, centers=)  # centers is synonymous with k  
+	* The $cluster of the kmeans object will extract the clusters  
+  
+Evaluating different values of K by eye:  
+  
+* The elbow method looks at sum-squared-within, summed across clusters  
+	* For each cluster, find the sum-squared of the distances from the centroid  
+    * Then, sum all of those distances to get the overall metric  
+* The sum-squared-within can be assessed for different levels of k (number of clusters), and the elbow-point is often a reasonable estimate for k  
+	* Can use the $tot.withinss element of a k-means model to extract the sum-squared-within  
+    * Can generate automatically using purrr::map_dbl(1:10, function(k) { model <- kmeans(myDF, centers=k) ; model$tot.withinss } )  
+  
+Silhouette analysis: observation level performance:  
+  
+* The Silhouette Width can be defined for each point based on two parameters  
+	* Within-cluster distance - C(i) - average Euclidean distance from the point to every other point in its cluster  
+    * Closest-neighbor distance - N(i) - average Euclidean distance from the point to the nearest cluster  
+    * The Silhouette Width S(i) is then calculated as 1 - C(i)/N(i) for C(i) <= N(i) and N(i)/C(i) - 1 for C(i) > N(i)  
+    * S(i) of around 1 is well-matched to its current cluster, 0 is borderline, -1 is poorly matched and would be better in another cluster  
+* Can generate clsuters using cluster::pam(x=, k=)  # note that the pam() function is very similar, but not identical, to the kmeans() function  
+	* Can then extract silhouette widths using $silinfo$widths or $silinfo$avg.width  
+    * Alternately, can be viewed using plot(silhouette(myPamObject))  
+  
+Making sense of the K-means clusters:  
+  
+* Revisiting the wholesale purchases dataset for Milk, Grocery, Frozen Food  
+* Can use best silhouette width to find k, then use k as an input to k-means  
+  
+Example code includes:  
+```{r}
+
+# Build a kmeans model
+model_km2 <- kmeans(lineup, centers = 2)
+
+# Extract the cluster assignment vector from the kmeans model
+clust_km2 <- model_km2$cluster
+
+# Create a new dataframe appending the cluster assignment
+lineup_km2 <- mutate(lineup, cluster = clust_km2)
+
+# Plot the positions of the players and color them using their cluster
+ggplot(lineup_km2, aes(x = x, y = y, color = factor(cluster))) +
+    geom_point(size=3) + 
+    theme_classic()
+
+
+# Build a kmeans model
+model_km3 <- kmeans(lineup, centers=3)
+
+# Extract the cluster assignment vector from the kmeans model
+clust_km3 <- model_km3$cluster
+
+# Create a new dataframe appending the cluster assignment
+lineup_km3 <- lineup %>% mutate(cluster=clust_km3)
+
+# Plot the positions of the players and color them using their cluster
+ggplot(lineup_km3, aes(x = x, y = y, color = factor(cluster))) +
+    geom_point(size=3) + 
+    theme_classic()
+
+
+library(purrr)
+
+# Use map_dbl to run many models with varying value of k (centers)
+tot_withinss <- map_dbl(1:10,  function(k){
+  model <- kmeans(lineup, centers = k)
+  model$tot.withinss
+})
+
+# Generate a data frame containing both k and tot_withinss
+elbow_df <- data.frame(
+  k = 1:10 ,
+  tot_withinss = tot_withinss
+)
+
+
+# Use map_dbl to run many models with varying value of k (centers)
+tot_withinss <- map_dbl(1:10,  function(k){
+  model <- kmeans(x = lineup, centers = k)
+  model$tot.withinss
+})
+
+# Generate a data frame containing both k and tot_withinss
+elbow_df <- data.frame(
+  k = 1:10,
+  tot_withinss = tot_withinss
+)
+
+# Plot the elbow plot
+ggplot(elbow_df, aes(x = k, y = tot_withinss)) +
+  geom_line() +
+  scale_x_continuous(breaks = 1:10)
+
+
+library(cluster)
+
+# Generate a k-means model using the pam() function with a k = 2
+pam_k2 <- pam(lineup, k = 2)
+
+# Plot the silhouette visual for the pam_k2 model
+plot(silhouette(pam_k2))
+
+# Generate a k-means model using the pam() function with a k = 3
+pam_k3 <- pam(lineup, k = 3)
+
+# Plot the silhouette visual for the pam_k3 model
+plot(silhouette(pam_k3))
+
+
+# Use map_dbl to run many models with varying value of k
+sil_width <- map_dbl(2:10,  function(k){
+  model <- pam(lineup, k = k)
+  model$silinfo$avg.width
+})
+
+# Generate a data frame containing both k and sil_width
+sil_df <- data.frame(
+  k = 2:10,
+  sil_width = sil_width
+)
+
+# Plot the relationship between k and sil_width
+ggplot(sil_df, aes(x = k, y = sil_width)) +
+  geom_line() +
+  scale_x_continuous(breaks = 2:10)
+
+
+# Use map_dbl to run many models with varying value of k
+sil_width <- map_dbl(2:10, function(k) { 
+  model <- pam(x=customers_spend, k=k)
+  model$silinfo$avg.width 
+  } 
+)
+
+# Generate a data frame containing both k and sil_width
+sil_df <- data.frame(k=2:10, sil_width=sil_width)
+
+# Plot the relationship between k and sil_width
+ggplot(sil_df, aes(x = k, y = sil_width)) +
+  geom_line() +
+  scale_x_continuous(breaks = 2:10)
+
+
+# Build a k-means model for the customers_spend with a k of 2
+model_customers <- kmeans(customers_spend, centers=2)
+
+# Extract the vector of cluster assignments from the model
+clust_customers <- model_customers$cluster
+
+# Build the segment_customers dataframe
+segment_customers <- mutate(customers_spend, cluster = clust_customers)
+
+# Calculate the size of each cluster
+count(segment_customers, cluster)
+
+# Calculate the mean for each category
+segment_customers %>% 
+  group_by(cluster) %>% 
+  summarise_all(funs(mean(.)))
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Case Study: National Occupation Mean Wage  
+  
 
 	
 	
