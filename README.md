@@ -987,5 +987,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_b captures Cluster Analysis in R - Chapter 2 (Hierarchical Clustering)  
 * DataCamp_Insights_v003_b captures Cluster Analysis in R - Chapter 3 (K-Means Clustering)  
 * DataCamp_Insights_v003_b captures Cluster Analysis in R - Chapter 4 (Case Study: National Occupation Mean Wage)  
-* DataCamp_Insights_v003_b captures Building Dashboards with shinydashboard - Chapter 1 (Building Statis Dashboards)  
+* DataCamp_Insights_v003_b captures Building Dashboards with shinydashboard - Chapter 1 (Building Static Dashboards)  
+* DataCamp_Insights_v003_b captures Building Dashboards with shinydashboard - Chapter 2 (Building Dynamic Dashboards)  
   
