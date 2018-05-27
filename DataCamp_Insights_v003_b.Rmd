@@ -12337,6 +12337,248 @@ shinyApp(ui, server)
   
 Chapter 2 - Building Dynamic Dashboards  
   
+Reactive expression refresher:  
+  
+* There are many examples of inputs - actionButton(), selectInput(), sliderInput(), radioButtons(), etc.  
+	* Generally, the parameters for the input functions are along the lines of inputId=, label=, choices=, etc.  
+* There are render*() functions, such as renderPlot(), renderText(), renderPrint() and the like  
+	* Best practice is to start the render*() functions with a parenteses and a brackets, such as ({ })  
+* Each of the render*() functions has an associated output functions, such as textOutput(), tableOutput(), plotOutput(), etc.  
+  
+Server-side dynamic how-to:  
+  
+* Can read in real-time data by way of streaming  
+* One method for streaming read-ins is the reactiveFileReader() capability, which checks to see whether a given file(s) have been updated  
+	* server <- function(input, output, session) {  
+        * reactive_data <- reactiveFileReader(  
+        * intervalMillis = 1000,  # milliseconds to wait between checks for updated data  
+        * session = session,   # allows for specific control over a user session  
+        * filePath = "file.csv",  # path to file(s)  
+        * readFunc = read.csv  # function for reading files  
+        * )  
+    * } # Can then use reactive_data(), including the parentheses, to access the data elsewhere  
+  
+Optimizing performance:  
+  
+* Code located outside of the server() function will only be run once - best for loading static data sets  
+* Code that is inside the server() function can be run multiple times  
+	* If it is not inside a reactive but is inside the server, then the data is run once for each new user  
+    * If it is inside a reactive that is inside the server, then the data is run every time a relevant change is made  
+  
+UI dynamic how-to:  
+  
+* The dropdownMenu() can have messages and notifications, which can also be populated from apply() on a data frame  
+	* messages <- apply(data, 1, function(row) { messageItem(from = row[["from"]], message = row[["message"]]) })  
+    * dropdownMenu(type = "message", .list = messages)  
+    * header <- dashboardHeader(dropdownMenuOutput("msg_menu"))  
+* Additional dynamic boxes include  
+	* renderInfoBox() -- infoBoxOutput()  
+    * renderValueBox() -- valueBoxOutput()  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# As a quick refresher, using the dashboardSidebar() function along with selectInput() and sliderInput() from the shiny package, you can create select lists and sliders
+# For example, to create a select list in the sidebar, you can do the following:
+# sidebar <- dashboardSidebar(
+#   selectInput(inputId = "numbers",
+#               label = "Numbers",
+#               choices = 1:3)
+#   )
+
+# For this chapter, we are working with the the dplyr starwars dataset, a data set pulled from the Star Wars API containing information about characters from Star Wars
+
+sidebar <- dashboardSidebar(
+  # Add a slider
+  sliderInput(inputId="height", label="Height", min=66, max=264, value=264)
+)
+
+ui <- dashboardPage(header = dashboardHeader(),
+                    sidebar = sidebar,
+                    body = dashboardBody()
+                    )
+
+server <- function(input, output) {}
+
+shinyApp(ui, server) 
+
+data(starwars, package="dplyr")
+starwars
+
+sidebar <- dashboardSidebar(
+  # Create a select list
+  selectInput(inputId="name", label="Name", choices=starwars$name)
+)
+
+body <- dashboardBody(
+  textOutput("name")
+)
+
+ui <- dashboardPage(header = dashboardHeader(),
+                    sidebar = sidebar,
+                    body = body
+                    )
+
+server <- function(input, output) {
+  output$name <- renderText({
+      input$name
+    })
+}
+
+shiny::shinyApp(ui, server)
+
+
+# One benefit of a dashboard is the ability to examine real-time data
+# In shiny, this can be done using the reactiveFileReader() or reactivePoll() functions from the shiny package
+# For example, if we had our data saved as a .csv, we could read it in using reactiveFileReader() along with the readFunc set to read.csv
+
+# filepath <- "data.csv"
+
+# server <- function(input, output, session) {
+#   reactive_data <- reactiveFileReader(
+#     intervalMillis = 1000,
+#     session = session, 
+#     filePath = filepath,
+#     readFunc = read.csv
+#   )
+# }
+
+# We have our data saved as a .csv located at a url called starwars_url; this object is already loaded for your convinience
+# In order to read this in, we can set our own readFunc like this:
+
+# readFunc = function(filePath) { 
+#   read.csv(url(filePath))
+#   }
+
+# If this .csv were updated live, we would see the changes! Read in this real-time data using reactiveFileReader()
+
+starwars_url <- "http://s3.amazonaws.com/assets.datacamp.com/production/course_6225/datasets/starwars.csv"
+
+server <- function(input, output, session) {
+  reactive_starwars_data <- reactiveFileReader(
+  intervalMillis=1000,
+  session=session,
+  filePath=starwars_url,
+  readFunc = function(filePath) { 
+    read.csv(url(filePath))
+  }
+  )
+}
+
+ui <- dashboardPage(header = dashboardHeader(),
+                    sidebar = dashboardSidebar(),
+                    body = dashboardBody()
+                    )
+shinyApp(ui, server)
+
+
+server <- function(input, output, session) {
+  reactive_starwars_data <- reactiveFileReader(
+        intervalMillis = 1000,
+        session = session,
+        filePath = starwars_url,
+        readFunc = function(filePath) { 
+           read.csv(url(filePath))
+         }
+         )
+    
+  output$table <- renderTable({reactive_starwars_data()})
+}
+
+body <- dashboardBody(
+  tableOutput("table")
+)
+
+ui <- dashboardPage(header = dashboardHeader(),
+                    sidebar = dashboardSidebar(),
+                    body = body
+                    )
+shinyApp(ui, server)
+
+
+
+# starwars <- read.csv(starwars_filepath)
+# server <- function(input, output) { 
+# }
+
+
+# We have added dynamic content via subsetting a data frame based on using input and reading in real-time data
+# Now we are going to allow the user to input task_data to determine task items
+# Recall that we can use an apply() function to iterate over a data frame, applying the taskItem() function to each row
+
+# tasks <- apply(data, 1, function(row) { 
+#   taskItem(text = row[["text"]],
+#            value = row[["value"]])
+# })
+# dropdownMenu(type = "tasks", .list = tasks)
+
+# You have a data frame (already loaded) called task_data with columns text and value
+# Use this to create a task drop down menu
+
+task_data <- data.frame(stringsAsFactors=FALSE, 
+                        text=c("find 20 hidden mickeys on the Tower of Terror", "Find a paint brush on Tom Sawyer Island", "Meet Chewbacca"), 
+                        value=c(60, 0, 100)
+                        )
+task_data
+
+server <- function(input, output) {
+  output$task_menu <- renderMenu({
+      tasks <- apply(task_data, 1, function(row) { taskItem(text = row[["text"]], value = row[["value"]]) } )
+      dropdownMenu(type = "tasks", .list = tasks)
+  })
+}
+
+header <- dashboardHeader(dropdownMenuOutput("task_menu"))
+
+ui <- dashboardPage(header = header,
+                    sidebar = dashboardSidebar(),
+                    body = dashboardBody()
+                    )
+shinyApp(ui, server)
+
+
+# In addition to updating the task drop down menus reactively, it is possible to create reactive boxes in the body
+# Here, you have a clickable action button in your sidebar
+# You want to update a value box each time the user clicks the action button
+# The valueBox() function will create a value box in the body
+# This takes the following form:
+
+# valueBox(value = 10, subtitle = "There are ten things here!")
+
+sidebar <- dashboardSidebar(
+  actionButton("click", "Update click box")
+) 
+
+server <- function(input, output) {
+  output$click_box <- renderValueBox({
+    valueBox(
+      value=input$click,
+      subtitle="Click Box"
+    )
+  })
+}
+
+body <- dashboardBody(
+      valueBoxOutput("click_box")
+ )
+
+
+ui <- dashboardPage(header = dashboardHeader(),
+                    sidebar = sidebar,
+                    body = body
+                    )
+shinyApp(ui, server)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Customizing Style  
+  
+
+	
 
 
 	
