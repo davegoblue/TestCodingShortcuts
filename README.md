@@ -990,3 +990,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_b captures Building Dashboards with shinydashboard - Chapter 1 (Building Static Dashboards)  
 * DataCamp_Insights_v003_b captures Building Dashboards with shinydashboard - Chapter 2 (Building Dynamic Dashboards)  
   
+### Expansions week of 28-MAY-2018  
+* DataCamp_Insights_v003_b captures Building Dashboards with shinydashboard - Chapter 3 (Customizing Style)  
+  
