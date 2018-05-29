@@ -992,4 +992,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 28-MAY-2018  
 * DataCamp_Insights_v003_b captures Building Dashboards with shinydashboard - Chapter 3 (Customizing Style)  
+* DataCamp_Insights_v003_b captures Building Dashboards with shinydashboard - Chapter 4 (Case Study)  
   
