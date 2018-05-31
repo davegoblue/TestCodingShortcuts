@@ -13310,6 +13310,168 @@ extractAndPlot(lmerModel)
   
 Chapter 2 - Linear Mixed-Effect Models  
   
+Linear mixed effect model - Birth rates data:  
+  
+* Small populations are highly sensitive to stochastic effects - if the mean is 1, a group of 5 might have 0 or 10  
+* Questions about how counties may impact birth rates, over and above other demographic factors  
+	* Example of plotting birth rate vs. county - will see both the highest and lowest birth rates in the smallest counties  
+* Random effect syntax for the lmer model includes  
+	* (1 | group) - random intercept with fixed mean  
+    * (1 | g1/g2) - intercepts vary among g1 and g2 within g2  
+    * (1 | g1) + (1 | g2) - random intercepts for two variables  
+    * x + (x | g) - correlated random slope and intercept  
+    * x + (x || g) - uncorrelated random slope and intercept  
+    * See lme4 documentation for additional details  
+  
+Understanding and reporting the outputs of lmer:  
+  
+* The output from lmer is similar to the output from lm, but with some key differences - if using print(), will see  
+	* The method used is REML - restricted maximum likelihood - which tends to solve better than maximum likelihood for these problems  
+    * There is an REML convergence criteria, which can be a helpful diagnostic  
+    * Can see the standard deviations for both the state and the residual, along with the number of observations  
+    * Get the fixed effects coefficients in a similar form as lm()  
+* The summary() call on lmer produces several additional outputs  
+	* Residuals summary  
+    * Fixed effects estimates include SE and t-values (but not p-values)  
+    * Correlations of fixed effects  
+* Can grab only the fixed effects using fixef(myLMERObject)  
+	* Can grab only the random effects using ranef(myLMERObject), though these will not have confidence intervals  
+    * The random effects confidence intervals could be estimated using bootstrapping or Bayesian methods per the author of lme4 - but actual random effects are just unobserved random variables rather than parameters  
+* Can grab only the confidence intervals using confint(myLMERObject)  
+* Need to be careful in reporting the results - figures vs. tables vs. in-line descriptions  
+  
+Statistical inference with Maryland crime data:  
+  
+* The Maryland crime data is available on data.gov - interesting for many public and private purposes  
+* The null hypothsis test can be used with LMER - frequentist approach  
+	* By default, lmer does not provide p-values, as there is ongoing debate as to the degrees of freedom and impact on reported results  
+    * Can use lmerTest package to calculate and report on the p-values  
+* Can use ANOVA to look at the variability explained by one model versus another model, and the associated degrees of freedom needed  
+  
+Example code includes:  
+```{r}
+
+# Read in births data
+rawBirths <- read.csv("./RInputFiles/countyBirthsDataUse.csv")
+countyBirthsData <- rawBirths
+str(countyBirthsData)
+
+
+# First, build a lmer with state as a random effect. Then look at the model's summary and the plot of residuals. 
+birthRateStateModel <- lme4::lmer(BirthRate ~ (1|State), data=countyBirthsData)
+summary(birthRateStateModel)
+plot(birthRateStateModel)
+
+# Next, plot the predicted values from the model ontop of the plot shown during the video.
+countyBirthsData$birthPredictState <- predict(birthRateStateModel, countyBirthsData)
+ggplot() + theme_minimal() +
+    geom_point(data =countyBirthsData, aes(x = TotalPopulation, y = BirthRate)) + 
+    geom_point(data = countyBirthsData, aes(x = TotalPopulation, y = birthPredictState),
+               color = 'blue', alpha = 0.5
+               )
+
+# Include the AverageAgeofMother as a fixed effect within the lmer and state as a random effect
+ageMotherModel <- lme4::lmer( BirthRate ~ AverageAgeofMother + (1|State), data=countyBirthsData)
+summary(ageMotherModel)
+
+# Compare the random-effect model to the linear effect model 
+summary(lm(BirthRate ~ AverageAgeofMother, data = countyBirthsData))
+
+
+# Include the AverageAgeofMother as a correlated random-effect slope parameter
+ageMotherModelRandomCorrelated <- lme4::lmer(BirthRate ~ AverageAgeofMother + (AverageAgeofMother|State),
+                       countyBirthsData)
+summary(ageMotherModelRandomCorrelated)
+
+
+# Include the AverageAgeofMother as a correlated random-effect slope parameter
+ageMotherModelRandomUncorrelated <- lme4::lmer(BirthRate ~ AverageAgeofMother + 
+                                                    (AverageAgeofMother || State), data=countyBirthsData
+                                               )
+summary(ageMotherModelRandomUncorrelated)
+
+
+out <- ageMotherModelRandomUncorrelated
+
+# Extract the fixed-effect coefficients
+lme4::fixef(out)
+
+# Extract the random-effect coefficients
+lme4::ranef(out)
+
+# Estimate the confidence intervals 
+(ciOut <- confint(out))
+
+
+# Technical note: Extracting out the regression coefficients from lmer is tricky (see discussion between the lmer and broom authors development)
+# Extract out the parameter estimates and confidence intervals and manipulate the data
+dataPlot <- data.frame(cbind( lme4::fixef(out), ciOut[ 4:5, ]))
+rownames(dataPlot)[1] <- "Intercept"
+colnames(dataPlot) <- c("mean", "l95", "u95")
+dataPlot$parameter <- rownames(dataPlot)
+
+# Print the new dataframe
+print(dataPlot)
+
+# Plot the results using ggplot2
+ggplot(dataPlot, aes(x = parameter, y = mean,
+                     ymin = l95, ymax = u95)) +
+    geom_hline( yintercept = 0, color = 'red' ) +
+    geom_linerange() + geom_point() + coord_flip() + theme_minimal()
+
+
+
+# Read in crime data
+rawCrime <- read.csv("./RInputFiles/MDCrime.csv")
+MDCrime <- rawCrime
+str(MDCrime)
+
+
+plot1 <- ggplot(data = MDCrime, aes(x = Year, y = Crime, group = County)) +
+    geom_line() + theme_minimal() +
+    ylab("Major crimes reported per county")
+print(plot1)
+
+plot1 + geom_smooth(method = 'lm')
+
+
+# Null hypothesis testing uses p-values to see if a variable is "significant"
+# Recently, the abuse and overuse of null hypothesis testing and p-values has caused the American Statistical Association to issue a statement about the use of p-values
+# Because of these criticisms and other numerical challenges, Doug Bates (the creator of the lme4 package) does not include p-values as part of his package
+# However, you may still want to estimate p-values, because p-values are sill commonly used. Several packages exist, including the lmerTest package
+# https://www.amstat.org/asa/files/pdfs/P-ValueStatement.pdf
+
+# Load lmerTest
+# library(lmerTest)
+
+# Fit the model with Year as both a fixed and random-effect
+lme4::lmer(Crime ~ Year + (1 + Year | County) , data = MDCrime)
+
+# Fit the model with Year2 rather than Year
+out <- lme4::lmer(Crime ~ Year2 + (1 + Year2 | County) , data = MDCrime)
+
+# Examine the model's output
+summary(out)
+
+
+## Build the Null model with only County as a random-effect
+null_model <- lme4::lmer(Crime ~ (1 | County) , data = MDCrime)
+
+## Build the Year2 model with Year2 as a fixed and random slope and County as the random-effect
+year_model <- lme4::lmer(Crime ~ Year2 + (1 + Year2 | County) , data = MDCrime)
+
+## Compare the two models using an anova
+anova(null_model, year_model)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Generalized Linear Mixed-Effect Models  
+  
+
 
 
 
