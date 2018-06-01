@@ -993,7 +993,9 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 28-MAY-2018  
 * DataCamp_Insights_v003_b captures Building Dashboards with shinydashboard - Chapter 3 (Customizing Style)  
 * DataCamp_Insights_v003_b captures Building Dashboards with shinydashboard - Chapter 4 (Case Study)  
-* DataCamp_Insights_v003_b captures Hierarchical and Mixed Effects Models - Chapter 1 (Overview and Introduction)  
-* DataCamp_Insights_v003_b captures Hierarchical and Mixed Effects Models - Chapter 2 (Linear Mixed Effect Models)  
-* DataCamp_Insights_v003_b captures Hierarchical and Mixed Effects Models - Chapter 3 (Generalized Linear Mixed Effect Models)  
+* Split DataCamp_Insights_v003_b so new components can go in DataCamp_Insights_v003_c to stay under DLL limit  
+* DataCamp_Insights_v003_b captures everything prior to Hierarchical and Mixed Effects Models  
+* DataCamp_Insights_v003_c captures Hierarchical and Mixed Effects Models - Chapter 1 (Overview and Introduction)  
+* DataCamp_Insights_v003_c captures Hierarchical and Mixed Effects Models - Chapter 2 (Linear Mixed Effect Models)  
+* DataCamp_Insights_v003_c captures Hierarchical and Mixed Effects Models - Chapter 3 (Generalized Linear Mixed Effect Models)  
   
