@@ -998,4 +998,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Hierarchical and Mixed Effects Models - Chapter 1 (Overview and Introduction)  
 * DataCamp_Insights_v003_c captures Hierarchical and Mixed Effects Models - Chapter 2 (Linear Mixed Effect Models)  
 * DataCamp_Insights_v003_c captures Hierarchical and Mixed Effects Models - Chapter 3 (Generalized Linear Mixed Effect Models)  
+* DataCamp_Insights_v003_c captures Hierarchical and Mixed Effects Models - Chapter 4 (Repeated Measures)  
   
