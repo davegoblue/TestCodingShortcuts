@@ -1004,4 +1004,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 04-JUN-2018  
 * DataCamp_Insights_v003_c captures Forecasting Product Demand in R - Chapter 2 (Components of Demand)  
 * DataCamp_Insights_v003_c captures Forecasting Product Demand in R - Chapter 3 (Blending Regression with Time Series)  
+* DataCamp_Insights_v003_c captures Forecasting Product Demand in R - Chapter 4 (Hierarchical Forecasting)  
   
