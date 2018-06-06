@@ -2220,6 +2220,266 @@ print(MAPE)</code></pre>
 <pre><code>## [1] 32.28549</code></pre>
 <hr />
 <p>Chapter 4 - Hierarchical Forecasting</p>
+<p>Bottom-Up Hierarchical Forecasting:</p>
+<ul>
+<li>The hierarchical data structuring can be an advantage in forecasting, provided that the data has a natural hierarchy<br />
+</li>
+<li>The sum of all the lower-level forecasts should equal the higher-level forecasts
+<ul>
+<li>Bottom-up: Forecast at the lowest level and aggregate (easiest but requires the most number of forecasts)<br />
+</li>
+<li>Top-down: Forecast at the top level and the apply downwards<br />
+</li>
+<li>Middle-out: Forecast at the middle levels and then apply both upwards and downwards</li>
+</ul></li>
+</ul>
+<p>Top-Down Hierarchical Forecasting:</p>
+<ul>
+<li>The top-down forecasting process is typically quicker but less accurate than the bottom-up forecasting process<br />
+</li>
+<li>Two techniques available for top-down reconciliation
+<ul>
+<li>Average of historical proportions - mean percentage that each component contributes to the total (calculated by sub-component such as week)<br />
+</li>
+<li>Proportion of historical averages - mean percentage that each component contributes to the total (calculated by aggregate)<br />
+</li>
+</ul></li>
+<li>Reconciled forecasts at lower levels are typically less accurate than the direct forecast of the lower levels</li>
+</ul>
+<p>Middle-Out Hierarchical Forecasting:</p>
+<ul>
+<li>Bottom-up forecasting is higher quality but more time-consuming than top-down forecasting<br />
+</li>
+<li>The middle-out forecasting method is a sometimes successful blend of the methods, getting decent accuracy at a lesser time commitment</li>
+</ul>
+<p>Wrap up:</p>
+<ul>
+<li>Using time series to forecast demand forward<br />
+</li>
+<li>Incorporating external factors using linear regression<br />
+</li>
+<li>Blending time series and regression approaches<br />
+</li>
+<li>Top-down, bottom-up, middle-out approaches to aggregation and forecasting at various levels (hierarchical)<br />
+</li>
+<li>Can extend by looking at cross-elasticities (impact of competitor pricing)<br />
+</li>
+<li>Can better forecast proportions using time series analysis<br />
+</li>
+<li>Additional demand forecasting models include neural networks, exponential smoothing, etc.</li>
+</ul>
+<p>Example code includes:</p>
+<pre class="r"><code># Build a time series model 
+MET_sp_model_arima &lt;- auto.arima(MET_sp)
+
+# Forecast the time series model for 22 periods
+for_MET_sp &lt;- forecast(MET_sp_model_arima, h=22)
+
+# Create an xts object
+for_MET_sp_xts &lt;- xts(for_MET_sp$mean, order.by=dates_valid)
+
+MET_sp_v &lt;- MET_sp[&quot;2017&quot;]
+
+# Calculate the MAPE
+MAPE &lt;- 100 * mean(abs(for_MET_sp_xts - MET_sp_v) / MET_sp_v)
+print(MAPE)</code></pre>
+<pre><code>## [1] 6.703272</code></pre>
+<pre class="r"><code>MET_sp_train &lt;- bev_xts_train %&gt;%
+    transform(log_sales = log(MET.sp), log_price=log(MET.sp.p))
+MET_sp_train &lt;- MET_sp_train[, c(&quot;log_sales&quot;, &quot;log_price&quot;)]
+MET_sp_train$newyear &lt;- 0
+MET_sp_train$valentine &lt;- 0
+MET_sp_train$christmas &lt;- 0
+MET_sp_train$mother &lt;- 0
+
+MET_sp_train[index(MET_sp_train) %in% as.Date(c(&quot;2014-12-28&quot;, &quot;2015-12-27&quot;, &quot;2016-12-25&quot;)), &quot;newyear&quot;] &lt;- 1
+MET_sp_train[index(MET_sp_train) %in% as.Date(c(&quot;2014-02-09&quot;, &quot;2015-02-08&quot;, &quot;2016-02-07&quot;)), &quot;valentine&quot;] &lt;- 1
+MET_sp_train[index(MET_sp_train) %in% as.Date(c(&quot;2014-12-21&quot;, &quot;2015-12-20&quot;, &quot;2016-12-18&quot;)), &quot;christmas&quot;] &lt;- 1
+MET_sp_train[index(MET_sp_train) %in% as.Date(c(&quot;2014-05-04&quot;, &quot;2015-05-03&quot;, &quot;2016-05-01&quot;)), &quot;mother&quot;] &lt;- 1
+
+
+# THE BELOW IS TOTAL NONSENSE
+# Build a regression model
+model_MET_sp &lt;- lm(log_sales ~ log_price + newyear + valentine + christmas + mother, data = MET_sp_train)
+
+
+MET_sp_valid &lt;- as.data.frame(bev_xts_valid) %&gt;%
+    mutate(log_sales = log(MET.sp), log_price=log(MET.sp.p)) %&gt;%
+    select(&quot;log_sales&quot;, &quot;log_price&quot;)
+MET_sp_valid$newyear &lt;- 0
+MET_sp_valid$valentine &lt;- 0
+MET_sp_valid$christmas &lt;- 0
+MET_sp_valid$mother &lt;- 0  
+
+MET_sp_valid[7, &quot;valentine&quot;] &lt;- 1
+MET_sp_valid[19, &quot;mother&quot;] &lt;- 1
+MET_sp_valid$log_sales &lt;- NULL
+
+
+# Forecast the regression model using the predict function 
+pred_MET_sp &lt;- predict(model_MET_sp, MET_sp_valid)
+
+# Exponentiate your predictions and create an xts object
+pred_MET_sp &lt;- exp(pred_MET_sp)
+pred_MET_sp_xts &lt;- xts(pred_MET_sp, order.by = dates_valid)
+
+# Calculate MAPE
+MAPE &lt;- 100*mean(abs((pred_MET_sp_xts - MET_sp_v)/MET_sp_v))
+print(MAPE)</code></pre>
+<pre><code>## [1] 6.55473</code></pre>
+<pre class="r"><code># Ensemble the two forecasts
+for_MET_sp_en &lt;- 0.5 * (for_MET_sp_xts + pred_MET_sp_xts)
+
+# Calculate the MAPE
+MAPE &lt;- 100 * mean(abs(for_MET_sp_en - MET_sp_v) / MET_sp_v)
+print(MAPE)</code></pre>
+<pre><code>## [1] 6.048594</code></pre>
+<pre class="r"><code># Copy over pred_MET_lo_xts
+pred_MET_lo_xts &lt;- xts(c(2960.6, 2974.1, 2943.2, 2948.6, 2915.6, 2736.4, 2953.9, 3199.4, 2934, 2898.7, 3027.7, 3165.9, 3073.1, 2842.7, 2928.7, 3070.2, 2982.2, 3018, 3031.9, 2879.4, 2993.2, 2974.1), order.by=dates_valid)
+
+
+# Calculate the metropolitan regional sales forecast
+for_MET_total &lt;- pred_MET_hi_xts + for_MET_sp_en + pred_MET_lo_xts
+
+# Calculate a validation data set 
+MET_t_v &lt;- bev_xts_valid[,&quot;MET.hi&quot;] + bev_xts_valid[,&quot;MET.lo&quot;] + bev_xts_valid[,&quot;MET.sp&quot;]
+
+# Calculate the MAPE
+MAPE &lt;- 100 * mean(abs(for_MET_total - MET_t_v) / MET_t_v)
+print(MAPE)</code></pre>
+<pre><code>## [1] 10.61952</code></pre>
+<pre class="r"><code># Create the MET_total data
+MET_total &lt;- xts(data.frame(MET.hi=c(5942, 5600, 5541, 6892, 5586, 5943, 6329, 6693, 6938, 6138, 6361, 6378, 5423, 5097, 4937, 5496, 6870, 6626, 6356, 5657, 6577, 7202, 7381, 7404, 7204, 6667, 6153, 6035, 5633, 5283, 5178, 4758, 5058, 5254, 5954, 6166, 6247, 6304, 7202, 6662, 6814, 6174, 5412, 5380, 5674, 6472, 6912, 7404, 8614, 8849, 7174, 6489, 7174, 6555, 6402, 7671, 5012, 4790, 5075, 5238, 5615, 6113, 7706, 7811, 7898, 7232, 6585, 5870, 7084, 5125, 5330, 5553, 6349, 6195, 6271, 5851, 5333, 5854, 5609, 5649, 6051, 6409, 5786, 5190, 5085, 4949, 5151, 5147, 5426, 5509, 6956, 7870, 8224, 6685, 6153, 5802, 5244, 5162, 5036, 5025, 8378, 8944, 7109, 7605, 7846, 7598, 8012, 9551, 6102, 5366, 4932, 4962, 5392, 6194, 7239, 7621, 7460, 7097, 6596, 5848, 8306, 5344, 5848, 6341, 7364, 7269, 7053, 6682, 6971, 7521, 7063, 6298, 6003, 5227, 5047, 4877, 4851, 4628, 4516, 4442, 4935, 5181, 5431, 5866, 5919, 5704, 5957, 6019, 5962, 6021, 5880, 5674, 7439, 7415)),
+                 order.by=dates_train
+                 )
+
+# Build a regional time series model
+MET_t_model_arima &lt;- auto.arima(MET_total)
+
+# Calculate a 2017 forecast for 22 periods
+for_MET_t &lt;- forecast(MET_t_model_arima, h=22)
+
+# Make an xts object from your forecast
+for_MET_t_xts &lt;- xts(for_MET_t$mean, order.by=dates_valid)
+
+# Calculate the MAPE
+MAPE &lt;- 100 * mean(abs(for_MET_t_xts - MET_t_v) / MET_t_v)
+print(MAPE)</code></pre>
+<pre><code>## [1] 17.10332</code></pre>
+<pre class="r"><code># Calculate the average historical proportions
+prop_hi &lt;- mean(MET_hi/MET_total)
+prop_lo &lt;- mean(MET_lo/MET_total)
+prop_sp &lt;- mean(MET_sp/MET_total)
+
+# Distribute out your forecast to each product
+for_prop_hi &lt;- prop_hi*for_MET_t_xts
+for_prop_lo &lt;- prop_lo*for_MET_t_xts
+for_prop_sp &lt;- prop_sp*for_MET_t_xts
+
+# Calculate the MAPE's for each product
+MAPE_hi &lt;- 100 * mean(abs(for_prop_hi - MET_hi_v) / MET_hi_v)
+print(MAPE_hi)</code></pre>
+<pre><code>## [1] 38.7318</code></pre>
+<pre class="r"><code>MET_lo_v &lt;- bev_xts_valid[,&quot;MET.lo&quot;]
+MAPE_lo &lt;- 100 * mean(abs(for_prop_lo - MET_lo_v) / MET_lo_v)
+print(MAPE_lo)</code></pre>
+<pre><code>## [1] 10.70649</code></pre>
+<pre class="r"><code>MAPE_sp &lt;- 100 * mean(abs(for_prop_sp - MET_sp_v) / MET_sp_v)
+print(MAPE_sp)</code></pre>
+<pre><code>## [1] 6.232888</code></pre>
+<pre class="r"><code># Calculate the average historical proportions
+prop_hi_2 &lt;- mean(MET_hi) / mean(MET_total)
+prop_lo_2 &lt;- mean(MET_lo) / mean(MET_total)
+prop_sp_2 &lt;- mean(MET_sp) / mean(MET_total)
+
+# Distribute out your forecast to each product
+for_prop_hi_2 &lt;- prop_hi_2 * for_MET_t_xts
+for_prop_lo_2 &lt;- prop_lo_2 * for_MET_t_xts
+for_prop_sp_2 &lt;- prop_sp_2 * for_MET_t_xts
+
+# Calculate the MAPE's for each product
+MAPE_hi &lt;- 100 * mean(abs(for_prop_hi_2 - MET_hi_v) / MET_hi_v)
+print(MAPE_hi)</code></pre>
+<pre><code>## [1] 38.33559</code></pre>
+<pre class="r"><code>MAPE_lo &lt;- 100 * mean(abs(for_prop_lo_2 - MET_lo_v) / MET_lo_v)
+print(MAPE_lo)</code></pre>
+<pre><code>## [1] 8.450784</code></pre>
+<pre class="r"><code>MAPE_sp &lt;- 100 * mean(abs(for_prop_sp_2 - MET_sp_v) / MET_sp_v)
+print(MAPE_sp)</code></pre>
+<pre><code>## [1] 6.517045</code></pre>
+<pre class="r"><code>SEC_total &lt;- xts(data.frame(SEC.hi=c(700, 775, 789, 863, 765, 759, 757, 747, 746, 709, 749, 786, 796, 726, 727, 723, 778, 755, 739, 740, 723, 695, 727, 707, 725, 684, 667, 698, 727, 722, 748, 695, 742, 739, 715, 724, 686, 671, 688, 682, 710, 700, 672, 680, 695, 780, 751, 693, 809, 881, 703, 712, 768, 796, 808, 904, 641, 662, 693, 725, 719, 736, 715, 722, 732, 745, 689, 705, 811, 739, 744, 700, 745, 735, 732, 722, 721, 732, 750, 714, 752, 677, 731, 674, 720, 675, 741, 722, 715, 719, 649, 697, 743, 733, 772, 698, 690, 734, 713, 644, 788, 833, 749, 731, 670, 675, 675, 993, 773, 751, 697, 677, 750, 723, 780, 763, 721, 701, 704, 684, 985, 791, 731, 714, 704, 694, 685, 652, 708, 754, 747, 705, 711, 699, 712, 745, 706, 665, 666, 692, 676, 696, 689, 697, 689, 717, 697, 708, 660, 707, 715, 680, 922, 888)), order.by=dates_train
+                 )
+
+# Build a time series model for the region
+SEC_t_model_arima &lt;- auto.arima(SEC_total)
+
+# Forecast the time series model
+for_SEC_t &lt;- forecast(SEC_t_model_arima, h=22)
+
+# Make into an xts object
+for_SEC_t_xts &lt;- xts(for_SEC_t$mean, order.by=dates_valid)
+
+SEC_t_v &lt;- bev_xts_valid$SEC.hi + bev_xts_valid$SEC.lo
+# Calculate the MAPE
+MAPE &lt;- 100 * mean(abs(for_SEC_t_xts - SEC_t_v) / SEC_t_v)
+print(MAPE)</code></pre>
+<pre><code>## [1] 4.742324</code></pre>
+<pre class="r"><code>SEC_hi &lt;- bev_xts_train[, &quot;SEC.hi&quot;]
+SEC_lo &lt;- bev_xts_train[, &quot;SEC.lo&quot;]
+SEC_hi_v &lt;- bev_xts_valid[, &quot;SEC.hi&quot;]
+SEC_lo_v &lt;- bev_xts_valid[, &quot;SEC.lo&quot;]
+
+# Calculate the average of historical proportions
+prop_hi &lt;- mean(SEC_hi / SEC_total)
+prop_lo &lt;- mean(SEC_lo / SEC_total)
+
+# Distribute the forecast
+for_prop_hi &lt;- prop_hi * for_SEC_t_xts
+for_prop_lo &lt;- prop_lo * for_SEC_t_xts
+
+# Calculate a MAPE for each product
+MAPE_hi &lt;- 100 * mean(abs(for_prop_hi - SEC_hi_v) / SEC_hi_v)
+print(MAPE_hi)</code></pre>
+<pre><code>## [1] 7.988508</code></pre>
+<pre class="r"><code>MAPE_lo &lt;- 100 * mean(abs(for_prop_lo - SEC_lo_v) / SEC_lo_v)
+print(MAPE_lo)</code></pre>
+<pre><code>## [1] 5.202529</code></pre>
+<pre class="r"><code># Copy over for_M_t_xts data
+for_M_t_xts &lt;- xts(c(2207, 2021, 2010, 2052, 2075, 2074, 2065, 2058, 2056, 2055, 2053, 2052, 2050, 2049, 2048, 2047, 2046, 2045, 2044, 2043, 2043, 2042), order.by=dates_valid)
+
+# Calculate the state sales forecast: for_state
+for_state = for_SEC_t_xts + for_MET_t_xts + for_M_t_xts
+
+# See the forecasts
+for_state</code></pre>
+<pre><code>##                [,1]
+## 2017-01-01 9996.689
+## 2017-01-08 9525.915
+## 2017-01-15 9342.760
+## 2017-01-22 9269.321
+## 2017-01-29 9214.912
+## 2017-02-05 9162.005
+## 2017-02-12 9118.199
+## 2017-02-19 9087.859
+## 2017-02-26 9070.209
+## 2017-03-05 9058.715
+## 2017-03-12 9049.677
+## 2017-03-19 9043.959
+## 2017-03-26 9038.794
+## 2017-04-02 9035.673
+## 2017-04-09 9033.250
+## 2017-04-16 9031.296
+## 2017-04-23 9029.656
+## 2017-04-30 9028.227
+## 2017-05-07 9026.939
+## 2017-05-14 9025.746
+## 2017-05-21 9025.617
+## 2017-05-28 9024.530</code></pre>
+<hr />
+</div>
+<div id="hr-analytics-in-r-exploring-employee-data" class="section level3">
+<h3><em>HR Analytics in R: Exploring Employee Data</em></h3>
+<p>Chapter 1 - Identifying the Best Recruiting Source</p>
 </div>
 </div>
 
