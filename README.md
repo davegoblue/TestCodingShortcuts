@@ -1007,4 +1007,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Forecasting Product Demand in R - Chapter 4 (Hierarchical Forecasting)  
 * DataCamp_Insights_v003_c captures HR Analytics in R - Chapter 1 (Identifying Best Recruiting Sources)  
 * DataCamp_Insights_v003_c captures HR Analytics in R - Chapter 2 (Drivers of Low Engagement)  
+* DataCamp_Insights_v003_c captures HR Analytics in R - Chapter 3 (New Hire Pay)  
   
