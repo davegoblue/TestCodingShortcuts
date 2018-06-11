@@ -1010,3 +1010,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures HR Analytics in R - Chapter 3 (New Hire Pay)  
 * DataCamp_Insights_v003_c captures HR Analytics in R - Chapter 4 (Performance Rating Consistency)  
   
+### Expansions week of 11-JUN-2018  
+* DataCamp_Insights_v003_c captures HR Analytics in R - Chapter 5 (Employee Safety Data)  
+  
