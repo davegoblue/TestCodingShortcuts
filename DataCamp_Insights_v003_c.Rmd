@@ -1969,9 +1969,138 @@ results %>%
   
 Chapter 2 - Stack Overflow Developer Data  
   
+Essential copying and pasting from Stack Overflow (largest and most trusted developer community):  
+  
+* Annual survey of developer perspectives on Stack Overflow - can be used for predictive modeling  
+* Data is made available publicly at insights.stackoverflow.com/survey  
+* Key question is "what makes a developer more likely to work remotely" (size of company, geography of employee, etc.)  
+	* Data are calss imbalanced, with many more Non-Remote employees than Remote employees  
+    * Best first step is the simplest model - logit, without any tricks  
+    * simple_glm <- stackoverflow %>% select(-Respondent) %>% glm(Remote ~ ., family = "binomial", + data = .)  # Remote ~ . Means "all variables" while data=. Means from the piped dataset  
+  
+Dealing with imbalanced data:  
+  
+* Class imbalance is a common problem that can negatively impact model performance  
+	* This dataset has 10x the number of non-remote, which can influence models to just start predicting non-remote in all cases  
+* One approach to class imbalance is upsampling, basically running resampling with replacement on the small class until it is the same size as the large class  
+	* Simple to implement, but with the risk of over-fitting  
+    * up_train <- upSample(x = select(training, -Remote), y = training$Remote, yname = "Remote") %>% as_tibble()  
+    * stack_glm <- train(Remote ~ ., method = "glm", family = "binomial", data = training, trControl = trainControl(method = "boot", sampling = "up"))  
+  
+Predicting remote status:  
+  
+* Classification models can include logistic regression and random forests  
+	* stack_glm <- train(Remote ~ ., method = "glm", family = "binomial", data = training, trControl = trainControl(method = "boot", sampling = "up"))  
+    * stack_rf <- train(Remote ~ ., method = "rf", data = training, trControl = trainControl(method = "boot", sampling = "up"))  
+* Classification models can be evaluated using the confusion matrix  
+	* confusionMatrix(predict(stack_glm, testing), testing$Remote)  
+    * yardstick::accuracy(testing_results, truth = Remote, estimate = `Logistic regression`)  
+    * yardstick::ppv(testing_results, truth = Remote, estimate = `Logistic regression`)  
+    * yardstick::npv(testing_results, truth = Remote, estimate = `Logistic regression`)  
+  
+Example code includes:  
+```{r cache=TRUE}
 
-	
+stackoverflow <- readr::read_csv("./RInputFiles/stackoverflow.csv")
+stackoverflow$Remote <- factor(stackoverflow$Remote, levels=c("Not remote", "Remote"))
+str(stackoverflow, give.attr = FALSE)
 
+
+# Print stackoverflow
+stackoverflow
+
+# First count for Remote
+stackoverflow %>% 
+    count(Remote, sort = TRUE)
+
+# then count for Country
+stackoverflow %>% 
+    count(Country, sort = TRUE)
+
+
+ggplot(stackoverflow, aes(x=Remote, y=YearsCodedJob)) +
+    geom_boxplot() +
+    labs(x = NULL,
+         y = "Years of professional coding experience") 
+
+
+# Build a simple logistic regression model
+simple_glm <- stackoverflow %>%
+        select(-Respondent) %>%
+        glm(Remote ~ .,
+            family = "binomial",
+            data = .)
+
+# Print the summary of the model
+summary(simple_glm)
+
+
+stack_select <- stackoverflow %>%
+    select(-Respondent)
+
+# Split the data into training and testing sets
+set.seed(1234)
+in_train <- caret::createDataPartition(stack_select$Remote, p=0.8, list = FALSE)
+training <- stack_select[in_train,]
+testing <- stack_select[-in_train,]
+
+
+up_train <- caret::upSample(x = select(training, -Remote), y = training$Remote, yname = "Remote") %>%
+    as_tibble()
+
+up_train %>%
+    count(Remote)
+
+
+# Sub-sample to 5% of original
+inUse <- sample(1:nrow(training), round(0.05*nrow(training)), replace=FALSE)
+useTrain <- training[sort(inUse), ]
+
+# Build a logistic regression model
+stack_glm <- caret::train(Remote ~ ., method="glm", family="binomial", data = training, 
+                          trControl = trainControl(method = "boot", sampling = "up")
+                          )
+
+# Print the model object 
+stack_glm
+
+
+# Build a random forest model
+stack_rf <- caret::train(Remote ~ ., method="rf", data = useTrain, 
+                         trControl = trainControl(method = "boot", sampling="up")
+                         )
+
+# Print the model object
+stack_rf
+
+
+# Confusion matrix for logistic regression model
+caret::confusionMatrix(predict(stack_glm, testing), testing$Remote)
+
+# Confusion matrix for random forest model
+caret::confusionMatrix(predict(stack_rf, testing), testing$Remote)
+
+
+# Predict values
+testing_results <- testing %>%
+    mutate(`Logistic regression` = predict(stack_glm, testing), `Random forest` = predict(stack_rf, testing))
+
+## Calculate accuracy
+yardstick::accuracy(testing_results, truth = Remote, estimate = `Logistic regression`)
+yardstick::accuracy(testing_results, truth = Remote, estimate = `Random forest`)
+
+## Calculate positive predict value
+yardstick::ppv(testing_results, truth = Remote, estimate = `Logistic regression`)
+yardstick::ppv(testing_results, truth = Remote, estimate = `Random forest`)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Voting  
+  
 
 
 
