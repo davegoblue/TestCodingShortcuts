@@ -2101,6 +2101,129 @@ yardstick::ppv(testing_results, truth = Remote, estimate = `Random forest`)
   
 Chapter 3 - Voting  
   
+Predicting voter turnout from survey data:  
+  
+* Survey data available from https://www.voterstudygroup.org/publications/2016-elections/data  
+	* Opinions about political and economic topics  
+    * Includes whether the voter turned out (voted), based on self-reporting, in the 2016 election  
+    * Data are coded as integers, requiring a data dictionary to map the questions and responses to what they mean  
+  
+Vote 2016:  
+  
+* Exploratory data analysis will help with learning about the underlying dataset  
+	* There are differences on many of the individual dimensions between voters and non-voters  
+    * A good first step can be to start with the very simplest model, Dependent ~ .  
+  
+Cross-validation is the process of sub-dividing the data into folds, with each fold used once as the validation set:  
+  
+* Allows for more accurate estimates of model performance on out-of-sample error  
+* Each process of CV will work through the data k times (assuming there are k folds)  
+	* Repeated CV is the process of running CV multiple times (this is particularly well suited to parallel processing)  
+  
+Comparing model performance:  
+  
+* Random forest models tend to be more powerful and capable of classifying the training data (and thus subject to risk of overfits and associated poor quality of test set predictions)  
+  
+Example code includes:  
+```{r cache=TRUE}
+
+voters <- readr::read_csv("./RInputFiles/voters.csv")
+voters$turnout16_2016 <- factor(voters$turnout16_2016, levels=c("Did not vote", "Voted"))
+str(voters, give.attr = FALSE)
+
+# Print voters
+voters
+
+# How many people voted?
+voters %>%
+    count(turnout16_2016)
+
+
+# How do the reponses on the survey vary with voting behavior?
+voters %>%
+    group_by(turnout16_2016) %>%
+    summarize(`Elections don't matter` = mean(RIGGED_SYSTEM_1_2016 <= 2),
+              `Economy is getting better` = mean(econtrend_2016 == 1),
+              `Crime is very important` = mean(imiss_a_2016 == 2))
+
+
+## Visualize difference by voter turnout
+voters %>%
+    ggplot(aes(econtrend_2016, ..density.., fill = turnout16_2016)) +
+    geom_histogram(alpha = 0.5, position = "identity", binwidth = 1) +
+    labs(title = "Overall, is the economy getting better or worse?")
+
+
+# Remove the case_indetifier column
+voters_select <- voters %>%
+        select(-case_identifier)
+
+# Build a simple logistic regression model
+simple_glm <- glm(turnout16_2016 ~ .,  family = "binomial", 
+                  data = voters_select)
+
+# Print the summary                  
+summary(simple_glm)
+
+
+# Split data into training and testing sets
+set.seed(1234)
+in_train <- caret::createDataPartition(voters_select$turnout16_2016, p = 0.8, list = FALSE)
+training <- voters_select[in_train, ]
+testing <- voters_select[-in_train, ]
+
+
+# Perform logistic regression with upsampling and no resampling
+vote_glm_1 <- caret::train(turnout16_2016 ~ ., method = "glm", family = "binomial", data = training,
+                           trControl = trainControl(method = "none", sampling = "up")
+                           )
+
+# Print vote_glm
+vote_glm_1
+
+
+useSmall <- sort(sample(1:nrow(training), round(0.1*nrow(training)), replace=FALSE))
+trainSmall <- training[useSmall, ]
+
+# Logistic regression
+vote_glm <- caret::train(turnout16_2016 ~ ., method = "glm", family = "binomial", data = trainSmall,
+                         trControl = trainControl(method = "repeatedcv", repeats = 2, sampling = "up")
+                         )
+
+# Print vote_glm
+vote_glm
+
+
+# Random forest
+vote_rf <- caret::train(turnout16_2016 ~ ., method = "rf", data = trainSmall,
+                        trControl = trainControl(method="repeatedcv", repeats=2, sampling = "up")
+                        )
+
+# Print vote_rf
+vote_rf
+
+
+# Confusion matrix for logistic regression model on training data
+caret::confusionMatrix(predict(vote_glm, trainSmall), trainSmall$turnout16_2016)
+
+# Confusion matrix for random forest model on training data
+caret::confusionMatrix(predict(vote_rf, trainSmall), trainSmall$turnout16_2016)
+
+# Confusion matrix for logistic regression model on testing data
+caret::confusionMatrix(predict(vote_glm, testing), testing$turnout16_2016)
+
+# Confusion matrix for random forest model on testing data
+caret::confusionMatrix(predict(vote_rf, testing), testing$turnout16_2016)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Nuns  
+  
+
 
 
 
