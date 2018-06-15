@@ -2223,7 +2223,153 @@ caret::confusionMatrix(predict(vote_rf, testing), testing$turnout16_2016)
   
 Chapter 4 - Nuns  
   
+Catholic sisters survey from 1967 - https://curate.nd.edu/show/0r967368551 with codebook at https://curate.nd.edu/downloads/0v838051f6x	 
+	
+* Responses from 130,000 sisters in ~400 congergations  
+* There was significant change occuring during this time period, both in society at large and within the community of nuns  
+* Age has been binned in groups of 10 years (has been recoded as a numeric at the top of the range, so 20 will mean 11-20 and 30 will mean 21-30 and the like)  
+* Historical dataset, centered in the context of nuns in 1967  
+* Good first step is to tidy the data, so that it is easier for exploratory data analysis  
+	* sisters67 %>% select(-sister) %>% gather(key, value, -age)  
+  
+Exploratory data analysis with tidy data:  
+  
+* Easy to see levels of agreement (overall) using dplyr::count()  
+* Agreement with specific questions by age  
+	* tidy_sisters %>% filter(key %in% paste0("v", 153:170)) %>% group_by(key, value) %>% summarise(age = mean(age)) %>% ggplot(aes(value, age, color = key)) + geom_line(alpha = 0.5, size = 1.5) + geom_point(size = 2) + facet_wrap(~key)  
+	* Can use the mix of responses to make estimates about the ages of the nuns  
+* Data will be split in to training, validation, and test sets  
+	* The validation set will be used for model selection  
+  
+Predicting age with supervised learning:  
+  
+* "rpart" - building a tree-based (CART) model  
+* "xgbLinear" - extreme gradient boosting  
+* "gbm" - gradient boosted ensembles  
+* Validation datasets are useful for assessing hyper-parameters and model choices, leaving the test dataset pure for a final out-of-sample error estimate  
+  
+Wrap up:  
+  
+* Train-Validation-Test to select the best models, tune the parameters, and estimate the out-of-sample error rates  
+* Dealing with class imbalances; improving performance with resamples (bootstraps, cross-validation, etc.)  
+* Hyper-parameter tuning can be valuable, but the time investment in other areas can often generate a greater return  
+* Gradient boosting and random forests tend to perform very well, but there is always value in trying out multiple models  
+	* Start with EDA and begin with a very simple model  
+  
+Example code includes:  
+```{r cache=TRUE}
 
+sisters67 <- readr::read_csv("./RInputFiles/sisters.csv")
+str(sisters67, give.attr = FALSE)
+
+
+# View sisters67
+glimpse(sisters67)
+
+# Plot the histogram
+ggplot(sisters67, aes(x = age)) +
+    geom_histogram(binwidth = 10)
+
+
+# Tidy the data set
+tidy_sisters <- sisters67 %>%
+    select(-sister) %>%
+    gather(key, value, -age)
+
+# Print the structure of tidy_sisters
+glimpse(tidy_sisters)
+
+
+# Overall agreement with all questions varied by age
+tidy_sisters %>%
+    group_by(age) %>%
+    summarize(value = mean(value, na.rm = TRUE))
+
+# Number of respondents agreed or disagreed overall
+tidy_sisters %>%
+    count(value)
+
+
+# Visualize agreement with age
+tidy_sisters %>%
+    filter(key %in% paste0("v", 153:170)) %>%
+    group_by(key, value) %>%
+    summarize(age = mean(age, na.rm = TRUE)) %>%
+    ggplot(aes(value, age, color = key)) +
+    geom_line(show.legend = FALSE) +
+    facet_wrap(~key, nrow = 3)
+
+
+# Remove the sister column
+sisters_select <- sisters67 %>% 
+    select(-sister)
+
+# Build a simple linear regression model
+simple_lm <- lm(age ~ ., 
+                data = sisters_select)
+
+# Print the summary of the model
+summary(simple_lm)
+
+
+# Split the data into training and validation/test sets
+set.seed(1234)
+in_train <- caret::createDataPartition(sisters_select$age, p = 0.6, list = FALSE)
+training <- sisters_select[in_train, ]
+validation_test <- sisters_select[-in_train, ]
+
+# Split the validation and test sets
+set.seed(1234)
+in_test <- caret::createDataPartition(validation_test$age, p = 0.5, list = FALSE)
+testing <- validation_test[in_test, ]
+validation <- validation_test[-in_test, ]
+
+
+# Fit a CART model
+sisters_cart <- caret::train(age ~ ., method = "rpart", data = training)
+
+# Print the CART model
+sisters_cart
+
+
+inSmall <- sample(1:nrow(training), 500, replace=FALSE)
+smallSisters <- training[sort(inSmall), ]
+
+sisters_xgb <- caret::train(age ~ ., method = "xgbTree", data = smallSisters)
+sisters_gbm <- caret::train(age ~ ., method = "gbm", data = smallSisters, verbose=FALSE)
+
+# Make predictions on the three models
+modeling_results <- validation %>%
+    mutate(CART = predict(sisters_cart, validation),
+           XGB = predict(sisters_xgb, validation),
+           GBM = predict(sisters_gbm, validation))
+
+# View the predictions
+modeling_results %>% 
+    select(CART, XGB, GBM)
+
+
+# Compare performace
+yardstick::metrics(modeling_results, truth = age, estimate = CART)
+yardstick::metrics(modeling_results, truth = age, estimate = XGB)
+yardstick::metrics(modeling_results, truth = age, estimate = GBM)
+
+
+# Calculate RMSE
+testing %>%
+    mutate(prediction = predict(sisters_gbm, testing)) %>%
+    yardstick::rmse(truth = age, estimate = prediction)
+
+```
+  
+  
+  
+***
+  
+###_Business Process Analytics in R_  
+  
+Chapter 1 - Introduction to Process Analysis  
+  
 
 
 
