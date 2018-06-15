@@ -1015,4 +1015,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Supervised Learning in R: Case Studies - Chapter 1 (Cars Data)  
 * DataCamp_Insights_v003_c captures Supervised Learning in R: Case Studies - Chapter 2 (Stack Overflow Developer Data)  
 * DataCamp_Insights_v003_c captures Supervised Learning in R: Case Studies - Chapter 3 (Voting)  
+* DataCamp_Insights_v003_c captures Supervised Learning in R: Case Studies - Chapter 4 (Nuns)  
   
