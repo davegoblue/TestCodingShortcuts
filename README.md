@@ -1017,4 +1017,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Supervised Learning in R: Case Studies - Chapter 3 (Voting)  
 * DataCamp_Insights_v003_c captures Supervised Learning in R: Case Studies - Chapter 4 (Nuns)  
 * DataCamp_Insights_v003_c captures Business Process Analytics in R - Chapter 1 (Introduction to Process Analysis)  
+* DataCamp_Insights_v003_c captures Business Process Analytics in R - Chapter 2 (Analysis Techniques) - notes  
   
