@@ -2645,6 +2645,182 @@ eat_patterns %>% dotted_chart(x = "relative_day", sort = "start_day", units = "s
   
 Chapter 3 - Event Data Processing  
   
+Filtering cases:  
+  
+* Sometimes there are too many cases, too many activities, missing data, and the like  
+	* Can filter by either cases or events (time periods or specific activity types)  
+    * Three levels of cases - performance, control-flow, and time frame  
+* Look at long cases for what went wrong, and short cases for what to mimic  
+	* filter_throughput_time(log, interval = c(5,10))  # absolute case length is 5-10 days  
+    * filter_throughput_time(log, percentage = 0.5)  # shortest 50% of the cases  
+    * filter_throughput_time(log, interval = c(5,10), units = "days", reverse =TRUE)  # cases that are NOT 5-10 days  
+    * filter_throughput_time(log, interval = c(5,NA), units = "days") # cases longer than 5 days  
+* Control-flow filters can be based on activity presence/absence, timing, and the like  
+  
+Filtering events - trim, frequency, label, general attribute:  
+  
+* Can trim to a time period based on start or end  
+	* filter_time_period(log, interval = ymd(c("20180110","20180122")), filter_method = "trim")  # discards everything else  
+* Can trim based on a specific start and end activities  
+	* filter_trim(start_activities = "blues")  # traces that have no blues will be discarded  
+    * filter_trim(start_activities = "blues", end_activities = "greens")  # traces that do not have blues followed by greens will be discarded  
+    * Can set reverse=TRUE to get the opposites of these  
+* Can filter by frequencies by either activity or resource  
+	* filter_activity_frequency(log, interval = c(50,100))  
+    * filter_activity_frequency(log, percentage = 0.8)  
+    * filter_resource_frequency(log, interval = c(60,900))  
+    * filter_resource_frequency(log, percentage = 0.6)  
+* Can filter by labels  
+	* filter_activity(log, activities = c("reds","oranges","purples")))  
+    * dplyr::filter(log, cost > 1000, priority == "High", ...)  
+  
+Aggregating events - Is-A and Part-of:  
+  
+* The Is-A is when there are many subtypes of activity that are really all part of a main activity  
+	* act_unite(log, "New name" = c("Old Variant 1","Old Variant 2","Old Variant 3"), ...)  # same number of activity instances, just fewer names  
+* The Part-of is when there are clearly distinct activities that can also be considered components of a higher-level activity  
+	* act_collapse(log, "Sub process" = c("Part 1","Part 2","Part 3"), ...)  # fewer number of activity instances, as they are collapsed to a single activity  
+  
+Enriching events - mutation (adding calculated variables):  
+  
+* The dplyr::mutate() can be used to directly add variables such as the cost  
+	* log %>% group_by_case() %>% mutate(total_cost = sum(cost, na.rm = TRUE)  # group_by_case() is a function applied to event logs  
+    * log %>% group_by_case() %>% mutate(total_cost = sum(cost, na.rm = TRUE) %>% mutate(impact = case_when(cost <= 1000 ~ "Low", cost <= 5000 ~ "Medium", TRUE ~ "High"))  
+    * log %>% group_by_case() %>% mutate(refund_made = any(str_detect(activity, "Pay Claim")))  
+* Metric functions can be used directly, with apped=TRUE, to both calculate the metric and add to the event log  
+	* log %>% througput_time(level = "case", units = "days", append = TRUE) %>% mutate(on_time = processing_time_case <= 7)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Select top 20% of cases according to trace frequency
+happy_path <- filter_trace_frequency(vacancies, percentage = 0.2)
+
+# Visualize using process map
+happy_path %>% process_map(type=requency(value = "absolute_case"))
+
+# Compute throughput time
+happy_path %>% throughput_time(units="days")
+
+
+# Find no_declines
+no_declines <- filter_activity_presence(vacancies, activities = "Decline Candidate", reverse=TRUE)
+
+# What is the average number of  
+first_hit <- filter_activity_presence(vacancies, activities = c("Send Offer", "Offer Accepted"), method="all")
+
+# Create a performance map
+first_hit %>% process_map(type=performance())
+
+# Compute throughput time
+first_hit %>% throughput_time()
+
+
+# Create not_refused
+not_refused <- vacancies %>% filter_precedence(antecedents = "Receive Response", consequents = "Review Non Acceptance", precedence_type = "directly_follows", filter_method = "none") 
+
+# Select longest_cases
+worst_cases <- not_refused %>% filter_throughput_time(interval=c(300, NA))
+
+# Show the different traces
+worst_cases %>% trace_explorer(coverage=1)
+
+
+# Select activities
+disapprovals <- vacancies %>% filter_activity(activities=c("Construct Offer", "Disapprove Offer", "Revise Offer","Disapprove Revision", "Restart Procedure"))
+
+# Explore traces
+disapprovals %>% trace_explorer(coverage=0.8)
+
+# Performance map
+disapprovals %>% process_map(type = performance(FUN = sum, units = "weeks"))
+
+
+# Select cases
+high_paid <- vacancies %>% filter(vacancy_department=="R&D", vacancy_salary_range==">100000")
+
+# Most active resources
+high_paid %>% resource_frequency(level="resource")
+
+# Create a dotted chart
+high_paid %>% dotted_chart(x="absolute", sort="start")
+
+# Filtered dotted chart
+library(lubridate)
+high_paid %>% filter_time_period(interval = ymd(c("20180321","20180620")), filter_method = "trim") %>% dotted_chart(x="absolute", sort="start")
+
+
+# Count activities and instances
+n_activities(vacancies)
+n_activity_instances(vacancies)
+
+# Combine activities
+united_vacancies <- vacancies %>% 
+    act_unite("Disapprove Contract Offer" = c("Disapprove Offer","Disapprove Revision"),
+              "Approve Contract Offer" = c("Approve Offer","Approve Revision"), 
+              "Construct Contract Offer" = c("Construct Offer","Revise Offer")
+              )
+              
+# Count activities and instances
+n_activities(united_vacancies)
+n_activity_instances(united_vacancies)
+
+
+# Aggregate sub processes
+aggregated_vacancies <- act_collapse(united_vacancies, 
+                            "Interviews" = c("First Interview","Second Interview","Third Interview"),
+                            "Prepare Recruitment" = c("Publish Position","File Applications","Check References"),
+                            "Create Offer" = c("Construct Contract Offer", "Disapprove Contract Offer", "Approve Contract Offer")
+                            )
+
+# Calculated number of activities and activity instances
+n_activities(aggregated_vacancies)
+n_activity_instances(aggregated_vacancies)
+
+# Create performance map
+aggregated_vacancies %>% process_map(type=performance())
+
+
+# Add total_cost
+vacancies_cost <- vacancies %>% 
+    group_by_case() %>% 
+    mutate(total_cost = sum(activity_cost, na.rm = TRUE))
+
+# Add cost_impact
+vacancies_impact <- vacancies_cost %>%
+
+
+
+
+# Compute throughput time per impact
+vacancies_impact %>% group_by(cost_impact) %>% throughput_time(units = "weeks") %>% plot()
+
+
+# Create cost_profile
+vacancies_profile <- vacancies_impact %>%
+    mutate(cost_profile = case_when(cost_impact == "High" & urgency < 7 ~ "Disproportionate",
+                                    cost_impact == "Medium" & urgency < 5 ~ "Excessive",
+                                    cost_impact == "Low" & urgency > 6 ~ "Lacking",
+                                    TRUE ~ "Appropriate")) 
+
+# Compare number of cases 
+vacancies_profile %>% 
+    group_by(cost_profile) %>%
+    n_cases()
+    
+# Explore lacking traces
+vacancies_profile %>%
+  filter(cost_profile == "Lacking") %>%
+  process_map()
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Case Study  
+  
 
 
 
