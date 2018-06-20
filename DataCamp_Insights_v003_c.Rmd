@@ -2821,6 +2821,199 @@ vacancies_profile %>%
   
 Chapter 4 - Case Study  
   
+Preparing the event data - example includes data from Sales, Purchasing, Manufacturing, Packaging & Delivery, Accounting:  
+  
+* While all departments need to work together, it is common for each department to have different data, business rules, relational data, etc.  
+* Need to create event data first prior to running anything in the bupar package  
+* Various field names (ends in _at or _by) may indicate the timing and resource levels  
+* The tidyverse tools are helpful for creating the initial data  
+  
+Getting to know the process:  
+  
+* Identify data sources, transform so that each row is an event, harmonize them, create an eventlog  
+* Start with high-level understanding of the process - summary(otc)  
+	* activity_presence(otc) %>% plot()  
+    * trace_length(otc) %>% plot()  
+    * start_activities(otc, "activity") %>% plot()  
+    * end_activities(otc, "activity") %>% plot()  
+  
+Roles and rules:  
+  
+* Parallel activities can be run in any order, which can cause an explosion in the number of traces - collapsing can help with abstraction  
+* Research questions may be related to performance, compliance, etc.  
+* The "4-eye" pricniple says that certain activities should not be performed by the same person  
+  
+Fast production, fast delivery:  
+  
+* Dotted charts can show the progression of the cases - request for quotation may be declined, or the offer may only be sent (no response)  
+* May want to look at the performance by stages (sub-groups of activities), for more fair comparisons  
+  
+Course recap:  
+  
+* Process maps  
+* Process analytics  
+* Data preprocessing  
+* Analysis and use cases  
+  
+Example code includes:  
+```{r cache=TRUE}
+
+quotations <- readRDS("./RInputFiles/otc_quotations.RDS")
+
+# Inspect quotations
+str(quotations)
+
+# Create offer_history
+offer_history <- quotations %>%
+    gather(key, value, -quotation_id) %>%
+    separate(key, into = c("activity", "info"))
+
+# Recode the key variable
+offer_history <- offer_history %>%
+    mutate(info = fct_recode(info,  "timestamp" = 'at',  "resource" = 'by'))
+
+# Spread the info variable
+offer_history <- offer_history %>%
+    spread(info, value)
+
+
+validations <- readRDS("./RInputFiles/otc_validations.RDS")
+
+# Inspect validations
+str(validations)
+
+# Create validate_history
+validate_history <- validations %>%
+    mutate(
+        activity = "Validate",
+        action = paste(quotation_id, "validate",  sep = "-"))
+
+# Gather the timestamp columns
+validate_history <- validate_history  %>%
+    gather(lifecycle, timestamp, started, completed)
+
+
+# Recode the lifecycle column of validate_history
+validate_history <- validate_history %>%
+    mutate(lifecycle = fct_recode(lifecycle,
+                "start" = "started",
+                "complete" = "completed"))
+
+
+# Add lifecycle and action column to offer_history
+offer_history <- offer_history %>%
+    mutate(
+        lifecycle = "complete",
+        action = paste(quotation_id, 1:n(), sep = "-"))
+
+# Create sales_history
+sales_history <- bind_rows(validate_history, offer_history)
+
+
+sales_history <- readRDS("./RInputFiles/otc_sales_history.RDS")
+order_history <- readRDS("./RInputFiles/otc_order_history.RDS")
+# sales_quotations <- readRDS("./RInputFiles/otc_sales_quotation.RDS")
+
+str(sales_history)
+str(order_history)
+# str(sales_quotations)
+
+order_history <- order_history %>% 
+    rename(timestamp=time, lifecycle=status) %>%
+    select(-activity_cost) %>%
+    mutate(activity=as.character(activity), 
+           resource=as.character(activity), 
+           lifecycle=as.character(lifecycle)
+           )
+sales_history <- sales_history %>%
+    mutate(timestamp=lubridate::as_datetime(timestamp))
+
+# sales_history <- sales_history %>% left_join(sales_quotations)
+otc <- bind_rows(sales_history, order_history)
+
+
+# Create the eventlog object 
+otc <- otc %>%
+    mutate(case_id = paste(quotation_id, sales_order_id, sep = "-")) %>%
+    eventlog(
+        case_id = "case_id",
+        activity_id = "activity",
+        activity_instance_id = "action",
+        timestamp = "timestamp",
+        resource_id = "resource",
+        lifecycle_id = "lifecycle"
+        )
+
+# Create trace coverage graph
+trace_coverage(otc, level="trace") %>% plot()
+
+# Explore traces
+otc %>%
+    trace_explorer(coverage = 0.25)
+
+
+# Collapse activities
+otc_high_level <- act_collapse(otc, "Delivery" = c(
+  "Handover To Deliverer",
+  "Order Delivered",
+  "Present For Collection",
+  "Order Fetched")
+  )
+
+# Draw a process map
+process_map(otc_high_level)
+
+# Redraw the trace coverage graph
+otc_high_level %>% trace_coverage(level="trace") %>% plot()
+
+# Compute activity wise processing time
+otc_high_level %>% processing_time(level="activity", units="days")
+
+# Plot a resource activity matrix of otc
+otc %>% resource_frequency(level = "resource-activity") %>% plot()
+
+
+# Create otc_selection
+otc_selection <- otc %>% filter_activity(activities = c("Send Quotation","Send Invoice"))
+
+# Explore traces
+otc %>% trace_explorer(coverage=1)
+
+# Draw a resource map
+otc_selection %>% resource_map()
+
+
+# Create otc_returned
+otc_returned <- otc %>% filter_activity_presence("Return Goods")
+
+# Compute percentage of returned orders
+n_cases(otc_returned)/n_cases(otc)
+
+# Trim cases and visualize
+otc_returned %>% filter_trim(start_activities="Return Goods") %>% process_map()
+
+
+# Time from order to delivery
+# otc %>% filter_trim(start_activities="Receive Sales Order", end_activities="Order Delivered") %>% 
+#     processing_time(units="days")
+
+
+# Plot processing time by type
+# otc %>%
+#     group_by(type) %>%
+#     throughput_time() %>%
+#     plot()
+
+```
+  
+  
+  
+***
+  
+###_Network Science in R - A Tidy Approach_  
+  
+Chapter 1 - Hubs of the Network  
+  
 
 
 
