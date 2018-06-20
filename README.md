@@ -1022,4 +1022,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 18-JUN-2018  
 * DataCamp_Insights_v003_c captures Business Process Analytics in R - Chapter 2 (Analysis Techniques) - code  
 * DataCamp_Insights_v003_c captures Business Process Analytics in R - Chapter 3 (Event Data Processing)  
+* DataCamp_Insights_v003_c captures Business Process Analytics in R - Chapter 4 (Case Study)  
   
