@@ -1025,4 +1025,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Business Process Analytics in R - Chapter 4 (Case Study)  
 * DataCamp_Insights_v003_c captures Network Science in R - A Tidy Approach - Chapter 1 (Hubs of the Network)  
 * DataCamp_Insights_v003_c captures Network Science in R - A Tidy Approach - Chapter 2 (Weakness and Strength)  
+* DataCamp_Insights_v003_c captures Network Science in R - A Tidy Approach - Chapter 3 (Connection Patterns)  
   
