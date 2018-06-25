@@ -1028,3 +1028,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Network Science in R - A Tidy Approach - Chapter 3 (Connection Patterns)  
 * DataCamp_Insights_v003_c captures Network Science in R - A Tidy Approach - Chapter 4 (Similarity Clusters)  
   
+### Expansions week of 25-JUN-2018  
+* DataCamp_Insights_v003_c captures Data Privacy and Anonymization in R - Chapter 1 (Introduction to Data Privacy)  
+  
