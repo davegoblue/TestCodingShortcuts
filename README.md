@@ -1033,4 +1033,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Data Privacy and Anonymization in R - Chapter 2 (Introduction to Differential Privacy)  
 * DataCamp_Insights_v003_c captures Data Privacy and Anonymization in R - Chapter 3 (Differentially Private Properties)  
 * DataCamp_Insights_v003_c captures Data Privacy and Anonymization in R - Chapter 4 (Differentially Private Data Synthesis)  
+* DataCamp_Insights_v003_c captures Marketing Analytics in R: Statistical Modeling - Chapter 1 (Modeling Customer Lifetime Value with Linear Regression)  
   
