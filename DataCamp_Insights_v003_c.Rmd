@@ -4197,13 +4197,194 @@ mean(predSales5)
   
 Chapter 2 - Logistic Regression for Churn Prevention  
   
-
-
+Churn prevention in online marketing:  
   
+* Objective is to predict the likelihood of a customer repeating their business, assessed using logistic regression  
+	* Model the log-odds (defined as log (P(Y=1) / P(Y=0))) as a linear function of the inputs  
+    * Convert the log-odds to odds (defined as P(Y=1) / P(Y=0)) by exponentiation  
+    * Convert the odds to a probability of churning, using odds / (1 + odds)  
+* Can begin with basic data exploration  
+	* ggplot(churnData, aes(x = returnCustomer)) + geom_histogram(stat = "count")  
+  
+Modeling and model selection:  
+  
+* The logit model can be run using the GLM provided in R  
+	* logitModelFull <- glm(returnCustomer ~ title + newsletter + websiteDesign + ..., family = binomial, churnData)  
+* Interpreting the coefficients is not easy - they are related to the log-odds  
+	* Can exponentiate the coefficients to get their impact on the odds  
+    * Can then interpret that greater than 1 means "more likely, all else equal"  
+* Can use MASS::stepAIC() to help refine the modeling  
+	* library(MASS)  
+    * logitModelNew <- stepAIC(logitModelFull, trace = 0)  
+    * summary(logitModelNew)  
+    * Produces a model with fewer variables and a lower AIC  
+  
+In-sample model fit and thresholding:  
+  
+* There are three types of pseudo-R-squared statistics available for the results of logistical regression  
+	* McFadden: R-squared = 1 - L(null) / L(full)  
+    * Cox-Snell: R-squared = 1 - (L(null) / L(full)) ** (2/n)  
+    * Nagelkerke: R-squared = [1 - (L(null) / L(full)) ** (2/n)] / [1 - L(null) ** (2/n)]  
+    * Generally, anything above 0.2 is reasonably good  
+    * descr::LogRegR2(logitModelNew)  
+    * library(SDMTools)  
+    * churnData$predNew <- predict(logitModelNew, type = "response", na.action = na.exclude)  # get the prediction probabilities  
+    * data %>% select(returnCustomer, predNew) %>% tail()  
+    * confMatrixNew <- confusion.matrix(churnData$returnCustomer, churnData$predNew, threshold = 0.5)  # this is the version from SDMTools  
+* Can give different weights to the different errors (false negatives, false positives, etc.)  
+	* Can instead look at a payoff, defined based on scalars for the various quadrants  
+  
+Out-of-sample validation and cross validation:  
+  
+* Begin by randomly splitting data in to training (roughly two-thirds) and holding back the remainder for validation (roughly one-third)  
+	* set.seed(534381)  
+    * churnData$isTrain <- rbinom(nrow(churnData), 1, 0.66)  
+    * train <- subset(churnData, churnData$isTrain == 1)  
+    * test <- subset(churnData, churnData$isTrain == 0)  
+    * test$predNew <- predict(logitTrainNew, type = "response", newdata = test)  # make predictions only on the test dataset  
+* Cross-validation is an even more powerful tool for assessing out-of-sample error  
+	* Split the data in to k subsets, and run the model k times with k-1 training data and the last subset used as the validation data  
+    * Acc03 <- function(r, pi = 0) {  
+    *   cm <- confusion.matrix(r, pi, threshold = 0.3)  
+    *   acc <- sum(diag(cm)) / sum(cm) return(acc)  
+    * }  
+    * set.seed(534381)  
+    * boot::cv.glm(churnData, logitModelNew, cost = Acc03, K = 6)$delta  
+* Can continually tweak the model to see if transforms, variable additions, etc., might tend to improve the out-of-sample error rate  
+  
+Example code includes:  
+```{r}
+
+defaultData <- readr::read_delim("./RInputFiles/defaultData.csv", delim=";")
+
+# Summary of data
+summary(defaultData)
+
+# Look at data structure
+str(defaultData, give.attr=FALSE)
+
+# Analyze the balancedness of dependent variable
+ggplot(defaultData, aes(x = PaymentDefault)) +
+  geom_histogram(stat = "count") 
 
 
+# Build logistic regression model
+logitModelFull <- glm(PaymentDefault ~ limitBal + sex + education + marriage +
+                   age + pay1 + pay2 + pay3 + pay4 + pay5 + pay6 + billAmt1 + 
+                   billAmt2 + billAmt3 + billAmt4 + billAmt5 + billAmt6 + payAmt1 + 
+                   payAmt2 + payAmt3 + payAmt4 + payAmt5 + payAmt6, 
+                family = "binomial", data = defaultData)
+
+# Take a look at the model
+summary(logitModelFull)
+
+# Take a look at the odds
+coefsexp <- coef(logitModelFull) %>% exp() %>% round(2)
+coefsexp
 
 
+# The old (full) model
+logitModelFull <- glm(PaymentDefault ~ limitBal + sex + education + marriage +
+                   age + pay1 + pay2 + pay3 + pay4 + pay5 + pay6 + billAmt1 + 
+                   billAmt2 + billAmt3 + billAmt4 + billAmt5 + billAmt6 + payAmt1 + 
+                   payAmt2 + payAmt3 + payAmt4 + payAmt5 + payAmt6, 
+                 family = binomial, defaultData)
+
+#Build the new model
+logitModelNew <- MASS::stepAIC(logitModelFull, trace=0) 
+
+#Look at the model
+summary(logitModelNew) 
+
+# Save the formula of the new model (it will be needed for the out-of-sample part) 
+formulaLogit <- as.formula(summary(logitModelNew)$call)
+formulaLogit
+
+
+# Make predictions using the full Model
+defaultData$predFull <- predict(logitModelFull, type = "response", na.action = na.exclude)
+
+# Construct the in-sample confusion matrix
+confMatrixModelFull <- SDMTools::confusion.matrix(defaultData$PaymentDefault, 
+                                                  defaultData$predFull, 
+                                                  threshold = 0.5
+                                                  )
+confMatrixModelFull
+
+# Calculate the accuracy for the full Model
+accuracyFull <- sum(diag(confMatrixModelFull)) / sum(confMatrixModelFull)
+accuracyFull
+
+
+# Calculate the accuracy for 'logitModelNew'
+# Make prediction
+defaultData$predNew <- predict(logitModelNew, type = "response", na.action = na.exclude)
+
+# Construct the in-sample confusion matrix
+confMatrixModelNew <- SDMTools::confusion.matrix(defaultData$PaymentDefault, 
+                                                 defaultData$predNew, 
+                                                 threshold = 0.5
+                                                 )
+confMatrixModelNew
+
+# Calculate the accuracy...
+accuracyNew <- sum(diag(confMatrixModelNew)) / sum(confMatrixModelNew)
+accuracyNew
+
+# and compare it to the full model's accuracy
+accuracyFull
+accuracyNew
+
+
+# Prepare data frame with threshold values and empty payoff column
+payoffMatrix <- data.frame(threshold = seq(from = 0.1, to = 0.5, by = 0.1), payoff = NA) 
+payoffMatrix
+ 
+for(i in 1:length(payoffMatrix$threshold)) {
+  # Calculate confusion matrix with varying threshold
+  confMatrix <- SDMTools::confusion.matrix(defaultData$PaymentDefault, 
+                                           defaultData$predNew, 
+                                           threshold = payoffMatrix$threshold[i]
+                                           )
+  # Calculate payoff and save it to the corresponding row
+  payoffMatrix$payoff[i] <- confMatrix[1, 1]*250 + confMatrix[1, 2]*(-1000)
+}
+payoffMatrix
+
+
+# Split data in train and test set
+set.seed(534381) 
+defaultData$isTrain <- rbinom(nrow(defaultData), 1, 0.66)
+train <- subset(defaultData, isTrain == 1)
+test <- subset(defaultData, isTrain  == 0)
+
+logitTrainNew <- glm(formulaLogit, family = binomial, data = train) # Modeling
+test$predNew <- predict(logitTrainNew, type = "response", newdata = test) # Predictions
+
+# Out-of-sample confusion matrix and accuracy
+confMatrixModelNew <- SDMTools::confusion.matrix(test$PaymentDefault, test$predNew, threshold = 0.3) 
+sum(diag(confMatrixModelNew)) / sum(confMatrixModelNew) # Compare this value to the in-sample accuracy
+
+
+# Accuracy function
+costAcc <- function(r, pi = 0) {
+  cm <- SDMTools::confusion.matrix(r, pi, threshold = 0.3)
+  acc <- sum(diag(cm)) / sum(cm)
+  return(acc)
+}
+
+# Cross validated accuracy for logitModelNew
+set.seed(534381)
+boot::cv.glm(defaultData, logitModelNew, cost = costAcc, K = 6)$delta[1]
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Modeling Time to Reorder with Survival Analysis  
+  
 
 
 
