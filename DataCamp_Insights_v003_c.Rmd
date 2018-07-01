@@ -4385,6 +4385,158 @@ boot::cv.glm(defaultData, logitModelNew, cost = costAcc, K = 6)$delta[1]
   
 Chapter 3 - Modeling Time to Reorder with Survival Analysis  
   
+Survival Analysis Introduction:  
+  
+* Often have "censored" data, meaning that the customer journeys are not yet complete  
+	* Random Type I Right censoring is the most common - a point can only be observed if it has occurred before time X, and it is otherwise unknowable (but known that they have not yet churned)  
+    * Can plot histograms of whether someone has churned depending on the length of time  
+    * plotTenure <- dataSurv %>% mutate(churn = churn %>% factor(labels = c("No", "Yes"))) %>%  
+    *   ggplot() + geom_histogram(aes(x = tenure, fill = factor(churn))) + facet_grid( ~ churn) +           
+    *   theme(legend.position = "none")  
+* Survival analysis attempts to estimate when something will happen (churn, second order, renewal, etc.)  
+  
+Survival curve analysis by Kaplan-Meier:  
+  
+* Begin by creating a new object containing the survival attribute  
+	* cbind(dataSurv %>% select(tenure, churn), surv = Surv(dataSurv$tenure, dataSurv$churn)) %>% head(10)  
+* The survival function is the probability of "no event" in cumulative by time t  
+	* The hazard function is the cumulative probability of "event" by time t  
+    * The "hazard rate" is the probability of the event happening in a small time, provided that it has not yet happened  
+* The Kaplan-Meier analysis can be used to estimate survival  
+	* fitKM <- survival::survfit(Surv(dataSurv$tenure, dataSurv$churn) ~ 1, type = "kaplan-meier")  
+    * print(fitKM)  # gives a few rough summary statistics  
+    * plot(fitKM) # survival curve with confidence interval  
+    * fitKMstr <- survfit(Surv(tenure, churn) ~ Partner, data = dataSurv)  # add covariates, such as ~ Partner rather than ~1 as in the baseline  
+  
+Cox PH model with constant covariates:  
+  
+* Model definition: cannot parse to ISO - see Excel notes  
+	* Predictors are lineary and multiplicatively related to the hazard function, lambda  
+    * Relative hazard function needs to remain constant over time  
+* Fitting a survival model in R  
+	* library(rms)  
+    * units(dataSurv$tenure) <- "Month"  
+    * dd <- datadist(dataSurv)  
+    * options(datadist = "dd")  
+    * fitCPH1 <- cph(Surv(tenure, churn) ~ gender + SeniorCitizen + Partner + Dependents + StreamMov + PaperlessBilling + PayMeth + MonthlyCharges, data = dataSurv, x = TRUE, y = TRUE, surv = TRUE, time.inc = 1)  
+    * Coefficient interpretation is relatively similar to logistic regression - exp(fitCPH1$coefficients) - can simplify the coefficients be making them multiplicative (1.00 is no impact)  
+    * survplot(fitCPH1, MonthlyCharges, label.curves = list(keys = 1:5))  # plots the survival probabilities based on varying 1 variable, assuming other variables constant  
+    * survplot(fitCPH1, Partner)  # covariate with partner, plotted  
+    * plot(summary(fitCPH1), log = TRUE)  # visualizing the hazard ratios  
+  
+Checking model assumptions and making predictions:  
+  
+* Can again use the Cox PH function  
+	* testCPH1 <- cox.zph(fitCPH1)  
+    * print(testCPH1)  # if p < 0.05, can reject the assumption that the predictor meets the proportional hazard assumption  
+    * plot(testCPH1, var = "Partner=Yes")  
+    * plot(testCPH1, var = "MonthlyCharges")  
+    * This test is conservative and sensitive to the number of observations  
+* If the PH (proportional hazard) assumptions are violated, can correct for this using  
+	* fitCPH2 <- cph(Surv(tenure, churn) ~ MonthlyCharges + SeniorCitizen + Partner + Dependents + StreamMov + Contract, stratum = "gender = Male", data = dataSurv, x = TRUE, y = TRUE, surv = TRUE)  
+    * rms::validate(fitCPH1, method = "crossvalidation", B = 10, pr = FALSE)  # pr=FALSE means only print at the end; R2 is the R-squared corrected by cross-validation  
+* Can then assess probabilities for the event to occur  
+	* oneNewData <- data.frame(gender = "Female", SeniorCitizen = "Yes", Partner = "No", Dependents = "Yes", StreamMov = "Yes", PaperlessBilling = "Yes", PayMeth = "BankTrans(auto)", MonthlyCharges = 37.12)  
+    * str(survest(fitCPH1, newdata = oneNewData, times = 3))  
+    * plot(survfit(fitCPH1, newdata = oneNewData))  
+    * print(survfit(fitCPH1, newdata = oneNewData))  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Look at the head of the data
+head(dataNextOrder)
+
+# Plot a histogram
+ggplot(dataNextOrder) +
+  geom_histogram(aes(x = daysSinceFirstPurch, fill = factor(boughtAgain))) +
+  facet_grid( ~ boughtAgain) + # Separate plots for boughtAgain = 1 vs. 0
+  theme(legend.position = "none") # Don't show legend
+
+
+# Create survival object
+survObj <- Surv(dataNextOrder$daysSinceFirstPurch, dataNextOrder$boughtAgain)
+
+# Look at structure
+str(survObj)
+
+
+# Compute and print fit
+fitKMSimple <- survfit(survObj ~ 1)
+print(fitKMSimple)
+
+# Plot fit
+plot(fitKMSimple,
+     conf.int = FALSE, xlab = "Time since first purchase", ylab = "Survival function", main = "Survival function")
+
+# Compute fit with categorical covariate
+fitKMCov <- survfit(survObj ~ voucher, data = dataNextOrder)
+
+# Plot fit with covariate and add labels
+plot(fitKMCov, lty = 2:3,
+     xlab = "Time since first purchase", ylab = "Survival function", main = "Survival function")
+legend(90, .9, c("No", "Yes"), lty = 2:3)
+
+
+# Determine distributions of predictor variables
+dd <- datadist(dataNextOrder)
+options(datadist = "dd")
+
+# Compute Cox PH Model and print results
+fitCPH <- cph(Surv(daysSinceFirstPurch, boughtAgain) ~ shoppingCartValue + voucher + returned + gender,
+              data = dataNextOrder,
+              x = TRUE, y = TRUE, surv = TRUE)
+print(fitCPH)
+
+# Interpret coefficients
+exp(fitCPH$coefficients)
+
+# Plot result summary
+plot(summary(fitCPH), log = TRUE)
+
+
+# Check proportional hazard assumption and print result
+testCPH <- cox.zph(fitCPH)
+print(testCPH)
+
+# Plot time-dependent beta
+plot(testCPH, var = "gender=male")
+
+# Load rms package
+library(rms)
+
+# Validate model
+validate(fitCPH, method = "crossvalidation", B = 10, dxy = TRUE, pr = FALSE)
+
+
+# Create data with new customer
+newCustomer <- data.frame(daysSinceFirstPurch = 21, shoppingCartValue = 99.9, gender = "female", voucher = 1, returned = 0, stringsAsFactors = FALSE)
+
+# Make predictions
+pred <- survfit(fitCPH, newdata = newCustomer)
+print(pred)
+plot(pred)
+
+# Correct the customer's gender
+newCustomer2 <- newCustomer
+newCustomer2$gender <- "male"
+
+# Redo prediction
+pred2 <- survfit(fitCPH, newdata = newCustomer2)
+print(pred2)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Reducing Dimensionality with Principal Component Analysis  
+  
+
+	
+	
+	
 
 
 
