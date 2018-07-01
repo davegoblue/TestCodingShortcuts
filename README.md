@@ -1035,4 +1035,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Data Privacy and Anonymization in R - Chapter 4 (Differentially Private Data Synthesis)  
 * DataCamp_Insights_v003_c captures Marketing Analytics in R: Statistical Modeling - Chapter 1 (Modeling Customer Lifetime Value with Linear Regression)  
 * DataCamp_Insights_v003_c captures Marketing Analytics in R: Statistical Modeling - Chapter 2 (Logistic Regression for Churn Prevention)  
+* DataCamp_Insights_v003_c captures Marketing Analytics in R: Statistical Modeling - Chapter 3 (Modeling Time to Reorder with Survival Analysis) - notes  
   
