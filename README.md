@@ -1037,3 +1037,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Marketing Analytics in R: Statistical Modeling - Chapter 2 (Logistic Regression for Churn Prevention)  
 * DataCamp_Insights_v003_c captures Marketing Analytics in R: Statistical Modeling - Chapter 3 (Modeling Time to Reorder with Survival Analysis) - notes  
   
+### Expansions week of 02-JUL-2018  
+* DataCamp_Insights_v003_c captures Marketing Analytics in R: Statistical Modeling - Chapter 3 (Modeling Time to Reorder with Survival Analysis) - code  
+  
