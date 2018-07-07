@@ -1043,4 +1043,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Marketing Analytics in R: Statistical Modeling - Chapter 4 (Reducing Dimensionality with Principal Component Analysis) - code  
 * DataCamp_Insights_v003_c captures Interactive Maps with leaflet in R - Chapter 1 (Setting Up Interactive Web Maps)  
 * DataCamp_Insights_v003_c captures Interactive Maps with leaflet in R - Chapter 2 (Plotting Points) - notes  
+* DataCamp_Insights_v003_c captures Interactive Maps with leaflet in R - Chapter 3 (Groups, Layers, Extras) - notes  
   
