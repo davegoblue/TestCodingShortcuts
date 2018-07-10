@@ -5168,6 +5168,211 @@ ipeds %>%
   
 Chapter 4 - Plotting Polygons  
   
+Spatial Data - ability to plot polygons rather than points:  
+  
+* Polygons have many points, and are stored in SPDF (Spatial Polygons Data Frame) with 5 slots  
+	* data - one observation per polygon  
+    * polygons - coordinates to plot each polygon  
+    * plotOrder - order for plotting  
+    * bbox - rectangle containing all the polygons  
+    * proj4string - coordinate reference system (CRS)  
+    * All accessed using the @ symbol  
+* Can join from the data component of the SPDF, accessed using @  
+	* hp@data <- shp@data %>% left_join(nc_income, by = c("GEOID10" = "zipcode"))  
+    * shp@polygons[[1]] %>% leaflet() %>% addPolygons()  # can plot a single polygon  
+  
+Mapping Polygons - can pipe SPDF in to a series of leaflet calls:  
+  
+* The basic polygon plotting method using leaflet() may produce shape boundaries that are too thick  
+	* shp %>% leaflet() %>% addTiles() %>% addPolygons()  
+    * weight - thickness of lines  
+    * color - color of lines  
+    * label - information shown on hover  
+    * highlight - options to highlight polygon on hover  
+* The refined plotting approach adds customization for better readability  
+	* shp %>% leaflet() %>% addTiles() %>% addPolygons(weight = 1, color = "grey", label = ~paste0("Total Income: " dollar(income)), highlight = highlightOptions(weight = 3, color = "red", bringToFront = TRUE))  
+* Can color numeric data when plotting polygons  
+	* colorNumeric - maps continuous data to interpolated palettes  
+    * colorBin - colors based on cut function  
+    * colorQuantile - colors based on quantile  
+    * nc_pal <- colorNumeric(palette = "Blues", domain = high_inc@data$mean_income)  
+    * nc_pal <- colorBin(palette = "YlGn", bins = 5, domain = high_inc@data$mean_income)  
+    * nc_pal <- colorQuantile(palette = "YlGn", n = 4, domain = high_inc@data$mean_income)  
+* Example of coloring using colorNumeric()  
+	* nc_pal <- colorNumeric("Blues", domain = high_inc@data$mean_income)  
+    * previewColors(pal = nc_pal, values = c(seq(100000, 600000, by = 100000)))  # explore sample values  
+    * shp %>% leaflet() %>% # addTiles() %>% addPolygons(weight = 1, fillOpacity = 1, color = ~nc_pal(mean_income), label = ~paste0("Mean Income: ", dollar(mean_income)), highlight = highlightOptions(weight = 3, color = "red", bringToFront = TRUE))  
+* Sometimes need to log-transform skewed data for better displays  
+  
+Putting Everything Together:  
+  
+* Leaflet and htmlwidgets for base maps and coloring  
+* Base and overlay groups to enhance interactivity  
+* Features available in the leaflet.extras function  
+* Can piece together a full map that includes both polygons and circle markers  
+	* leaflet() %>% addTiles(group = "OSM") %>% addProviderTiles("CartoDB", group = "Carto") %>%           
+	*   addProviderTiles("Esri", group = "Esri") %>%  
+    *   addPolygons(data = shp, weight = 1, fillOpacity = .75, color = ~nc_pal(log(mean_income)), label = ~paste0("Mean Income: ", dollar(mean_income)), group = "Mean Income") %>%  
+    *   addCircleMarkers(data = nc_public, radius = 2, label = ~htmlEscape(name), color = ~pal(sector_label), group = "Public") %>%  
+    *   addCircleMarkers(data = nc_private, radius = 2, label = ~htmlEscape(name), color = ~pal(sector_label), group = "Private") %>%  
+    *   addCircleMarkers(data = nc_profit, radius = 2, label = ~htmlEscape(name), color = ~pal(sector_label), group = "For-Profit") %>%  
+    * addLayersControl(baseGroups = c("OSM", "Carto", "Esri"), overlayGroups = c("Public", "Private", "For-Profit", "Mean Income"))  
+* Can also save a map for future use  
+	* m <- leaflet() %>% addTiles() %>% addMarkers( data = ipeds, clusterOptions = markerClusterOptions())%>% addPolygons(data = shp)  
+    * library(htmlwidgets)  
+    * saveWidget(m, file="myMap.html")  # saves the file as html  
+  
+Wrap up - additional resources:  
+  
+* RStudio's leaflet website: https://rstudio.github.io/leaflet/  
+* Leaflet extras: https://github.com/bhaskarvk/leaflet.extras  
+* JavaScript library: http://leafletjs.com/  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Print a summary of the `shp` data
+summary(shp)
+
+# Print the class of `shp`
+class(shp)
+
+# Print the slot names of `shp`
+slotNames(shp)
+
+
+# Glimpse the data slot of shp
+glimpse(shp@data)
+
+# Print the class of the data slot of shp
+class(shp@data)
+
+# Print GEOID10
+shp@data$GEOID10
+
+
+# Glimpse the nc_income data
+glimpse(nc_income)
+
+# Summarise the nc_income data
+summary(nc_income)
+
+# Left join nc_income onto shp@data and store in shp_nc_income
+shp_nc_income <- shp@data %>% 
+                left_join(nc_income, by = c("GEOID10" = "zipcode"))
+
+# Print the number of missing values of each variable in shp_nc_income
+shp_nc_income %>%
+  summarise_all(funs(sum(is.na(.))))
+
+
+# map the polygons in shp
+shp %>% 
+    leaflet() %>% 
+    addTiles() %>% 
+    addPolygons()
+
+# which zips were not in the income data?
+shp_na <- shp[is.na(shp$mean_income),]
+
+# map the polygons in shp_na
+shp_na %>% 
+    leaflet() %>% 
+    addTiles() %>% 
+    addPolygons()
+
+
+# summarise the mean income variable
+summary(shp$mean_income)
+
+# subset shp to include only zip codes in the top quartile of mean income
+high_inc <- shp[!is.na(shp$mean_income) & shp$mean_income > 55917,]
+
+# map the boundaries of the zip codes in the top quartile of mean income
+high_inc %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons()
+
+
+# create color palette with colorNumeric()
+nc_pal <- colorNumeric("YlGn", domain = high_inc@data$mean_income)
+
+high_inc %>%
+  leaflet() %>%
+  addTiles() %>%
+  # set boundary thickness to 1 and color polygons blue
+  addPolygons(weight = 1, color = ~nc_pal(mean_income),
+              # add labels that display mean income
+              label = ~paste0("Mean Income: ", dollar(mean_income)),
+              # highlight polygons on hover
+              highlight = highlightOptions(weight = 5, color = "white",
+              bringToFront = TRUE))
+
+
+# Create a logged version of the nc_pal color palette
+nc_pal <- colorNumeric("YlGn", domain = log(high_inc@data$mean_income))
+
+# apply the nc_pal
+high_inc %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB") %>%
+  addPolygons(weight = 1, color = ~nc_pal(log(mean_income)), fillOpacity = 1,
+              label = ~paste0("Mean Income: ", dollar(mean_income)),
+              highlightOptions = highlightOptions(weight = 5, color = "white", bringToFront = TRUE))
+
+
+# Print the slot names of `wealthy_zips`
+slotNames(wealthy_zips)
+
+# Print a summary of the `mean_income` variable
+summary(wealthy_zips$mean_income)
+
+# plot zip codes with mean incomes >= $200k
+wealthy_zips %>% 
+  leaflet() %>% 
+  addProviderTiles("CartoDB") %>% 
+  addPolygons(weight = 1, fillOpacity = .7, color = "Green",  group = "Wealthy Zipcodes", 
+              label = ~paste0("Mean Income: ", dollar(mean_income)),
+              highlightOptions = highlightOptions(weight = 5, color = "white", bringToFront = TRUE))
+
+
+
+
+
+
+# Add polygons using wealthy_zips
+final_map <- m4 %>% 
+   addPolygons(data = wealthy_zips, weight = 1, fillOpacity = .5, color = "Grey",  group = "Wealthy Zip Codes", 
+              label = ~paste0("Mean Income: ", dollar(mean_income)),
+              highlight = highlightOptions(weight = 5, color = "white", bringToFront = TRUE)) %>% 
+    # Update layer controls including "Wealthy Zip Codes"
+    addLayersControl(baseGroups = c("OSM", "Carto", "Esri"), 
+                         overlayGroups = c("Public", "Private", "For-Profit", "Wealthy Zip Codes"))
+
+
+# Add polygons using wealthy_zips
+final_map <- m4 %>% 
+   addPolygons(data = wealthy_zips, weight = 1, fillOpacity = .5, color = "Grey",  group = "Wealthy Zip Codes", 
+              label = ~paste0("Mean Income: ", dollar(mean_income)),
+              highlightOptions = highlightOptions(weight = 5, color = "white", bringToFront = TRUE)) %>% 
+    # Update layer controls including "Wealthy Zip Codes"
+    addLayersControl(baseGroups = c("OSM", "Carto", "Esri"), 
+                         overlayGroups = c("Public", "Private", "For-Profit", "Wealthy Zip Codes"))     
+
+# Print and explore your very last map of the course!
+final_map
+
+```
+  
+  
+  
+***
+  
+###_Support Vector Machines in R_  
+  
+Chapter 1 - Introduction  
+  
 
 
 
