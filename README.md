@@ -1049,4 +1049,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 09-JUL-2018  
 * DataCamp_Insights_v003_c captures Interactive Maps with leaflet in R - Chapter 3 (Groups, Layers, Extras) - code  
 * DataCamp_Insights_v003_c captures Interactive Maps with leaflet in R - Chapter 4 (Plotting Polygons) - notes  
+* DataCamp_Insights_v003_c captures Interactive Maps with leaflet in R - Chapter 4 (Plotting Polygons) - code  
   
