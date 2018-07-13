@@ -5488,6 +5488,257 @@ plot_margins
   
 Chapter 2 - Support Vector Classifiers - Linear Kernels  
   
+Linear Support Vector Machines:  
+  
+* Can split the data from the previous chapter (perfectly separable) in to train/test on an 80-20 basis  
+	* set.seed() = 1  
+    * df[, "train"] <- ifelse(runif(nrow(df))<0.8,1,0)  
+    * trainset <- df[df$train==1,]  
+    * testset <- df[df$train==0,]  
+    * trainColNum <- grep("train", names(trainset))  
+    * trainset <- trainset[,-trainColNum]  
+    * testset <- testset[,-trainColNum]  
+* Decision boundaries have many shapes-types (called kernels) such as lines, polynomials, etc.  
+* For this chapter, will use e1071::svm(), a function with many options  
+	* formula, data, type ("C-classification" for classification), kernel ("linear" for this chapter), cost/gamma (tuning parameters, which will be left at the defaults for now), scale (boolean telling whether to scale the data in advance - FALSE makes for easier plotting, but typically would be set to TRUE in the real-world)  
+* Example of running e1071::svm()  
+	* library(e1071)  
+    * svm_model<- svm(y ~ ., data = trainset, type = "C-classification", kernel = "linear", scale = FALSE)  
+    * svm_model  
+    * svm_model$index  # indices of the support vectors  
+    * svm_model$SV  # support vector coordinates  
+    * svm_model$rho  # negative y-intercept of the decision boundary  
+    * svm_model$coefs  # weighting coefficients of support vectors (magnitude is importance, side is which part of boundary)  
+    * pred_train <- predict(svm_model,trainset)  
+    * pred_test <- predict(svm_model,testset)  
+  
+Visualizing Linear SVM:  
+  
+* Can begin by plotting the training data, distinguished by color  
+	* p <- ggplot(data = trainset, aes(x = x1, y = x2, color = y)) + geom_point() + scale_color_manual(values = c("red","blue"))  
+    * df_sv <- trainset[svm_model$index,]  
+    * p <- p + geom_point(data = df_sv, aes(x = x1, y = x2), color = "purple", size = 4, alpha = 0.5)  
+    * p  
+* The support vectors tend to be close to the decision boundary - in fact, they are defined as points that "support" the boundary  
+* Goal is to extract the slope and coefficients from the model (not stored in the model object)  
+	* w <- t(svm_model$coefs) %*% svm_model$SV  
+    * slope_1 <- -w[1]/w[2]  
+    * intercept_1 <- svm_model$rho/w[2]  
+    * p <- p + geom_abline(slope = slope_1, intercept = intercept_1)  
+    * p <- p + geom_abline(slope = slope_1, intercept = intercept_1-1/w[2], linetype = "dashed") + geom_abline(slope = slope_1, intercept = intercept_1+1/w[2], linetype = "dashed")  
+    * p  
+* There are several properties observed in the plot  
+	* The boundary is supported by the support vectors  
+    * The boundary is "soft", which allows for uncertainty in location/shape of the boundary  
+    * Can also use e1071::plot(x=myModel, data=myData) to plot the function  
+  
+Tuning Linear SVM:  
+  
+* Can tweak the cost parameter to change the size of the soft boundary for the SVM  
+	* Higher costs lead to harder (smaller, narrower) decision boundaries, with fewer support vectors  
+    * The implication is that raising the cost can be a good idea if the data are known to be linearly separable  
+  
+Multi-class problems:  
+  
+* SVM can manage classification problems with 3+ target types also - using the example iris data  
+	* p <- ggplot(data = iris, aes(x = Petal.Width, y = Petal.Length, color = Species)) + geom_point()  
+    * p  
+* The SVM at core is a binary classifier, but can be used in a multi-class setting  
+	* Have a model for each of the choose(m, 2) possible combinations, and use majority voting on the outputs (ties broken by random)  
+    * This method is called the "one against one" classification, and it is automatically included in e1071  
+    * svm_model<- svm(Species ~ ., data = trainset, type = "C-classification", kernel = "linear")  # all run automatically  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+
+dfOld <- df
+delta <- 0.07
+df <- df[abs(1.4*df$x1 - df$x2) > delta, ]
+
+
+#split train and test data in an 80/20 proportion
+df[, "train"] <- ifelse(runif(nrow(df))<0.8, 1, 0)
+
+#assign training rows to data frame trainset
+trainset <- df[df$train == 1, ]
+#assign test rows to data frame testset
+testset <- df[df$train == 0, ]
+
+#find index of "train" column
+trainColNum <- grep("train", names(df))
+
+#remove "train" column from train and test dataset
+trainset <- trainset[, -trainColNum]
+testset <- testset[, -trainColNum]
+
+
+library(e1071)
+
+#build svm model, setting required parameters
+svm_model<- svm(y ~ ., 
+                data = trainset, 
+                type = "C-classification", 
+                kernel = "linear", 
+                scale = FALSE)
+
+
+#list components of model
+names(svm_model)
+
+#list values of the SV, index and rho
+svm_model$SV
+svm_model$index
+svm_model$rho
+
+#compute training accuracy
+pred_train <- predict(svm_model, trainset)
+mean(pred_train == trainset$y)
+
+#compute test accuracy
+pred_test <- predict(svm_model, testset)
+mean(pred_test == testset$y)
+
+
+#build scatter plot of training dataset
+scatter_plot <- ggplot(data = trainset, aes(x = x1, y = x2, color = y)) + 
+    geom_point() + 
+    scale_color_manual(values = c("red", "blue"))
+ 
+#add plot layer marking out the support vectors 
+layered_plot <- 
+    scatter_plot + geom_point(data = trainset[svm_model$index, ], aes(x = x1, y = x2), color = "purple", size = 4, alpha = 0.5)
+
+#display plot
+layered_plot
+
+
+#calculate slope and intercept of decision boundary from weight vector and svm model
+w <- c(x1=6.55241, x2=-4.73278)  # calculated manually outside of this module
+slope_1 <- -w[1]/w[2]
+intercept_1 <- svm_model$rho/w[2]
+
+#build scatter plot of training dataset
+scatter_plot <- ggplot(data = trainset, aes(x = x1, y = x2, color = y)) + 
+    geom_point() + scale_color_manual(values = c("red", "blue"))
+#add decision boundary
+plot_decision <- scatter_plot + geom_abline(slope = slope_1, intercept = intercept_1) 
+#add margin boundaries
+plot_margins <- plot_decision + 
+ geom_abline(slope = slope_1, intercept = intercept_1 - 1/w[2], linetype = "dashed")+
+ geom_abline(slope = slope_1, intercept = intercept_1 + 1/w[2], linetype = "dashed")
+#display plot
+plot_margins
+
+
+#build svm model
+svm_model<- 
+    svm(y ~ ., data = trainset, type = "C-classification", 
+        kernel = "linear", scale = FALSE)
+
+#plot decision boundaries and support vectors
+plot(x = svm_model, data = trainset)
+
+
+#build svm model, cost = 1
+svm_model_1 <- svm(y ~ .,
+                   data = trainset,
+                   type = "C-classification",
+                   cost = 1,
+                   kernel = "linear",
+                   scale = FALSE)
+
+#print model details
+svm_model_1
+
+#build svm model, cost = 100
+svm_model_100 <- svm(y ~ .,
+                   data = trainset,
+                   type = "C-classification",
+                   cost = 100,
+                   kernel = "linear",
+                   scale = FALSE)
+
+#print model details
+svm_model_100
+
+
+# Create the base train_plot
+train_plot <- ggplot(data = trainset, aes(x = x1, y = x2, color = y)) + 
+    geom_point() + scale_color_manual(values = c("red", "blue"))
+w_1 <- c(x1=6.55241, x2=-4.73278)  # calculated manually outside of this module
+w_100 <- c(x1=18.3097, x2=-13.09972)  # calculated manually outside of this module
+intercept_1 <- -0.005515526  # calculated outside of this module
+intercept_100 <- 0.001852543  # calculated outside of this module
+slope_1 <- -w_1[1]/w_1[2]
+slope_100 <- -w_100[1]/w_100[2]
+
+
+#add decision boundary and margins for cost = 1 to training data scatter plot
+train_plot_with_margins <- train_plot + 
+    geom_abline(slope = slope_1, intercept = intercept_1) +
+    geom_abline(slope = slope_1, intercept = intercept_1 - 1/w_1[2], linetype = "dashed")+
+    geom_abline(slope = slope_1, intercept = intercept_1 + 1/w_1[2], linetype = "dashed")
+
+#display plot
+train_plot_with_margins
+
+#add decision boundary and margins for cost = 100 to training data scatter plot
+train_plot_with_margins <- train_plot_with_margins + 
+    geom_abline(slope = slope_100, intercept = intercept_100, color = "goldenrod") +
+    geom_abline(slope = slope_100, intercept = intercept_100 - 1/w_100[2], linetype = "dashed", color = "goldenrod")+
+    geom_abline(slope = slope_100, intercept = intercept_100 + 1/w_100[2], linetype = "dashed", color = "goldenrod")
+
+#display plot 
+train_plot_with_margins
+
+
+svm_model<- svm(y ~ ., data = trainset, type = "C-classification", kernel = "linear", scale = FALSE)
+
+#compute training accuracy
+pred_train <- predict(svm_model, trainset)
+mean(pred_train == trainset$y)
+
+#compute test accuracy
+pred_test <- predict(svm_model, testset)
+mean(pred_test == testset$y)
+
+#plot
+plot(svm_model, trainset)
+
+
+data(iris)
+nTrials <- 100
+accuracy <- numeric(nTrials)
+
+#calculate accuracy for n distinct 80/20 train/test partitions
+for (i in 1:nTrials){ 
+    iris[, "train"] <- ifelse(runif(nrow(iris))<0.8, 1, 0)
+    trainColNum <- grep("train", names(iris))
+    trainset <- iris[iris$train == 1, -trainColNum]
+    testset <- iris[iris$train == 0, -trainColNum]
+    svm_model <- svm(Species~ ., data = trainset, 
+                     type = "C-classification", kernel = "linear")
+    pred_test <- predict(svm_model, testset)
+    accuracy[i] <- mean(pred_test == testset$Species)
+}
+
+#mean accuracy and standard deviation
+mean(accuracy) 
+sd(accuracy)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Polynomial Kernels  
+  
+
+
+	
+	
 
 
 
