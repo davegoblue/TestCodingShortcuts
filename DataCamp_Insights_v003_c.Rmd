@@ -5735,15 +5735,190 @@ sd(accuracy)
   
 Chapter 3 - Polynomial Kernels  
   
+Generating radially separable datasets:  
+  
+* The goal is to generate 2D points (again uniformly distributed on x1 and x2 using runif)  
+* Can then define a value for whether the points are within x of the center  
+	* radius <- 0.7  
+    * radius_squared <- radius^2  
+    * df$y <- factor(ifelse(df$x1^2 + df$x2^2 < radius_squared, -1, 1), levels = c(-1,1))  
+    * p <- ggplot(data = df, aes(x = x1, y = x2, color = y)) + geom_point() + scale_color_manual(values = c("-1" = "red","1" = "blue"))   
+    * p  
+* Can add a circular boundary  
+	* circle <- function(x1_center, x2_center, r, npoint = 100){ 
+	*   #angular spacing of 2*pi/npoint between points  
+	*   theta <- seq(0,2*pi,length.out = npoint)  
+	*   x1_circ <- x1_center + r * cos(theta)  
+	*   x2_circ <- x2_center + r * sin(theta)  
+	*   return(data.frame(x1c = x1_circ, x2c = x2_circ))  
+	*   }  
+    * boundary <- circle(x1_center = 0, x2_center = 0, r = radius)  
+    * p <- p + geom_path(data = boundary, aes(x = x1c, y = x2c), inherit.aes = FALSE)  
+  
+Linear SVM on radially separable datasets:  
+  
+* The linear SVM will perform poorly on the radially separable dataset  
+	* svm_model<- svm(y ~ ., data=trainset, type="C-classification", kernel="linear")  
+    * svm_model  
+    * pred_test <- predict(svm_model,testset)  
+    * plot(svm_model,trainset)  # all points are classified as 1  
+  
+Kernel trick - devise a mathematical transformation that makes the data linearly separable:  
+  
+* For a circles could map X1 = x1**2 and X2 = x2**2, where X1 + X2 = 0.49 (which is linearly separable)  
+* The polynomial kernel has a degree (e.g., 1 for linear, 2 for quadratic, etc.) and tuning parameters gamma and coef0  
+	* The kernel also uses u dot v where u and v are vectors belonging to the dataset  
+    * (gamma * (u dot v) + coef0) ** degree  
+* Applying the quadratic kernel to the circular data from above  
+	* svm_model<- svm(y ~ ., data = trainset, type = "C-classification", kernel = "polynomial", degree = 2)  
+    * plot(svm_model, trainset)  
+  
+Tuning SVM:  
+  
+* Set a search range for each parameter, typically as a sequence of variable (e.g., in multiples of 10)  
+* For each combination of parameters, build an SVM and assess the out-of-sample accuracy - can become computationally intensive, though  
+	* tune_out <- tune.svm(x = trainset[,-3], y = trainset[,3], type = "C-classification", kernel = "polynomial", degree = 2, cost = 10^(-1:2), gamma = c(0.1,1,10), coef0 = c(0.1,1,10))  
+    * tune_out$best.parameters$cost  
+    * tune_out$best.parameters$gamma  
+    * tune_out$best.parameters$coef0  
+    * svm_model <- svm(y~ ., data = trainset, type = "C-classification", kernel = "polynomial", degree = 2, cost = tune_out$best.parameters$cost, gamma = tune_out$best.parameters$gamma, coef0 = tune_out$best.parameters$coef0)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+#set number of variables and seed
+n <- 400
+set.seed(1)
+
+#Generate data frame with two uniformly distributed predictors, x1 and x2
+df <- data.frame(x1 = runif(n, min = -1, max = 1), x2 = runif(n, min = -1, max = 1))
+
+#We want a circular boundary. Set boundary radius 
+radius <- 0.8
+radius_squared <- radius^2
+
+#create dependent categorical variable, y, with value -1 or 1 depending on whether point lies
+#within or outside the circle.
+df$y <- factor(ifelse(df$x1**2 + df$x2**2 < radius_squared, -1, 1), levels = c(-1, 1))
 
 
-	
-	
+#load ggplot
+library(ggplot2)
+
+#build scatter plot, distinguish class by color
+scatter_plot <- ggplot(data = df, aes(x = x1, y = x2, color = y)) + 
+    geom_point() +
+    scale_color_manual(values = c("red", "blue"))
+
+#display plot
+scatter_plot
 
 
+#default cost mode;
+svm_model_1 <- svm(y ~ ., data = trainset, type = "C-classification", cost = 1, kernel = "linear")
+
+#training accuracy
+pred_train <- predict(svm_model_1, trainset)
+mean(pred_train == trainset$y)
+
+#test accuracy
+pred_test <- predict(svm_model_1, testset)
+mean(pred_test == testset$y)
+
+#cost = 100 model
+svm_model_100 <- svm(y ~ ., data = trainset, type = "C-classification", cost = 100, kernel = "linear")
+
+#accuracy
+pred_train <- predict(svm_model_100, trainset)
+mean(pred_train == trainset$y)
+pred_test <- predict(svm_model_100, testset)
+mean(pred_test == testset$y)
 
 
+#print average accuracy and standard deviation
+accuracy <- rep(NA, 100)
+set.seed(2)
 
+#comment
+for (i in 1:100){
+    df[, "train"] <- ifelse(runif(nrow(df))<0.8, 1, 0)
+    trainset <- df[df$train == 1, ]
+    testset <- df[df$train == 0, ]
+    trainColNum <- grep("train", names(trainset))
+    trainset <- trainset[, -trainColNum]
+    testset <- testset[, -trainColNum]
+    svm_model<- svm(y ~ ., data = trainset, type = "C-classification", kernel = "linear")
+    pred_test <- predict(svm_model, testset)
+    accuracy[i] <- mean(pred_test == testset$y)
+}
+
+#print average accuracy and standard deviation
+mean(accuracy)
+sd(accuracy)
+
+
+#transform data
+df1 <- data.frame(x1sq = df$x1^2, x2sq = df$x2^2, y = df$y)
+
+#plot data points in the transformed space
+plot_transformed <- ggplot(data = df1, aes(x = x1sq, y = x2sq, color = y)) + 
+    geom_point()+ guides(color = FALSE) + 
+    scale_color_manual(values = c("red", "blue"))
+
+#add decision boundary and visualize
+plot_decision <- plot_transformed + geom_abline(slope = -1, intercept = 0.64)
+plot_decision
+
+
+svm_model <- svm(y ~ ., data = trainset, type = "C-classification", kernel = "polynomial", degree = 2)
+
+#measure training and test accuracy
+pred_train <- predict(svm_model, trainset)
+mean(pred_train == trainset$y)
+pred_test <- predict(svm_model, testset)
+mean(pred_test == testset$y)
+
+#plot
+plot(svm_model, trainset)
+
+
+#tune model
+tune_out <- 
+    tune.svm(x = trainset[, -3], y = trainset[, 3], 
+             type = "C-classification", 
+             kernel = "polynomial", degree = 2, cost = 10^(-1:2), 
+             gamma = c(0.1, 1, 10), coef0 = c(0.1, 1, 10))
+
+#list optimal values
+tune_out$best.parameters$cost
+tune_out$best.parameters$gamma
+tune_out$best.parameters$coef0
+
+
+#Build tuned model
+svm_model <- svm(y ~ ., data = trainset, type = "C-classification", 
+                 kernel = "polynomial", degree = 2, 
+                 cost = tune_out$best.parameters$cost, 
+                 gamma = tune_out$best.parameters$gamma, 
+                 coef0 = tune_out$best.parameters$coef0)
+
+#Calculate training and test accuracies
+pred_train <- predict(svm_model, trainset)
+mean(pred_train == trainset$y)
+pred_test <- predict(svm_model, testset)
+mean(pred_test == testset$y)
+
+#plot model
+plot(svm_model, trainset)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Radial Basis Kernel Functions  
+  
 
 
 
