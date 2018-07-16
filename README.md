@@ -1055,3 +1055,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Support Vector Machines in R - Chapter 2 (Support Vector Classifiers - Linear Kernels) - code  
 * DataCamp_Insights_v003_c captures Support Vector Machines in R - Chapter 3 (Polynomial Kernels) - notes  
   
+### Expansions week of 16-JUL-2018  
+* DataCamp_Insights_v003_c captures Support Vector Machines in R - Chapter 3 (Polynomial Kernels) - code  
+  
