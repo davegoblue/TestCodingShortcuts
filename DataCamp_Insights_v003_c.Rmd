@@ -5927,6 +5927,199 @@ plot(svm_model, trainset)
   
 Chapter 4 - Radial Basis Kernel Functions  
   
+Generating complex datasets:  
+  
+* The RBF kernel is highly flexible, can fit complex boundaries, and is common in the real-world  
+* Can generate complex data by using different distributions for x and y  
+	* n <- 600  
+    * set.seed(42)  
+    * df <- data.frame(x1 = rnorm(n, mean = -0.5, sd = 1), x2 = runif(n, min = -1, max = 1))  
+* The decision boundary can then be two circles that just barely touch at the origin  
+	* radius <- 0.7  
+    * radius_squared <- radius^2  
+    * center_1 <- c(-0.7,0)  
+    * center_2 <- c(0.7,0)  
+    * df$y <- factor(ifelse( (df$x1-center_1[1])^2 + (df$x2-center_1[2])^2 < radius_squared| (df$x1-center_2[1])^2 + (df$x2-center_2[2])^2 < radius_squared, -1,1), levels = c(-1,1))  
+    * p <- ggplot(data = df, aes(x = x1, y = x2, color = y)) + geom_point() + guides(color = FALSE) + scale_color_manual(values = c("red","blue"))  
+    * p  
+* Can then build linear, polynomial, and RBF kernels to model the data  
+  
+Motivating the RBF kernel:  
+  
+* Neither the linear kernel nor the polynomial kernel will work well for the dataset as described  
+* Can use the heuristic that points near each other probably belong to the same class (similar to kNN)  
+	* The kernel should have a maximum at (a, b), and should decay as you move away from (a, b)  
+    * The rate of decay, all else equal should be the same in all directions, with a tunable gamma  
+    * As good fortune has it, the exponential exp(-gamma * r) has all of these properties  
+    * rbf <- function(r, gamma) exp(-gamma*r)  
+    * ggplot(data.frame(r = c(-0, 10)), aes(r)) +  
+    *   stat_function(fun = rbf, args = list(gamma = 0.2), aes(color = "0.2")) +  
+    *   stat_function(fun = rbf, args = list(gamma = 0.4), aes(color = "0.4")) +  
+    *   stat_function(fun = rbf, args = list(gamma = 0.6), aes(color = "0.6")) +  
+    *   stat_function(fun = rbf, args = list(gamma = 0.8), aes(color = "0.8")) +  
+    *   stat_function(fun = rbf, args = list(gamma = 1), aes(color = "1")) +  
+    *   stat_function(fun = rbf, args = list(gamma = 2), aes(color = "2")) +  
+    *   scale_color_manual("gamma", values = c("red","orange","yellow", "green","blue","violet")) +  
+    *   ggtitle("Radial basis function (gamma=0.2 to 2)")  
+  
+The RBF kernel simulates some of the principles of kNN using exponential decay:  
+  
+* The RBF kernel can be built using pre-set R commands  
+	* svm_model<- svm(y ~ ., data = trainset, type = "C-classification", kernel = "radial")  
+* The predicted decision boundary will no longer be linear, and can be refined through tuning  
+	* tune_out <- tune.svm(x = trainset[,-3], y = trainset[,3], gamma = 5*10^(-2:2), cost = c(0.01,0.1,1,10,100), type = "C-classification", kernel = "radial")  
+    * tune_out$best.parameters$cost  
+    * tune_out$best.parameters$gamma  
+    * svm_model <- svm(y~ ., data=trainset, type="C-classification", kernel="radial", cost=tune_out$best.parameters$cost, gamma=tune_out$best.parameters$gamma)  
+  
+Example code includes:  
+```{r}
+
+#number of data points
+n <- 1000
+
+#set seed
+set.seed(1)
+
+#create dataframe
+df <- data.frame(x1 = rnorm(n, mean = -0.5, sd = 1), x2 = runif(n, min = -1, max = 1))
+
+
+#set radius and centers
+radius <- 0.8
+center_1 <- c(-0.8, 0)
+center_2 <- c(0.8, 0)
+radius_squared <- radius^2
+
+#create binary classification variable
+df$y <- factor(ifelse((df$x1-center_1[1])^2 + (df$x2-center_1[2])^2 < radius_squared |
+                      (df$x1-center_2[1])^2 + (df$x2-center_2[2])^2 < radius_squared, -1, 1),
+                      levels = c(-1, 1))
+
+
+#create scatter plot
+scatter_plot<- ggplot(data = df, aes(x = x1, y = x2, color = y)) + 
+    geom_point() + 
+    scale_color_manual(values = c("red", "blue"))
+ 
+scatter_plot 
+
+
+# Create 75/25 split for train/test
+inTrain <- sample(1:nrow(df), round(0.75*nrow(df)), replace=FALSE)
+trainset <- df[sort(inTrain), ]
+testset <- df[-inTrain, ]
+
+
+#build model
+svm_model <- svm(y ~ ., data = trainset, type = "C-classification", kernel = "linear")
+
+#accuracy
+pred_train <- predict(svm_model, trainset)
+mean(pred_train == trainset$y)
+pred_test <- predict(svm_model, testset)
+mean(pred_test == testset$y)
+
+#plot model against testset
+plot(svm_model, testset)
+
+
+#build model
+svm_model <- svm(y ~ ., data = trainset, type = "C-classification", kernel = "polynomial", degree = 2)
+
+#accuracy
+pred_train <- predict(svm_model, trainset)
+mean(pred_train == trainset$y)
+pred_test <- predict(svm_model, testset)
+mean(pred_test == testset$y)
+
+#plot model
+plot(svm_model, trainset)
+
+
+#create vector to store accuracies and set random number seed
+accuracy <- rep(NA, 100)
+set.seed(2)
+
+
+# Create a dummy frame dfDum for use in the for loop
+dfDum <- df
+
+#calculate accuracies for 100 training/test partitions
+for (i in 1:100){
+    dfDum[, "train"] <- ifelse(runif(nrow(dfDum))<0.8, 1, 0)
+    trainset <- dfDum[dfDum$train == 1, ]
+    testset <- dfDum[dfDum$train == 0, ]
+    trainColNum <- grep("train", names(trainset))
+    trainset <- trainset[, -trainColNum]
+    testset <- testset[, -trainColNum]
+    svm_model<- svm(y ~ ., data = trainset, type = "C-classification", kernel = "polynomial", degree = 2)
+    pred_test <- predict(svm_model, testset)
+    accuracy[i] <- mean(pred_test == testset$y)
+}
+
+#print average accuracy and standard deviation
+mean(accuracy)
+sd(accuracy)
+
+
+#create vector to store accuracies and set random number seed
+accuracy <- rep(NA, 100)
+set.seed(2)
+
+#calculate accuracies for 100 training/test partitions
+for (i in 1:100){
+    dfDum[, "train"] <- ifelse(runif(nrow(dfDum))<0.8, 1, 0)
+    trainset <- dfDum[dfDum$train == 1, ]
+    testset <- dfDum[dfDum$train == 0, ]
+    trainColNum <- grep("train", names(trainset))
+    trainset <- trainset[, -trainColNum]
+    testset <- testset[, -trainColNum]
+    svm_model<- svm(y ~ ., data = trainset, type = "C-classification", kernel = "radial")
+    pred_test <- predict(svm_model, testset)
+    accuracy[i] <- mean(pred_test == testset$y)
+}
+
+#print average accuracy and standard deviation
+mean(accuracy)
+sd(accuracy)
+
+
+# Re-create original 75/25 split for train/test
+inTrain <- sample(1:nrow(df), round(0.75*nrow(df)), replace=FALSE)
+trainset <- df[sort(inTrain), ]
+testset <- df[-inTrain, ]
+
+#tune model
+tune_out <- tune.svm(x = trainset[, -3], y = trainset[, 3], 
+                     gamma = 5*10^(-2:2), 
+                     cost = c(0.01, 0.1, 1, 10, 100), 
+                     type = "C-classification", kernel = "radial")
+tune_out
+
+#build tuned model
+svm_model <- svm(y~ ., data = trainset, type = "C-classification", kernel = "radial", 
+                 cost = tune_out$best.parameters$cost, 
+                 gamma = tune_out$best.parameters$gamma)
+
+#calculate test accuracy
+pred_test <- predict(svm_model, testset)
+mean(pred_test == testset$y)
+
+#Plot decision boundary against test data
+plot(svm_model, testset)
+
+```
+  
+  
+  
+***
+  
+###_Experimental Design in R_  
+  
+Chapter 1 - Introduction to Experimental Design  
+  
+
 
 
 
