@@ -1058,4 +1058,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 16-JUL-2018  
 * DataCamp_Insights_v003_c captures Support Vector Machines in R - Chapter 3 (Polynomial Kernels) - code  
 * DataCamp_Insights_v003_c captures Support Vector Machines in R - Chapter 4 (Radial Basis Kernel Functions)  
+* DataCamp_Insights_v003_c captures Experimental Design in R - Chapter 1 (Introduction to Experimenatl Design)  
   
