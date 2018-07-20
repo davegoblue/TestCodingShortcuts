@@ -6347,6 +6347,176 @@ lendingclub_ab <- lendingclub %>%
   
 Chapter 3 - Randomized Complete (and Balanced Incomplete) Block Designs  
   
+Intro to NHANES Dataset and Sampling:  
+  
+* NHANES is the National Health and Nutrition Examination Study, run once every 2 years in the US since the late 1990s (was run on different frequency since the 1960s)  
+* NHANES individuals are sampled from a scheme to match the US demographics - upsampling of elderly and minorities for sufficient sample size for statistical conclusions  
+* Two key types of sampling  
+	* Probability sampling - probability is used to select the sample (will be covered in this course)  
+    * Non-probability sampling - voluntary (whoever responds), convenience (whoever the researcher can find)  
+* Many types of random sampling can be run in R  
+	* Simple Random Sampling - sample()  
+    * Stratified Sampling - dataset %>% group_by(strata_variable) %>% sample_n()  # sample a specified number of people inside each segment  
+    * Cluster Sampling - cluster(dataset, cluster_var_name, number_to_select, method = "option")  # select everyone in each randomly select cluster  
+    * Systematic Sampling - every 5th or 10th or etc. person (implemented by custom functions)  
+    * Multi-Stage Sampling - combinations of 2+ of the above approaches in a sensible and structured manner  
+  
+Randomized Complete Block Designs (RCBD):  
+  
+* RCBD is run when there is a potential nuisance factor in the data that might otherwise impact the results and conclusions  
+	* Randomized - treatment is assigned randomly inside each block  
+    * Complete - each treatment is used the same number of times inside each block  
+    * Block - experimental groups are blocked to be similar (differences within the group are expected to be lesser than differences across the groups)  
+    * Design - the experiment  
+    * "Block what you can, randomize what you cannot"  
+* The library(agricolae) allows for drawing some of the experimental designs such as an RCBD  
+	* library(agricolae)  
+    * trt <- letters[1:4]  
+    * rep <- 4  
+    * design.rcbd <- design.rcbd(trt, r = rep, seed = 42, serie = 0)  # serie has to do with tagging of number blocks  
+    * design.rcbd$sketch  
+  
+Balanced Incomplete Block Designs (BIBD):  
+  
+* Incomplete blocaks are when you cannot fully fit a treatment inside a block  
+	* Balanced - each pair of treatments occur together in a block an equal number of times  
+    * Incomplete - not every treatment will appear in every block  
+    * Block - experimental groups are blocked to be similar (differences within the group are expected to be lesser than differences across the groups  
+    * Design - the experiment  
+* Suppose that t is the number of treatments, k is the number of treatments per block, and r is the number of replications  
+	* lambda = r * (k - 1) / (t - 1)  
+    * If lambda is a whole number, then a BIBD is possible; otherwise, it is not  
+  
+Example code includes:  
+```{r}
+
+nhanes_demo <- readr::read_csv("./RInputFiles/nhanes_demo.csv")
+nhanes_medical <- readr::read_csv("./RInputFiles/nhanes_medicalconditions.csv")
+nhanes_bodymeasures <- readr::read_csv("./RInputFiles/nhanes_bodymeasures.csv")
+dummy_nhanes_final <- readr::read_csv("./RInputFiles/nhanes_final.csv")
+
+#merge the 3 datasets you just created to create nhanes_combined
+nhanes_combined <- list(nhanes_demo, nhanes_medical, nhanes_bodymeasures) %>%
+  Reduce(function(df1, df2) inner_join(df1, df2, by="seqn"), .)
+
+
+#fill in the dplyr code
+nhanes_combined %>% group_by(mcq365d) %>% summarise(mean = mean(bmxwt, na.rm = TRUE))
+
+#fill in the ggplot2 code
+nhanes_combined %>% filter(ridageyr > 16) %>% 
+  ggplot(aes(x=as.factor(mcq365d), y=bmxwt)) +
+  geom_boxplot()
+
+
+#filter out anyone less than 16
+nhanes_filter <- nhanes_combined %>% filter(ridageyr > 16)
+
+#use simputation & impute bmxwt to fill in missing values
+nhanes_final <- simputation::impute_median(nhanes_filter, bmxwt ~ riagendr)
+
+#recode mcq365d with ifelse() & examine with table()
+nhanes_final$mcq365d <- ifelse(nhanes_final$mcq365d==9, 2, nhanes_final$mcq365d)
+table(nhanes_final$mcq365d)
+
+
+#use sample() to create nhanes_srs
+nhanes_srs <- nhanes_final[sample(nrow(nhanes_final), 2500), ]
+
+#create nhanes_stratified with group_by() and sample_n()
+nhanes_stratified <- nhanes_final %>%
+  group_by(riagendr) %>%
+  sample_n(2000)
+table(nhanes_stratified$riagendr)
+
+#load sampling package and create nhanes_cluster with cluster()
+nhanes_cluster <- sampling::cluster(nhanes_final, "indhhin2", 6, method = "srswor")
+
+
+#use str() to view design.rcbd's criteria
+str(agricolae::design.rcbd)
+
+#build trt and rep
+trt <- LETTERS[1:5]
+rep <- 4
+
+#Use trt and rep to build my.design.rcbd and view the sketch part of the object
+my_design_rcbd <- agricolae::design.rcbd(trt, r=rep, seed = 42, serie=0)
+my_design_rcbd$sketch
+
+
+#make nhanes_final$riagendr a factor variable
+nhanes_final$riagendr <- factor(nhanes_final$riagendr)
+
+#use aov() to create nhanes_rcbd
+nhanes_rcbd <- aov(bmxwt ~ mcq365d + riagendr, data=nhanes_final)
+
+#check the results of nhanes_rcbd with summary()
+summary(nhanes_rcbd)
+
+#print the difference in weights by mcq365d and riagendr
+nhanes_final %>% group_by(mcq365d, riagendr) %>% summarise(mean_wt = mean(bmxwt))
+
+
+#set up the 2x2 plotting grid and then plot nhanes_rcbd
+par(mfrow=c(2, 2))
+plot(nhanes_rcbd)
+par(mfrow=c(1, 1))
+
+#run the code to view the interaction plots
+with(nhanes_final, interaction.plot(mcq365d, riagendr, bmxwt))
+
+#run the code to view the interaction plots
+with(nhanes_final, interaction.plot(riagendr, mcq365d, bmxwt))
+
+
+#create my_design_bibd_1
+# my_design_bibd_1 <- design.bib(LETTERS[1:3], k = 4, r = 16, serie = 0, seed = 42)  # will throw an error
+
+#create my_design_bibd_2
+# my_design_bibd_2 <- design.bib(letters[1:2], k = 3, r = 5, serie = 0, seed = 42)  # will throw warning
+
+#create my_design_bibd_3
+my_design_bibd_3 <- agricolae::design.bib(letters[1:4], k = 4, r = 6, serie = 0, seed = 42)
+my_design_bibd_3$sketch
+
+
+lambda <- function(t, k, r){
+  return((r*(k-1)) / (t-1))
+}
+
+#calculate lambda
+lambda(4, 3, 3)
+
+
+#build the data.frame
+creatinine <- c(1.98, 1.97, 2.35, 2.09, 1.87, 1.95, 2.08, 2.01, 1.84, 2.06, 1.97, 2.22)
+food <- as.factor(c("A", "C", "D", "A", "B", "C", "B", "C", "D", "A", "B", "D"))
+color <- as.factor(rep(c("Black", "White", "Orange", "Spotted"), each = 3))
+cat_experiment <- as.data.frame(cbind(creatinine, food, color))
+
+#create cat_model & then wrong_cat_model and examine them with summary()
+cat_model <- aov(creatinine ~ food + color, data=cat_experiment)
+summary(cat_model)
+
+
+#calculate lambda
+lambda(3, 3, 2)
+
+#create weightlift_model & examine results (variable does not exist in dataset)
+# weightlift_model <- aov(bmxarmc ~ weightlift_treat + ridreth1, data=nhanes_final)
+# summary(weightlift_model)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Latin Squares, Graeco-Latin Squares, Factorial Experiments  
+  
+
+
 
 
 
