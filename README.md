@@ -1061,4 +1061,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Experimental Design in R - Chapter 1 (Introduction to Experimental Design)  
 * DataCamp_Insights_v003_c captures Experimental Design in R - Chapter 2 (Basic Experiments)  
 * DataCamp_Insights_v003_c captures Experimental Design in R - Chapter 3 (Randomized Complete and Balanced Incomplete Block Design)  
+* DataCamp_Insights_v003_c captures Experimental Design in R - Ch. 4 (Latin Squares, Graeco-Latin Squares, Factorial Experiments)  
   
