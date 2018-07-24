@@ -1066,4 +1066,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 23-JUL-2018  
 * DataCamp_Insights_v003_c captures Structural Equation Modeling with lavaan in R - Chapter 1 (One-Factor Models) - code  
+* DataCamp_Insights_v003_c captures Structural Equation Modeling with lavaan in R - Chapter 2 (Multi-Factor Models)  
   
