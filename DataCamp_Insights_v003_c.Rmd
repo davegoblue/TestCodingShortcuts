@@ -7312,6 +7312,251 @@ ggplot(bakeoff, aes(x=episode)) +
   
 Chapter 2 - Tame Data  
   
+Cast column types:  
+  
+* Type-casting can be an important step in taming data  
+* The readr package has options for col_type within the read_csv() function  
+	* By default, all of the column types are guessed from the first 1,000 rows  
+    * bakers_raw %>% dplyr::slice(1:4)  # look at the first 4 rows  
+* Can convert a character to a number using parse_number()  
+	* parse_number("36 years")  # will become 36  
+    * bakers_tame <- read_csv(file = "bakers.csv", col_types = cols(age = col_number()) )  # col_number() will wrangle the age column to a numeric  
+* Can also use the parse_date capability to manage datetime inputs  
+	* parse_date("14 August 2012", format = "%d %B %Y")  
+    * bakers <- read_csv("bakers.csv", col_types = cols( last_date_uk = col_date(format = "%d %B %Y") ))  # col_date() will wrangle last_date_uk to a datetime  
+* There is always both a parse_* and a col_* for any given data type; can practive with parse_* then use col_* in the read-in  
+  
+Recode values:  
+  
+* The recode() function in dplyr can be used to recode values in the data  
+	* young_bakers %>% mutate(stu_label = recode(student, `0` = "other", .default = "student"))  # 0 will become other, anything else will become student  
+    * young_bakers %>% mutate(stu_label = recode(student, `0` = NA_character_, .default = "student"))  # create NA for a specific string  
+    * young_bakers %>% mutate(student = na_if(student, 0))  # na_if will convert to NA if the condition(s) is met  
+  
+Select variables:  
+  
+* Can select just a subset of the variables using select  
+* The select() function is powerful when you only need to work with a subset of the data  
+	* young_bakers2 %>% select(baker, series_winner)  # keep these variables  
+    * young_bakers2 %>% select(-technical_winner)  # drop these variables (signalled by the minus sign)  
+* Can use helper functions inside the select() call  
+	* young_bakers2 %>% select(baker, starts_with("series"))  
+    * young_bakers2 %>% select(ends_with("winner"), baker)  
+    * young_bakers2 %>% select(contains("bake"))  
+* The filter() function works on rows rather than columns  
+	* young_bakers2 %>% filter(series_winner == 1 | series_runner_up == 1)  
+  
+Tame variable names:  
+  
+* Can rename variables while selecting  
+	* young_bakers3 %>% select(baker, tech_1 = tre1)  
+    * young_bakers3 %>% select(baker, tech_ = tre1:tre3)  
+    * young_bakers3 %>% select(baker, tech_ = starts_with("tr"), result_ = starts_with("rs"))  
+* Within the rename call, it is not possible to use the helper functions  
+	* young_bakers3 %>% rename(tech_1 = t_first, result_1 = r_first)  # new = old  
+    * young_bakers3 %>% select(everything(), tech_ = starts_with("tr"), result_ = starts_with("rs"))  # everything first keeps all the column orders the same  
+* Can also use the janitor package to help with cleaning variables  
+	* young_bakers3 %>% janitor::clean_names()  
+    * Converts to snake case (lower case with underscores)  
+  
+Example code includes:  
+```{r}
+
+# NOTE THAT THIS WILL THROW WARNINGS
+# Try to cast technical as a number
+desserts <- readr::read_csv("./RInputFiles/desserts.csv",
+                      col_types = cols(
+                        technical = col_number())
+                     )
+
+# View parsing problems
+readr::problems(desserts)
+
+# NOTE THAT THIS WILL FIX THE ERRORS
+# Edit code to fix the parsing error 
+desserts <- readr::read_csv("./RInputFiles/desserts.csv",
+                      col_types = cols(
+                        technical = col_number()),
+                      na = c("", "NA", "N/A") 
+                     )
+
+# View parsing problems
+readr::problems(desserts)
+
+
+# Find format to parse uk_airdate 
+readr::parse_date("17 August 2010", format = "%d %B %Y")
+
+# Edit to cast uk_airdate
+desserts <- readr::read_csv("./RInputFiles/desserts.csv", 
+                     na = c("", "NA", "N/A"),
+                     col_types = cols(
+                       technical = col_number(),
+                       uk_airdate = col_date("%d %B %Y")
+                     ))
+
+# Print by descending uk_airdate
+desserts %>%
+  arrange(desc(uk_airdate))
+
+
+# Cast result a factor
+desserts <- readr::read_csv("./RInputFiles/desserts.csv", 
+                     na = c("", "NA", "N/A"),
+                     col_types = cols(
+                       technical = col_number(),
+                       uk_airdate = col_date(format = "%d %B %Y"),
+                       result = col_factor(levels=NULL)
+                     ))
+                    
+# Glimpse to view
+glimpse(desserts)
+
+
+oldDesserts <- desserts
+tempDesserts <- desserts %>%
+    gather(key="type_ing", value="status", starts_with(c("showstopper")), starts_with(c("signature"))) %>%
+    separate(type_ing, into=c("challenge", "ingredient"), sep="_") %>%
+    spread(ingredient, status)
+glimpse(tempDesserts)
+desserts <- tempDesserts
+
+
+# Count rows grouping by nut variable
+desserts %>%
+  count(nut, sort=TRUE)
+
+# Recode filberts as hazelnuts
+desserts <- desserts %>% 
+  mutate(nut = recode(nut, "filbert" = "hazelnut"))
+
+# Count rows again 
+desserts %>% 
+    count(nut, sort = TRUE)
+
+# Edit code to recode "no nut" as missing
+desserts <- desserts %>% 
+  mutate(nut = recode(nut, "filbert" = "hazelnut", 
+                           "no nut" = NA_character_))
+
+# Count rows again 
+desserts %>% 
+    count(nut, sort = TRUE)
+
+
+# Edit to recode tech_win as factor
+desserts <- desserts %>% 
+  mutate(tech_win = recode_factor(technical, `1` = 1,
+                           .default = 0))
+
+# Count to compare values                      
+desserts %>% 
+  count(technical == 1, tech_win)
+
+
+ratings0 <- readr::read_csv("./RInputFiles/02.03_messy_ratings.csv")
+str(ratings0, give.attr=FALSE)
+
+# ratings1 <- readr::read_csv("./RInputFiles/messy_ratings.csv")
+# str(ratings1, give.attr=FALSE)
+# ratings2 <- readr::read_csv("./RInputFiles/messy_ratings2.csv")
+# str(ratings2, give.attr=FALSE)
+
+ratings <- ratings0 %>%
+    filter(series >= 3) %>%
+    rename(day=day_of_week) %>%
+    mutate(series=factor(series), 
+           season_premiere=lubridate::mdy(season_premiere), 
+           season_finale=lubridate::mdy(season_finale), 
+           viewer_growth = (e10_viewers_7day - e1_viewers_7day)
+           ) %>%
+    select(-contains("uk_airdate"))
+
+
+# Recode channel as dummy: bbc (1) or not (0)
+ratings <- ratings %>% 
+  mutate(bbc = recode_factor(channel, "Channel 4"=0, .default=1))
+
+# Look at the variables to plot next
+ratings %>% select(series, channel, bbc, viewer_growth)
+
+# Make a filled bar chart
+ggplot(ratings, aes(x = series, y = viewer_growth, fill = bbc)) +
+  geom_col()
+
+
+# Move channel to first column
+ratings %>% 
+  select(channel, everything())
+
+# Edit to drop 7- and 28-day episode viewer data
+ratings %>% 
+  select(-ends_with("day"))
+
+# Edit to move channel to first and drop episode viewer data
+ratings %>% 
+  select(-ends_with("day")) %>%
+  select(channel, everything())
+
+
+# Glimpse messy names
+# glimpse(messy_ratings)
+
+# Reformat to lower camelcase
+# ratings <- messy_ratings %>%
+#   clean_names(case="lower_camel")
+    
+# Glimpse cleaned names
+# glimpse(ratings)
+
+# Reformat to snake case
+# ratings <- messy_ratings %>% 
+#     clean_names("snake")
+
+# Glimpse cleaned names
+# glimpse(ratings)
+
+
+# Select 7-day viewer data by series
+viewers_7day <- ratings %>%
+  select(series, contains("7day"))
+
+# Glimpse
+glimpse(viewers_7day)
+
+# Adapt code to also rename 7-day viewer data
+viewers_7day <- ratings %>% 
+    select(series, viewers_7day_ = ends_with("7day"))
+
+# Glimpse
+glimpse(viewers_7day)
+
+
+# Adapt code to drop 28-day columns; move 7-day to front
+viewers_7day <- ratings %>% 
+    select(viewers_7day_ = ends_with("7day"), everything(), -contains("28day"))
+
+# Glimpse
+glimpse(viewers_7day)
+
+
+# Adapt code to keep original order
+viewers_7day <- ratings %>% 
+    select(everything(), -ends_with("28day"), viewers_7day_ = ends_with("7day"))
+
+# Glimpse
+glimpse(viewers_7day)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Tidy Your Data  
+  
+
+
 
 
 
