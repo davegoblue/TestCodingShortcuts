@@ -7457,11 +7457,6 @@ desserts %>%
 ratings0 <- readr::read_csv("./RInputFiles/02.03_messy_ratings.csv")
 str(ratings0, give.attr=FALSE)
 
-# ratings1 <- readr::read_csv("./RInputFiles/messy_ratings.csv")
-# str(ratings1, give.attr=FALSE)
-# ratings2 <- readr::read_csv("./RInputFiles/messy_ratings2.csv")
-# str(ratings2, give.attr=FALSE)
-
 ratings <- ratings0 %>%
     filter(series >= 3) %>%
     rename(day=day_of_week) %>%
@@ -7555,6 +7550,201 @@ glimpse(viewers_7day)
   
 Chapter 3 - Tidy Your Data  
   
+Introduction to Tidy Data:  
+  
+* Tidy data helps with producing good plots - allows for faceting and the like  
+* Data can be tidy but not tame, and can be tame but not tidy  
+	* In general, tidy data is long rather than wide  
+    * As a result, tidy data tends to take up more space, but with the advantage of being easier to plot or analyze  
+* Can automatically get counts summed to a specific level  
+	* juniors_tidy %>% count(baker, wt = correct)  # variable wt will be the sum of correct  
+    * ggplot(juniors_tidy, aes(baker, correct)) + geom_col()  # roughly the equivalent if plotting the data  
+  
+Gather:  
+  
+* Gathering is the process of converting data from wide to long  
+	* gather(data, key, value, .)  
+    * key is the new column containing the variable  
+    * value is the new column contining the value  
+    * The . are the columns to be gathered, with column name going to the key column and associated values going to the value column  
+    * The key and value need to be quoted while the . can be passed bare (unquoted)  
+  
+Separate:  
+  
+* Sometimes, a column really contains two variable, for example when there is spice_trail or the like  
+* The separate function requires at least three arguments  
+	* data - the data frame  
+    * col - the column that you want to separate (can be a bare variable name since it already exists in the data frame)  
+    * into - quoted variables to be created, inside the c() function  
+    * By default, the existing column col is replaced  
+    * There is also an option for convert=TRUE where it will try to pick the best variable type (especially helpful when creating numbers)  
+    * There is also the option for sep, where the defaults for separators can be over-ridden to better match the data  
+  
+Spread:  
+  
+* The spread function is designed to convert long data to wide data  
+	* Spread can be considered a tool to tidy messy rows, where gather is a tool to tidy messy columns  
+    * data - the data frame  
+    * key - the key is the column that currently contains what should become the new columns  
+    * value - value is the column that currently contains what should become the values in the new columns  
+    * convert=TRUE will help with re-casting variable types (particularly helpful when numbers are being pulled out of a mixed character-number column (likely what drove the need to spread)  
+  
+Tidy multiple sets of data:  
+  
+* Sometimes, there are multiple data components to tidy, where the columns need to be fixed in several ways  
+	* For example, score_1, guess_1, score_2, guess_2  
+    * Ideal target would be to have trials (1, 2, 3) in one column, and with columns score and guess containing the variables  
+* Example code for converting multiple columns simultaneously  
+	* juniors_multi %>% gather(key = "key", value = "value", score_1:guess_3) %>% separate(key, into = c("var", "order"), convert = TRUE)  
+    * juniors_multi %>% gather(key = "key", value = "value", score_1:guess_3) %>% separate(key, into = c("var", "order"), convert = TRUE) %>% spread(var, value)  
+  
+Example code includes:  
+```{r}
+
+ratings1 <- readr::read_csv("./RInputFiles/messy_ratings.csv")
+oldRatings <- ratings
+ratings <- ratings1
+ratings1
+
+# Plot of episode 1 viewers by series
+ratings %>%
+  ggplot(aes(x=series, y=e1)) + 
+  geom_bar(stat="identity")
+  
+# Adapt code to plot episode 2 viewers by series
+ggplot(ratings, aes(x = series, y = e2)) +
+    geom_col() 
+
+
+# Gather and count episodes
+tidy_ratings <- ratings %>%
+    gather(key = "episode", value = "viewers_7day", -series, 
+           factor_key = TRUE, na.rm = TRUE) %>% 
+    arrange(series, episode) %>% 
+    mutate(episode_count = row_number())
+
+# Plot viewers by episode and series
+ggplot(tidy_ratings, aes(x = episode_count, y = viewers_7day, fill = as.factor(series))) +
+    geom_col()
+
+
+ratings2 <- readr::read_csv("./RInputFiles/messy_ratings2.csv")
+ratings2$series <- as.factor(ratings2$series)
+ratings2
+
+# Gather 7-day viewers by episode (ratings2 already loaded)
+week_ratings <- ratings2  %>% 
+    select(series, ends_with("7day")) %>% 
+    gather(episode, viewers_7day, ends_with("7day"), na.rm = TRUE, factor_key = TRUE)
+    
+# Plot 7-day viewers by episode and series
+ggplot(week_ratings, aes(x = episode, y = viewers_7day, group = series)) +
+    geom_line() +
+    facet_wrap(~series)
+
+
+# Edit to parse episode number
+week_ratings <- ratings2 %>% 
+    select(series, ends_with("7day")) %>% 
+    gather(episode, viewers_7day, ends_with("7day"), na.rm = TRUE) %>% 
+    separate(episode, into = "episode", extra = "drop") %>% 
+    mutate(episode = parse_number(episode))
+    
+# Edit your code to color by series and add a theme
+ggplot(week_ratings, aes(x = episode, y = viewers_7day, 
+                         group = series, color = series)) +
+    geom_line() +
+    facet_wrap(~series) +
+    guides(color = FALSE) +
+    theme_minimal() 
+
+
+week_ratings_dec <- week_ratings %>%
+    mutate(viewers_7day=as.character(viewers_7day)) %>%
+    separate(viewers_7day, into=c("viewers_millions", "viewers_decimal"), sep="\\.") %>%
+    mutate(viewers_decimal=ifelse(is.na(viewers_decimal), ".", paste0(".", viewers_decimal))) %>%
+    dplyr::arrange(series, episode)
+
+# Unite series and episode
+ratings3 <- week_ratings_dec %>% 
+    unite("viewers_7day", viewers_millions, viewers_decimal)
+
+# Print to view
+ratings3
+
+
+# Adapt to change the separator
+ratings3 <- week_ratings_dec  %>% 
+    unite(viewers_7day, viewers_millions, viewers_decimal, sep="")
+
+# Print to view
+ratings3
+
+
+# Adapt to cast viewers as a number
+ratings3 <- week_ratings_dec  %>% 
+    unite(viewers_7day, viewers_millions, viewers_decimal, sep="") %>%
+    mutate(viewers_7day = parse_number(viewers_7day))
+
+# Print to view
+ratings3
+
+
+# Create tidy data with 7- and 28-day viewers
+tidy_ratings_all <- ratings2 %>%
+    gather(episode, viewers, ends_with("day"), na.rm = TRUE) %>% 
+    separate(episode, into = c("episode", "days")) %>%  
+    mutate(episode = parse_number(episode),
+           days = parse_number(days)) 
+
+# Adapt to spread counted values
+tidy_ratings_all %>% 
+    count(series, days, wt = viewers) %>%
+    spread(key=days, value=n, sep="_")
+
+# Fill in blanks to get premiere/finale data
+tidy_ratings <- ratings %>%
+    gather(episode, viewers, -series, na.rm = TRUE) %>%
+    mutate(episode = parse_number(episode)) %>% 
+    group_by(series) %>% 
+    filter(episode == 1 | episode == max(episode)) %>% 
+    ungroup()
+
+
+# Recode first/last episodes
+first_last <- tidy_ratings %>% 
+  mutate(episode = recode(episode, `1` = "first", .default = "last")) 
+
+# Fill in to make slope chart
+ggplot(first_last, aes(x = episode, y = viewers, color = as.factor(series))) +
+  geom_point() +
+  geom_line(aes(group = series))
+
+# Switch the variables mapping x-axis and color
+ggplot(first_last, aes(x = series, y = viewers, color = episode)) +
+  geom_point() + # keep
+  geom_line(aes(group = series)) + # keep
+  coord_flip() # keep
+
+# Calculate relative increase in viewers
+bump_by_series <- first_last %>% 
+  spread(episode, viewers) %>%   
+  mutate(bump = (last - first) / first)
+  
+# Fill in to make bar chart of bumps by series
+ggplot(bump_by_series, aes(x = series, y = bump)) +
+  geom_col() +
+  scale_y_continuous(labels = scales::percent) # converts to %
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Transform Your Data  
+  
+
 
 
 
