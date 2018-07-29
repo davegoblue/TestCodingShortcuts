@@ -1071,4 +1071,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Structural Equation Modeling with lavaan in R - Chapter 4 (Full Example and Extension)  
 * DataCamp_Insights_v003_c captures Working with Data in the Tidyverse - Chapter 1 (Explore Data)  
 * DataCamp_Insights_v003_c captures Working with Data in the Tidyverse - Chapter 2 (Tame Data)  
+* DataCamp_Insights_v003_c captures Working with Data in the Tidyverse - Chapter 3 (Tidy Data)  
   
