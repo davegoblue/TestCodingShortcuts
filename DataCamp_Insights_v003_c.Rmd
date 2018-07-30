@@ -7744,6 +7744,182 @@ ggplot(bump_by_series, aes(x = series, y = bump)) +
   
 Chapter 4 - Transform Your Data  
   
+Complex recoding with case_when:  
+  
+* The case_when function allow for vectoizing multiple if-else-then statements  
+	* The LHS must give (or be) a boolean  
+    * The default value for else is NA  
+* Example using ages of the baker data  
+	* bakers %>% mutate(gen = if_else(between(birth_year, 1981, 1996), "millenial", "not millenial"))  # simple if statement (boundaries of between are inclusive)  
+    * bakers %>% mutate(gen = case_when( between(birth_year, 1965, 1980) ~ "gen_x", between(birth_year, 1981, 1996) ~ "millenial" ))  # logical ~ result  
+    * bakers %>% mutate(gen = case_when( between(birth_year, 1928, 1945) ~ "silent", between(birth_year, 1946, 1964) ~ "boomer", between(birth_year, 1965, 1980) ~ "gen_x", between(birth_year, 1981, 1996) ~ "millenial", TRUE ~ "gen_z" ))  
+    * bakers %>% count(gen, sort = TRUE) %>% mutate(prop = n / sum(n))  
+  
+Factors:  
+  
+* The forcats package is made specifically for working with factors - all functions start with fct_  
+* Converting to factors helps ensure the proper ordering of the data  
+	* ggplot(bakers, aes(x = fct_rev(fct_infreq(gen)))) + geom_bar()  # reverse by infrequency (build from small to large)  # on-the-fly conversions inside ggplot  
+    * bakers <- bakers %>% mutate(gen = fct_relevel(gen, "silent", "boomer", "gen_x", "millenial", "gen_z"))  # conversions of the raw dataset  
+    * bakers %>% dplyr::pull(gen) %>% levels()  # check that this worked  
+    * ggplot(bakers, aes(x = gen)) + geom_bar()  # will now be plotted in the desired order  
+* Need to be careful of the proper treatment of factors  
+	* ggplot(bakers, aes(x = gen, fill = series_winner)) + geom_bar()  # FAIL  
+    * bakers <- bakers %>% mutate(series_winner = as.factor(series_winner))  
+    * ggplot(bakers, aes(x = gen, fill = series_winner)) + geom_bar()  # WORKS  
+    * ggplot(bakers, aes(x = gen, fill = as.factor(series_winner))) + geom_bar()  # ALSO WORKS  
+  
+Dates:  
+  
+* Can use lubridate for convenience functions such as ymd() or dmy(), with the output being ISO (YYYY-MM-DD)  
+	* Can also include a vector of suspected dates  
+    * dmy("17 August 2010")  # will work  
+    * hosts <- tibble::tribble( ~host, ~bday, ~premiere, "Mary", "24 March 1935", "August 17th, 2010", "Paul", "1 March 1966", "August 17th, 2010")  
+    * hosts <- hosts %>% mutate(bday = dmy(bday), premiere = mdy(premiere))  
+* There are three aspects of timespans  
+	* interval - time span bound by two real dates  
+    * duration - exact number of seconds in an interval  
+    * period - change in clock time of an interval  
+    * hosts <- hosts %>% mutate(age_int = interval(bday, premiere))  # new variable age_int will be of type interval  
+    * hosts %>% mutate(years_decimal = age_int / years(1), years_whole = age_int %/% years(1))  # years(1) is one year, so this is fractional and whole (floored) years  
+  
+Strings:  
+  
+* The separate function splits one column in to 2+ columns (for example "age, job" could become "age" and "job")  
+	* series5 <- series5 %>% separate(about, into = c("age", "occupation"), sep = ", ")  
+    * series5 <- series5 %>% separate(about, into = c("age", "occupation"), sep = ", ") %>% mutate(age = parse_number(age))  # numeric age. Dropping years  
+* The stringr package makes working with strings in R easier (typically used within a mutate) - all functions start with str_  
+	* series5 <- series5 %>% mutate(baker = str_to_upper(baker), showstopper = str_to_lower(showstopper))  
+    * series5 %>% mutate(pie = str_detect(showstopper, "pie"))  # returns a boolean  
+    * series5 %>% mutate(showstopper = str_replace(showstopper, "pie", "tart"))  # find and replace for strings  
+    * series5 %>% mutate(showstopper = str_remove(showstopper, "pie"))  # remove "pie", though there may be trailing whitespace  
+    * series5 %>% mutate(showstopper = str_remove(showstopper, "pie"), showstopper = str_trim(showstopper))  # trim whitespace at the beginning or end  
+  
+Final thoughts:  
+  
+* R using the tidyverse for analysis and presentation  
+* Reading data using readr and analyzing using dplyr and ggplot2  
+* Taming variable types, names, and values  
+* Transforming data using stringr and lubridate  
+* The "here" package can make working with file paths much easier  
+  
+Example code includes:  
+```{r}
+
+baker_results <- readr::read_csv("./RInputFiles/baker_results.csv")
+messy_baker_results <- readr::read_csv("./RInputFiles/messy_baker_results.csv")
+bakers <- baker_results
+glimpse(bakers)
+
+
+# Create skill variable with 3 levels
+bakers <- bakers %>% 
+  mutate(skill = case_when(
+    star_baker > technical_winner ~ "super_star",
+    star_baker < technical_winner ~ "high_tech",
+    TRUE ~ "well_rounded"
+  ))
+  
+# Filter zeroes to examine skill variable
+bakers %>% 
+  filter(star_baker==0 & technical_winner==0) %>% 
+  count(skill)
+
+
+# Add pipe to drop skill = NA
+bakers_skill <- bakers %>% 
+  mutate(skill = case_when(
+    star_baker > technical_winner ~ "super_star",
+    star_baker < technical_winner ~ "high_tech",
+    star_baker == 0 & technical_winner == 0 ~ NA_character_,
+    star_baker == technical_winner  ~ "well_rounded"
+  )) %>% 
+  drop_na(skill)
+  
+# Count bakers by skill
+bakers_skill %>%
+  count(skill)
+
+
+# Cast skill as a factor
+bakers <- bakers %>% 
+  mutate(skill = as.factor(skill))
+
+# Examine levels
+bakers %>%
+  pull(skill) %>%
+  levels()
+
+
+baker_dates <- bakers %>%
+    select(series, baker, contains("date")) %>%
+    mutate(last_date_appeared_us=as.character(last_date_us), 
+           first_date_appeared_us=as.character(first_date_us)
+           ) %>%
+    rename(first_date_appeared_uk=first_date_appeared, last_date_appeared_uk=last_date_appeared) %>%
+    select(-last_date_us, -first_date_us)
+glimpse(baker_dates)
+
+
+# Add a line to extract labeled month
+baker_dates <- baker_dates %>% 
+  mutate(last_date_appeared_us=lubridate::ymd(last_date_appeared_us), 
+         last_month_us=lubridate::month(last_date_appeared_us, label=TRUE)
+         )
+         
+ggplot(baker_dates, aes(x=last_month_us)) + geom_bar()
+
+
+baker_time <- baker_dates %>%
+    mutate(first_date_appeared_us=lubridate::ymd(first_date_appeared_us)) %>%
+    select(-last_month_us)
+glimpse(baker_time)
+
+           
+# Add a line to create whole months on air variable
+baker_time <- baker_time  %>% 
+  mutate(time_on_air = lubridate::interval(first_date_appeared_uk, last_date_appeared_uk),
+         weeks_on_air = time_on_air / lubridate::weeks(1), 
+         months_on_air = time_on_air %/% months(1)
+         )
+
+# Count rows
+messy_baker_results %>% 
+  count(position_reached)
+
+
+# Add another mutate to replace "THIRD PLACE" with "RUNNER UP"and count
+messy_baker_results <- messy_baker_results %>% 
+  mutate(position_reached = str_to_upper(position_reached),
+         position_reached = str_replace(position_reached, "-", " "), 
+         position_reached = str_replace(position_reached, "THIRD PLACE", "RUNNER UP"))
+
+# Count rows
+messy_baker_results %>% 
+  count(position_reached)
+
+
+# Add a line to create new variable called student
+bakers <- bakers %>% 
+    mutate(occupation = str_to_lower(occupation), 
+           student=str_detect(occupation, "student")
+           )
+
+# Find all students and examine occupations
+bakers %>% 
+  filter(student) %>%
+  select(baker, occupation, student)
+
+```
+  
+  
+  
+***
+  
+###_Modeling Data in the Tidyverse_  
+  
+Chapter 1 - Introduction to Modeling  
+  
 
 
 
