@@ -1075,5 +1075,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 30-JUL-2018  
 * DataCamp_Insights_v003_c captures Working with Data in the Tidyverse - Chapter 4 (Transform Data)  
+* DataCamp_Insights_v003_c captures Modeling Data in the Tidyverse - Chapter 1 (Introduction to Modeling)  
   
-
