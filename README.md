@@ -1078,5 +1078,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Modeling Data in the Tidyverse - Chapter 1 (Introduction to Modeling)  
 * DataCamp_Insights_v003_c captures Modeling Data in the Tidyverse - Chapter 2 (Modeling with Regression)  
 * DataCamp_Insights_v003_c captures Modeling Data in the Tidyverse - Chapter 3 (Modeling with Multiple Regression)  
-* DataCamp_Insights_v003_c captures Modeling Data in the Tidyverse - Chapter 4 (Model Selection and Assessment)  
+* DataCamp_Insights_v003_c captures Modeling Data in the Tidyverse - Chapter 4 (Model Selection and Assessment) - notes  
+* DataCamp_Insights_v003_c captures Modeling Data in the Tidyverse - Chapter 4 (Model Selection and Assessment) - code  
   
