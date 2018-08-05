@@ -8398,6 +8398,166 @@ moderndive::get_regression_points(train_model_2, newdata = test) %>%
   
 Chapter 1 - Introduction to Survey Data  
 
+What are survey weights?  
+  
+* Survey weights sometimes appear inside a dataset, to reflect potential over/under sampling  
+	* Survey weights result from a complex survey design - number of points in the population represented by each entry in the sampling frame  
+    * For example, average income would be the sum-product of weights and incomes divided by the sum of weights  
+  
+Specifying elements of the design in R:  
+  
+* Simple random sampling is when every member of the population is known and had an equal chance of being selected  
+	* library(survey)  
+    * srs_design <- svydesign(data = paSample, weights = ~wts, fpc=~N, id=~1)  # the ~ means that these are column names  
+* Stratified sampling is when a simple random sample is taken from each of the strata (sub-units)  
+	* For example, taking 100 people from every county in a state, so that county-level averages can be gathered  
+    * stratified_design <- svydesign(data = paSample, id = ~1, weights = ~wts, strata = ~county, fpc = ~N)  
+* Cluster sampling is when the population are grouped in to clusters, with a simple random sample of clusters selected, and with simple random samples taken within each selected cluster  
+	* cluster_design <- svydesign(data = paSample, id = ~county + personid, fpc = ~N1 + N2, weights = ~wts) 
+  
+Visualizing impact of survey weights:  
+  
+* NHANES data - assessment of health of persons in the US, derived by a health check in a mobile doctor's office  
+	* Stage 0 - stratified by geography and proportion minority  
+    * Stage 1 - within strata, counties randomly selected (selection likelihood proportional to population)  
+    * Stage 2 - within counties, city blocks randomly selected (selection likelihood proportional to population)  
+    * Stage 3 - within city blocks, households randomly selected (based on demographics)  
+    * Stage 4 - within households, people randomly selected  
+* NHANES data are availabl through a package in R  
+	* library(NHANES)  
+    * dim(NHANESraw)  
+    * summarize(NHANESraw, N_hat = sum(WTMEC2YR))  # sums to double the US population, due to having 4 years of data when desiring only 2 years of data  
+    * NHANESraw <- mutate(NHANESraw, WTMEC4YR = WTMEC2YR/2)  # fix the double population issue  
+    * NHANES_design <- svydesign(data = NHANESraw, strata = ~SDMVSTRA, id = ~SDMVPSU, nest = TRUE, weights = ~WTMEC4YR)  # id is the cluster (first-level), nest=TRUE is due to id being nested within strata (???)  
+    * distinct(NHANESraw, SDMVPSU)  # only takes 3 values, since only 1-3 counties are selected  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+colTypes <- "FINLWT21 numeric _ FINCBTAX integer _ BLS_URBN integer _ POPSIZE integer _ EDUC_REF character _ EDUCA2 character _ AGE_REF integer _ AGE2 character _ SEX_REF integer _ SEX2 integer _ REF_RACE integer _ RACE2 integer _ HISP_REF integer _ HISP2 integer _ FAM_TYPE integer _ MARITAL1 integer _ REGION integer _ SMSASTAT integer _ HIGH_EDU character _ EHOUSNGC numeric _ TOTEXPCQ numeric _ FOODCQ numeric _ TRANSCQ numeric _ HEALTHCQ numeric _ ENTERTCQ numeric _ EDUCACQ integer _ TOBACCCQ numeric _ STUDFINX character _ IRAX character _ CUTENURE integer _ FAM_SIZE integer _ VEHQ integer _ ROOMSQ character _ INC_HRS1 character _ INC_HRS2 character _ EARNCOMP integer _ NO_EARNR integer _ OCCUCOD1 character _ OCCUCOD2 character _ STATE character _ DIVISION integer _ TOTXEST integer _ CREDFINX character _ CREDITB integer _ CREDITX character _ BUILDING character _ ST_HOUS integer _ INT_PHON character _ INT_HOME character _ "
+
+ce <- readr::read_csv("./RInputFiles/ce.csv")
+glimpse(ce)
+ceColTypes <- ""
+for (x in names(ce)) { ceColTypes <- paste0(ceColTypes, x, " ", class(ce[, x, drop=TRUE]), " _ ") }
+all.equal(colTypes, ceColTypes)
+
+# Construct a histogram of the weights
+ggplot(data = ce, mapping = aes(x = FINLWT21)) +
+    geom_histogram()
+
+# In the next few exercises we will practice specifying sampling designs using different samples from the api dataset, located in the survey package
+# The api dataset contains the Academic Performance Index and demographic information for schools in California
+# The apisrs dataset is a simple random sample of schools from the api dataset
+# Notice that pw contains the survey weights and fpc contains the total number of schools in the population
+
+data(api, package="survey")
+library(survey)
+
+# Look at the apisrs dataset
+glimpse(apisrs)
+
+# Specify a simple random sampling for apisrs
+apisrs_design <- svydesign(data = apisrs, weights = ~pw, fpc = ~fpc, id = ~1)
+
+# Print a summary of the design
+summary(apisrs_design)
+
+
+# Now let's practice specifying a stratified sampling design, using the dataset apistrat
+# The schools are stratified based on the school type stype where E = Elementary, M = Middle, and H = High School
+# For each school type, a simple random sample of schools was taken
+
+# Glimpse the data
+glimpse(apistrat)
+
+# Summarize strata sample sizes
+apistrat %>%
+  count(stype)
+
+# Specify the design
+strat_design <- svydesign(data = apistrat, weights = ~pw, fpc = ~fpc, id = ~1, strata = ~stype)
+
+# Look at the summary information for the stratified design
+summary(strat_design)
+
+
+# Now let's practice specifying a cluster sampling design, using the dataset apiclus2
+# The schools were clustered based on school districts, dnum
+# Within a sampled school district, 5 schools were randomly selected for the sample
+# The schools are denoted by snum
+# The number of districts is given by fpc1 and the number of schools in the sampled districts is given by fpc2
+
+# Glimpse the data
+glimpse(apiclus2)
+
+# Specify the design
+apiclus_design <- svydesign(id = ~dnum + snum, data = apiclus2, weights = ~pw, fpc = ~fpc1 + fpc2)
+
+#Look at the summary information stored for both designs
+summary(apiclus_design)
+
+
+# Construct histogram of pw
+ggplot(data = apisrs, mapping = aes(x = pw)) + 
+    geom_histogram()
+
+# Construct histogram of pw
+ggplot(data = apistrat, mapping = aes(x = pw)) + 
+    geom_histogram()
+
+# Construct histogram of pw
+ggplot(data = apiclus2, mapping = aes(x = pw)) + 
+    geom_histogram()
+
+
+#Create table of average survey weights by race
+tab_weights <- NHANESraw %>%
+  group_by(Race1) %>%
+  summarize(avg_wt = mean(WTMEC4YR))
+
+#Print the table
+tab_weights
+
+
+# The two important design variables in NHANESraw are SDMVSTRA, which contains the strata assignment for each unit, and SDMVPSU, which contains the cluster id within a given stratum
+
+NHANESraw <- read.csv("./RInputFiles/NHANESraw.txt")
+NHANESraw <- NHANESraw %>%
+    mutate(WTMEC4YR=WTMEC2YR / 2)
+names(NHANESraw)[1] <- "SurveyYr"
+glimpse(NHANESraw)
+
+# Specify the NHANES design
+NHANES_design <- svydesign(data = NHANESraw, strata = ~SDMVSTRA, id = ~SDMVPSU, 
+                           nest = TRUE, weights = ~WTMEC4YR
+                           )
+
+# Print summary of design
+summary(NHANES_design)
+
+# Number of clusters
+NHANESraw %>%
+  summarize(n_clusters = n_distinct(SDMVSTRA, SDMVPSU))
+
+# Sample sizes in clusters
+NHANESraw %>%
+  count(SDMVSTRA, SDMVPSU) 
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Exploring categorical data  
+  
+
+	
+	
+	
+	
+	
 
 
 
