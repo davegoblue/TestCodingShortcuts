@@ -1085,4 +1085,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 06-AUG-2018  
 * DataCamp_Insights_v003_c captures Analyzing Survey Data in R - Chapter 1 (Introduction to Survey Data) - code  
 * DataCamp_Insights_v003_c captures Analyzing Survey Data in R - Chapter 2 (Exploring Categorical Data)  
+* DataCamp_Insights_v003_c captures Analyzing Survey Data in R - Chapter 3 (Exploring Quantitative Data)  
   
