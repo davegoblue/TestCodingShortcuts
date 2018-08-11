@@ -9118,11 +9118,176 @@ c(p_hat - 2 * SE_approx, p_hat + 2 * SE_approx)
   
 Chapter 2 - Proportions (Testing and Power)  
   
+Hypothesis test for a proportion:  
+  
+* The hypothesis test for a proportion looks at what sort of p-hat would be observed if p held a specific value  
+	* The hypothesize() function prior to generate() sets out the hypothesis in question  
+* Suppose that analysis is being run on whether people favor capital punishment  
+	* null <- gss2016 %>% specify(response=cappun, success="FAVOR") %>% hypothesize(null="point", p=0.5) %>% generate(reps=500, type="simulate") %>% calculate(stat="prop")  
+    * null %>% summarize(mean(stat > p_hat)) %>% pull() * 2  # The times 2 is for a two-sided test  
+  
+Intervals for differences:  
+  
+* Can also look at differences in proportions, for example men vs. women belief in afterlife  
+* Can generate null data by rewording the null hypothesis to "there is no association between belief in the afterlife and gender" - enables test by permutation  
+	* gss2016 %>% specify(response=postlife, explanatory=sex, success="YES") %>% hypothesize(null="independence") %>% generate(reps=1, type="permute")  
+    * gss2016 %>% specify(postlife ~ sex, success="YES") %>% hypothesize(null="independence") %>% generate(reps=1, type="permute")  # can use formula notation; same command as above, but simplified  
+    * null <- gss2016 %>% specify(postlife ~ sex, success="YES") %>% hypothesize(null="independence") %>% generate(reps=500, type="permute")  %>% calculate(stat="diff in props", order=c("FEMALE", "MALE")) # Full command  
+    * null %>% summarize(mean(stat > d_hat)) %>% pull() * 2  
+  
+Statistical errors:  
+  
+* Type I errors - probability of rejecting a true null hypothesis - will happen with probability alpha  
+* Type II errors - probability of not rejecting a false null hypothesis  - will happen with probability beta, meaning the test has power 1-beta  
+  
+Example code includes:  
+```{r}
+
+# Construct plot
+ggplot(gss2016, aes(x = postlife)) + 
+    geom_bar()
+
+# Compute and save proportion that believe
+p_hat <- gss2016 %>%
+    summarize(mean(postlife == "YES", na.rm = TRUE)) %>%
+    pull()
+
+# Generate one data set under H0
+sim1 <- gss2016 %>%
+    specify(response = postlife, success = "YES") %>%
+    hypothesize(null = "point", p = 0.75) %>%
+    generate(reps = 1, type = "simulate")
+
+# Construct plot
+ggplot(sim1, aes(x=postlife)) +
+    geom_bar()
+
+# Compute proportion that believe
+sim1 %>%
+    summarize(mean(postlife == "YES")) %>%
+    pull()
 
 
+# Generate null distribution
+null <- gss2016 %>%
+    specify(response = postlife, success = "YES") %>%
+    hypothesize(null = "point", p = .75) %>%
+    generate(reps = 100, type = "simulate") %>%
+    calculate(stat = "prop")
+
+# Visualize null distribution
+ggplot(null, aes(x = stat)) +
+    geom_density() +
+    geom_vline(xintercept = p_hat, color = "red")
+
+# Compute the two-tailed p-value
+null %>%
+    summarize(mean(stat > p_hat)) %>%
+    pull() * 2
 
 
+# Plot distribution
+ggplot(gss2016, aes(x = sex, fill = cappun)) +
+    geom_bar(position = "fill")
+  
+# Compute two proportions
+p_hats <- gss2016 %>%
+    group_by(sex) %>%
+    summarize(mean(cappun == "FAVOR", na.rm = TRUE)) %>%
+    pull()
 
+# Compute difference in proportions
+d_hat <- diff(p_hats)
+
+
+# Create null distribution
+null <- gss2016 %>%
+    specify(cappun ~ sex, success = "FAVOR") %>%
+    hypothesize(null = "independence") %>%
+    generate(reps = 500, type = "permute") %>%
+    calculate(stat = "diff in props", order = c("FEMALE", "MALE"))
+  
+# Visualize null
+ggplot(null, aes(x = stat)) +
+    geom_density() +
+    geom_vline(xintercept = d_hat, col = "red")
+  
+# Compute two-tailed p-value
+null %>%
+    summarize(mean(stat < d_hat)) %>%
+    pull() * 2
+
+
+# Create the bootstrap distribution
+boot <- gss2016 %>%
+    specify(cappun ~ sex, success="FAVOR") %>%
+    generate(reps=500, type="bootstrap") %>%
+    calculate(stat = "diff in props", order = c("FEMALE", "MALE"))
+  
+# Compute the standard error
+SE <- boot %>%
+    summarize(sd(stat)) %>%
+    pull()
+  
+# Form the CI (lower, upper)
+c( d_hat - 2*SE, d_hat + 2*SE )
+
+
+gssmod <- gss2016 %>%
+    mutate(coinflip=sample(c("heads", "tails"), size=nrow(.), replace=TRUE))
+table(gssmod$coinflip)
+
+# Find difference in props
+p_hats <- gssmod %>%
+    group_by(coinflip) %>%
+    summarize(mean(cappun == "FAVOR", na.rm = TRUE)) %>%
+    pull()
+
+# Compute difference in proportions
+d_hat <- diff(p_hats)
+
+# Form null distribution
+null <- gssmod %>%
+    specify(cappun ~ coinflip, success = "FAVOR") %>%
+    hypothesize(null = "independence") %>%
+    generate(reps = 500, type = "permute") %>%
+    calculate(stat = "diff in props", order = c("heads", "tails"))
+
+ggplot(null, aes(x = stat)) +
+    geom_density() +
+    geom_vline(xintercept = d_hat, color = "red")
+
+
+# Set alpha
+alpha <- 0.05
+
+# Find cutoffs
+upper <- null %>%
+    summarize(quantile(stat, probs = c(1-alpha/2))) %>%
+    pull()
+lower <- null %>%
+    summarize(quantile(stat, probs = alpha/2)) %>%
+    pull()
+  
+# Visualize cutoffs
+ggplot(null, aes(x = stat)) +
+    geom_density() +
+    geom_vline(xintercept = d_hat, color = "red") +
+    geom_vline(xintercept = lower, color = "blue") +
+    geom_vline(xintercept = upper, color = "blue")
+
+# check if inside cutoffs
+d_hat %>%
+    between(lower, upper)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Comparing Many Parameters (Independence)  
+  
 
 
 
