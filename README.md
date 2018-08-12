@@ -1089,4 +1089,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Analyzing Survey Data in R - Chapter 4 (Modeling Quantitative Data)  
 * DataCamp_Insights_v003_c captures Inference for Categorical Data - Chapter 1 (Inference for a Single Parameter)  
 * DataCamp_Insights_v003_c captures Inference for Categorical Data - Chapter 2 (Proportions - Testing and Power)  
+* DataCamp_Insights_v003_c captures Inference for Categorical Data - Chapter 3 (Comparing Many Parameters - Independence)  
   
