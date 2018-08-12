@@ -9288,6 +9288,160 @@ d_hat %>%
   
 Chapter 3 - Comparing Many Parameters (Independence)  
   
+Contingency tables:  
+  
+* Can look at bivariate relationships, such as political party affiliation vs. opinions on military spending  
+	* The broom package can help in movements to/from contingency tables, by keeping things cleaner  
+    * tab <- gss2016 %>% select(natarms, party) %>% table()  
+    * tab %>% broom::tidy() %>% uncount(Freq)  
+  
+Chi-squared test statistic:  
+  
+* Can use Chi-squared to look at dependence of variables  
+* Can create a contingency table O of the observations and a contingency table E of the expected distribution if there is pure independence  
+	* Can then look at (O-E)**2 / E, and sum up to get the overall Chi-squared distribution  
+    * Hypothesis tests can then assess how extreme a given Chi-squared may be  
+  
+Alternative method - chi-squared test statistic:  
+  
+* The Chi-squared statistic is derived from the Chi-squared distribution, which is specified solely by the number of degrees of freedom  
+	* The degrees of freedom are (nRows - 1) * (nCols - 1)  
+    * pchisq(chi_obs_spac, df=4)  # gives the likelihood of actual being less than, can use 1-pchisq() for the amount that is greater (the p-value of interest  
+* Generally, need to have 5+ counts per cell, and to only use chi-squared for df=2+ (for df=1, can just compare proportions using the normal distribution)  
+  
+Intervals for chi-squared:  
+  
+* Can remove the hypothesize() call and use bootstrap() instead, but there is no real meaning to a Chi-squared in the absence of a null hypothesis  
+* It is very unlikely that you would ever see a confidence interval attached to a Chi-squared interval  
+  
+Example code includes:  
+```{r}
+
+# Exclude "other" party
+gss_party <- gss2016 %>%
+    mutate(party=fct_collapse(partyid, 
+                              "D"=c("STRONG DEMOCRAT", "NOT STR DEMOCRAT"), 
+                              "R"=c("NOT STR REPUBLICAN", "STRONG REPUBLICAN"),
+                              "I"=c("IND,NEAR DEM", "INDEPENDENT", "IND,NEAR REP"),
+                              "O"="OTHER PARTY"
+                              )
+           ) %>%
+    filter(!is.na(party), party != "O") %>%
+    droplevels()
+
+# Bar plot of proportions
+gss_party %>%
+    ggplot(aes(x = party, fill = natspac)) +
+    geom_bar(position = "fill")
+  
+# Bar plot of counts
+gss_party %>%
+    ggplot(aes(x=party, fill = natspac)) +
+    geom_bar()
+
+
+# Create table of natspac and party
+O <- gss_party %>%
+    select(natspac, party) %>%
+    table()
+
+# Convert table back to tidy df
+O %>%
+    broom::tidy() %>%
+    uncount(n)
+
+
+# Create one permuted data set
+perm_1 <- gss_party %>%
+    specify(natarms ~ party) %>%
+    hypothesize(null = "independence") %>%
+    generate(reps = 1, type = "permute")
+  
+# Visualize permuted data
+ggplot(perm_1, aes(x = party, fill = natarms)) +
+    geom_bar()
+
+# Make contingency table
+tab <- perm_1 %>%
+    ungroup() %>%
+    select(natarms, party) %>%
+    table()
+  
+# Compute chi-squared stat
+(chi_obs_arms <- chisq.test(tab)$statistic)
+
+(chi_obs_spac <- chisq.test(gss_party$natspac, gss_party$party)$statistic)
+
+# Create null
+null <- gss_party %>%
+    specify(natspac ~ party) %>%
+    hypothesize(null = "independence") %>%
+    generate(reps = 100, type = "permute") %>%
+    calculate(stat = "Chisq")
+
+# Visualize H_0 and obs
+ggplot(null, aes(x = stat)) +
+    geom_density() +
+    geom_vline(xintercept = chi_obs_spac, color = "red")
+
+# Create null
+null <- gss_party %>%
+    specify(natarms ~ party) %>%
+    hypothesize(null = "independence") %>%
+    generate(reps = 100, type = "permute") %>%
+    calculate(stat = "Chisq")
+
+# Visualize H_0 and obs
+ggplot(null, aes(x = stat)) +
+    geom_density() +
+    geom_vline(xintercept = chi_obs_arms, color = "red")
+
+
+# create bar plot
+gss2016 %>%
+    ggplot(aes(x = region, fill = happy)) +
+    geom_bar(position = "fill") +
+    coord_flip()
+
+# create table
+tab <- gss2016 %>%
+    select(happy, region) %>%
+    table()
+  
+# compute observed statistic
+(chi_obs_stat <- chisq.test(tab)$statistic)
+
+
+# generate null distribution
+null <- gss2016 %>%
+    mutate(happy=fct_other(happy, keep=c("VERY HAPPY"))) %>%
+    specify(happy ~ region, success = "VERY HAPPY") %>%
+    hypothesize(null = "independence") %>%
+    generate(reps = 500, type = "permute") %>%
+    calculate(stat = "Chisq")
+
+# plot null(s)
+ggplot(null, aes(x = stat)) +
+    geom_density() +
+    geom_vline(xintercept = chi_obs_stat) +
+    stat_function(fun = dchisq, args = list(df = (9-1)*(2-1)), color = "blue")
+
+# permutation p-value
+null %>% 
+    summarize(mean(stat > chi_obs_stat)) %>% 
+    pull()
+
+# approximation p-value
+1 - pchisq(chi_obs_stat, df = (9-1)*(2-1))
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Comparing Many Parameters (Goodness of Fit)  
+  
 
 
 
