@@ -1093,4 +1093,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 13-AUG-2018  
 * DataCamp_Insights_v003_c captures Inference for Categorical Data - Chapter 4 (Comparing Many Parameters - Goodness of Fit)  
+* DataCamp_Insights_v003_c captures Building Dashboards with flexdashboard - Chapter 1 (Dashboard Layouts)  
   
