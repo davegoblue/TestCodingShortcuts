@@ -1095,4 +1095,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Inference for Categorical Data - Chapter 4 (Comparing Many Parameters - Goodness of Fit)  
 * DataCamp_Insights_v003_c captures Building Dashboards with flexdashboard - Chapter 1 (Dashboard Layouts)  
 * DataCamp_Insights_v003_c captures Building Dashboards with flexdashboard - Chapter 2 (Data Visualization for Dashboards)  
+* DataCamp_Insights_v003_c captures Building Dashboards with flexdashboard - Chapter 3 (Dashboard Components)  
   
