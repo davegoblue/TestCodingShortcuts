@@ -9942,6 +9942,266 @@ legend("bottomleft", legend = c("Lower to Higher Rank", "Higher to Lower Rank"),
   
 Chapter 2 - Talk About R on Twitter  
   
+Creating retweet graphs:  
+  
+* Data is several days of tweets from #rstats - want to use retweets (starts with RT) to form the network  
+	* raw_tweets <- read.csv("datasets/rstatstweets.csv", stringsAsFactors = F)  
+    * all_sn <- unique(raw_tweets$screen_name)  
+    * rt_g <- graph.empty()  
+    * rt_g <- rt_g + vertices(all_sn)  
+    * for(i in 1:dim(raw_tweets)[1]){  
+    *     rt_name <- find_rt(raw_tweets$tweet_text[i])  
+    *     if(!is.null(rt_name)){  
+    *         if(!rt_name %in% all_sn){   
+    *             rt_g <- rt_g + vertices(rt_name)  
+    *         }  
+    *     rt_g <- rt_g + edges(c(raw_tweets$screen_name[i], rt_name))  
+    *     }  
+    * }  
+    * sum(degree(rt_g) == 0)  
+    * rt_g <- simplify(rt_g)  
+    * rt_g <- delete.vertices(rt_g, degree(rt_g) == 0)  
+  
+Building mentions graphs:  
+  
+* Tweets that mention someone can be a reply or a callout  
+* There is more complexity than with the retweets, since there is no common format to a mention such as "starts with RT"  
+    * ment_g <- graph.empty()  
+    * ment_g <- ment_g + vertices(all_sn)  
+    * for(i in 1:dim(raw_tweets)[1]) {  
+    *     ment_name <- mention_ext(raw_tweets$tweet_text[i])  
+    *     if(length(ment_name) > 0 ) {  
+    *         for(j in ment_name) {  
+    *             if(!j %in% all_sn) {  
+    *                 ment_g <- ment_g + vertices(j)  
+    *             }  
+    *         ment_g <- ment_g + edges(c(raw_tweets$screen_name[i], j))  
+    *         }  
+    *     }  
+    * }  
+* The mentions graph is significantly different, with many more small conversations shown by way of a sub-graph  
+  
+Finding communities:  
+  
+* Communities are natural way to think of graphs - people who talk much more to each other than to the full network  
+	* ment_edg <- cluster_edge_betweenness(as.undirected(ment_g))  
+    * ment_eigen <- cluster_leading_eigen(as.undirected(ment_g))  
+    * ment_lp <- cluster_label_prop(as.undirected(ment_g))  
+    * length(ment_edg)  
+    * table(sizes(ment_edg))  
+* Can compare similarities within community structures  
+	* compare(ment_edg, ment_eigen, method = 'vi')  # "vi" is "variance information"  
+    * compare(ment_eigen, ment_lp, method = 'vi')  
+    * compare(ment_lp, ment_edg, method = 'vi')  
+* Can also plot the community structures  
+	* lrg_eigen <- as.numeric(names(ment_eigen[which(sizes(ment_eigen) >45)]))  
+    * eigen_sg <- induced.subgraph(ment_g, V(ment_g)[ eigen %in% lrg_eigen])  
+* plot(eigen_sg, vertex.label = NA, edge.arrow.width = .8, edge.arrow.size = 0.2,  
+*      coords = layout_with_fr(ment_sg), margin = 0, vertex.size = 6,  
+*      vertex.color = as.numeric(as.factor(V(eigen_sg)$eigen))  
+*      )  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+rt_g <- read.graph("./RInputFiles/rt_g.gml", format=c("gml"))
+rt_g
+
+
+# Calculate the number of nodes
+gsize(rt_g)
+
+# Calculate the number of edges
+gorder(rt_g)
+
+# Calculate the density
+graph.density(rt_g)
+
+# Create the plot
+plot(rt_g, vertex.label = NA, edge.arrow.width = .8, edge.arrow.size = 0.4, vertex.size = 3)
+
+
+# Set the default color to black
+V(rt_g)$color <- "black"
+
+# Set the color of nodes that were retweeted just once to blue
+V(rt_g)[degree(rt_g, mode = "in") == 1]$color <- "blue"
+
+# Set the color of nodes that were retweeters just once to green 
+V(rt_g)[degree(rt_g, mode = "out") == 1 ]$color <- "green"
+
+# Plot the network
+plot(rt_g, vertex.label = NA, edge.arrow.width = .8, 
+    edge.arrow.size = 0.25, 
+    vertex.size = 4, vertex.color = V(rt_g)$color)
+
+
+# Set the default color to black
+V(rt_g)$color <- "black"
+
+# Set the color of nodes that were retweeted just once to blue
+V(rt_g)[degree(rt_g, mode = "in") == 1 & degree(rt_g, mode = "out") == 0]$color <- "blue"
+
+# Set the color of nodes that were retweeters just once to green 
+V(rt_g)[degree(rt_g, mode = "in") == 0 & degree(rt_g, mode = "out") == 1 ]$color <- "green"
+
+# Plot the network
+plot(rt_g, vertex.label = NA, edge.arrow.width = .8, 
+    edge.arrow.size = 0.25, 
+    vertex.size = 4, vertex.color = V(rt_g)$color)
+
+
+# Calculate betweenness
+rt_btw <- betweenness(rt_g, directed = TRUE)
+
+# Plot histogram
+hist(rt_btw, breaks = 2000, xlim = c(0, 1000), main = "Betweenness")
+
+# Calculate eigen centrality
+rt_ec <- eigen_centrality(rt_g, directed = TRUE)
+
+# Plot histogram
+hist(rt_ec$vector, breaks = 100, xlim = c(0, .2), main = "Eigen Centrality")
+
+
+# Get top 1% of vertices by eigen centrality
+top_ec <- rt_ec$vector[rt_ec$vector > quantile(rt_ec$vector, .99)]
+
+# Get top 1% of vertices by betweenness
+top_btw <- rt_btw[rt_btw > quantile(rt_btw, .99)]
+
+# Make a nice data frame to print, with three columns, Rank, Betweenness, and Eigencentrality
+most_central <- as.data.frame(cbind(1:length(top_ec), names(sort(top_btw, decreasing = T)), names(sort(top_ec, decreasing = T))))
+
+# Set column names
+colnames(most_central) <- c("Rank", "Betweenness", "Eigen Centrality")
+
+# Print out the data frame
+print(most_central)
+
+
+# Transform rt_btw and add as centrality
+V(rt_g)$cent <-  log(rt_btw+2)
+
+# Visualize
+plot(rt_g, vertex.label = NA, edge.arrow.width = .2,
+     edge.arrow.size = 0.0,
+     vertex.size = unlist(V(rt_g)$cent), vertex.color = "red")
+
+# Create subgraph 
+rt_sub <-induced_subgraph(rt_g, V(rt_g)[V(rt_g)$cent >= quantile(V(rt_g)$cent, 0.99 )])
+
+# Plot subgraph
+plot(rt_sub, vertex.label = NA, edge.arrow.width = .2,
+     edge.arrow.size = 0.0,
+     vertex.size = unlist(V(rt_sub)$cent), vertex.color = "red")
+
+
+# Create a dataframe to plot with ggplot
+ratio_df <- data.frame(io_ratio = c(ment_ratio, rt_ratio))
+ratio_df["graph_type"] <- c(rep("Mention", length(ment_ratio)), rep("Retweet", length(rt_ratio)) )
+ratio_df_filtered <- ratio_df %>% filter(!is.infinite(io_ratio) & io_ratio > 0)
+
+# Plot the graph
+ggplot(ratio_df, aes(x = io_ratio , fill= graph_type, group = graph_type)) + 
+  geom_density(alpha = .5) + 
+  xlim(0, 10)
+ 
+# Check the mean and median of each ratio
+ratio_df %>% group_by(graph_type) %>% summarise(m_ratio = mean(io_ratio))
+ratio_df %>% group_by(graph_type) %>% summarise(med = median(io_ratio))
+
+
+ment_g <- read.graph("./RInputFiles/ment_g.gml", format=c("gml"))
+ment_g
+
+
+# Plot mention graph 
+plot(ment_g, vertex.label = NA, edge.arrow.width = .8,
+     edge.arrow.size = 0.2,
+     margin = 0,
+     vertex.size = 3)
+
+# Find the assortivity of each graph
+assortativity_degree(rt_g, directed = TRUE)
+assortativity_degree(ment_g, directed = TRUE)
+
+# Find the reciprocity of each graph
+reciprocity(rt_g) 
+reciprocity(ment_g)
+
+
+# Get size 3 cliques
+clq_list <- cliques(ment_g, min = 3, max = 3)
+
+# Convert to a dataframe and filter down to just revodavid cliques
+clq_df <- data.frame(matrix(names(unlist(clq_list)), nrow = length(clq_list), byrow = T))
+rev_d <- clq_df %>% filter(X1 == "revodavid" | X2 == "revodavid" | X3 == "revodavid") %>% droplevels()
+
+# Create empty graph and build it up
+clq_g_empty <- graph.empty()
+clq_g <- clq_g_empty + vertices(unique(unlist(rev_d)))
+for(i in 1:dim(rev_d)[1]){
+  clq_g <- clq_g + edges(rev_d[i, 1], rev_d[i, 2])
+  clq_g <- clq_g + edges(rev_d[i, 2], rev_d[i, 3])
+  clq_g <- clq_g + edges(rev_d[i, 1], rev_d[i, 3])}
+
+# Trim graph and plot using `simplify()`
+clq_g_trimmed <- as.undirected(simplify(clq_g))
+plot(clq_g_trimmed)
+
+
+# Find the communities
+rt_fgc <-  cluster_fast_greedy(as.undirected(rt_g))
+rt_info <- cluster_infomap(as.undirected(rt_g))
+rt_clust <- cluster_louvain(as.undirected(rt_g))
+
+# Compare all the communities
+compare(rt_fgc, rt_clust, method = 'vi')
+compare(rt_info, rt_clust, method = 'vi')
+compare(rt_fgc, rt_info, method = 'vi')
+
+# Test membership of the same users
+fgc_test <- which(names(membership(rt_fgc)) %in% c("bass_analytics", "big_data_flow"))
+membership(rt_fgc)[fgc_test]
+
+info_test <- which(names(membership(rt_info)) %in% c("bass_analytics", "big_data_flow"))
+membership(rt_info)[info_test]
+
+
+# The crossing() function in igraph will return true if a particular edge crosses communities
+# This is useful when we want to see certain vertices that are bridges between communities
+
+# Assign cluster membership to each vertex in rt_g using membership()
+V(rt_g)$clust <- membership(rt_clust)
+
+# Assign crossing value to each edge
+E(rt_g)$cross <- crossing(rt_clust, rt_g)
+
+# Plot the whole graph (this is probably a mess)
+plot(rt_g, vertex.label = NA, edge.arrow.width = .8, edge.arrow.size = 0.2, 
+     coords = layout_with_fr(rt_g), margin = 0, vertex.size = 3, 
+     vertex.color = V(rt_g)$clust, edge.color = E(rt_g)$cross+1)
+
+# Create a subgraph with just a few communities greater than 50 but less than 90 in size
+mid_comm <- as.numeric(names(sizes(rt_clust)[sizes(rt_clust) > 50 & sizes(rt_clust) < 90 ]))
+rt_sg <- induced.subgraph(rt_g, V(rt_g)[ clust %in% mid_comm ])
+
+# Plot the subgraph
+plot(rt_sg, vertex.label = NA, edge.arrow.width = .8, edge.arrow.size = 0.2, 
+     coords = layout_with_fr(rt_sg), margin = 0, vertex.size = 3, 
+     vertex.color = V(rt_sg)$clust, edge.color = E(rt_sg)$cross+1)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Bike Sharing in Chicago  
+  
+
+
 
 
 
