@@ -1100,3 +1100,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Network Analysis in R: Case Studies - Chapter 1 (Exploring Graphs Through Time)  
 * DataCamp_Insights_v003_c captures Network Analysis in R: Case Studies - Chapter 2 (Talk About R on Twitter) - notes  
   
+### Expansions week of 20-AUG-2018  
+* DataCamp_Insights_v003_c captures Network Analysis in R: Case Studies - Chapter 2 (Talk About R on Twitter) - code  
+  
