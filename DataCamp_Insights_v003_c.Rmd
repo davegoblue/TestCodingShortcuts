@@ -10208,6 +10208,278 @@ plot(rt_sg, vertex.label = NA, edge.arrow.width = .8, edge.arrow.size = 0.2,
   
 Chapter 3 - Bike Sharing in Chicago  
   
+Creating our graph from raw data:  
+  
+* Dataset based on Chicago Divvy bike sharing, from freely available data  
+	* bike_dat <- read.csv("/Users/edmundhart/wkspace/courses-case-studies-network-r/datasets/bike2_test3.csv", stringsAsFactors = F)  
+    * trip_df <- bike_dat %>% group_by(from_station_id, to_station_id) %>% summarise(weights = n())  
+    * head(trip_df)  
+    * trip_g <- graph_from_data_frame(trip_df[, 1:2])  
+    * E(trip_g)$weight <- trip_df$weights  
+    * gsize(trip_g)  
+    * gorder(trip_g)  
+* Can create a sub-graph and run some initial explorations on the network - will notice that there are many loops (trips where to/from is the same)  
+	* sg <- induced_subgraph(trip_g, 1:12)  
+    * plot(sg, vertex.label = NA, edge.arrow.width = .8, edge.arrow.size = 0.6, margin = 0, vertex.size = 6, edge.width = log(E(sg)$weight+2))  
+  
+Compare Graph Distance vs. Geographic Distance:  
+  
+* Graphs do not always reflect the geography well; graph distance may or may not be related to geographic distance  
+* Can get graph distances using built in functions  
+	* farthest_vertices(trip_g_simp)  
+    * get_diameter(trip_g_simp)  
+* Can use geographic coding (lat/lon) to find the geographic distances  
+	* library(geosphere)  
+    * st_to <- bike_dat %>% filter(from_station_id == 336 ) %>% sample_n(1) %>% select(from_longitude, from_latitude)  
+    * st_from <- bike_dat %>% filter(from_station_id == 340 ) %>% sample_n(1) %>% select(from_longitude, from_latitude)  
+    * farthest_dist <- distm(st_from, st_to, fun = distHaversine)  
+    * bike_dist <- function(station_1, station_2, divy_bike_df){  
+    *     st1 <- divy_bike_df %>% filter(from_station_id == station_1 ) %>% sample_n(1) %>% select(from_longitude, from_latitude)  
+    *     st2 <- divy_bike_df %>% filter(from_station_id == station_2 ) %>% sample_n(1) %>% select(from_longitude, from_latitude)  
+    *     farthest_dist <- distm(st1, st2, fun = distHaversine)  
+    *     return(farthest_dist)  
+    * }
+  
+Connectivity:  
+  
+* Can be measured either for vertex or edges - how many need to be removed to create 2 distinct graphs  
+	* rand_g <- erdos.renyi.game(10, .4, "gnp", directed = F)  
+    * plot(rand_g)  
+    * vertex_connectivity(rand_g)  
+    * edge_connectivity(rand_g)  
+    * min_cut(rand_g, value.only = F)  # more information about the connectivity  
+* Can then run comparisons between random graphs and bike-sharing graphs  
+	* nv <- gorder(trip_g_ud)  
+    * ed <- edge_density(trip_g_ud)  
+    * graph_vec <- rep(NA, 1000)  
+    * for(i in 1:1000){ w1 <- erdos.renyi.game(nv, ed, "gnp", directed = T) ; graph_vec[i]<- edge_connectivity(w1) }  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+bike_dat <- readr::read_csv("./RInputFiles/divvy_bike_sample.csv")
+glimpse(bike_dat)
+
+# Create trip_df_subs
+trip_df_subs <- bike_dat %>% 
+  filter(usertype == "Subscriber") %>% 
+  group_by(from_station_id, to_station_id) %>% 
+  summarise(weights = n())
+
+# Create igraph object
+trip_g_subs <- graph_from_data_frame(trip_df_subs[, 1:2])
+
+# Add edge weights
+E(trip_g_subs)$weights <- trip_df_subs$weights / sum(trip_df_subs$weights)
+
+# Now work the same code and filter it down to non-subs
+trip_df_non_subs <- bike_dat %>% 
+  filter(usertype == "Customer") %>% 
+  group_by(from_station_id, to_station_id) %>% 
+  summarise(weights = n())
+
+# Create igraph object
+trip_g_non_subs <- graph_from_data_frame(trip_df_non_subs[, 1:2])
+
+# Add edge weights
+E(trip_g_non_subs)$weights <- trip_df_non_subs$weights / sum(trip_df_non_subs$weights)
+
+# Now let's compare these graphs
+gsize(trip_g_subs)
+gsize(trip_g_non_subs)
+
+
+# Create the subgraphs
+sg_sub <- induced_subgraph(trip_g_subs, 1:12)
+sg_non_sub <- induced_subgraph(trip_g_non_subs, 1:12)
+
+# Plot sg_sub
+plot(sg_sub, vertex.size = 20, edge.arrow.width = .8, edge.arrow.size = 0.4, 
+     margin = 0, edge.width = E(sg_sub)$weights*10000, main = "Subscribers")
+
+# Plot sg_non_sub
+plot(sg_non_sub, vertex.size = 20, edge.arrow.width = .8, edge.arrow.size = 0.4, 
+     margin = 0, vertex.size = 10, edge.width = E(sg_non_sub)$weights*10000, 
+     main = "Customers")
+
+
+bike_dist <- function(station_1, station_2, divy_bike_df){ 
+   st1 <- divy_bike_df %>% filter(from_station_id == station_1 ) %>% sample_n(1) %>% select(from_longitude, from_latitude)
+   st2 <- divy_bike_df %>% filter(from_station_id == station_2 ) %>% sample_n(1) %>% select(from_longitude, from_latitude)
+   farthest_dist <- distm(st1, st2, fun = distHaversine)
+   return(farthest_dist)
+}
+
+
+# See the diameter of each graph
+get_diameter(trip_g_subs)
+get_diameter(trip_g_non_subs)
+
+# Find the farthest vertices
+farthest_vertices(trip_g_subs)
+farthest_vertices(trip_g_non_subs)
+
+# See how far apart each one is and compare the distances
+bike_dist(200, 298, bike_dat)
+bike_dist(116, 281, bike_dat)
+
+
+# Find the degree distribution
+trip_out <- degree(trip_g_simp, mode = "out")
+trip_in <- degree(trip_g_simp, mode = "in")
+
+# Create a data frame for easier filtering 
+trip_deg <- data.frame(cbind(trip_out, trip_in))
+trip_deg$station_id <- names(trip_out)
+trip_deg_adj <- trip_deg %>% mutate(ratio = trip_out / trip_in)
+
+# Filter out rarely traveled to stations
+trip_deg_filter <- trip_deg_adj %>% filter(trip_out > 10) %>% filter(trip_in > 10) 
+
+# Plot histogram
+hist(trip_deg_filter$ratio)
+
+# See which stations were the most skewed using which.min() and which.max()
+trip_deg_filter %>% slice(which.min(ratio))
+trip_deg_filter %>% slice(which.max(ratio))
+
+
+# If the weights are the same across all stations, then an unweighted degree ratio would work
+# But if we want to know how many bikes are actually flowing, we need to consider weights
+# The weighted analog to degree distribution is strength
+# We can calculate this with the strength() function, which presents a weighted degree distribution based on the weight attribute of a graph's edges
+
+# Calculate the weighted in and out degrees
+trip_out_w <- strength(trip_g_simp, mode = "out")
+trip_in_w <- strength(trip_g_simp, mode = "in")
+
+# Create a data frame for easier filtering 
+trip_deg_w <- data.frame(cbind(trip_out_w, trip_in_w))
+trip_deg_w$station_id <- names(trip_out_w)
+trip_deg_w_adj <- trip_deg_w %>% mutate(ratio = trip_out_w / trip_in_w)
+
+# Filter out rarely traveled to stations
+trip_deg_w_filter <- trip_deg_w_adj %>% filter(trip_out_w > 10) %>% filter(trip_in_w > 10) 
+
+# Plot histogram of ratio
+hist(trip_deg_w_filter$ratio)
+
+# See which stations were the most skewed using which.min() and which.max()
+trip_deg_w_filter %>% slice(which.min(ratio))
+trip_deg_w_filter %>% slice(which.max(ratio))
+
+
+# Create a sub graph of the least traveled graph 275
+g275 <- make_ego_graph(trip_g_simp,  1, nodes = "275", mode= "out")[[1]]
+
+# Plot graph with geographic coordinates
+plot(g275, layout = as.matrix(latlong), vertex.label.color = "blue", vertex.label.cex = .6,
+     edge.color = 'black', vertex.size = 15, edge.arrow.size = .1,
+     edge.width = E(g275)$weight, main = "Lat/Lon Layout")
+
+# Plot graph without geographic coordinates
+plot(g275, vertex.label.color = "blue", vertex.label.cex = .6,
+     edge.color = 'black', vertex.size = 15, edge.arrow.size = .1,
+     edge.width = E(g275)$weight,
+     main = "Default Layout")
+
+
+# Eigen centrality weighted
+ec_weight <- eigen_centrality(trip_g_simp, directed = T, weights = NULL)
+
+# Eigen centrality unweighted
+ec_unweight <- eigen_centrality(trip_g_simp, directed = T, weights = NA)
+
+# Closeness weighted
+close_weight <- closeness(trip_g_simp, weights = NULL)
+
+# Closeness unweighted
+close_unweight <- closeness(trip_g_simp, weights = NA)
+
+# Output nicely with cbind()
+cbind(c(
+  names(V(trip_g_simp))[which.min(ec_weight$vector)],
+  names(V(trip_g_simp))[which.min(close_weight)],
+  names(V(trip_g_simp))[which.min(ec_unweight$vector)],
+  names(V(trip_g_simp))[which.min(close_unweight)]
+  ), c("Weighted Eigen Centrality", "Weighted Closeness", "Unweighted Eigen Centrality", "Unweighted Closeness")
+)
+
+
+# Find the minimum number of cuts using min_cut()
+ud_cut <- min_cut(trip_g_ud, value.only = FALSE)
+
+# Print the vertex with the minimum number of cuts
+print(ud_cut$partition1)
+
+# Make an ego graph
+g<- make_ego_graph(trip_g_ud, 1, nodes = "281")[[1]]
+plot(g, edge.color = 'black', edge.arrow.size = .1)
+
+# Print the value
+print(ud_cut$value)
+
+# Print cut object
+print(ud_cut$cut)
+
+# Compare the output of close and far vertices
+stMincuts(trip_g_simp, far_stations[1], far_stations[2])$value
+stMincuts(trip_g_simp, close_stations[1], close_stations[2])$value
+
+
+# Find the actual value
+clust_coef <- transitivity(trip_g_simp, type = "global")
+
+# Get randomization parameters using gorder() and edge_density()
+nv <- gorder(trip_g_simp)
+ed <- edge_density(trip_g_simp)
+
+# Create an empty vector to hold output of 300 simulations
+graph_vec <- rep(NA, 300)
+
+# Calculate clustering for random graphs
+for(i in 1:300){
+  graph_vec[i]<- transitivity(erdos.renyi.game(nv, ed, "gnp", directed = T), type = "global")
+}
+
+# Plot a histogram of the simulated values
+hist(graph_vec, xlim = c(.35, .6), main = "Unweighted clustering randomization")
+
+# Add a line with the true value
+abline(v = clust_coef, col = "red")
+
+
+# Find the mean local weighted clustering coeffecient
+m_clust <- mean(transitivity(trip_g_simp, type = "weighted"))
+nv <- gorder(trip_g_simp)
+ed <- edge_density(trip_g_simp)
+graph_vec <- rep(NA, 100)
+
+for(i in 1:100){
+  g_temp <- erdos.renyi.game(nv, ed, "gnp", directed = T)
+  # Sample existing weights and add them to the random graph
+  E(g_temp)$weight <- sample(x = E(trip_g_simp)$weight, size = gsize(g_temp), replace = TRUE)
+  graph_vec[i]<- mean(transitivity(g_temp, type = "weighted"))
+}
+
+# Plot a histogram of the simulated values
+hist(graph_vec, xlim = c(.35, .7), main = "Unweighted clustering randomization")
+
+# Add a line with the true value
+abline(v = m_clust ,col = "red")
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Other Ways to Visualize Graph Data  
+  
+
+	
+	
+	
 
 
 
