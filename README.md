@@ -1102,4 +1102,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 20-AUG-2018  
 * DataCamp_Insights_v003_c captures Network Analysis in R: Case Studies - Chapter 2 (Talk About R on Twitter) - code  
+* DataCamp_Insights_v003_c captures Network Analysis in R: Case Studies - Chapter 3 (Bike Sharing in Chicago) - notes  
   
