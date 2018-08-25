@@ -1106,4 +1106,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Network Analysis in R: Case Studies - Chapter 3 (Bike Sharing in Chicago) - code  
 * DataCamp_Insights_v003_c captures Network Analysis in R: Case Studies - Chapter 4 (Other Ways to Visualize Graph Data) - notes  
 * DataCamp_Insights_v003_c captures Network Analysis in R: Case Studies - Chapter 4 (Other Ways to Visualize Graph Data) - code  
+* DataCamp_Insights_v003_c captures Fundamentals of Bayesian Analysis in R - Chapter 1 (What is Bayesian Analysis?) - notes  
   
