@@ -1112,4 +1112,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 27-AUG-2018  
 * DataCamp_Insights_v003_c captures Fundamentals of Bayesian Analysis in R - Chapter 2 (How Does Bayesian Inference Work?) - notes  
 * DataCamp_Insights_v003_c captures Fundamentals of Bayesian Analysis in R - Chapter 2 (How Does Bayesian Inference Work?) - code  
+* DataCamp_Insights_v003_c captures Fundamentals of Bayesian Analysis in R - Chapter 3 (Why Use Bayesian Data Analysis?) - notes  
   
