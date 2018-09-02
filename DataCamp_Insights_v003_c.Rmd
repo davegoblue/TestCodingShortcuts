@@ -11255,6 +11255,149 @@ plot(pars$proportion_clicks, pars$probability, type = "h")
   
 Chapter 5 - More Parameters, Data, and Bayes  
   
+Temperature in a normal lake:  
+  
+* Example of having some water data temperature for a given day  
+	* temp <- c(19, 23, 20, 17, 23)  
+    * The normal distribution could be a good candidate for the generative function in this case - parameters with mu and sigma  
+    * rnorm(n = , mean = , sd = )  
+    * dnorm(x = , mean = , sd = )  
+    * like <- dnorm(x = temp, mean = 20, sd = 2)  # likelihood of our observed temperatures given a mean of 20 and a standard deviation of 2  
+    * prod(like)  # joint likelihood of probabilities  
+    * log(like)  # addresses the problem of likelihoods being so small that computer precision becomes an issue  
+  
+Bayesian model of water temperature:  
+  
+* Can define priors such as sigma ~Uniform(0, 10) and mean ~ N(18, 5)  
+* Can then run an additional grid-approximation exercise  
+	* temp <- c(19, 23, 20, 17, 23)  
+    * mu <- seq(8, 30, by = 0.5)  
+    * sigma <- seq(0.1, 10, by = 0.3)  
+    * pars <- expand.grid(mu = mu, sigma = sigma))  
+    * pars$mu_prior <- dnorm(pars$mu, mean = 18, sd = 5)  
+    * pars$sigma_prior <- dunif(pars$sigma, min = 0, max = 10)  
+    * pars$prior <- pars$mu_prior * pars$sigma_prior  
+    * for(i in 1:nrow(pars)) {  
+    *     likelihoods <- dnorm(temp, pars$mu[i], pars$sigma[i])  
+    *     pars$likelihood[i] <- prod(likelihoods)  
+    * }  
+    * pars$probability <- pars$likelihood * pars$prior  
+    * pars$probability <- pars$probability / sum(pars$probability)  
+  
+Beach party implications of water temperatures:  
+  
+* Suppose that there is aminimum water temperature for holding a beach party and that we want the probability of exceedence of this temperature  
+* It is helpful to create a frame for further analysis; random sampling, weighted by probability, can help  
+	* sample_indices <- sample( 1:nrow(pars), size = 10000, replace = TRUE, prob = pars$probability)  # draw some random samples proportional to each row's probability  
+    * pars_sample <- pars[sample_indices, c("mu", "sigma")]  
+    * hist(pars_sample$mu, 30)  
+    * pred_temp <- rnorm(10000, mean = pars_sample$mu, sd = pars_sample$sigma)  
+    * hist(pred_temp, 30)  
+    * sum(pred_temp >= 18) / length(pred_temp )  
+  
+Practical tool (BEST):  
+  
+* Models are often available off-the-shelf which can save time; one example is BEST by John Kruschke  
+	* BEST assumes that data come from a t-distribution (more or less a normal distribution with the degrees of freedom added)  
+    * BEST estimates standard deviation, mean, and degrees of freedom  
+    * BEST uses MCMC (Markov chain Monte Carlo)  
+* Can fit the data directly using BEST  
+	* library(BEST)  
+    * iq <- c(55, 44, 34, 18, 51, 40, 40, 49, 48, 46)  
+    * fit <- BESTmcmc(iq)  
+    * fit  # note that nu is the degrees of freedom  
+    * plot(fit)  
+  
+Wrap and up and next steps:  
+  
+* Bayesian inference as a technique for modeling uncertainty - data, generative model, and prior probability distributions  
+* Can use sampling and grid approximation to calculate probabilities and distributions  
+	* Under-the-hood, used MCMC as implemented by way of BEST  
+* Additional areas for exploration include full application of Bayesian approaches to time series, deep learning, and the like  
+* Can also add more advanced computational models  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+mu <- 3500
+sigma <- 600
+
+weight_distr <- rnorm(n = 100000, mean = mu, sd = sigma)
+hist(weight_distr, xlim = c(0, 6000), col = "lightgreen")
+
+
+mu <- 3500
+sigma <- 600
+
+weight <- seq(0, 6000, by=100)
+likelihood <- dnorm(weight, mean=mu, sd=sigma)
+
+plot(x=weight, y=likelihood, type="h")
+
+
+# The IQ of a bunch of zombies
+iq <- c(55, 44, 34, 18, 51, 40, 40, 49, 48, 46)
+# Defining the parameter grid
+pars <- expand.grid(mu = seq(0, 150, length.out = 100), 
+                    sigma = seq(0.1, 50, length.out = 100))
+# Defining and calculating the prior density for each parameter combination
+pars$mu_prior <- dnorm(pars$mu, mean = 100, sd = 100)
+pars$sigma_prior <- dunif(pars$sigma, min = 0.1, max = 50)
+pars$prior <- pars$mu_prior * pars$sigma_prior
+# Calculating the likelihood for each parameter combination
+for(i in 1:nrow(pars)) {
+  likelihoods <- dnorm(iq, pars$mu[i], pars$sigma[i])
+  pars$likelihood[i] <- prod(likelihoods)
+}
+# Calculating the probability of each parameter combination
+pars$probability <- pars$likelihood * pars$prior / sum(pars$likelihood * pars$prior)
+levelplot(probability ~ mu * sigma, data = pars)
+
+
+head(pars)
+sample_indices <- sample( nrow(pars), size = 10000,
+    replace = TRUE, prob = pars$probability)
+head(sample_indices)
+pars_sample <- pars[sample_indices, c("mu", "sigma")]
+hist(pars_sample$mu)
+quantile(pars_sample$mu, c(0.025, 0.5, 0.975))
+
+
+head(pars_sample)
+pred_iq <- rnorm(10000, mean = pars_sample$mu, sd = pars_sample$sigma)
+hist(pred_iq)
+mean(pred_iq >= 60)
+
+
+# The IQ of zombies on a regular diet and a brain based diet.
+iq_brains <- c(44, 52, 42, 66, 53, 42, 55, 57, 56, 51)
+iq_regular <- c(55, 44, 34, 18, 51, 40, 40, 49, 48, 46)
+mean(iq_brains) - mean(iq_regular)
+
+library(BEST)
+best_posterior <- BESTmcmc(iq_brains, iq_regular)
+plot(best_posterior)
+
+
+# The IQ of zombies given a regular diet and a brain based diet.
+iq_brains <- c(44, 52, 42, 66, 53, 42, 55, 57, 56, 51)
+iq_regular <- c(55, 44, 34, 18, 51, 40, 40, 49, 48, 150)
+mean(iq_brains) - mean(iq_regular)
+
+library(BEST)
+best_posterior <- BESTmcmc(iq_brains, iq_regular)
+plot(best_posterior)
+
+```
+  
+  
+  
+***
+  
+###_Categorical Data in the Tidyverse_  
+  
+Chapter 1 - Introduction to Factor Variables  
+  
 
 
 
