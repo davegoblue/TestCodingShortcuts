@@ -1121,4 +1121,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 03-SEP-2018  
 * DataCamp_Insights_v003_c captures Fundamentals of Bayesian Analysis in R - Chapter 5 (More Parameters, Data, and Bayes) - code  
 * DataCamp_Insights_v003_c captures Categorical Data in the Tidyverse - Chapter 1 (Introduction to Factor Variables) - notes  
+* DataCamp_Insights_v003_c captures Categorical Data in the Tidyverse - Chapter 1 (Introduction to Factor Variables) - code  
   
