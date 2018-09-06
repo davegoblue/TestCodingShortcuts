@@ -11487,9 +11487,131 @@ multiple_choice_answers %>%
   
 Chapter 2 - Manipulating Factor Variables  
   
+Reordering factors:  
+  
+* Can order by frequency or by another variable for pure categorical variables  
+* For ordinal variables, typically is best to order by the implied order inside the ordinal variable - can manually enter using fct_relevel()  
+	* ggplot(aes(nlp_frequency, x = fct_relevel(response, "Rarely", "Sometimes", "Often", "Most of the time"))) + geom_bar()  
+    * nlp_frequency %>% pull(response) %>% levels()  
+    * nlp_frequency %>% mutate(response = fct_relevel(response, "Often", "Most of the time")) %>% pull(response) %>% levels()  # This moves Often and Most of the time to the front, leaving others alone  
+    * nlp_frequency %>% mutate(response = fct_relevel(response, "Often", "Most of the time", after = 2)) %>% pull(response) %>% levels()  # move these to after 2  
+    * nlp_frequency %>% mutate(response = fct_relevel(response, "Often", "Most of the time", after = Inf) %>% pull(response) %>% levels()  # move this to the end  
+  
+Renaming factor levels:  
+  
+* Can convert names for factor levels using forcats::fct_recode()  
+	* levels(flying_etiquette$middle_arm_rest_three)  # get the initial levels  
+    * ggplot(flying_etiquette, aes(x = fct_infreq(middle_arm_rest_three))) + geom_bar() + coord_flip() + labs(x = "Arm rest opinions")  # labels are very wordy, graph is compressed  
+    * flying_etiquette %>% mutate(middle_arm_rest_three = fct_recode(middle_arm_rest_three,   
+    *     "Other" = "Other (please specify)", "Everyone should share" = "The arm rests should be shared",  
+    *     "Aisle and window people" = "The people in the aisle and window seats get both arm rests",   
+    *     "Middle person" = "The person in the middle seat gets both arm rests",  
+    *     "Fastest person" = "Whoever puts their arm on the arm rest first")  
+    * ) %>%   
+    * count(middle_arm_rest_three)  
+  
+Collapsing factor levels:  
+  
+* Can collapse factor levels using forcats::fct_collapse()  
+	* flying_etiquette %>% mutate(height = fct_collapse(height, under_5_3 = c("Under 5 ft.", "5'0\"", "5'1\"", "5'2\""), over_6_1 = c("6'1\"", "6'2\"", "6'3\"", "6'4\"", "6'5\"", "6'6\" and above"))) %>% pull(height) %>% levels()  
+* Can collapse factor levels to other using forcats::fct_other()  
+	* flying_etiquette %>% mutate(new_height = fct_other(height, keep = c("6'4\"", "5'1\""))) %>% count(new_height)  # will make everything other than keep in to Other  
+    * flying_etiquette %>% mutate(new_height = fct_other(height, drop = c("Under 5 ft.", "5'0\"", "5'1\"", "5'2\"", "5'3\""))) %>% pull(new_height) %>% levels()  # will move the drop items to Other  
+    * flying_etiquette %>% mutate(new_height = fct_lump(height, prop = .08)) %>% count(new_height)  # anything less than a proportion of 0.08 will be moved to other  
+    * flying_etiquette %>% mutate(new_height = fct_lump(height, n = 3)) %>% count(new_height)  # keep the top 3 categories  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+multiple_choice_responses <- multiple_choice_answers
+
+# Print the levels of WorkInternalVsExternalTools
+levels(multiple_choice_responses$WorkInternalVsExternalTools)
+
+# Reorder the levels from internal to external 
+mc_responses_reordered <- multiple_choice_responses %>%
+    mutate(WorkInternalVsExternalTools = fct_relevel(WorkInternalVsExternalTools, 
+                                                     c('Entirely internal', 'More internal than external',
+                                                       'Approximately half internal and half external', 
+                                                       'More external than internal', 'Entirely external',
+                                                       'Do not know'
+                                                       )
+                                                     )
+           )
+
+# Make a bar plot of the responses
+ggplot(mc_responses_reordered, aes(x=WorkInternalVsExternalTools)) + 
+    geom_bar() + 
+    coord_flip()
 
 
+multiple_choice_responses %>%
+    # Move "I did not complete any formal education past high school" and "Some college/university study without earning a bachelor's degree" to the front
+    mutate(FormalEducation = fct_relevel(FormalEducation, c("I did not complete any formal education past high school", "Some college/university study without earning a bachelor's degree"))) %>%
+    # Move "Doctoral degree" to be the sixth level
+    mutate(FormalEducation = fct_relevel(FormalEducation, after=6, "Doctoral degree")) %>%
+    # Move "I prefer not to answer" to be the last level.
+    mutate(FormalEducation = fct_relevel(FormalEducation, after=Inf, "I prefer not to answer")) %>%
+    # Examine the new level order
+    pull(FormalEducation) %>%
+    levels()
 
+
+# make a bar plot of the frequency of FormalEducation
+ggplot(multiple_choice_responses, aes(x=FormalEducation)) + 
+    geom_bar()
+
+
+multiple_choice_responses %>%
+    # rename levels
+    mutate(FormalEducation = fct_recode(FormalEducation, "High school" ="I did not complete any formal education past high school", "Some college" = "Some college/university study without earning a bachelor's degree")) %>%
+    # make a bar plot of FormalEducation
+    ggplot(aes(x=FormalEducation)) + 
+    geom_bar()
+
+
+multiple_choice_responses %>%
+    # Create new variable, grouped_titles, by collapsing levels in CurrentJobTitleSelect
+    mutate(grouped_titles = fct_collapse(CurrentJobTitleSelect, 
+        "Computer Scientist" = c("Programmer", "Software Developer/Software Engineer"), 
+        "Researcher" = "Scientist/Researcher", 
+        "Data Analyst/Scientist/Engineer" = c("DBA/Database Engineer", "Data Scientist", 
+                                              "Business Analyst", "Data Analyst", 
+                                              "Data Miner", "Predictive Modeler"))) %>%
+    # Turn every title that isn't now one of the grouped_titles into "Other"
+    mutate(grouped_titles = fct_other(grouped_titles, 
+                             keep = c("Computer Scientist", 
+                                     "Researcher", 
+                                     "Data Analyst/Scientist/Engineer"))) %>% 
+    # Get a count of the grouped titles
+    count(grouped_titles)
+
+
+multiple_choice_responses %>%
+  # remove NAs of MLMethodNextYearSelect
+  filter(!is.na(MLMethodNextYearSelect)) %>%
+  # create ml_method, which lumps all those with less than 5% of people into "Other"
+  mutate(ml_method = fct_lump(MLMethodNextYearSelect, prop=0.05)) %>%
+  # print the frequency of your new variable in descending order
+  count(ml_method, sort=TRUE)
+
+
+multiple_choice_responses %>%
+  # remove NAs 
+  filter(!is.na(MLMethodNextYearSelect)) %>%
+  # create ml_method, retaining the 5 most common methods and renaming others "other method" 
+  mutate(ml_method = fct_lump(MLMethodNextYearSelect, 5, other_level="other method")) %>%
+  # print the frequency of your new variable in descending order
+  count(ml_method, sort=TRUE)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Creating Factor Variables  
+  
 
 
 
