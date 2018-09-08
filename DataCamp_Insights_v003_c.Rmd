@@ -11612,6 +11612,144 @@ multiple_choice_responses %>%
   
 Chapter 3 - Creating Factor Variables  
   
+Examining common themed variables:  
+  
+* Tidy data has each row as an observation and each column as a variable (generally, moving from wide to long)  
+	* multipleChoiceResponses %>% select(contains("WorkChallengeFrequency")) %>% gather(work_challenge, frequency)  
+    * work_challenges <- multipleChoiceResponses %>% select(contains("WorkChallengeFrequency")) %>% gather(work_challenge, frequency) %>%  
+    *     mutate(work_challenge = str_remove(work_challenge, "WorkChallengeFrequency"))  # will remove the string "WorkChallengeFrequency" from column work_challenge  
+* Can also convert the variables to 0/1 and then use for statistical summaries  
+	* work_challenges %>% filter(!is.na(frequency)) %>% mutate(frequency = if_else( frequency %in% c("Most of the time", "Often"), 1, 0) ) %>%  
+    * group_by(work_challenge) %>% summarise(perc_problem = mean(frequency))  
+  
+Tricks of ggplot2:  
+  
+* Initial plots may not look so good, for example  
+	* ggplot(job_titles_by_perc, aes(x = CurrentJobTitleSelect,, y = perc_w_title)) + geom_point()  
+* Can angle the tick axes for better readability  
+	* ggplot(job_titles_by_perc, aes(x = CurrentJobTitleSelect, y = perc_w_title)) + geom_point() + theme(axis.text.x = element_text(angle = 90, hjust = 1))  
+* Can reorder by oreder of popularity using fct_reorder  
+	* ggplot(job_titles_by_perc, aes(x = fct_reorder(CurrentJobTitleSelect, perc_w_title), y = perc_w_title)) + geom_point() + theme(axis.text.x = element_text(angle = 90, hjust = 1))  
+    * ggplot(job_titles_by_perc, aes(x = fct_rev(fct_reorder(CurrentJobTitleSelect, perc_w_title)), y = perc_w_title)) + geom_point() + theme(axis.text.x = element_text(angle = 90, hjust = 1))  
+* Can add axis labels and titles using labs()  
+	* g <- ggplot(job_titles_by_perc, aes(x = fct_rev(fct_reorder(CurrentJobTitleSelect, perc_w_title)), y = perc_w_title)) + geom_point() + theme(axis.text.x = element_text(angle = 90, hjust = 1))  
+    * g <- g + labs(x = "Job Title", y = "Percent with title")  
+* Can change the y-axis ticks to be explicit percentages  
+	* g + scale_y_continuous(labels = scales::percent_format())  
+  
+Changing and creating variables with dplyr::case_when():  
+  
+* Suppose that there is a simple vector to be recoded using simple business rules  
+	* x <- 1:20  
+    * case_when(x %% 15 == 0 ~ "fizz buzz", x %% 3 == 0 ~ "fizz", x %% 5 == 0 ~ "buzz", TRUE ~ as.character(x) )  # TRUE is the all others  
+* Conditions evaluate from first to last, and the first matching condition is acted on for that value  
+	* moods %>% mutate(action = case_when( mood == "happy" & status == "know it" ~ "clap your hands", mood == "happy" & status == "do not know it" ~ "stomp your feet", mood == "sad" ~ "look at puppies", TRUE ~ "jump around")  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+learning_platform_usefulness <- multiple_choice_responses %>%
+  # select columns with LearningPlatformUsefulness in title
+  select(contains("LearningPlatformUsefulness")) %>%
+  # change data from wide to long
+  gather(learning_platform, usefulness) %>%
+  # remove rows where usefulness is NA
+  filter(!is.na(usefulness)) %>%
+  # remove "LearningPlatformUsefulness" from each string in `learning_platform 
+  mutate(learning_platform = str_remove(learning_platform, "LearningPlatformUsefulness"))
+
+
+learning_platform_usefulness %>%
+  # change dataset to one row per learning_platform usefulness pair with number of entries for each
+  count(learning_platform, usefulness) %>%
+  # use add_count to create column with total number of answers for that learning_platform
+  add_count(learning_platform, wt=n) %>%
+  # create a line graph for each question with usefulness on x-axis and percentage of responses on y
+  ggplot(aes(x = usefulness, y = n/nn, group = learning_platform)) + 
+  geom_line() + 
+  facet_wrap(~ learning_platform)
+
+
+avg_usefulness <- learning_platform_usefulness %>%
+    # If usefulness is "Not Useful", make 0, else 1 
+    mutate(usefulness = ifelse(usefulness=="Not Useful", 0, 1)) %>%
+    # Get the average usefulness by learning platform 
+    group_by(learning_platform) %>%
+    summarize(avg_usefulness = mean(usefulness))
+
+# Make a scatter plot of average usefulness by learning platform 
+ggplot(avg_usefulness, aes(x=learning_platform, y=avg_usefulness)) + 
+    geom_point()
+
+ggplot(avg_usefulness, aes(x = learning_platform, y = avg_usefulness)) + 
+    geom_point() + 
+    # rotate x-axis text by 90 degrees
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    # rename y and x axis labels
+    labs(x="Learning Platform", y="Percent finding at least somewhat useful") + 
+    # change y axis scale to percentage
+    scale_y_continuous(labels = scales::percent)
+
+ggplot(avg_usefulness, 
+       aes(x = fct_rev(fct_reorder(learning_platform, avg_usefulness)), y = avg_usefulness)
+       ) + 
+    geom_point() + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    labs(x = "Learning Platform", y = "Percent finding at least somewhat useful") + 
+    scale_y_continuous(labels = scales::percent)
+
+
+# Check the min age
+min(multiple_choice_responses$Age)
+# Check the max age
+max(multiple_choice_responses$Age)
+
+
+multiple_choice_responses %>%
+    # Eliminate any ages below 10 and above 90
+    filter(between(Age, 10, 90)) %>%
+    # Create the generation variable based on age
+    mutate(generation=case_when(
+      between(Age, 10, 22) ~ "Gen Z", 
+      between(Age, 23, 37) ~ "Gen Y", 
+      between(Age, 38, 52) ~ "Gen X", 
+      between(Age, 53, 71) ~ "Baby Boomer", 
+      between(Age, 72, 90) ~ "Silent"
+    )) %>%
+    # Get a count of how many answers in each generation
+    count(generation)
+
+
+multiple_choice_responses %>%
+    # Filter out people who selected Data Scientist as their Job Title
+    filter(!is.na(CurrentJobTitleSelect) & CurrentJobTitleSelect != "Data Scientist")  %>%
+    # Create a new variable, job_identity
+    mutate(job_identity = case_when(
+        CurrentJobTitleSelect == "Data Analyst" & DataScienceIdentitySelect == "Yes" ~ "DS analysts", 
+        CurrentJobTitleSelect == "Data Analyst" & DataScienceIdentitySelect %in% c("No", "Sort of (Explain more)") ~ "NDS analyst", 
+        CurrentJobTitleSelect != "Data Analyst" & DataScienceIdentitySelect == "Yes" ~ "DS non-analysts", 
+        TRUE ~ "NDS non analysts")
+        ) %>%
+    mutate(JobSat=case_when(
+        is.na(JobSatisfaction) ~ NA_integer_,
+        JobSatisfaction == "I prefer not to share" | JobSatisfaction == "NA" ~ NA_integer_, 
+        JobSatisfaction == "1 - Highly Dissatisfied" ~ 1L, 
+        JobSatisfaction == "10 - Highly Satisfied" ~ 10L, 
+        TRUE ~ as.integer(JobSatisfaction))) %>%
+    # Get the average job satisfaction by job_identity, removing NAs
+    group_by(job_identity) %>%
+    summarize(avg_js = mean(JobSat, na.rm=TRUE))
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Case Study on Flight Etiquette  
+  
+
+
 
 
 
