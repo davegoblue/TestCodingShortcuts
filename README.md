@@ -1124,4 +1124,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Categorical Data in the Tidyverse - Chapter 1 (Introduction to Factor Variables) - code  
 * DataCamp_Insights_v003_c captures Categorical Data in the Tidyverse - Chapter 2 (Manipulating Factor Variables) - notes  
 * DataCamp_Insights_v003_c captures Categorical Data in the Tidyverse - Chapter 2 (Manipulating Factor Variables) - code  
+* DataCamp_Insights_v003_c captures Categorical Data in the Tidyverse - Chapter 3 (Creating Factor Variables) - notes  
   
