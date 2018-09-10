@@ -11872,6 +11872,169 @@ flipped_plot +
   
 Chapter 1 - Introduction to Bayesian Modeling  
   
+Prior model:  
+  
+* Goals include foundational Bayesian models such as Beta-Binomial, Normal-Normal, and Bayesian regression  
+	* Define, compile, simulate using RJAGS  
+    * Conduct Bayesian posterior inference using RJAGS  
+* Example of election poll - there is some uncertainty around the polling figures that have been released  
+	* An additional poll might tend to update the prior model that was built using the previous elections data  
+    * Bayesian posterior models are a powerful means of combining priors and data  
+* The prior model depends on some specific assumptions and notations  
+	* Suppose that p is the percentage of people who support you - assumed to be a random variable between 0 and 1  
+    * The prior model for p is p ~ Beta(45, 55)  
+    * The beta model can be tuned from pessimism Beta(1, 5) to complete uncertainty Beta(1, 1)  
+  
+Data and likelihood:  
+  
+* Suppose that a candidate running for election does a small poll and finds 6 of 10 plan to vote for them  
+	* Can integrate even a small data sample like this with assumptions and priors  
+    * Assumptions might include that voters are independent and p is a global probability that any given voter supports you  
+    * Then, X ~ Bin(n, p) which is to say that X can be defined as the number of n polled voters that support you (assuming per above global probability p)  
+* There is a dependence between X, n, and p, thus the data can help to assess how likely each of the values of p may be given that you observed X in n  
+	* The likelihood function is the likelihood of observing X given that p takes on a specific value  
+  
+Posterior model:  
+  
+* The prior and the likelihood can be integrated to form the posterior  
+	* The prior is knowledge that exists before data and the likelihood is what exists based on the data  
+    * Multiply prior and likelihood and then scale so probabilities add to 1  
+* The RJAGS package combines R with JAGS (Just Another Gibbs Sampler) - requires downloading JAGS and then loading rjags  
+* Can define the model within RJAGS, for example  
+	* vote_model <- "model{  
+    *     # Likelihood model for X
+    *     X ~ dbin(p, n)  # order of n and p are reversed (known difference for RJAGS)
+    *     # Prior model for p
+    *     p ~ dbeta(a, b)
+    * }"  
+    * vote_jags_A <- jags.model(textConnection(vote_model), data = list(a = 45, b = 55, X = 6, n = 10), inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 100))  
+    * vote_sim <- coda.samples(model = vote_jags, variable.names = c("p"), n.iter = 10000)  # variable.names is the variable of interest, which is p in this case  
+    * plot(vote_sim, trace = FALSE)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Make sure you have installed JAGS-4.x.y.exe (for any x >=0, y>=0) from http://www.sourceforge.net/projects/mcmc-jags/files
+
+# Sample 10000 draws from Beta(45,55) prior
+prior_A <- rbeta(n = 10000, shape1 = 45, shape2 = 55)
+
+# Store the results in a data frame
+prior_sim <- data.frame(prior_A)
+
+# Construct a density plot of the prior sample
+ggplot(prior_sim, aes(x = prior_A)) + 
+    geom_density()    
+
+
+# Sample 10000 draws from the Beta(1,1) prior
+prior_B <- rbeta(n = 10000, shape1 = 1, shape2 = 1)    
+
+# Sample 10000 draws from the Beta(100,100) prior
+prior_C <- rbeta(n = 10000, shape1 = 100, shape2 = 100)
+
+# Combine the results in a single data frame
+prior_sim <- data.frame(samples = c(prior_A, prior_B, prior_C),
+        priors = rep(c("A","B","C"), each = 10000))
+
+# Plot the 3 priors
+ggplot(prior_sim, aes(x = samples, fill = priors)) + 
+    geom_density(alpha = 0.5)
+
+
+# Define a vector of 1000 p values    
+p_grid <- seq(0, 1, length.out=1000)
+
+# Simulate 1 poll result for each p in p_grid   
+poll_result <- rbinom(1000, 10, prob=p_grid)
+
+# Create likelihood_sim data frame
+likelihood_sim <- data.frame(p_grid, poll_result)    
+
+# Density plots of p_grid grouped by poll_result
+ggplot(likelihood_sim, aes(x = p_grid, y = poll_result, group = poll_result)) + 
+    ggridges::geom_density_ridges()
+
+
+# Density plots of p_grid grouped by poll_result
+ggplot(likelihood_sim, aes(x = p_grid, y = poll_result, group = poll_result, fill = poll_result==6)) + 
+    ggridges::geom_density_ridges()
+
+# Keep the polls with X = 6    
+likelihood_sim_6 <- likelihood_sim %>%     
+    filter(poll_result==6)    
+
+# Construct a density plot of the remaining p_grid values
+ggplot(likelihood_sim_6, aes(x = p_grid)) + 
+    geom_density() + 
+    lims(x = c(0,1))
+
+
+# DEFINE the model
+vote_model <- "model{
+    # Likelihood model for X
+    X ~ dbin(p, n)
+    
+    # Prior model for p
+    p ~ dbeta(a, b)
+}"
+
+# COMPILE the model    
+vote_jags <- jags.model(textConnection(vote_model), 
+    data = list(a = 45, b = 55, X = 6, n = 10),
+    inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 100))
+
+# SIMULATE the posterior
+vote_sim <- coda.samples(model = vote_jags, variable.names = c("p"), n.iter = 10000)
+
+# PLOT the posterior
+plot(vote_sim, trace = FALSE)
+
+
+# COMPILE the model    
+vote_jags <- jags.model(textConnection(vote_model), 
+    data = list(a = 1, b = 1, X = 6, n = 10),
+    inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 100))
+
+# SIMULATE the posterior
+vote_sim <- coda.samples(model = vote_jags, variable.names = c("p"), n.iter = 10000)
+
+# PLOT the posterior
+plot(vote_sim, trace = FALSE, xlim = c(0,1), ylim = c(0,18))
+
+
+# COMPILE the model    
+vote_jags <- jags.model(textConnection(vote_model), 
+    data = list(a = 1, b = 1, X = 220, n = 400),
+    inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 100))
+
+# SIMULATE the posterior
+vote_sim <- coda.samples(model = vote_jags, variable.names = c("p"), n.iter = 10000)
+
+# PLOT the posterior
+plot(vote_sim, trace = FALSE, xlim = c(0,1), ylim = c(0,18))
+
+
+# COMPILE the model    
+vote_jags <- jags.model(textConnection(vote_model), 
+    data = list(a = 45, b = 55, X = 220, n = 400),
+    inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 100))
+
+# SIMULATE the posterior
+vote_sim <- coda.samples(model = vote_jags, variable.names = c("p"), n.iter = 10000)
+
+# PLOT the posterior
+plot(vote_sim, trace = FALSE, xlim = c(0,1), ylim = c(0,18))
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Bayesian Models and Markov Chains  
+  
+
 
 
 
