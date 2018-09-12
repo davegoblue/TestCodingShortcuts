@@ -1130,4 +1130,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 03-SEP-2018  
 * DataCamp_Insights_v003_c captures Bayesian Modeling with RJAGS - Chapter 1 (Introduction to Bayesian Modeling) - notes  
 * DataCamp_Insights_v003_c captures Categorical Data in the Tidyverse - Chapter 3 (Creating Factor Variables) - code  
+* DataCamp_Insights_v003_c captures Bayesian Modeling with RJAGS - Chapter 2 (Bayesian Models and Markov Chains) - notes  
   
