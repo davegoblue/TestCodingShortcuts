@@ -12035,6 +12035,207 @@ plot(vote_sim, trace = FALSE, xlim = c(0,1), ylim = c(0,18))
   
 Chapter 2 - Bayesian Models and Markov Chains  
   
+Normal-Normal Model:  
+  
+* Example of reaction times in a sleep deprivation study  
+	* Y(i) ~ N(m, s**2) meaning change in reaction time for subject I, assumed to be normally distributed as N(m, s**2)  
+    * Prior information is that normal reaction time is 250 and is expected to increase by 0-150 after sleep deprivation (scale of the prior)  
+    * The prior for the mean might then be defined as 50 ms increase in reaction time with a standard deviation of 25  
+    * The prior for the standard deviation might then be uniform on 0-200  
+* Overall formulation of the sleep study model includes  
+	* Y(i) ~ N(m, s**2)  
+    * m ~ N(50, 25**2)  
+    * s ~ Unif(0, 200)  
+  
+Simulating Normal-Normal in RJAGS:  
+  
+* Posterior insights are based on the product of the prior and the data, which can be simulated using RJAGS  
+	* sleep_model <- "model{  
+    *     # Likelihood model for Y[i]
+    *     for(i in 1:length(Y)) {
+    *         Y[i] ~ dnorm(m, s^(-2))  # requires precision which can be defined as the inverse of sigma-squared  
+    *     }  
+    *     # Prior models for m and s  
+    *     m ~ dnorm(50, 25^(-2))  # requires precision which can be defined as the inverse of sigma-squared  
+    *     s ~ dunif(0, 200)  
+    * }"  
+    * sleep_jags <- jags.model(textConnection(sleep_model), data = list(Y = sleep_study$diff_3), inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 1989))  
+    * sleep_sim <- coda.samples(model = sleep_jags, variable.names = c("m", "s"), n.iter = 10000)  
+  
+Markov chains:  
+  
+* The RJAGS approach is approximating parameters based on Monte Carlo Markov Chains (MCMC)  
+	* The goal of RJAGS is to use Markov chains to estimate (approximate) posteriors that would otherwise be too complicated to model  
+* Each iteration of a Markov chain depends on the previous iteration (the iterations are not entirely random or independent)  
+	* Over time, the Markov chain explores the sample space, but the exploration is often over a smaller range for smaller intervals (there are auto-corelations)  
+    * The overall distribution of the Markov chain mimics a random sampling drawn from the posterior distribution  
+  
+Markov chain diagnostics and reproducibility:  
+  
+* The trace plots indicate the longitudinal behavior of the chain while the density plots indicate the distribution of the chain  
+* Questions about what makes for a good chain (convergence, trials needed, etc.)  
+	* Stability is good - long-run trends should be stabilized  
+    * Multiple parallel chains should return very similar results with similar features (should not be overly dependent on RNG/seed)  
+    * summary(sleep_sim)  # provides key Markov chain diagnostics  
+* Generally, problems with Markov chains can be addressed with longer chains (more iterations)  
+* Helpful to set the seed and RNG in the model for reproducibility  
+	* inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 1989)  # example inside jags.model()  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Take 10000 samples from the m prior
+prior_m <- rnorm(10000, 50, 25)
+
+# Take 10000 samples from the s prior    
+prior_s <- runif(10000, 0, 200)
+
+# Store samples in a data frame
+samples <- data.frame(prior_m, prior_s)
+
+# Density plots of the prior_m & prior_s samples    
+ggplot(samples, aes(x = prior_m)) + 
+    geom_density()
+ggplot(samples, aes(x = prior_s)) + 
+    geom_density()
+
+
+# Check out the first 6 rows of sleep_study
+head(sleep_study)
+
+# Define diff_3
+sleep_study <- sleep_study %>%
+  mutate(diff_3=day_3-day_0)
+
+# Histogram of diff_3    
+ggplot(sleep_study, aes(x = diff_3)) + 
+    geom_histogram(binwidth = 20, color = "white")
+
+# Mean and standard deviation of diff_3    
+sleep_study %>%
+  summarize(mean(diff_3), sd(diff_3))
+
+
+# DEFINE the model    
+sleep_model <- "model{
+    # Likelihood model for Y[i]
+    for(i in 1:length(Y)) {
+        Y[i] ~ dnorm(m, s^(-2))
+    }
+
+    # Prior models for m and s
+    m ~ dnorm(50, 25^(-2))
+    s ~ dunif(0, 200)
+}"    
+
+# COMPILE the model
+sleep_jags <- jags.model(textConnection(sleep_model), data = list(Y = sleep_study$diff_3),
+    inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 1989))    
+
+# SIMULATE the posterior    
+sleep_sim <- coda.samples(model = sleep_jags, variable.names = c("m", "s"), n.iter = 10000)
+
+# PLOT the posterior    
+plot(sleep_sim, trace = FALSE)    
+
+
+# Let m be the average change in reaction time after 3 days of sleep deprivation
+# In a previous exercise, you obtained an approximate sample of 10,000 draws from the posterior model of m
+# You stored the resulting mcmc.list object as sleep_sim which is loaded in your workspace:
+# In fact, the sample of m values in sleep_sim is a dependent Markov chain, the distribution of which converges to the posterior
+# You will examine the contents of sleep_sim and, to have finer control over your analysis, store the contents in a data frame
+
+# Check out the head of sleep_sim
+head(sleep_sim)
+
+# Store the chains in a data frame
+sleep_chains <- data.frame(sleep_sim[[1]], iter = 1:10000)
+
+# Check out the head of sleep_chains
+head(sleep_chains)
+
+
+# NOTE: The 10,000 recorded Iterations start after a "burn-in" period in which samples are discarded
+# Thus the Iterations count doesn't start at 1!
+
+# Use plot() to construct trace plots of the m and s chains
+plot(sleep_sim, density=FALSE)
+
+# Use ggplot() to construct a trace plot of the m chain
+ggplot(sleep_chains, aes(x = iter, y = m)) + 
+    geom_line()
+
+# Trace plot the first 100 iterations of the m chain
+ggplot(dplyr::filter(sleep_chains, iter<=100), aes(x = iter, y = m)) + geom_line()
+
+# Note that the longitudinal behavior of the chain appears quite random and that the trend remains relatively constant
+# This is a good thing - it indicates that the Markov chain (likely) converges quickly to the posterior distribution of m
+
+
+# Use plot() to construct density plots of the m and s chains
+plot(sleep_sim, trace=FALSE)
+
+# Use ggplot() to construct a density plot of the m chain
+ggplot(sleep_chains, aes(x = m)) + 
+    geom_density()
+
+# Density plot of the first 100 values in the m chain
+ggplot(dplyr::filter(sleep_chains, iter<=100), aes(x = m)) + 
+    geom_density()
+
+
+# COMPILE the model
+sleep_jags_multi <- jags.model(textConnection(sleep_model), data = list(Y = sleep_study$diff_3), n.chains=4)   
+
+# SIMULATE the posterior    
+sleep_sim_multi <- coda.samples(model = sleep_jags_multi, variable.names = c("m", "s"), n.iter = 1000)
+
+# Check out the head of sleep_sim_multi
+head(sleep_sim_multi)
+
+# Construct trace plots of the m and s chains
+plot(sleep_sim_multi, density=FALSE)
+
+
+# The mean of the m Markov chain provides an estimate of the posterior mean of m
+# The naive standard error provides a measure of the estimate's accuracy.
+
+# Suppose your goal is to estimate the posterior mean of m within a standard error of 0.1 ms
+# If the observed naive standard error exceeds this target, no problem!
+# You can simply run a longer chain
+
+
+# SIMULATE the posterior    
+sleep_sim_1 <- coda.samples(model = sleep_jags, variable.names = c("m", "s"), n.iter = 1000)
+
+# Summarize the m and s chains of sleep_sim_1
+summary(sleep_sim_1)
+
+# RE-SIMULATE the posterior    
+sleep_sim_2 <- coda.samples(model = sleep_jags, variable.names = c("m", "s"), n.iter = 10000)
+
+# Summarize the m and s chains of sleep_sim_2
+summary(sleep_sim_2)
+
+
+# COMPILE the model
+sleep_jags <- jags.model(textConnection(sleep_model), data = list(Y = sleep_study$diff_3), inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 1989)) 
+
+# SIMULATE the posterior    
+sleep_sim <- coda.samples(model = sleep_jags, variable.names = c("m", "s"), n.iter = 10000)
+
+# Summarize the m and s chains of sleep_sim
+summary(sleep_sim)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Bayesian Inference and Prediction
+  
+
 
 
 
