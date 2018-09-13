@@ -12235,6 +12235,248 @@ summary(sleep_sim)
   
 Chapter 3 - Bayesian Inference and Prediction
   
+Simple Bayesian Regression Model:  
+  
+* The simple Bayesian regression lays the ground work for more complicated modeling built on it  
+* Suppose that the goal is to model human weights, and that they are N(m, s**2)  
+	* Y(i) ~ N(m(i), s**2)  # m(i) is an average weight that depends on height  
+    * m(i) = a + b*X(i) where X(i) is the height of individual i  
+* Can specify Bayesian model with priors  
+	* a = intercept ~ N(0, 200**2)  
+    * b = slope (expected to be positive) ~ N(1, 0.5**2)  
+    * s = residual standard deviation ~ Unif(0, 20)  
+  
+Bayesian Regression in RJAGS:  
+  
+* The basic lm() regression will give the parameters based on linear regression  
+* Can instead define the Bayesian linear regression for RJAGS  
+	* Within RJAGS, [i] means that it varies for each subject, i  
+    * Within RJAGS, <- means there is an exact mathematical formula that does not need to be estimated  
+    * weight_model <- "model{  
+    *     # Likelihood model for Y[i]  
+    *     for(i in 1:length(Y)) {  
+    *         Y[i] ~ dnorm(m[i], s^(-2))  
+    *         m[i] <- a + b * X[i]  
+    *     }  
+    *     # Prior models for a, b, s  
+    *     a ~ dnorm(0, 200^(-2))  
+    *     b ~ dnorm(1, 0.5^(-2))  
+    *     s ~ dunif(0, 20)  
+    * }"  
+    * weight_jags <- jags.model(textConnection(weight_model), data = list(X = bdims$hgt, Y = bdims$wgt), inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 2018))  
+    * weight_sim <- coda.samples(model = weight_jags, variable.names = c("a", "b", "s"), n.iter = 10000)  
+* Options for addressing the Markov chain instability include  
+	* Standardize the height predictor  
+    * Increase the chain length  
+  
+Posterior estimation and inference:  
+  
+* Bayesian regression using RJAGS provided estimates for the slope and intercept parameters  
+* The posterior densities can be summarized for better communication - for example, point estimates based on means  
+* Can also plot the lines corresponding to each pair of slope, intercepts - can further create "credible intervals"  
+	* The 95% credible intervals are the middle 95% of the densities for each of the parameters (slope and intercept)  
+* Can also assess frequencies of exceedence for parameters  
+	* table(weight_chains$b > 1.1)  
+  
+Posterior prediction:  
+  
+* Based on simulations, the posterior mean trend was estimated  
+	* Can use the final coefficients to make estimates about the population  
+    * Could instead model the regression based on each set of coefficients included in the chain, including calculating the credible interval  
+* Rather than using the regression to find means, the goal may be to predict an individual  
+	* Plug in the data as per finding the mean  
+    * The residual standard deviation (s) can then be used inside chain, using all of the a, b, s, data  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Note the 3 parameters in the model of weight by height: intercept a, slope b, & standard deviation s
+# In the first step of your Bayesian analysis, you will simulate the following prior models for these parameters: a ~ N(0, 200^2), b ~ N(1, 0.5^2), and s ~ Unif(0, 20)
+
+# Take 10000 samples from the a, b, & s priors
+prior_a <- rnorm(10000, 0, 200)
+prior_b <- rnorm(10000, 1, 0.5)
+prior_s <- runif(10000, 0, 20)
+
+# Store samples in a data frame
+samples <- data.frame(prior_a, prior_b, prior_s, set=1:10000)
+
+# Construct density plots of the prior samples    
+ggplot(samples, aes(x = prior_a)) + 
+    geom_density()
+ggplot(samples, aes(x = prior_b)) + 
+    geom_density()
+ggplot(samples, aes(x = prior_s)) + 
+    geom_density()
+
+
+# Replicate the first 12 parameter sets 50 times each
+prior_scenarios_rep <- bind_rows(replicate(n = 50, expr = samples[1:12, ], simplify = FALSE)) 
+
+# Simulate 50 height & weight data points for each parameter set
+prior_simulation <- prior_scenarios_rep %>% 
+    mutate(height = rnorm(600, 170, 10)) %>% 
+    mutate(weight = rnorm(600, prior_a + prior_b*height, prior_s))
+
+# Plot the simulated data & regression model for each parameter set
+ggplot(prior_simulation, aes(x = height, y = weight)) + 
+    geom_point() + 
+    geom_smooth(method = "lm", se = FALSE, size = 0.75) + 
+    facet_wrap(~ set)
+
+
+# The bdims data set from the openintro package is loaded in your workspace
+# bdims contains physical measurements on a sample of 507 individuals, including their weight in kg (wgt) and height in cm (hgt)
+
+# Construct a scatterplot of wgt vs hgt
+ggplot(bdims, aes(x = hgt, y = wgt)) + 
+    geom_point()
+
+# Add a model smooth
+ggplot(bdims, aes(x = hgt, y = wgt)) + 
+    geom_point() + 
+    geom_smooth(method = "lm", se = FALSE)
+    
+# Obtain the sample regression model
+wt_model <- lm(wgt ~ hgt, data = bdims)
+
+# Summarize the model
+summary(wt_model)
+
+
+# DEFINE the model    
+weight_model <- "model{
+    # Likelihood model for Y[i]
+    for(i in 1:length(Y)) {
+        Y[i] ~ dnorm(m[i], s^(-2))
+        m[i] <- a + b * X[i]
+    }
+
+    # Prior models for a, b, s
+    a ~ dnorm(0, 200^(-2))
+    b ~ dnorm(1, 0.5^(-2))
+    s ~ dunif(0, 20)
+}"
+
+# COMPILE the model
+weight_jags <- jags.model(textConnection(weight_model), data = list(X=bdims$hgt, Y=bdims$wgt), 
+                  inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 1989))
+
+# COMPILE the model
+weight_jags <- jags.model(textConnection(weight_model), data = list(Y = bdims$wgt, X = bdims$hgt), 
+                          inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 1989))
+
+# SIMULATE the posterior    
+weight_sim <- coda.samples(model = weight_jags, variable.names = c("a", "b", "s"), n.iter = 1000)
+
+# PLOT the posterior    
+plot(weight_sim)
+
+
+# A 100,000 iteration RJAGS simulation of the posterior, weight_sim_big, is in your workspace along with a data frame of the Markov chain output:
+head(weight_chains, 2)
+
+# The posterior means of the intercept & slope parameters, a & b, reflect the posterior mean trend in the relationship between weight & height
+# In contrast, the full posteriors of a & b reflect the range of plausible parameters, thus posterior uncertainty in the trend
+# You will examine the trend and uncertainty in this trend below
+# The bdims data are in your workspace
+
+# Summarize the posterior Markov chains
+summary(weight_sim_big)
+
+# Calculate the estimated posterior mean of b
+mean(weight_chains$b)
+
+# Plot the posterior mean regression model
+ggplot(bdims, aes(x=hgt, y=wgt)) + 
+    geom_point() + 
+    geom_abline(intercept = mean(weight_chains$a), slope = mean(weight_chains$b), color = "red")
+
+# Visualize the range of 20 posterior regression models
+ggplot(bdims, aes(x=hgt, y=wgt)) + 
+    geom_point() + 
+    geom_abline(intercept = weight_chains$a[1:20], slope = weight_chains$b[1:20], color = "gray", size = 0.25)
+
+
+# Summarize the posterior Markov chains
+summary(weight_sim_big)
+
+# Calculate the 95% posterior credible interval for b
+quantile(weight_chains$b, c(0.025, 0.975))
+
+# Calculate the 90% posterior credible interval for b
+quantile(weight_chains$b, c(0.05, 0.95))
+
+# Mark the 90% credible interval 
+ggplot(weight_chains, aes(x = b)) + 
+    geom_density() + 
+    geom_vline(xintercept = quantile(weight_chains$b, c(0.05, 0.95)), color = "red")
+
+
+# Mark 1.1 on a posterior density plot for b
+ggplot(weight_chains, aes(x=b)) + 
+    geom_density() + 
+    geom_vline(xintercept = 1.1, color = "red")
+
+# Summarize the number of b chain values that exceed 1.1
+table(weight_chains$b > 1.1)
+
+# Calculate the proportion of b chain values that exceed 1.1 
+mean(weight_chains$b > 1.1)
+
+
+# Calculate the trend under each Markov chain parameter set
+weight_chains <- weight_chains %>% 
+    mutate(m_180 = a + b*180)
+
+# Construct a posterior density plot of the trend
+ggplot(weight_chains, aes(x = m_180)) + 
+    geom_density() 
+
+# Calculate the average trend
+mean(weight_chains$m_180)
+
+# Construct a posterior credible interval for the trend
+quantile(weight_chains$m_180, c(0.025, 0.975))
+
+
+# Simulate 1 prediction under the first parameter set
+rnorm(1, mean=weight_chains$m_180[1], sd=weight_chains$s[1])
+
+# Simulate 1 prediction under the second parameter set
+rnorm(1, mean=weight_chains$m_180[2], sd=weight_chains$s[2])
+
+# Simulate & store 1 prediction under each parameter set
+weight_chains <- weight_chains  %>% 
+    mutate(Y_180=rnorm(nrow(weight_chains), mean=m_180, sd=s))
+
+# Print the first 6 parameter sets & predictions
+head(weight_chains)
+
+
+# Construct a density plot of the posterior predictions
+ggplot(weight_chains, aes(x=Y_180)) + 
+    geom_density() + 
+    geom_vline(xintercept = quantile(weight_chains$Y_180, c(0.025, 0.975)), color = "red")
+
+# Construct a posterior credible interval for the prediction
+quantile(weight_chains$Y_180, c(0.025, 0.975))
+
+# Visualize the credible on a scatterplot of the data
+ggplot(bdims, aes(x=hgt, y=wgt)) + 
+    geom_point() + 
+    geom_abline(intercept = mean(weight_chains$a), slope = mean(weight_chains$b), color = "red") + 
+    geom_segment(x = 180, xend = 180, y = quantile(weight_chains$Y_180, c(0.025)), yend = quantile(weight_chains$Y_180, c(0.975)), color = "red")
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Multivariate and Generalized Linear Models  
+  
+
 
 
 
