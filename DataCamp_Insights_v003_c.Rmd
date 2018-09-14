@@ -12476,7 +12476,289 @@ ggplot(bdims, aes(x=hgt, y=wgt)) +
   
 Chapter 4 - Multivariate and Generalized Linear Models  
   
+Bayesian regression with categorical predictor:  
+  
+* Can incorporate categorical predictors in to the Bayesian regressions  
+* Example of usage of a rail-trail in MA  
+	* Y[i] ~ N(m[i], s**2) where [i] is the day - assumed to have varying means but constant standard deviations  
+    * X[i] is a 1/0 variable where 1 is for weekdays and 0 is for weekends  
+    * m[i] = a + b*X[i], meaning that a is the typical weekend volume and a+b is the typical weekday volume  
+    * The prior will be a ~ N(400, 100**2) and b ~ N(0, 200**2) and s ~ Unif(0, 200)  
+* Can then define the model using RJAGS  
+	* rail_model_1 <- "model{  
+    *     # Likelihood model for Y[i]  
+    *     for(i in 1:length(Y)) {  
+    *         Y[i] ~ dnorm(m[i], s^(-2))  
+    *         m[i] <- a + b[X[i]]  
+    *     }  
+    *     # Prior models for a, b, s  
+    *     a ~ dnorm(400, 100^(-2))  
+    *     s ~ dunif(0, 200)  
+    *     b[1] <- 0  
+    *     b[2] ~ dnorm(0, 200^(-2))  
+    * }"  
+    * Note that b[1] <- 0 is because we want m[i] = a for the reference level; b[2], the second level, is what we want to model  
+  
+Multivariate Bayesian regression:  
+  
+* Bayesian models can be generalized to multivariate models, for example  
+	* Y[i] ~ N(m[i], s**2) where [i] is the day - assumed to have varying means but constant standard deviations  
+    * X[i] is a 1/0 variable where 1 is for weekdays and 0 is for weekends  
+    * Z[i] is the high temperatue on day [i] in degrees F  
+    * m[i] = a + b*X[i] + c*Z[i]  
+    * a ~ N(0, 200**2), b ~ N(0, 200**2), c ~ N(0, 20**2), s ~ Unif(0, 200)  
+* Can then define and simulate this model using RJAGS  
+	* rail_model_2 <- "model{  
+    *     # Likelihood model for Y[i]  
+    *     for(i in 1:length(Y)) {  
+    *         Y[i] ~ dnorm(m[i], s^(-2))  
+    *         m[i] <- a + b[X[i]] + c * Z[i]  
+    *     }  
+    *     # Prior models for a, b, c, s  
+    *     a ~ dnorm(0, 200^(-2))  
+    *     b[1] <- 0  
+    *     b[2] ~ dnorm(0, 200^(-2))  
+    *     c ~ dnorm(0, 20^(-2))  
+    *     s ~ dunif(0, 200)  
+    * }"  
+  
+Bayesian Poisson regression:  
+  
+* Can generalize regression techniques to non-normalized settings, such as Poisson regressions  
+* Bicycle riders per day might better be modeled as a Poisson - should be discrete and non-negative, for example  
+	* Y ~ Pois(lambda[i])  
+    * log(lambda[i]) = a + b * X[i] + c * Z[i]  
+    * a ~ N(0, 200**2)  
+    * b ~ N(0, 2**2)  
+    * c ~ N(0, 2**2)  
+* Can then define the model within RJAGS  
+	* poisson_model <- "model{  
+    *     # Likelihood model for Y[i]  
+    *     for(i in 1:length(Y)) {  
+    *         Y[i] ~ dpois(l[i])  
+    *         log(l[i]) <- a + b[X[i]] + c*Z[i]  
+    *     }  
+    *     # Prior models for a, b, c  
+    *     a ~ dnorm(0, 200^(-2))  
+    *     b[1] <- 0  
+    *     b[2] ~ dnorm(0, 2^(-2))  
+    *     c ~ dnorm(0, 2^(-2))  
+    * }"  
+* Caveat for the Poisson is the mean and variance should be roughly equal; might accept some imperfections of dispersions  
+  
+Wrap up:  
+  
+* Bayesian modeling has grown in popularity along with computing resources  
+* RJAGS allows for defining, compiling, and simulating Bayesian models  
+* Intutive posterior inference, including credible intervals  
+* Generalizing from normal models to Poisson models  
+  
+Example code includes:  
+```{r eval=FALSE}
 
+# Confirm that weekday is a factor variable
+is.factor(RailTrail$weekday)
+
+# Construct a density plot of volume by weekday
+ggplot(RailTrail, aes(x = volume, fill = weekday)) + 
+    geom_density(alpha = 0.5)
+
+# Calculate the mean volume on weekdays vs weekends
+RailTrail %>%
+  group_by(weekday) %>%
+  summarize(mean(volume))
+
+
+# DEFINE the model    
+rail_model_1 <- "model{
+    # Likelihood model for Y[i]
+    for(i in 1:length(Y)) {
+      Y[i] ~ dnorm(m[i], s^(-2))
+      m[i] <- a + b[X[i]]
+    }
+    
+    # Prior models for a, b, s
+    a ~ dnorm(400, 100^(-2))
+    b[1] <- 0
+    b[2] ~ dnorm(0, 200^(-2))
+    s ~ dunif(0, 200)
+}"
+
+# COMPILE the model
+rail_jags_1 <- jags.model(textConnection(rail_model_1), 
+    data = list(Y=RailTrail$volume, X=RailTrail$weekday),
+    inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 10)
+    )  
+
+# COMPILE the model
+rail_jags_1 <- jags.model(textConnection(rail_model_1), data = list(Y = RailTrail$volume, X = RailTrail$weekday), 
+    inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 10))
+
+# SIMULATE the posterior    
+rail_sim_1 <- coda.samples(model = rail_jags_1, variable.names = c("a", "b", "s"), n.iter = 10000)
+
+# Store the chains in a data frame
+rail_chains_1 <- data.frame(rail_sim_1[[1]])
+
+# PLOT the posterior    
+plot(rail_sim_1)
+
+
+# Posterior probability that typical volume is lower on weekdays
+mean(rail_chains_1$'b.2.' < 0)
+
+# Construct a chain of values for the typical weekday volume
+rail_chains_1 <- rail_chains_1 %>% 
+    mutate(weekday_mean = a + b.2.)
+
+# Construct a density plot of the weekday chain
+ggplot(rail_chains_1, aes(x=weekday_mean)) +
+  geom_density()
+
+# 95% credible interval for typical weekday volume
+quantile(rail_chains_1$weekday_mean, c(0.025, 0.975))
+
+
+# Construct a plot of volume by hightemp & weekday
+ggplot(RailTrail, aes(x=hightemp, y=volume, color=weekday)) + 
+    geom_point()
+
+# Construct a sample model
+rail_lm <- lm(volume ~ weekday + hightemp, data=RailTrail)
+
+# Summarize the model
+summary(rail_lm)
+
+# Superimpose sample estimates of the model lines
+ggplot(RailTrail, aes(x=hightemp, y=volume, color=weekday)) + 
+    geom_point() + 
+    geom_abline(intercept = coef(rail_lm)["(Intercept)"], slope = coef(rail_lm)["hightemp"], color = "red") +
+    geom_abline(intercept = sum(coef(rail_lm)[c("(Intercept)", "weekdayTRUE")]), slope = coef(rail_lm)["hightemp"], color = "turquoise3")
+
+
+# DEFINE the model    
+rail_model_2 <- "model{
+  # Likelihood model for Y[i]
+  for(i in 1:length(Y)){
+    Y[i] ~ dnorm(m[i], s^(-2))
+    m[i] <- a + b[X[i]] + c * Z[i]
+  }
+    
+  # Prior models for a, b, c, s
+  a ~ dnorm(0, 200^(-2))
+  b[1] <- 0
+  b[2] ~ dnorm(0, 200^(-2))
+  c ~ dnorm(0, 20^(-2))
+  s ~ dunif(0, 200)
+}"
+
+# COMPILE the model
+rail_jags_2 <- jags.model(textConnection(rail_model_2), 
+                          data = list(Y=RailTrail$volume, X=RailTrail$weekday, Z=RailTrail$hightemp),
+                          inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 10)
+                          )
+
+# SIMULATE the posterior    
+rail_sim_2 <- coda.samples(model = rail_jags_2, variable.names = c("a", "b", "c", "s"), n.iter = 10000)
+
+# Store the chains in a data frame
+rail_chains_2 <- data.frame(rail_sim_2[[1]])
+
+# PLOT the posterior    
+plot(rail_sim_2)
+
+
+# Summarize the posterior Markov chains
+summary(rail_sim_2)
+
+# Plot the posterior mean regression models
+ggplot(RailTrail, aes(x=hightemp, y=volume, color=weekday)) + 
+    geom_point() + 
+    geom_abline(intercept = mean(rail_chains_2[, "a"]), slope = mean(rail_chains_2[, "c"]), color = "red") + 
+    geom_abline(intercept = mean(rail_chains_2[, "a"]) + mean(rail_chains_2[, "b.2."]), slope = mean(rail_chains_2[, "c"]), color = "turquoise3")
+  
+# Posterior probability that typical volume is lower on weekdays
+mean(rail_chains_2$'b.2.' < 0)
+
+
+# DEFINE the model    
+poisson_model <- "model{
+    # Likelihood model for Y[i]
+    for(i in 1:length(Y)) {
+        Y[i] ~ dpois(l[i])
+        log(l[i]) <- a + b[X[i]] + c * Z[i]
+    }
+
+    # Prior models for a, b, c
+    a ~ dnorm(0, 200^(-2))
+    b[1] <- 0
+    b[2] ~ dnorm(0, 2^(-2))
+    c ~ dnorm(0, 2^(-2))
+}" 
+
+# COMPILE the model
+poisson_jags <- jags.model(textConnection(poisson_model), 
+                           data = list(Y=RailTrail$volume, X=RailTrail$weekday, Z=RailTrail$hightemp),
+                           inits = list(.RNG.name = "base::Wichmann-Hill", .RNG.seed = 10)
+                           )
+
+# SIMULATE the posterior    
+poisson_sim <- coda.samples(model = poisson_jags, variable.names = c("a", "b", "c"), n.iter = 10000)
+
+# Store the chains in a data frame
+poisson_chains <- data.frame(poisson_sim[[1]])
+
+# PLOT the posterior    
+plot(poisson_sim)
+
+
+# Summarize the posterior Markov chains
+summary(poisson_sim)
+
+# Plot the posterior mean regression models
+ggplot(RailTrail, aes(x = hightemp, y = volume, color = weekday)) + 
+    geom_point() + 
+    stat_function(fun = function(x){exp(5.01352 + 0.01426 * x)}, color = "red") + 
+    stat_function(fun = function(x){exp(5.01352 - 0.12800 + 0.01426 * x)}, color = "turquoise3")
+
+
+# Calculate the typical volume on 80 degree weekends & 80 degree weekdays
+poisson_chains <- poisson_chains %>% 
+    mutate(l_weekend=exp(a + c*80)) %>% 
+    mutate(l_weekday=exp(a + b.2. + c*80))
+
+# Construct a 95% CI for typical volume on 80 degree weekend
+quantile(poisson_chains$l_weekend, c(0.025, 0.975))
+
+# Construct a 95% CI for typical volume on 80 degree weekday
+quantile(poisson_chains$l_weekday, c(0.025, 0.975))
+
+
+# Simulate weekend & weekday predictions under each parameter set
+poisson_chains <- poisson_chains %>% 
+    mutate(Y_weekend=rpois(nrow(poisson_chains), l_weekend)) %>% 
+    mutate(Y_weekday=rpois(nrow(poisson_chains), l_weekday))
+    
+# Print the first 6 sets of parameter values & predictions
+head(poisson_chains)
+
+# Construct a density plot of the posterior weekday predictions
+ggplot(poisson_chains, aes(x=Y_weekday)) +
+  geom_density()
+
+# Posterior probability that weekday volume is less 400
+mean(poisson_chains$Y_weekday < 400)
+
+```
+  
+  
+  
+***
+  
+###_Parallel Programming in R_  
+  
+Chapter 1 - Can I run my application in parallel?  
+  
 
 
 
