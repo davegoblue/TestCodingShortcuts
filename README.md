@@ -1133,4 +1133,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Bayesian Modeling with RJAGS - Chapter 2 (Bayesian Models and Markov Chains) - notes  
 * DataCamp_Insights_v003_c captures Bayesian Modeling with RJAGS - Chapter 3 (Bayesian Inference and Prediction) - notes  
 * DataCamp_Insights_v003_c captures Bayesian Modeling with RJAGS - Chapter 4 (Multivariate and Generalized Linear Models) - notes  
+* DataCamp_Insights_v003_c captures Categorical Data in the Tidyverse - Chapter 4 (Case Study on Flight Etiquette) - code  
   
