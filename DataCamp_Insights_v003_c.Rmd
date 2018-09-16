@@ -12745,6 +12745,219 @@ mean(poisson_chains$Y_weekday < 400)
   
 Chapter 1 - Can I run my application in parallel?  
   
+Partitioning problems in to independent pieces:  
+  
+* Course contents include  
+	* Methods of parallel programming and R packages for support  
+    * The parallel package in R  
+    * Packages foreach and future.apply  
+    * Random numbers and reproducibility  
+* Programs can be partitioned either by tasks (e.g., birth model, death model, migration model) or by data (chunks of data passed to a routine, such as rowSums to a matrix)  
+	* Many independent tasks are referred to as "embarassingly parallel", and this is common to statistical simulations  
+  
+Models of parallel computing:  
+  
+* Available hardware drives the ability to split components - # CPU, Memory (including shared memory or distributed memory)  
+	* Message passing software runs on distributed memory and allows for fully independent processes  
+    * Shared memory allows for easier passing of data  
+* Programming paradigms include master-worker and map-reduce (Hadoop or Scala or the like)  
+* This course will cover the master-worker model  
+	* The master process creates processes for the workers and then compiles the results that the workers return  
+  
+R packages for parallel computing:  
+  
+* The R core package parallel allows for code to be independent of other packages  
+* Can instead work with iotools and sparklyr for working with the map-reduce process  
+	* Further, pbdR allows for many parallel approaches within R  
+* The master-worker paradigms can be implemented using foreach, future.apply, snow, snowFT, snowfall, future (currently under active development, more modern)  
+* The parallel package can be used for basic parallel tasks  
+	* ncores <- parallel::detectCores(logical = FALSE)  
+    * cl <- parallel::makeCluster(ncores)  
+    * parallel::clusterApply(cl, x = ncores:1, fun = rnorm)  # x is passed to the workers in order, so worker 1 will get ronorn(ncores)  
+    * parallel::stopCluster(cl)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+extract_words <- function(book_name) {
+    # extract the text of the book
+    text <- subset(austen_books(), book == book_name)$text
+    # extract words from the text and convert to lowercase
+    str_extract_all(text, boundary("word")) %>% unlist %>% tolower
+}
+
+janeausten_words <- function() {
+    # Names of the six books contained in janeaustenr
+    books <- austen_books()$book %>% unique %>% as.character
+    # Vector of words from all six books
+    words <- sapply(books, extract_words) %>% unlist
+    words
+}
+
+austen_books <- function () 
+{
+    books <- list('Sense & Sensibility' = janeaustenr::sensesensibility, 
+                  'Pride & Prejudice' = janeaustenr::prideprejudice, 
+                  'Mansfield Park' = janeaustenr::mansfieldpark, 
+                  'Emma' = janeaustenr::emma, 
+                  'Northanger Abbey' = janeaustenr::northangerabbey, 
+                  'Persuasion' = janeaustenr::persuasion
+                  )
+    ret <- data.frame(text = unlist(books, use.names = FALSE), stringsAsFactors = FALSE)
+    ret$book <- factor(rep(names(books), sapply(books, length)))
+    ret$book <- factor(ret$book, levels = unique(ret$book))
+    structure(ret, class = c("tbl_df", "tbl", "data.frame"))
+}
+
+max_frequency <- function(letter, words, min_length = 1) {
+    w <- select_words(letter, words = words, min_length = min_length)
+    frequency <- table(w)    
+    frequency[which.max(frequency)]
+}
+
+select_words <- function(letter, words, min_length = 1) {
+    min_length_words <- words[nchar(words) >= min_length]
+    grep(paste0("^", letter), min_length_words, value = TRUE)
+}
+
+# Vector of words from all six books
+words <- janeausten_words()
+
+# Most frequent "a"-word that is at least 5 chars long
+max_frequency(letter = "a", words = words, min_length = 5)
+
+# Partitioning
+result <- lapply(letters, FUN=max_frequency,
+                 words = words, min_length = 5) %>% unlist()
+
+# barplot of result
+barplot(result, las = 2)
+
+
+replicates <- 50
+sample_size <- 10000
+
+# Function that computes mean of normal random numbers
+myfunc <- function(n, ...) mean(rnorm(n, ...))
+
+# Init result, set seed & repeat the task sequentially
+result <- rep(NA, replicates)
+set.seed(123)
+for(iter in 1:replicates) result[iter] <- myfunc(sample_size)
+
+# View result
+hist(result)
+
+# Use sapply() with different distribution parameters
+hist(sapply(rep(sample_size, replicates), FUN=myfunc, mean = 10, sd = 5))
+
+
+# We'll now introduce a demographic model to be used throughout the course. It projects net migration rates via an AR(1) model, rate(t+1) - µ = ?(rate(t) -µ) + error with variance s2
+# An MCMC estimation for the USA resulted in 1000 samples of parameters µ, ? and s
+# The task is to project the future distribution of migration rates
+
+ar1_trajectory <- function(est, rate0, len = 15) {
+    trajectory <- rep(NA, len)
+    rate <- rate0
+    for (time in seq_len(len)) {
+        trajectory[time] <- ar1(est, r = rate)
+        rate <- trajectory[time]
+    }
+    trajectory
+}
+
+ar1 <- function(est, r) {
+    est['mu'] + est['phi'] * (r - est['mu']) + 
+        rnorm(1, sd = est['sigma'])
+}
+
+ar1_block <- function(id, rate0 = 0.015, traj_len = 15, block_size = 10) {
+    trajectories <- matrix(NA, nrow = block_size, ncol = traj_len)
+    for (i in seq_len(block_size)) 
+        trajectories[i,] <- ar1_trajectory(unlist(ar1est[id, ]), rate0 = rate0, len = traj_len)
+    trajectories
+}
+
+show_migration <- function(trajs) {
+    df <- data.frame(time = seq(2020, by = 5, len = ncol(trajs)),
+                     migration_rate = apply(trajs, 2, median),
+                     lower = apply(trajs, 2, quantile, 0.1),
+                     upper = apply(trajs, 2, quantile, 0.9)
+                    )
+    g <- ggplot(df, aes(x = time, y = migration_rate)) + 
+        geom_ribbon(aes(ymin = lower, ymax = upper), fill = "grey70") + 
+        geom_line()
+    print(g)
+}
+
+
+# Simulate from multiple rows of the estimation dataset
+ar1_multblocks <- function(ids, ...) {
+    trajectories <- NULL
+    for (i in seq_along(ids)) {
+        trajectories <- rbind(trajectories, ar1_block(ids[i], ...))
+    }
+    trajectories
+}
+
+ar1est <- data.frame(mu=c(0.0105, 0.0185, 0.022, 0.0113, 0.0144, 0.0175, -9e-04, 0.0093, 0.0111, -9e-04, -0.0024, 0.0086, 0.012, 0.0161, 0.0043, 0.0175, 0.0118, 0.0019, 0.0116, 0.0048, 0.0154, 0.0137, 0.0168, 0.0191, 0.0108, -0.0037, 0.0135, 0.0203, -0.0042, 0.0097, 0.0209, 0.0034, 0.0113, 0.0102, 0.0094, -0.0012, 0.008, 0.0082, 0.0123, 0.0175, 0.0054, -0.0087, 0.0161, 0.0155, 0.0126, 0.0181, 0.014, -0.0135, -0.0095, 0.0142, 0.011, 0.0194, 0.0149, 0.0115, 0.0129, -0.0124, 0.0116, 0.0136, 0.0161, 0.005, 0.0165, -0.0079, 0.0129, -0.0016, -7e-04, 0.0243, 0.0193, -0.004, 0.0145, 0.0078, 0.0156, 0.001, 0.0032, 0.0069, 0.0146, 0.0164, 0.0113, 0.0116, 0.0182, 0.0167, -0.0031, 0.0168, 0.0137, 0.012, -0.0212, -0.0092, 0.019, 0.0167, -0.0021, 0.0156, 0.0173, 0.0148, -0.0036, 0.0168, 0.0179, 0.0086, 0.0131, 0.015, 0.0106, 0.0132, 0.0119, 0.0156, 0.0159, 0.0256, 0.0071, 0.0163, 0.0107, 0.0139, 0.0228, 0.0139, 0.0117, 0.0133, 0.0127, -0.0162, 0.0115, 0.0095, 0.0183, 0.0183, -6e-04, 0.0177, 0.0145, 0.0041, 0.0143, 0.0135, -0.0078, 0.0036, 0.015, 0.018, 0.0158, 0.0054, -0.0204, 0.0193, 0.0051, 0.0144, 0.0129, 0.0134, 0.0116, 0.0102, 0.0203, 0.0154, 0.0106, 0.0184, 0.0096, -0.0032, 0.0143, 0.0158, 0.0093, 0.0159, 0.0112, 0.0106, 0.0075, 0.0133, 0.0171, 0.0133, 0.0139, 0.0167, 0.0131, -0.0078, 0.0135, 0.0145, 0.0104, 8e-04, 0.0205, 0.0046, 0.011, 0.0148, 0.0202, 8e-04, 0.0211, 0.0135, -8e-04, -0.0104, -0.0027, 0.0094, 0.0179, -0.0101, 0.0156, 0.0155, 0.014, 0.0149, 0.0165, 0.0168, 0.0155, 0.0136, 0.0156, 0.0149, 0.0191, 0.0176, 0.0094, -0.0076, 0.0162, 0.0143, 0.0182, 0.0102, 0.015, -0.0292, 0.0063, -0.0028, 0.0163, 0.015), 
+                     sigma=c(0.0081, 0.0053, 0.0069, 0.0075, 0.0082, 0.006, 0.0101, 0.011, 0.0064, 0.0066, 0.0095, 0.0057, 0.0078, 0.005, 0.0076, 0.0064, 0.0067, 0.0049, 0.0086, 0.0067, 0.0063, 0.0054, 0.0063, 0.0077, 0.0072, 0.0074, 0.0067, 0.0047, 0.0125, 0.0069, 0.0052, 0.0073, 0.0063, 0.0072, 0.0086, 0.0079, 0.009, 0.006, 0.0077, 0.0061, 0.0082, 0.0072, 0.0054, 0.0056, 0.0072, 0.0085, 0.0064, 0.0058, 0.0064, 0.0084, 0.0075, 0.006, 0.0048, 0.0068, 0.0065, 0.0082, 0.0072, 0.0056, 0.0056, 0.0055, 0.0054, 0.0059, 0.0064, 0.0069, 0.0073, 0.0071, 0.0057, 0.0062, 0.0086, 0.0062, 0.0054, 0.0052, 0.0066, 0.0076, 0.0046, 0.0056, 0.0066, 0.0077, 0.0074, 0.0061, 0.0056, 0.0065, 0.0069, 0.0084, 0.0058, 0.007, 0.0074, 0.0077, 0.0081, 0.0083, 0.0054, 0.0057, 0.0076, 0.0119, 0.0056, 0.0078, 0.005, 0.0073, 0.0075, 0.0054, 0.0085, 0.011, 0.0063, 0.0056, 0.009, 0.0069, 0.008, 0.0063, 0.007, 0.0059, 0.0064, 0.006, 0.0103, 0.0085, 0.006, 0.0076, 0.0054, 0.0066, 0.0056, 0.0071, 0.0079, 0.007, 0.0085, 0.0075, 0.007, 0.0085, 0.006, 0.0067, 0.006, 0.0074, 0.0098, 0.0066, 0.0058, 0.0075, 0.0064, 0.0059, 0.0103, 0.0055, 0.0053, 0.0068, 0.0057, 0.009, 0.0118, 0.0096, 0.0085, 0.0075, 0.0078, 0.0041, 0.0056, 0.008, 0.0071, 0.006, 0.0046, 0.0061, 0.007, 0.0061, 0.0066, 0.0075, 0.0094, 0.0072, 0.008, 0.0064, 0.0079, 0.0068, 0.0069, 0.0058, 0.0056, 0.0057, 0.0065, 0.006, 0.0073, 0.0067, 0.0068, 0.0071, 0.0048, 0.0071, 0.0063, 0.0051, 0.0079, 0.0042, 0.0048, 0.0066, 0.0072, 0.0058, 0.0057, 0.0083, 0.0063, 0.0057, 0.0103, 0.0096, 0.0067, 0.0051, 0.0075, 0.0064, 0.0069, 0.007, 0.007, 0.0074, 0.0056, 0.006), 
+                     phi=c(0.42, 0.3509, 0.8197, 0.5304, 0.1491, 0.3675, 0.9687, 0.7877, 0.7114, 0.9435, 0.9634, 0.9189, 0.4758, 0.5738, 0.8016, 0.0509, 0.8281, 0.8168, 0.7442, 0.9347, 0.1699, 0.3566, 0.8388, 0.7724, 0.7474, 0.7834, 0.6661, 0.5162, 0.9025, 0.5306, 0.6912, 0.7625, 0.8289, 0.6985, 0.9188, 0.9639, 0.3178, 0.7288, 0.4129, 0.2196, 0.9304, 0.9697, 0.193, 0.1474, 0.3111, 0.8844, 0.7386, 0.9674, 0.9983, 0.4863, 0.9338, 0.7999, 0.4696, 0.5078, 0.5141, 0.9958, 0.6404, 0.2886, 0.4171, 0.9856, 0.3261, 0.9713, 0.682, 0.7686, 0.8577, 0.9481, 0.6057, 0.934, 0.3161, 0.9414, 0.8349, 0.8325, 0.8913, 0.7726, 0.7327, 0.1403, 0.8144, 0.7506, 0.225, 0.4884, 0.9052, 0.2891, 0.1652, 0.7612, 0.9403, 0.9865, 0.4107, 0.6518, 0.893, 0.4981, 0.72, 0.3366, 0.8437, 0.2551, 0.7753, 0.5, 0.7857, 0.7107, 0.5643, 0.2887, 0.9621, 0.2384, 0.414, 0.86, 0.6917, 0.4946, 0.2325, 0.3419, 0.9219, 0.2706, 0.717, 0.2327, 0.7541, 0.9692, 0.5838, 0.9346, 0.4739, 0.3219, 0.9634, 0.3046, 0.9913, 0.8485, 0.3071, 0.0373, 0.9183, 0.7935, 0.0039, 0.5968, 0.3654, 0.595, 0.9712, 0.2745, 0.6027, 0.7441, 0.7641, 0.3582, 0.3397, 0.7748, 0.8188, 0.0604, 0.5076, 0.2856, 0.6859, 0.6705, 0.0326, 0.8749, 0.2596, 0.1138, 0.6072, 0.4, 0.9241, 0.612, 0.2375, 0.2495, 0.0661, 0.3234, 0.7651, 0.8581, 0.4818, 0.7303, 0.7458, 0.8925, 0.2861, 0.982, 0.0791, 0.2474, 0.4326, 0.8757, 0.5288, 0.6476, 0.8473, 0.9098, 0.9562, 0.8464, 0.5444, 0.9738, 0.706, 0.0795, 0.391, 0.3167, 0.3311, 0.5681, 0.27, 0.9046, 0.2299, 0.2299, 0.085, 0.4002, 0.7443, 0.9865, 0.7028, 0.9016, 0.6092, 0.2367, 0.5402, 0.9401, 0.8013, 0.993, 0.2473, 0.6414)
+                     )
+str(ar1est)
+
+
+# Generate trajectories for all rows of the estimation dataset
+trajs <- ar1_multblocks(seq_along(nrow(ar1est)), rate0 = 0.015,  block_size = 10, traj_len = 15)
+
+# Show results
+show_migration(trajs)
+
+
+# Load package
+library(parallel)
+
+# How many physical cores are available?
+ncores <- detectCores(logical = FALSE)
+
+# Create a cluster
+cl <- makeCluster(ncores)
+
+# Process rnorm in parallel
+clusterApply(cl, 1:ncores, fun = rnorm, mean = 10, sd = 2)
+
+# Evaluate partial sums in parallel
+part_sums <- clusterApply(cl, x = c(1, 51), fun = function(x) sum(x:(x + 49)))
+
+# Total sum
+total <- sum(unlist(part_sums))
+
+# Check for correctness
+total == sum(1:100)
+
+# Stop the cluster
+stopCluster(cl)
+
+
+# Create a cluster and set parameters
+cl <- makeCluster(2)
+replicates <- 50
+sample_size <- 10000
+
+# Parallel evaluation
+means <- clusterApply(cl, x = rep(sample_size, replicates), fun = myfunc)
+                
+# View results as histogram
+hist(unlist(means))
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - The parallel package  
+  
 
 
 
