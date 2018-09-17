@@ -1136,3 +1136,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Categorical Data in the Tidyverse - Chapter 4 (Case Study on Flight Etiquette) - code  
 * DataCamp_Insights_v003_c captures Parallel Programming in R - Chapter 1 (Can I Run My Application in Parallel?) - notes  
   
+### Expansions week of 10-SEP-2018  
+* DataCamp_Insights_v003_c captures Parallel Programming in R - Chapter 1 (Can I Run My Application in Parallel?) - code  
+  
