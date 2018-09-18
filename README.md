@@ -1138,4 +1138,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 10-SEP-2018  
 * DataCamp_Insights_v003_c captures Parallel Programming in R - Chapter 1 (Can I Run My Application in Parallel?) - code  
+* DataCamp_Insights_v003_c captures Parallel Programming in R - Chapter 2 (The parallel package) - notes  
   
