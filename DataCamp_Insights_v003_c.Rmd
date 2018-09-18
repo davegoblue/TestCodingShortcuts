@@ -12958,6 +12958,285 @@ hist(unlist(means))
   
 Chapter 2 - The parallel package  
   
+Cluster basics:  
+  
+* The parallel package consists of two parts - snow (Tuerney) and multicore (Urbanek)  
+	* The snow can work on any operating system  
+    * The multicore works on most systems but not on Windows  
+* Supported backends for snow are managed automatically by the parallel package  
+	* cl <- makeCluster(ncores, type = "PSOCK")  # default socket communication, works on all OS, all clusters start with a completely empty environment  
+    * cl <- makeCluster(ncores, type = "FORK")  # all OS except Windows, all workers are complete copies of the master environment  
+    * cl <- makeCluster(ncores, type = "MPI")  # interface provided by Rmpi and may be more efficient on machines where MPI is enabled  
+  
+Core of parallel:  
+  
+* The main processing functions are clusterApply and clusterApplyLB ("load balanced")  
+* The wrapper functions include parApply, parLapply, parSapply, parRapply (rows of a matrix), parCapply (columns of a matrix)  
+	* Further, parLapplyLB, parSapplyLB are wrappers on the clusterApplyLB data  
+* Example of using clusterApply for work on a pre-defined cluster cl  
+	* clusterApply(cl, x = arg.sequence, fun = myfunc)  # each element of x is passed to myfunc (length of x is the total number of tasks)  
+* There are several overheads involved in creating parallel processing - starting/stopping clusters, messages sent between nodes/masters, size of messages  
+	* Communications between master and workers is expensive, so long worker times are preferred in general  
+    * The overheads may sometimes be so significant as to make parallel processing more time-consuming than serial processing  
+  
+Initialization of nodes:  
+  
+* Cluster nodes typically start with a clean, empty environment (default for sockets)  
+* Repeated communications with the workers is expensive  
+	* clusterApply(cl, rep(1000, n), rnorm, sd = 1:1000)  # master needs to send the vector to all the clusters (big overhead)  
+* Good practice is to initialize workers at the beginning with everything that stays constant and/or is time consuming  
+	* Sending static data or datasets, loading libraries, evaluating global functions, etc.  
+* The clusterCall() will call the same function with the same arguments on all the nodes  
+	* cl <- makeCluster(2)  
+    * clusterCall(cl, function() library(janeaustenr))  # will be loaded in all the clusters  
+    * clusterCall(cl, function(i) emma[i], 20)  # will call the 20th element of emma from janeausten  
+* The clusterEvalQ() will evaluate a literal expression on all nodes  
+	* cl <- makeCluster(2)  
+    * clusterEvalQ(cl, { library(janeaustenr) ; library(stringr) ; get_books <- function() austen_books()$book %>% unique %>% as.character })  # all books in the package  
+    * clusterCall(cl, function(i) get_books()[i], 1:3)  # function get_books is available in the environment due to the above  
+* The clusterExport() will export objects from master to the workers  
+	* books <- get_books()  
+    * cl <- makeCluster(2)  
+    * clusterExport(cl, "books")  # The books object is passed quoted  
+    * clusterCall(cl, function() print(books))  # books will be available since it was passed by clusterExport()  
+  
+Subsetting data:  
+  
+* Each task is applied to a different data chunk; these can be made available to the worker in various ways  
+	* Random numbers on the fly  
+    * Arguments  
+    * Chunking on the workers side  
+* Example of random numbers being created on the fly by the workers (reproducibility covered in later chapters)  
+	* myfunc <- function(n, ...) mean(rnorm(n, ...))  
+    * clusterApply(cl, rep(1000, 20), myfunc, sd = 6)  
+* Example of chunking the data on the master side and then passing the data to workers as an argument  
+	* Incorporated in to parApply() by default  
+    * cl <- makeCluster(4)  
+    * mat <- matrix(rnorm(12), ncol=4)  
+    * parCapply(cl, mat, sum)  # splits the matrix by column and passes to worker  
+    * unlist(clusterApply(cl, as.data.frame(mat), sum))  # needs to be converted to data.frame first for clusterApply()  
+* Example of chunking data on the worker side (each pre-populated with the full data, chunking on the worker side) - saves communication time  
+	* n <- 100  
+    * M <- matrix(rnorm(n * n), ncol = n)  
+    * clusterExport(cl, "M")  
+    * mult_row <- function(id) apply(M, 2, function(col) sum(M[id,] * col))  
+    * clusterApply(cl, 1:n, mult_row) %>% do.call(rbind, .)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Load parallel and create a cluster
+library(parallel)
+cl <- makeCluster(4)
+
+# Investigate the cl object and its elements
+typeof(cl)
+length(cl)
+typeof(cl[[3]])
+cl[[3]]$rank
+
+# What is the process ID of the workers
+clusterCall(cl, Sys.getpid)
+
+# Stop the cluster
+stopCluster(cl)
+
+
+# Define ncores and a print function
+ncores <- 2
+print_ncores <- function() print(ncores)
+
+# Create a socket and a fork clusters
+# cl_sock <- makeCluster(ncores, type = "PSOCK")
+# cl_fork <- makeCluster(ncores, type = "FORK")  # this is possible only on OS other than Windows
+
+# Evaluate the print function on each cluster
+# clusterCall(cl_sock, print_ncores)  # this will fail since the socket has no knowledge of the main environment
+# clusterCall(cl_fork, print_ncores)
+
+# Change ncores and evaluate again
+# ncores <- 4
+# clusterCall(cl_fork, print_ncores)  # the fork is only of the original environment, so these clusters will still think the answer is 2
+
+
+# In this exercise, you will take the simple embarrassingly parallel application for computing mean of random numbers (myfunc()) from the first chapter, and implement two functions:
+# One that runs the application sequentially, mean_seq(), and one that runs it in parallel, mean_par()
+# Both functions have three arguments, n (sample size), repl (number of replicates) and ... (passed to myfunc())
+# Function mean_par() assumes a cluster object cl to be present in the global environment
+
+# Function to run repeatedly
+myfunc <- function(n, ...) mean(rnorm(n, ...))
+
+# Sequential solution
+mean_seq <- function(n, repl, ...) {
+    res <- rep(NA, repl)
+    for (it in 1:repl) res[it] <- myfunc(n, ...)
+    res
+}
+
+# Parallel solution
+mean_par <- function(n, repl, ...) {
+    res <- clusterApply(cl, x = rep(n, repl), fun = myfunc, ...)
+    unlist(res)
+}
+
+
+# Load packages 
+library(parallel)
+library(microbenchmark)
+
+# Create a cluster
+cl <- makeCluster(2)
+
+# Compare run times
+microbenchmark(mean_seq(3000000, repl = 4), 
+               mean_par(3000000, repl = 4),
+               mean_seq(100, repl = 100), 
+               mean_par(100, repl = 100),
+               times = 1, unit = "s")
+# Stop cluster               
+stopCluster(cl)
+
+
+# Load extraDistr on master
+library(extraDistr)
+
+# Define myrdnorm 
+myrdnorm <- function(n, mean = 0, sd = 1) 
+    rdnorm(n, mean = mean, sd = sd)
+
+# Run myrdnorm in parallel - should fail
+# res <- clusterApply(cl, rep(1000, 20), myrdnorm, sd = 6)   # will error out
+
+
+# Load extraDistr on all workers
+cl <- makeCluster(2)
+clusterEvalQ(cl, library(extraDistr))
+
+# Run myrdnorm in parallel again and show results
+res <- clusterApply(cl, rep(1000, 20), myrdnorm, sd = 6)
+hist(unlist(res))
+
+
+# myrdnorm that uses global variables
+myrdnorm <- function(n) rdnorm(n, mean = mean, sd = sd)
+
+# Initialize workers 
+clusterEvalQ(cl, {
+    library(extraDistr)
+    mean=10
+    sd=5
+    })
+    
+# Run myrdnorm in parallel and show results
+res <- clusterApply(cl, rep(1000, 100), myrdnorm)
+
+# View results
+hist(unlist(res))
+
+
+# Set global objects on master
+mean <- 20
+sd <- 10
+
+# Export global objects to workers
+clusterExport(cl, c("mean", "sd"))
+
+# Load extraDistr on workers
+clusterEvalQ(cl, library(extraDistr))
+
+# Run myrdnorm in parallel and show results
+res <- clusterApply(cl, rep(1000, 100), myrdnorm)
+hist(unlist(res))
+
+
+select_words <- function(letter, words, min_length = 1) {
+    min_length_words <- words[nchar(words) >= min_length]
+    grep(paste0("^", letter), min_length_words, value = TRUE)
+}
+
+# Export "select_words" to workers
+clusterExport(cl, "select_words")
+
+# Split indices for two chunks
+ind <- splitIndices(length(words), 2)
+
+# Find unique words in parallel
+result <- clusterApply(cl, x = list(words[ind[[1]]], words[ind[[2]]]),  
+            function(w, ...) unique(select_words("v", w, ...)), 
+            min_length = 10)
+            
+# Show vectorized unique results
+unique(unlist(result))
+
+
+# Earlier you defined a function ar1_multblocks() that takes a vector of row identifiers as argument and generates migration trajectories using the corresponding rows of the parameter set ar1est
+# ar1_multblocks() depends on ar1_block() which in turns depends on ar1_trajectory()
+# These functions along with the cluster object cl of size 4, function show_migration(), the dataset ar1est (reduced to 200 rows) and packages parallel and ggplot2 are available in your workspace
+
+ar1_block <- function(id, rate0 = 0.015, traj_len = 15, block_size = 10) {
+    trajectories <- matrix(NA, nrow = block_size, ncol=traj_len)
+    for (i in seq_len(block_size)) 
+        trajectories[i,] <- ar1_trajectory(unlist(ar1est[id, ]), rate0 = rate0, len = traj_len)
+    trajectories
+}
+
+ar1_trajectory <- function(est, rate0, len = 15) {
+    ar1 <- function(est, r) {
+        # simulate one AR(1) value
+        est['mu'] + est['phi'] * (r - est['mu']) + 
+        rnorm(1, sd = est['sigma'])
+    }
+    trajectory <- rep(NA, len)
+    rate <- rate0
+    for (time in seq_len(len)) {
+        trajectory[time] <- ar1(est, r = rate)
+        rate <- trajectory[time]
+    }
+    trajectory
+}
+
+ar1_multblocks <- function(ids, ...) {
+    trajectories <- NULL
+    for (i in seq_along(ids))
+        trajectories <- rbind(trajectories, ar1_block(ids[i], ...))
+    trajectories
+}
+
+# Export data and functions
+clusterExport(cl, c("ar1est", "ar1_block", "ar1_trajectory"))
+
+# Process ar1_multblocks in parallel
+res <- clusterApply(cl, 1:nrow(ar1est), ar1_multblocks)
+
+# Combine results into a matrix and show results
+trajs <- do.call(rbind, res)
+show_migration(trajs)
+
+
+# The object res returned by clusterApply() in the previous exercise is also in your workspace, now called res_prev
+res_prev <- res
+
+# Split task into 5 chunks
+ind <- splitIndices(nrow(ar1est), 5)
+
+# Process ar1_multblocks in parallel
+res <- clusterApply(cl, ind, ar1_multblocks)
+
+# Dimensions of results 
+(res_dim <- c(length(res), nrow(res[[1]])))
+(res_prev_dim <- c(length(res_prev), nrow(res_prev[[1]])))
+
+stopCluster(cl)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - foreach, future.apply, and Load Balancing  
+  
 
 
 
