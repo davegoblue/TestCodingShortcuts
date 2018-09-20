@@ -13237,6 +13237,325 @@ stopCluster(cl)
   
 Chapter 3 - foreach, future.apply, and Load Balancing  
   
+foreach:  
+  
+* The looping construct can be applied using the foreach package (Calaway and Weston), similar to previous examples  
+* The foreach makes it possible to run parallel processing for loops - code can be written the same way for both sequential and parallel applications  
+* The basic syntax is foreach(.) %do% .  
+	* library(foreach)  
+    * foreach(n = rep(5, 3)) %do% rnorm(n)  
+    * foreach(n = rep(5, 3), m = 10^(0:2)) %do% rnorm(n, mean = m)  # can pass arguments  
+    * The foreach() call will return a value - in the example above, this would be a list  
+* Can combine results using post-processing arguments - the .combine argument  
+	* foreach(n = rep(5, 3), .combine = rbind) %do% rnorm(n)  # rbind of the three lists  
+    * foreach(n = rep(5, 3), .combine = '+') %do% rnorm(n)  # sum across the three lists  
+* Can also use list comprehensions with the foreach() function - using the %:% operator  
+	* foreach(x = sample(1:1000, 10), .combine = c) %:% when(x %% 3 == 0 || x %% 5 == 0) %do% x  
+  
+foreach and parallel backends:  
+  
+* The most popular backend is the doParallel() call for parallel foreach() processing  
+	* Other backends include doFuture() using the future package and doSEQ() which allows switching between parallel and sequential  
+* The doParallel package by Calaway et al is an interface between foreach and parallel, and requires initialization with registerDoParallel()  
+	* library(doParallel)  
+    * registerDoParallel(cores = 3)  # uses multicore for Unix and snow for Windows  
+    * cl <- makeCluster(3)  # can make your own clusters and pass them also  
+    * registerDoParallel(cl)  # passing the cl object rather than cores (will default to snow since that is makeCluster() default  
+* Examples of converting a sequential loop to a parallel loop  
+	* library(foreach)  
+    * foreach(n = rep(5, 3)) %do% rnorm(n)  
+    * library(doParallel)  
+    * cl <- makeCluster(3)  
+    * registerDoParallel(cl)  
+    * foreach(n = rep(5, 3)) %dopar% rnorm(n)  # note the conversion to %dopar% which is what engages the parallel processing  
+* The doFuture package (Bengtsson) is built on top of the future package  
+	* The central idea is that there is a future plan for how foreach should work behind the scenes - sequential, cluster, multicore, multiprocess, etc.  
+    * Other packages are available from future.batchtools  
+    * library(doFuture)  
+    * registerDoFuture()  
+    * plan(cluster, workers = 3)  # using the cluster plan  
+    * foreach(n = rep(5, 3)) %dopar% rnorm(n)  # same use of foreach, with the cluster plan applied  
+    * plan(multicore)  # using the multicore plan  
+    * foreach(n = rep(5, 3)) %dopar% rnorm(n)  
+  
+future and future.apply - packages that are continually under development:  
+  
+* The future package intends to have a uniform API for sequential and parallel processing  
+* The future construct is for an expression that may be used in the future  
+	* Example in plain R - x <- mean(rnorm(n, 0, 1)) ; y <- mean(rnorm(n, 10, 5)) ; print(c(x, y))  
+    * Example in implicit futures - x %<-% mean(rnorm(n, 0, 1)) ; y %<-% mean(rnorm(n, 10, 5)) ; print(c(x, y))  
+    * Example in explicit futures - x <- future(mean(rnorm(n, 0, 1))) ; y <- future(mean(rnorm(n, 10, 5))) ; print(c(value(x), value(y)))  
+    * Values can be managed asynchronously, meaning that the next line can start running while the current line is still in process  
+* The same code can then be run either in parallel or sequentially - sequential example  
+	* plan(sequential)  
+    * x %<-% mean(rnorm(n, 0, 1))  
+    * y %<-% mean(rnorm(n, 10, 5))  
+    * print(c(x, y))  
+* The same code can then be run either in parallel or sequentially - parallel example  
+	* plan(multicore)  
+    * x %<-% mean(rnorm(n, 0, 1))  
+    * y %<-% mean(rnorm(n, 10, 5))  
+    * print(c(x, y))  
+* The package future.apply is a higher level API for all the apply packages in R using futures  
+	* Sibling to foreach  
+    * functions include future_lapply(), future_sapply(), future_apply()  
+* Example of using future.apply()  
+	* lapply(1:10, rnorm)  # base R  
+    * plan(sequential)  
+    * future_lapply(1:10, rnorm)  # future.apply implementation of base R above  
+    * plan(cluster, workers=4)  
+    * future_lapply(1:10, rnorm)  # future.apply implementation of base R above, now run in parallel  
+* Separating the plan from the processing allows for processing across many systems  
+	* Single CPU uses sequential, cluster plan for many cores, etc.  
+  
+Load balancing and scheduling:  
+  
+* There can be significant node waiting times if the master waits for all workers to finish before assigning new tasks  
+	* The clusterApplyLB() is designed to speed up processing by sending new tasks to workers as soon as they finish their old tasks  
+* Communication overhead can also be a big problem when the tasks are small  
+	* Can instead give the workers many tasks at once, and have them communicate with the master only at the start and the finish  
+    * Drawback is that idle workers will not be available to help busy workers  
+* Can chunk in parallel using the splitIndices() function  
+	* splitIndices(10, 2)  
+    * clusterApply(cl, x = splitIndices(10, 2), fun = sapply, "*", 100)  # multiply all numbers by 100  
+    * Can also use parApply with the chunk.size option in R 3.5+  
+    * foreach(s = isplitVector(1:10, chunks = 2)) %dopar% sapply(s, "*", 100)  # itertools functions to implement in foreach  
+    * future_sapply(1:10, `*`, 100, future.scheduling = 1)  # 1 chunk per worker  
+    * future_sapply(1:10, `*`, 100, future.scheduling = FALSE)  # 1 chunk per task  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Recall the first chapter where you found the most frequent words from the janeaustenr package that are of certain minimum length
+result <- lapply(letters, max_frequency, words = words, min_length = 5) %>% 
+    unlist
+# In this exercise, you will implement the foreach construct to solve the same problem
+# The janeaustenr package, a vector of all words from the included books, words, and a function max_frequency() for finding the results based on a given starting letter are all available in your workspace
+
+# Load the package
+library(foreach)
+
+# foreach construct
+result <- foreach(l = letters, .combine=c) %do% max_frequency(l, words=words, min_length=5)
+                
+# Plot results 
+barplot(result, las = 2)
+
+
+# Specifically, your job is to modify the code so that the maximum frequency for the first half of the alphabet is obtained for words that are two and more characters long, while the frequency corresponding to the second half of the alphabet is derived from words that are six and more characters long
+# Note that we are using an alphabet of 26 characters
+
+# foreach construct and combine into vector
+result <- foreach(l = letters, n = rep(c(2, 6), each=13), .combine = c) %do% 
+    max_frequency(l, words=words, min_length=n)
+          
+# Plot results
+barplot(result, las = 2)
+
+
+# Register doParallel with 2 cores
+doParallel::registerDoParallel(cores=2)
+
+# Parallel foreach loop
+res <- foreach(r = rep(1000, 100), .combine = rbind, 
+            .packages = "extraDistr") %dopar% myrdnorm(r)
+            
+# Dimensions of res
+dim_res <- dim(res)
+
+
+# So far you learned how to search for the most frequent word in a text sequentially using foreach()
+# In the course of the next two exercises, you will implement the same task using doParallel and doFuture for parallel processing and benchmark it against the sequential version
+# The sequential solution is implemented in function freq_seq() (type freq_seq in your console to see it)
+# It iterates over a global character vector chars and calls the function max_frequency() which searches within a vector of words, while filtering for minimum word length
+# All these objects are preloaded, as is the doParallel package
+# Your job now is to write a function freq_doPar() that runs the same code in parallel via doParallel
+
+freq_seq <- function(min_length = 5)
+    foreach(l = letters, .combine = c) %do% 
+        max_frequency(l, words = words, min_length = min_length)
+
+# Function for doParallel foreach
+freq_doPar <- function(cores, min_length = 5) {
+    # Register a cluster of size cores
+    doParallel::registerDoParallel(cores=cores)
+    
+    # foreach loop
+    foreach(l=letters, .combine=c, 
+            .export = c("max_frequency", "select_words", "words"),
+            .packages = c("janeaustenr", "stringr")) %dopar%
+        max_frequency(l, words=words, min_length=min_length)
+}
+
+# Run on 2 cores
+freq_doPar(cores=2)
+
+
+# Now your job is to create a function freq_doFut() that accomplishes the same task as freq_doPar() but with the doFuture backend
+# Note that when using doFuture, arguments .packages and .export in foreach() are not necessary, as the package deals with the exports automatically
+# You will then benchmark these two functions, together with the sequential freq_seq()
+# All the functions from the last exercise are available in your workspace
+# In addition, the packages doFuture and microbenchmark are also preloaded
+# To keep the computation time low, the global chars vector is set to the first six letters of the alphabet only
+
+cores <- 2
+min_length <- 5
+
+# Function for doFuture foreach
+freq_doFut <- function(cores, min_length = 5) {
+    # Register and set plan
+    doFuture::registerDoFuture()
+    future::plan(strategy="cluster", workers=cores)
+
+    # foreach loop
+    foreach(l = letters, .combine = c) %dopar%
+        max_frequency(l, words = words, min_length = min_length)
+}
+
+# Benchmark
+microbenchmark(freq_seq(min_length),
+               freq_doPar(cores, min_length),
+               freq_doFut(cores, min_length),
+               times = 1)
+
+# It is straight forward to swap parallel backends with foreach
+# In this small example, you might not see any time advantage in running it in parallel
+# In addition, doFuture is usually somewhat slower than doParallel
+# This is because doFuture has a higher computation overhead
+# We encourage you to test these frameworks on more time-consuming applications where an overhead become negligible relative to the overall processing time
+
+extract_words_from_text <- function(text) {
+    str_extract_all(text, boundary("word")) %>% 
+        unlist %>% 
+        tolower
+}
+
+# Main function
+freq_fapply <- function(words, chars=letters, min_length=5) {
+    unlist(future.apply::future_lapply(chars, FUN=max_frequency, words = words, min_length = min_length))
+}
+
+obama <- readLines("./RInputFiles/obama.txt")
+obama_speech <- paste(obama[obama != ""], collapse=" ")
+
+# Extract words and call freq_fapply
+words <- extract_words_from_text(obama_speech)
+res <- freq_fapply(words)
+
+# Plot results
+barplot(res, las = 2)
+
+
+# Now imagine you are a user of the fictional package from the previous exercise
+# At home you have a two-CPU Mac computer, and at work you use a Linux cluster with two 16-CPU computers, called "oisin" and "oscar"
+# Your job is to write a function for each of the hardware that calls freq_fapply() while taking advantage of all available CPUs
+# For the cluster, you set workers to a vector of computer names corresponding to the number of CPUs, i.e. 16 x "oisin" and 16 x "oscar"
+# For a one-CPU environment, we have created a function fapply_seq()
+
+# fapply_seq <- function(...) {
+#     future::plan(strategy="sequential") 
+#     freq_fapply(words, letters, ...)
+# }
+
+# multicore function
+# fapply_mc <- function(cores=2, ...) {
+#     plan(strategy="multicore", workers=cores)
+#     freq_fapply(words, letters, ...)
+# }
+
+# cluster function
+# fapply_cl <- function(cores=NULL, ...) {
+#     # set default value for cores
+#     if(is.null(cores))
+#         cores <- rep(c("oisin", "oscar"), each = 16)
+#         
+#     # parallel processing
+#     plan(strategy="cluster", workers=cores)
+#     freq_fapply(words, letters, ...)
+# }
+
+
+# Note: Multicore does not work on Windows. We recommend using the 'multiprocess' or 'cluster' plan on Windows computers.
+
+# Microbenchmark
+# microbenchmark(fapply_seq = fapply_seq(),
+#                fapply_mc_2 = fapply_mc(cores=2), 
+#                fapply_mc_10 = fapply_mc(cores=10),
+#                fapply_cl = fapply_cl(cores=2), 
+#                times = 1)
+
+# Which is the slowest?
+# slowest1 <- "fapply_cl"
+
+
+# This is because for a small number of tasks a sequential code can run faster than a parallel version due to the parallel overhead
+# The cluster plan has usually the largest overhead and thus, should be used only for larger number of tasks
+# The multicore may be more efficient when the number of workers is equal to the number of cores
+# It uses shared memory, and thus is faster than cluster
+
+
+# In your workspace there is a vector tasktime containing simulated processing times of 30 tasks (generated using runif())
+# There is also a cluster object cl with two nodes
+# Your job is to apply the function Sys.sleep() to tasktime in parallel using clusterApply() and clusterApplyLB() and benchmark them
+# The parallel and microbenchmark packages are loaded
+# We also provided functions for plotting cluster usage plots called plot_cluster_apply() and plot_cluster_applyLB()
+# Both functions use functionality from the snow package
+
+tasktime <- c(0.1328, 0.1861, 0.2865, 0.4541, 0.1009, 0.4492, 0.4723, 0.3304, 0.3146, 0.031, 0.1031, 0.0884, 0.3435, 0.1921, 0.3849, 0.2489, 0.3588, 0.496, 0.1901, 0.3887, 0.4674, 0.1062, 0.3259, 0.0629, 0.1337, 0.1931, 0.0068, 0.1913, 0.4349, 0.1702)
+
+# plot_cluster_apply <- function(cl, x, fun) 
+#     plot(snow::snow.time(snow::clusterApply(cl, x, fun)),
+#             title = "Cluster usage of clusterApply")
+
+# plot_cluster_applyLB <- function(cl, x, fun) 
+#     plot(snow::snow.time(snow::clusterApplyLB(cl, x, fun)),
+#             title = "Cluster usage of clusterApplyLB")
+
+# Benchmark clusterApply and clusterApplyLB
+# microbenchmark(
+#     clusterApply(cl, tasktime, Sys.sleep),
+#     clusterApplyLB(cl, tasktime, Sys.sleep),
+#     times = 1
+# )
+
+# Plot cluster usage
+# plot_cluster_apply(cl, tasktime, Sys.sleep)
+# plot_cluster_applyLB(cl, tasktime, Sys.sleep)
+
+
+# Now we compare the results from the previous exercise with ones generated using parSapply(), which represents here an implementation that groups tasks into as many chunks as there are workers available
+# You first explore its cluster usage plot, using the function plot_parSapply() we defined for you
+# We generated a version of the tasktime vector, called bias_tasktime that generates very uneven load
+# Your job is to compare the run times of parSapply() with clusterApplyLB() applied to bias_tasktime
+
+# plot_parSapply <- function(cl, x, fun) 
+#     plot(snow::snow.time(snow::parSapply(cl, x, fun)),
+#             title = "Cluster usage of parSapply")
+
+# bias_tasktime <- c(1, 1, 1, 0.1, 0.1, 0.1, 1e-04, 1e-04, 1e-04, 0.001, 1)
+
+# Plot cluster usage for parSapply
+# plot_parSapply(cl, tasktime, Sys.sleep)
+
+# Microbenchmark
+# microbenchmark(
+#     clusterApplyLB(cl, bias_tasktime, Sys.sleep),
+#     parSapply(cl, bias_tasktime, Sys.sleep),
+#     times = 1
+# )
+
+# Plot cluster usage for parSapply and clusterApplyLB
+# plot_cluster_applyLB(cl, bias_tasktime, Sys.sleep)
+# plot_parSapply(cl, bias_tasktime, Sys.sleep)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Random Numbers and Reproducibility  
+  
 
 
 
