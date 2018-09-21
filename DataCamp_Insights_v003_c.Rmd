@@ -13556,9 +13556,210 @@ tasktime <- c(0.1328, 0.1861, 0.2865, 0.4541, 0.1009, 0.4492, 0.4723, 0.3304, 0.
   
 Chapter 4 - Random Numbers and Reproducibility  
   
+Are results reproducible?  
+  
+* Many statistical numbers require the use of random numbers - MCMC, boot, simulation, sample, rnorm, etc.  
+	* Typically, would use a set.seed() to initialize the RNG to a known state  
+* Setting the seed typically does not guarantee reproducibility of parallel processing  
+	* library(parallel)  
+    * cl <- makeCluster(2)  
+    * set.seed(1234)  
+    * clusterApply(cl, rep(3, 2), rnorm)  
+    * set.seed(1234)  # only sets the RNG in the master node; thus not sent to the workers  
+    * clusterApply(cl, rep(3, 2), rnorm)  # will get different sets of results 
+* Can instead set the RNG for each of the workers  
+	* clusterEvalQ(cl, set.seed(1234))  
+    * clusterApply(cl, rep(3, 2), rnorm)  # both clusters will give the identicla results  
+* There is another common and not recommended method of generating random numbers in parallel code - gives statistical properties that are not desirable  
+	* for (i in 1:2) {  
+    *     set.seed(1234)  
+    *     clusterApply(cl, sample(1:10000000, 2), set.seed)  
+    *     print(clusterApply(cl, rep(3, 2), rnorm))  
+    * }  
+  
+Parallel random number generators:  
+  
+* A good RNG should comply with certain parameters - long period > 2**100, good structural properties in high dimensions, reproducible  
+	* These parameters should hold in a distributed environment also  
+* RNG streams with period 2**291 and seeds 2**127 steps apart is available based on research by L'Ecuyer  
+	* Allows for each part of a parallel process to have reproducible streams with the proper properties  
+    * Available in R through rlecuyer and rstream  
+    * Also available in R Code using RNGkind("L'Ecuyer-CMRG")  
+* The L'Ecuyer generator is the default when using parallel but needs to be initialized with a seed for cluster cl  
+	* clusterSetRNGStream(cl, iseed = 1234)  # initializes a reproducible and independent seed for each of the workers  
+* Reproducibility in parallel depends on the task flow - certain conditions need to apply  
+	* Runs on clusters of the same size (different number of workers means different random numbers)  
+    * Cannot use load balancing (balancing loads means non-deterministic scheduling and assignment)  
+  
+Reproducibility in foreach and future.apply:  
+  
+* Can achieve reproducibility in foreach using doRNG - one stream per task  
+	* library(doRNG)  
+    * library(doParallel)  
+    * registerDoParallel(cores = 3)  
+    * set.seed(1)  
+    * res1 <- foreach(n = rep(2, 5), .combine = rbind) %dorng% rnorm(n)  
+    * set.seed(1)  
+    * res2 <- foreach(n = rep(2, 5), .combine = rbind) %dorng% rnorm(n)  
+    * identical(res1, res2)  # TRUE  
+* Can also use doRNG by way of %dopar%  
+	* library(doRNG)  
+    * library(doParallel)  
+    * registerDoParallel(cores = 3)  
+    * registerDoRNG(1)  # 1 is the seed  
+    * res3 <- foreach(n = rep(2, 5), .combine = rbind) %dopar% rnorm(n)  
+    * set.seed(1)  
+    * res4 <- foreach(n = rep(2, 5), .combine = rbind) %dopar% rnorm(n)  
+    * c(identical(res1, res3), identical(res2, res4))  # TRUE TRUE  
+* Can also use independent streams in future.apply  
+	* library(future.apply)  
+    * plan(sequential)  
+    * res5 <- future_lapply(1:5, FUN = rnorm, future.seed = 1234)  
+    * plan(multiprocess)  
+    * res6 <- future_lapply(1:5, FUN = rnorm, future.seed = 1234)  
+    * identical(res5, res6)  # TRUE  
+  
+Next steps:  
+  
+* The parallel package is the baseline for many other packages  
+	* Often not reproducible  
+* The foreach package with doParallel and doFuture can be reproducible using doRNG  
+* The future.apply package has an inutitive apply-like syntax and is always reproducible if future.seed is set  
+* General best practices include  
+	* Minimize overhead and master-worker communication frequencies  
+    * Use scheduling and load balancing through effective use of chunking  
+    * Be careful that parallel overhead can actually make tasks longer if the tasks are all small and the communication takes more time than the calculations  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# In addition to the code in the previous exercise, we also created a FORK cluster for you.
+
+# cl.fork <- makeCluster(2, type = "FORK")
+
+# Your job is to register the two cluster objects with the preloaded doParallel package and compare results obtained with parallel foreach
+# How do the results differ in terms of reproducibility?
+
+library(doParallel)
+cl.sock <- makeCluster(2, type = "PSOCK")
+registerDoParallel(cl.sock)
+set.seed(100)
+foreach (i = 1:2) %dopar% rnorm(3)
 
 
+# Register and use cl.sock
+registerDoParallel(cl.sock)
+replicate(2, {
+    set.seed(100)
+    foreach(i = 1:2, .combine = rbind) %dopar% rnorm(3)
+    }, simplify = FALSE
+)
 
+# Register and use cl.fork
+# registerDoParallel(cl.fork)
+# replicate(2, {
+#     set.seed(100)
+#     foreach(i = 1:2, .combine = rbind) %dopar% rnorm(3)
+#     }, simplify = FALSE
+# )
+
+
+# Create a cluster
+cl <- makeCluster(2)
+
+# Check RNGkind on workers
+clusterCall(cl, RNGkind)
+
+# Set the RNG seed on workers
+clusterSetRNGStream(cl, iseed=100)
+
+# Check RNGkind on workers
+clusterCall(cl, RNGkind)
+
+
+# Now you are ready to make your results reproducible
+# You will use the simple embarrassingly parallel application for computing a mean of random numbers (myfunc) which we parallelized in the second chapter using clusterApply()
+# The parallel package, myfunc() , n (sample size, set to 1000) and repl (number of replicates, set to 5) are available in your workspace
+# You will now call clusterApply() repeatedly to check if results can be reproduced, without and with initializing the RNG
+
+n <- 1000
+repl <- 5
+
+# Create a cluster of size 2
+cl <- makeCluster(2)
+
+# Call clusterApply three times
+for(i in 1:3)
+    print(unlist(clusterApply(cl, rep(n, repl), myfunc)))
+
+# Create a seed object
+seed <- 1234
+
+# Repeatedly set the cluster seed and call clusterApply()
+for(i in 1:3) {
+    clusterSetRNGStream(cl, iseed = seed)
+    print(unlist(clusterApply(cl, rep(n, repl), myfunc)))
+}
+
+
+# Create two cluster objects, of size 2 and 4
+cl2 <- makeCluster(2)
+cl4 <- makeCluster(4)
+
+# Set seed on cl2 and call clusterApply
+clusterSetRNGStream(cl2, iseed = seed)
+unlist(clusterApply(cl2, rep(n, repl), myfunc))
+
+# Set seed on cl4 and call clusterApply
+clusterSetRNGStream(cl4, iseed = seed)
+unlist(clusterApply(cl4, rep(n, repl), myfunc))
+
+
+# Register doParallel and doRNG
+library(doRNG)
+registerDoParallel(cores = 2)
+doRNG::registerDoRNG(seed)
+
+# Call ar1_block via foreach
+mpar <- foreach(r=1:5) %dopar% ar1_block(r)
+
+# Register sequential backend, set seed and run foreach
+registerDoSEQ()
+set.seed(seed)
+mseq <- foreach(r=1:5) %dorng% ar1_block(r)
+
+# Check if results identical
+identical(mpar, mseq)
+
+
+# You are able to reproduce sequential and parallel applications! Remember to always use %dorng% if you use the doSEQ backend
+# Also note that by default on the Linux DataCamp server, registerDoParallel() creates a FORK cluster if a number of cores is passed to it
+# As a result, there was no need to export any functions to workers, as they were copied from the master
+# On a different platform, the .export option may be needed
+
+
+# Set multiprocess plan 
+future::plan(strategy="multiprocess", workers = 2)
+
+# Call ar1_block via future_lapply
+mfpar <- future.apply::future_lapply(1:5, FUN=ar1_block, future.seed=seed)
+
+# Set sequential plan and repeat future_lapply
+future::plan(strategy="sequential")
+mfseq <- future.apply::future_lapply(1:5, FUN=ar1_block, future.seed=seed)
+
+# Check if results are identical
+identical(mfpar, mfseq)
+
+```
+  
+  
+  
+***
+  
+###_Marketing Analytics in R: Choice Modeling_  
+  
+Chapter 1 - Quicktart Guide  
 
 
 
