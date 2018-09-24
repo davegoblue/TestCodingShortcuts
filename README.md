@@ -1145,3 +1145,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Parallel Programming in R - Chapter 3 (foreach, future.apply, Load Balancing) - code  
 * DataCamp_Insights_v003_c captures Marketing Analytics in R: Choice Modeling - Chapter 1 (Quickstart Guide) - notes  
   
+### Expansions week of 17-SEP-2018  
+* DataCamp_Insights_v003_c captures Parallel Programming in R - Chapter 4 (Random Numbers and Reproducibility) - code  
+  
