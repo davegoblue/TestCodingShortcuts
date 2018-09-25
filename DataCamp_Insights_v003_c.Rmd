@@ -13806,9 +13806,9 @@ sportscar$seat <- as.factor(sportscar$seat)
 sportscar$price <- as.factor(sportscar$price)
 sportscar$choice <- as.logical(sportscar$choice)
 sportscar <- sportscar %>% rename(resp.id=resp_id)
-sportscar <- mlogit.data(sportscar, shape="long", choice="choice", 
-                         alt.var=c("alt"), varying=c(4:8)
-                         )
+sportscar$key <- rep(1:2000, each=3)
+row.names(sportscar) <- paste(sportscar$key, sportscar$alt, sep=".")
+sportscar <- mlogit.data(sportscar, shape="long", choice="choice", alt.var="alt")
 str(sportscar)
 
 # Create a table of chosen sportscars by transmission type
@@ -13824,8 +13824,20 @@ barplot(chosen_by_trans)
 # load the mlogit library 
 library(mlogit)
 
+# Crashes out due to issue with class "family" in MatrixModels and lme4
+m1 <- mlogit::mlogit(choice ~ seat + trans + convert + price, 
+                     data=sportscar, 
+                     seed=10
+                     )
+
 # fit a choice model using mlogit() and assign the output to m1
-m1 <- mlogit(choice ~ seat + trans + convert + price, data=sportscar, seed=10)
+# m1 <- mlogit::mlogit(choice ~ seat + trans + convert + price, 
+#                      data=sportscar, 
+#                      chid.var="key", 
+#                      alt.var="alt", 
+#                      choice="choice", 
+#                      seed=10
+#                      )
 
 # summarize the m1 object to see the output of the choice model
 summary(m1)
@@ -13842,7 +13854,12 @@ predict_mnl <- function(model, products) {
 }
 
 # inspect products
-products
+products <- data.frame(seat=factor("2", levels=c("2", "4", "5")), 
+                       trans=factor(rep(c("manual", "auto"), each=2), levels=c("auto", "manual")), 
+                       convert=factor(rep(c("no", "yes"), times=2), levels=c("no", "yes")), 
+                       price=factor("35", levels=c("30", "35", "40"))
+                       )
+str(products)
 
 # use predict_mnl to predict share for products
 shares <- predict_mnl(m1, products)
@@ -13862,6 +13879,128 @@ barplot(shares$share, ylab="Predicted Market Share",
   
 Chapter 2 - Managing and Summarizing Choice Data  
   
+Assembling choice data:  
+  
+* Choices made in the wild (revealed preference data) can be analyzed using the transaction record and product set available  
+* Can instead run a survey with hypothetical decision making (conjoint)  
+* Sometimes, data are provided in wide format, with sets of columns describing the choices  
+  
+Converting from wide to long:  
+  
+* Often helpful to convert the wide format data to long format instead  
+	* sportscar <- reshape(sportscar_wide, direction="long", varying = list(seat=5:7, trans=8:10, convert=11:13, price=14:16), v.names = c("seat", "trans", "convert", "price"), timevar="alt")  # column labels are given in v.names; timevar="alt" means make an alt column  
+    * new_order <- order(sportscar$resp_id, sportscar$ques, sportscar$alt)  
+    * sportscar <- sportscar[new_order,]  # ordered by question  
+    * sportscar$choice <- sportscar$choice == sportscar$alt  # make a boolean rather than an integer  
+  
+Choice data in two files:  
+  
+* Can receive choice data from two separate files - alternatives and choices  
+	* sportscar <- merge(sportscar_choices, sportscar_alts, by=c("resp_id", "ques"))  
+  
+Visualizing choce data:  
+  
+* Data in long format can be summarized and visualized  
+	* xtabs(~ trans, data = sportscar)  # just get the totals by transmission  
+    * xtabs(~ trans + choice, data = sportscar)  # COUNT of transmission by choice  
+    * xtabs(choice ~ trans, data=sportscar)  # SUM of choice by trans  
+    * plot(xtabs(~ trans + choice, data=sportscar))  # mosaic plot  
+    * plot(xtabs(~ trans + segment + choice, data=sportscar))  # mosaic plot split primarily by trans, then with segment and choice  
+  
+Designing a conjoint survey:  
+  
+* Conjoint surveys are popular for product design - can include any number of features  
+	* Begin picking attributes of interest (commonly 8-10) and levels of interest (commonly 2-5 per level)  
+* Need to decide which product profiles to show to which users and which questions  
+* Can create a random design in R  
+	* attribs <- list(Type=c("Milk", "Dark", "White"), Brand=c("Cadbury", "Toblerone", "Kinder"), Price=5:30/10)  
+    * all_comb <- expand.grid(attribs)  
+    * for (i in 1:100) {  
+    *     rand_rows <- sample(1:nrow(all_comb), size=12*3)  
+    *     rand_alts <- all_comb[rand_rows, ]  
+    *     choc_survey[choc_survey$Subject==i, 4:6] <- rand_alts  
+    * }  
+* Can code the survey in html or use a platform like Google or Survey Monkey  
+	* Can also use a firm like Qualtrics  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Look at the head() of chocolate_wide
+head(chocolate_wide)
+
+# Use summary() to see which brands and types are in chocolate_wide
+summary(chocolate_wide)
+
+
+# use reshape() to change the data from long to wide 
+chocolate <- reshape(data= chocolate_wide , direction="long", 
+                     varying = list(Brand=3:5, Price=6:8, Type=9:11), 
+                     v.names=c("Brand", "Price", "Type"), timevar="Alt")
+                     
+# use head() to confirm that the data has been properly transformed
+head(chocolate)
+
+
+# Create the new order for the chocolate data frame
+new_order <- order(chocolate$Subject, chocolate$Trial, chocolate$Alt)
+
+# Reorder the chocolate data frame to the new_order
+chocolate <- chocolate[new_order,]
+
+# Look at the head() of chocolate to see how it has been reordered
+head(chocolate)
+
+
+# Use head(chocolate) and look at the Selection variable. 
+head(chocolate)
+
+# Transform the Selection variable to a logical indicator
+chocolate$Selection <- chocolate$Alt == chocolate$Selection
+
+# Use head(chocolate) to see how the Selection variable has changed. Now it is logical.
+head(chocolate)
+
+
+# Merge choc_choice and choc_alts
+choc_merge <- merge(choc_choice, choc_alts, by=c("Subject", "Trial"))
+
+# Convert Selection to a logical variable
+choc_merge$Selection <- choc_merge$Selection == choc_merge$Alt
+
+# Inspect chocolate_merge using head
+head(choc_merge)
+
+
+# Use xtabs to count up how often each Type is chosen
+counts <- xtabs(~ Type + Selection, data=chocolate)
+
+# Plot the counts
+plot(counts, cex = 1.5)
+
+
+# Modify this code to count up how many times each **Brand** is chosen
+counts <- xtabs(~ Brand + Selection, data=chocolate)
+
+# Plot the counts
+plot(counts, cex = 1.5)
+
+
+# Use xtabs to count up how often each Price is chosen
+counts <- xtabs(~ Price + Selection, data=chocolate)
+
+# Plot the counts
+plot(counts, cex=1.5)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Building Choice Models  
+  
+
 
 
 
