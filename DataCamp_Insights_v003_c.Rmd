@@ -13926,6 +13926,10 @@ Designing a conjoint survey:
 Example code includes:  
 ```{r eval=FALSE}
 
+chLong <- read.csv("./RInputFiles/chocolate_choice_long.csv")
+chWide <- read.csv("./RInputFiles/chocolate_choice_wide.csv")
+chocolate_wide <- chWide
+
 # Look at the head() of chocolate_wide
 head(chocolate_wide)
 
@@ -13962,6 +13966,17 @@ chocolate$Selection <- chocolate$Alt == chocolate$Selection
 head(chocolate)
 
 
+choc_choice <- chocolate %>%
+    filter(Selection==TRUE) %>%
+    mutate(Selection=Alt) %>%
+    select(Subject, Trial, Response_Time, Selection)
+choc_alts <- chocolate %>%
+    select(Subject, Trial, Alt, Brand, Price, Type)
+
+str(choc_choice)
+str(choc_alts)
+
+
 # Merge choc_choice and choc_alts
 choc_merge <- merge(choc_choice, choc_alts, by=c("Subject", "Trial"))
 
@@ -13990,7 +14005,7 @@ plot(counts, cex = 1.5)
 counts <- xtabs(~ Price + Selection, data=chocolate)
 
 # Plot the counts
-plot(counts, cex=1.5)
+plot(counts, cex=0.6)
 
 ```
   
@@ -14000,6 +14015,209 @@ plot(counts, cex=1.5)
   
 Chapter 3 - Building Choice Models  
   
+Choice models - under the hood:  
+  
+* The multimonial logit model begins with a linear equation for utility which drives probabilities  
+	* v1 <- alpha * 4 + beta * 100  # value  
+    * v2 <- alpha * 5 + beta * 150  
+    * v2 <- alpha * 2 + beta * 175  
+    * u1 <- v1 + error1  # utility  
+    * u2 <- v2 + error2  
+    * u3 <- v3 + error3  
+    * choice <- which.max(c(u1, u2, u3))  
+    * p1 <- exp(v1) / ( exp(v1) + exp(v2) + exp(v3) )  
+    * p2 <- exp(v2) / ( exp(v1) + exp(v2) + exp(v3) )  
+    * p3 <- exp(v3) / ( exp(v1) + exp(v2) + exp(v3) )  
+* We want to estimate the parameters that best calculate the v  
+	* m1 <- mlogit(choice ~ 0 + seat + price, data=sportscar, print.level=3)  # find parameters that maximize likelihood, print all iterations as per print.level=3  
+    * summary(m1)  
+* The mlogit requires a specific data format  
+	* sportscar <- mlogit.data(sportscar.df, shape="long", choice="choice", varying=5:8, alt.var="alt")  # what was chose, what attributes vary, and what is the alternative number column  
+  
+Interpreting choice model parameters:  
+  
+* Coefficients for each attribute are multiplied by the level of that attribute to create the v1/v2/v3  
+* Factor variables are converted to numbers in the model.matrix process - need to understand what is the zero level  
+	* head(model.matrix(m2))  
+    * head(sportscar)  
+* May want to convert to factors even if the data are numeric  
+	* sportscar$seat <- as.factor(sportscar$seat)  
+    * m3 <- mlogit(choice ~ 0 + seat + trans + convert + price, data=sportscar)  
+    * summary(m3)  
+* Can make price response non-linear (factor) or keep linear and assume Willingness to Pay  
+	* coef(m3)  
+    * coef(m3)/-coef(m3)[5]  # assumes that price is the 5th element of the coef vector  
+  
+Intercepts and interactions:  
+  
+* There is no intercept in the v1, v2, v3, since adding the same constant to each of them cancels out once the exponentials are taken  
+	* The intercept is not identified, and so fixing the intercept using ~ 0 + is preferred (model will just pick a random one otherwise)  
+* An interaction term is based on the multiplication of several terms from the original dataset  
+	* m4 <- mlogit(choice ~ 0 + seat + trans + convert + price + trans:price, data=sportscar)  # interaction between transmission and price  
+    * m4 <- mlogit(choice ~ 0 + seat + trans*convert + price, data=sportscar)  # same command as above, less typing  
+* Interpreting the standard errors along with the z-values and p-values is similar to any other regression  
+* Can also add segments, as long as they interact with at least one of the attributes  
+	* m5 <- mlogit(choice ~ 0 + seat + convert + trans + price:segment, data=sportscar)  
+  
+Predicting shares:  
+  
+* Share predictions can be a good way to communicate preferences  
+* Begin by creating vectors of attributes of interest  
+	* price <- c(35, 30)  
+    * seat <- factor(c(2, 2), levels=c(2,4,5))  
+    * trans <- factor(c("manual", "auto"), levels=c("auto", "manual"))  
+    * convert <- factor(c("no", "no"), levels=c("no", "yes"))  
+    * segment <- factor(c("basic", "basic"), levels=c("basic", "fun", "racer"))  
+    * prod <- data.frame(seat, trans, convert, price, segment)  
+* Use a model prediction to make the share predictions  
+	* m5 <- mlogit(choice ~ 0 + seat + convert + trans + price:segment, data=sportscar)  
+    * prod.coded <- model.matrix(update(m5$formula, 0 ~ .), data = prod)[,-1]  
+    * v <- prod.coded %*% m5$coef  
+    * p <- exp(u) / sum(exp(u))  
+    * cbind(p, prod)  
+    * predict_mnl <- function(model, products) {  
+    *     data.model <- model.matrix(update(model$formula, 0 ~ .), data = products)[,-1]  
+    *     utility <- data.model%*%model$coef  
+    *     share <- exp(utility)/sum(exp(utility))  
+    *     cbind(share, products)  
+    * }  
+    * shares <- predict_mnl(m5, products)  
+    * barplot(shares$share, horiz = TRUE, col="tomato2", xlab = "Predicted Market Share", names.arg = c("Our Sportscar", "Competitor 1"))  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# use mlogit.data() to convert chocolate_df to mlogit.data
+chocolate <- mlogit.data(chocolate_df, shape = "long",
+                         choice = "Selection", alt.var = "Alt", 
+                         varying = 6:8)
+                         
+# use str() to confirm that chocolate is an mlogit.data object
+str(chocolate)
+
+
+# Fit a model with mlogit() and assign it to choc_m1
+choc_m1 <- mlogit(Selection ~ Brand + Type + Price, data=chocolate, print.level=3)
+
+# Summarize choc_m1 with summary()
+summary(choc_m1)
+
+
+# summarize the choc_m1 model that includes the intercepts
+summary(choc_m1)
+
+# modify the call to mlogit to exclude the intercept
+choc_m2 <- mlogit(Selection ~ 0 + Brand + Type + Price, data = chocolate, print.level=3)
+
+# summarize the choc_m2 model
+summary(choc_m2)
+
+
+# compute the wtp by dividing the coefficient vector by the negative of the price coefficient
+coef(choc_m2) / -coef(choc_m2)["Price"]
+
+
+# change the Price variable to a factor in the chocolate data
+chocolate$Price <- as.factor(chocolate$Price)
+
+# fit a model with mlogit and assign it to choc_m3
+choc_m3 <- mlogit(Selection ~ 0 + Brand + Type + Price, data=chocolate)
+
+# inspect the coefficients
+summary(choc_m3)
+
+
+# likelihood ratio test comparing two models
+lrtest(choc_m2, choc_m3)
+
+
+# add the formula for mlogit
+choc_m4 <- mlogit(Selection ~ 0 + Brand + Type + Price + Brand:Type, data=chocolate)
+
+# use summary to see the coefficients
+summary(choc_m4)
+
+
+# add the formula for mlogit
+choc_m5 <- mlogit(Selection ~ 0 + Brand + Type + Price + Price:Trial, data=chocolate)
+
+# use summary to see the outputs
+summary(choc_m5)
+
+
+# add the formula for mlogit
+choc_m5 <- mlogit(Selection ~ 0 + Brand + Type + Price + Price:Trial, data=chocolate)
+
+# use summary to see the outputs
+summary(choc_m5)
+
+
+predict_mnl <- function(model, products) {
+  data.model <- model.matrix(update(model$formula, 0 ~ .), 
+                             data = products)[,-1]
+  utility <- data.model%*%model$coef
+  share <- exp(utility)/sum(exp(utility))
+  cbind(share, products)
+}
+
+# modify the code below so that the segement is set to "racer" for both alternatives
+price <- c(35, 30)
+seat <- factor(c(2, 2), levels=c(2,4,5))
+trans <- factor(c("manual", "auto"), levels=c("auto", "manual"))
+convert <- factor(c("no", "no"), levels=c("no", "yes"))
+segment <- factor(c("racer", "racer"), levels=c("basic", "fun", "racer"))
+prod <- data.frame(seat, trans, convert, price, segment)
+
+# predict shares for the "racer" segment
+predict_mnl(model=m5, products=prod)
+
+
+# fit the choc_m2 model
+choc_m2 <- mlogit(Selection ~ 0 + Brand + Type + Price, data=chocolate)
+
+# create a data frame with the Ghiradelli products
+Brand <- factor(rep("Ghirardelli", 5), level = levels(chocolate$Brand))
+Type <- levels(chocolate$Type)
+Price <- 3   # treated as a number in choc_m2
+ghir_choc <- data.frame(Brand, Type, Price)
+
+# predict shares
+predict_mnl(model=choc_m2, products=ghir_choc)
+
+
+# compute and save the share prediction 
+shares <- predict_mnl(choc_m2, ghir_choc)
+
+# make a barplot of the shares
+barplot(shares$share, 
+        horiz = TRUE, col="tomato2",
+        xlab = "Predicted Market Share", 
+        main = "Shares for Ghiradelli chocolate bars at $3 each", 
+        names.arg = levels(chocolate$Type)
+        )
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Hierarchical Choice Models  
+  
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
 
 
 
