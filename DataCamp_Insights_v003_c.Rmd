@@ -13755,6 +13755,10 @@ mfseq <- future.apply::future_lapply(1:5, FUN=ar1_block, future.seed=seed)
 # Check if results are identical
 identical(mfpar, mfseq)
 
+
+rm(mean)
+rm(sd)
+
 ```
   
   
@@ -13798,6 +13802,30 @@ Using choice models to make decisions:
 Example code includes:  
 ```{r eval=FALSE}
 
+# Unload conflicting namespaces
+unloadNamespace("rms")
+unloadNamespace("quantreg")
+unloadNamespace("MatrixModels")
+
+unloadNamespace("lmerTest")
+unloadNamespace("semPlot")
+unloadNamespace("rockchalk")
+unloadNamespace("qgraph")
+unloadNamespace("sem")
+unloadNamespace("mi")
+unloadNamespace("arm")
+unloadNamespace("mice")
+unloadNamespace("mitml")
+unloadNamespace("jomo")
+unloadNamespace("arm")
+unloadNamespace("jomo")
+unloadNamespace("lme4")
+
+
+# load the mlogit library 
+library(mlogit)
+
+
 scLong <- read.csv("./RInputFiles/sportscar_choice_long.csv")
 scWide <- read.csv("./RInputFiles/sportscar_choice_wide.csv")
 sportscar <- scLong
@@ -13821,16 +13849,8 @@ chosen_by_trans
 barplot(chosen_by_trans)
 
 
-# load the mlogit library 
-library(MatrixModels)
-library(lme4)
-library(mlogit)
-
 # Crashes out due to issue with class "family" in MatrixModels and lme4
-m1 <- mlogit::mlogit(choice ~ seat + trans + convert + price, 
-                     data=sportscar, 
-                     seed=10
-                     )
+m1 <- mlogit(choice ~ seat + trans + convert + price, data=sportscar, seed=10)
 
 # fit a choice model using mlogit() and assign the output to m1
 # m1 <- mlogit::mlogit(choice ~ seat + trans + convert + price, 
@@ -14089,27 +14109,24 @@ Predicting shares:
 Example code includes:  
 ```{r eval=FALSE}
 
-# use mlogit.data() to convert chocolate_df to mlogit.data
-chocolate <- mlogit.data(chocolate_df, shape = "long",
-                         choice = "Selection", alt.var = "Alt", 
-                         varying = 6:8)
+# use mlogit.data() to convert chocolate to mlogit.data
+chocolate_df <- mlogit.data(chocolate, shape = "long",
+                            choice = "Selection", alt.var = "Alt", 
+                            varying = 6:8)
                          
 # use str() to confirm that chocolate is an mlogit.data object
-str(chocolate)
+str(chocolate_df)
 
 
 # Fit a model with mlogit() and assign it to choc_m1
-choc_m1 <- mlogit(Selection ~ Brand + Type + Price, data=chocolate, print.level=3)
+choc_m1 <- mlogit(Selection ~ Brand + Type + Price, data=chocolate_df, print.level=3)
 
 # Summarize choc_m1 with summary()
 summary(choc_m1)
 
 
-# summarize the choc_m1 model that includes the intercepts
-summary(choc_m1)
-
 # modify the call to mlogit to exclude the intercept
-choc_m2 <- mlogit(Selection ~ 0 + Brand + Type + Price, data = chocolate, print.level=3)
+choc_m2 <- mlogit(Selection ~ 0 + Brand + Type + Price, data = chocolate_df, print.level=3)
 
 # summarize the choc_m2 model
 summary(choc_m2)
@@ -14206,20 +14223,144 @@ barplot(shares$share,
   
 Chapter 4 - Hierarchical Choice Models  
   
+What is a hierarchical choice model?  
+  
+* Hierarchical choice models (random coefficient models) account for differences in preferences across entities (heterogeneity)  
+* An assumption is made that each individual is pulled from a distribution  
+	* for (i in 1:n_resp) {  
+    *     beta[i] <- mvrnorm(1, beta_0, Sigma)  # random normal vector  
+    *     for (j in 1:n_task[i]) {  
+    *         X <- X[X$resp == i & X$task == j, ]  
+    *         u <- X %*% beta[i]  
+    *         p[i,] <- exp(u) / sum(exp(u))  
+    *     }  
+    * }  
+* Can fit the hierarchical model using the mlogit() function  
+	* sportscar <- mlogit.data(sportscar, choice="choice", shape="long", varying=5:8, alt.var="alt", id.var = "resp_id")  
+    * m7 <- mlogit(choice ~ 0 + seat + trans + convert + price, data = sportscar, rpar = c(price = "n"), panel = TRUE)  # rpar=c(price="n") will nornmally distribute price parameter across people  
+    * summary(m7)  
+    * plot(m7)  # plotting function for mlogit objects  
+  
+Heterogeneity in preferences for other features:  
+  
+* Might have heterogeneity in choices on many other attributes, including factor data  
+* A different manner of coding factors can work better for hierarchical models  
+	* Effects coding has -1, 0, 1 so that the factors are relative to average rather than relative to the first factor  
+    * contrasts(sportscar$seat) <- contr.sum(levels(sportscar$seat))  # stores effects coding with the data frame  
+    * dimnames(contrasts(sportscar$seat))[[2]] <- levels(sportscar$seat)[1:2]  # improve readability  
+* Can make all of the coefficients heterogeneous  
+	* my_rpar <- c("n", "n", "n", "n", "n")  # make them all normal  
+    * m3 <- mlogit(choice ~ 0 + seat + trans + convert + price, data=sportscar)  # get coefficient names  
+    * names(my_rpar) <- names(m3$coefficients)  # assign them to my_rpar  
+    * m8 <- mlogit(choice ~ 0 + seat + trans + convert + price, data = sportscar, panel = TRUE, rpar = my_rpar)  # fit the model  
+    * plot(m8, par=c("seat4", "seat5"))  
+    * -sum(m8$coef[1:2])  # can get the 2-seat coefficient since it no longer needs to be 0  
+  
+Predicting shares with hierarchical models:  
+  
+* Can predict shares with a hierarchical model, including those where decision-making preferences may be correlated  
+	* m10 <- mlogit(choice ~ 0 + seat + trans + convert + price, data = sportscar, rpar = myrpar, panel=TRUE, correlation = TRUE)  
+    * cor.mlogit(m10)  
+    * mean <- m10$coef[1:5] # hard coded  
+    * Sigma <- cov.mlogit(m10)  
+    * share <- matrix(NA, nrow=1000, ncol=nrow(prod.coded))  
+    * for (i in 1:1000) {  
+    *     coef <- mvrnorm(1, mu=mean, Sigma=Sigma)  
+    *     utility <- prod.coded %*% coef  
+    *     share[i,] <- exp(utility) / sum(exp(utility))  
+    * }  
+    * cbind(colMeans(share), prod)  
+* Niche product shares tend to increase when heterogeneity is included - each element of the niche may be a small preference, but correlated with preference for other elements of the niche  
+  
+Wrap up:  
+  
+* Decisions need to be made in building a choice model - attributes, numeric vs. factors, hierarchical, distributions, nesting, etc.  
+* Can start with basic models and build out as needed  
+	* Inspect the data - investigate a few choices to confirm understanding of the data  
+    * Run the model and inspect the standard errors - if too high, simplify  
+    * Heterogeneity is a good idea whenever the decisions are being made by humans  
+  
+Example code includes:  
+```{r eval=FALSE}
 
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
+# Determine the number of subjects in chocolate$Subjects
+length(levels(chocolate$Subject))
+
+
+# add id.var input to mlogit.data call
+chocolate <- mlogit.data(chocolate, choice = "Selection", shape="long", 
+                         varying=6:8, alt.var = "Alt", id.var = "Subject"
+                         )
+                         
+# add rpar and panel inputs to mlogit call
+choc_m6 <- mlogit(Selection ~ 0 + Brand + Type + Price, data = chocolate, 
+                  rpar = c(Price="n"), panel=TRUE)
+
+# plot the model
+plot(choc_m6)
+
+
+# set the contrasts for Brand to effects code
+contrasts(chocolate$Brand) <- contr.sum(levels(chocolate$Brand))
+dimnames(contrasts(chocolate$Brand))[[2]] <- levels(chocolate$Brand)[1:4]
+contrasts(chocolate$Brand)
+
+# set the contrasts for Type to effects code
+contrasts(chocolate$Type) <- contr.sum(levels(chocolate$Type))
+dimnames(contrasts(chocolate$Type))[[2]] <- levels(chocolate$Type)[1:4]
+contrasts(chocolate$Type)
+
+
+# create my_rpar vector
+choc_m2 <- mlogit(Selection ~ 0 + Brand + Type + Price, data=chocolate)
+my_rpar <- rep("n", length(choc_m2$coef))
+names(my_rpar) <- names(choc_m2$coef)
+my_rpar
+
+# fit model with random coefficients
+choc_m7 <- mlogit(Selection ~ 0 + Brand + Type + Price, data=chocolate, rpar=my_rpar, panel=TRUE)
+
+
+# print the coefficients 
+choc_m7$coef[5:8]
+
+# compute the negative sum of those coefficients
+-sum(choc_m7$coef[5:8])
+
+
+# Extract the mean parameters and assign to mean
+mean <- choc_m8$coef[1:9]   
+
+# Extract the covariance parameters and assign to Sigma
+Sigma <- cov.mlogit(choc_m8) 
+
+# Create storage for individual draws of share
+share <- matrix(NA, nrow=1000, ncol=nrow(choc_line_coded))
+
+# For each draw (person)
+for (i in 1:1000) { 
+  # Draw a coefficient vector
+  coef <- mvrnorm(1, mu=mean, Sigma=Sigma)
+  # Compute utilities for those coef
+  utility <- choc_line_coded %*% coef
+  # Compute probabilites according to logit formuila
+  share[i,] <- exp(utility) / sum(exp(utility))
+}  
+
+# Average the draws of the shares
+cbind(colMeans(share), choc_line)
+
+```
+  
+  
+  
+***
+  
+###_Single-Cell RNA-Seq Workflows in R_  
+  
+Chapter 1 - What Is RNA Single-Cell RNA-Seq?  
+  
+
 
 
 
