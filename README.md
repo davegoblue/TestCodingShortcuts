@@ -1152,4 +1152,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Marketing Analytics in R: Choice Modeling - Chapter 2 (Managing and Summarizing Choice Data) - code  
 * DataCamp_Insights_v003_c captures Marketing Analytics in R: Choice Modeling - Chapter 4 (Hierarchical Choice Models) - notes  
 * DataCamp_Insights_v003_c captures Single-Cell RNA-Seq Workflows in R - Chapter 1 (What is Single-Cell RNA Seq?) - notes  
+* DataCamp_Insights_v003_c captures Single-Cell RNA-Seq Workflows in R - Chapter 2 (Quality Control and Normalization) - notes  
   
