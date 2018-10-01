@@ -1127,7 +1127,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Categorical Data in the Tidyverse - Chapter 3 (Creating Factor Variables) - notes  
 * DataCamp_Insights_v003_c captures Categorical Data in the Tidyverse - Chapter 4 (Case Study on Flight Etiquette) - notes  
   
-### Expansions week of 03-SEP-2018  
+### Expansions week of 10-SEP-2018  
 * DataCamp_Insights_v003_c captures Bayesian Modeling with RJAGS - Chapter 1 (Introduction to Bayesian Modeling) - notes  
 * DataCamp_Insights_v003_c captures Categorical Data in the Tidyverse - Chapter 3 (Creating Factor Variables) - code  
 * DataCamp_Insights_v003_c captures Bayesian Modeling with RJAGS - Chapter 2 (Bayesian Models and Markov Chains) - notes  
@@ -1136,7 +1136,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Categorical Data in the Tidyverse - Chapter 4 (Case Study on Flight Etiquette) - code  
 * DataCamp_Insights_v003_c captures Parallel Programming in R - Chapter 1 (Can I Run My Application in Parallel?) - notes  
   
-### Expansions week of 10-SEP-2018  
+### Expansions week of 17-SEP-2018  
 * DataCamp_Insights_v003_c captures Parallel Programming in R - Chapter 1 (Can I Run My Application in Parallel?) - code  
 * DataCamp_Insights_v003_c captures Parallel Programming in R - Chapter 2 (The parallel package) - notes  
 * DataCamp_Insights_v003_c captures Parallel Programming in R - Chapter 2 (The parallel package) - code  
@@ -1145,7 +1145,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Parallel Programming in R - Chapter 3 (foreach, future.apply, Load Balancing) - code  
 * DataCamp_Insights_v003_c captures Marketing Analytics in R: Choice Modeling - Chapter 1 (Quickstart Guide) - notes  
   
-### Expansions week of 17-SEP-2018  
+### Expansions week of 24-SEP-2018  
 * DataCamp_Insights_v003_c captures Parallel Programming in R - Chapter 4 (Random Numbers and Reproducibility) - code  
 * DataCamp_Insights_v003_c captures Marketing Analytics in R: Choice Modeling - Chapter 2 (Managing and Summarizing Choice Data) - notes  
 * DataCamp_Insights_v003_c captures Marketing Analytics in R: Choice Modeling - Chapter 3 (Building Choice Models) - notes  
@@ -1153,4 +1153,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Marketing Analytics in R: Choice Modeling - Chapter 4 (Hierarchical Choice Models) - notes  
 * DataCamp_Insights_v003_c captures Single-Cell RNA-Seq Workflows in R - Chapter 1 (What is Single-Cell RNA Seq?) - notes  
 * DataCamp_Insights_v003_c captures Single-Cell RNA-Seq Workflows in R - Chapter 2 (Quality Control and Normalization) - notes  
+  
+### Expansions week of 01-OCT-2018  
+* DataCamp_Insights_v003_c captures Single-Cell RNA-Seq Workflows in R - Chapter 3 (Visualization and Dimensionality Reduction) - notes  
   
