@@ -1157,4 +1157,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 01-OCT-2018  
 * DataCamp_Insights_v003_c captures Single-Cell RNA-Seq Workflows in R - Chapter 3 (Visualization and Dimensionality Reduction) - notes  
 * DataCamp_Insights_v003_c captures Single-Cell RNA-Seq Workflows in R - Chapter 4 (Cell Clustering and Differential Expression Analysis) - notes  
+* DataCamp_Insights_v003_c captures Differential Expression Analysis in R with limma - Chapter 1 (Differential Expression Analysis) - notes  
   
