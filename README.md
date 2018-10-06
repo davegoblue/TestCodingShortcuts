@@ -1160,4 +1160,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Differential Expression Analysis in R with limma - Chapter 1 (Differential Expression Analysis) - notes  
 * DataCamp_Insights_v003_c captures Differential Expression Analysis in R with limma - Chapter 2 (Flexible Models for Common Study Designs) - notes  
 * DataCamp_Insights_v003_c captures Differential Expression Analysis in R with limma - Chapter 3 (Pre-processing and Post-processing) - notes  
+* DataCamp_Insights_v003_c captures Differential Expression Analysis in R with limma - Chapter 4 (Case Study: Effect of Doxorubicin Treatment) - notes  
   
