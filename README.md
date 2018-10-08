@@ -1163,3 +1163,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Differential Expression Analysis in R with limma - Chapter 4 (Case Study: Effect of Doxorubicin Treatment) - notes  
 * DataCamp_Insights_v003_c captures Interactive Data Visualization with bokeh - Chapter 1 (rbokeh Introduction)  
   
+### Expansions week of 08-OCT-2018  
+* DataCamp_Insights_v003_c captures Interactive Data Visualization with bokeh - Chapter 2 (rbokeh Aestehtic Attributes and Figure Options) - notes  
+  
