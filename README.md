@@ -1168,4 +1168,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Interactive Data Visualization with bokeh - Chapter 3 (Data Manipulation for Visualization and More rbokeh Layers) - notes  
 * DataCamp_Insights_v003_c captures Interactive Data Visualization with bokeh - Chapter 4 (Grid Plots and Maps) - notes  
 * DataCamp_Insights_v003_c captures A/B Testing in R - Chapter 1 (Mini Case Study in A/B Testing) - notes  
+* DataCamp_Insights_v003_c captures A/B Testing in R - Chapter 1 (Mini Case Study in A/B Testing) - code  
   
