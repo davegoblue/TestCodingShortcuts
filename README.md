@@ -1172,3 +1172,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures A/B Testing in R - Chapter 2 (Mini Case Study in A/B Testing - Part II) - notes  
 * DataCamp_Insights_v003_c captures A/B Testing in R - Chapter 2 (Mini Case Study in A/B Testing - Part II) - code  
   
+### Expansions week of 15-OCT-2018  
+* DataCamp_Insights_v003_c captures A/B Testing in R - Chapter 3 (Experimental Design in A/B Testing) - notes  
+  
