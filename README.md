@@ -1174,4 +1174,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 15-OCT-2018  
 * DataCamp_Insights_v003_c captures A/B Testing in R - Chapter 3 (Experimental Design in A/B Testing) - notes  
+* DataCamp_Insights_v003_c captures A/B Testing in R - Chapter 4 (Statistical Analyses in A/B Testing) - notes  
   
