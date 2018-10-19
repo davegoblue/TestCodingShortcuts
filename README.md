@@ -1177,4 +1177,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures A/B Testing in R - Chapter 4 (Statistical Analyses in A/B Testing) - notes  
 * DataCamp_Insights_v003_c captures Mixture Models in R - Chapter 1 (Introduction to Mixture Models) - notes  
 * DataCamp_Insights_v003_c captures Mixture Models in R - Chapter 1 (Introduction to Mixture Models) - code  
+* DataCamp_Insights_v003_c captures Mixture Models in R - Chapter 2 (Structure of Mixture Models and Parameter Estimation) - notes  
   
