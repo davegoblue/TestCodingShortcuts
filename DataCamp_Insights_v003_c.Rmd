@@ -16758,6 +16758,191 @@ mixture %>%
   
 Chapter 2 - Structure of Mixture Models and Parameter Estimation  
   
+Structure of Mixture Models:  
+  
+* Three questions to be answered for clustering with mixture models  
+	* Suitable probability distribution - depends on domain expertise  
+    * Number of clusters - domain expertise or testing to see what best satisfies criteria  
+    * Parameters and estimates - based on Expectation Maximization (EM) Algorithm  
+* Example of the gender dataset - bivariate Gaussian, with two clusters, and mu/sigma/proportion for each  
+* Example of handwritten digits (3 vs. 6) - Bernoulli distributions with two clusters, mean probability of being 1 for every dot  
+* Example of crime types in Chicago - Poisson distribution with six clusters (crime types), average and proportion of crimes  
+  
+Parameter Estimation:  
+  
+* Suppose that we have an assumption of 2 clusters each from a Gaussian distribution and with each distribution having the same sigma  
+	* If the probabilities are known, try to estimate the means  
+    * If the means are known, try to estimate the probabilities  
+    * means_estimates <- data_with_probs %>% summarise(mean_red = sum(x * prob_red) / sum(prob_red), mean_blue = sum(x * prob_blue) / sum(prob_blue))  
+    * proportions_estimates <- data_with_probs %>% summarise(proportion_red = mean(prob_red), proportion_blue = 1 - proportion_red)  
+    * data %>% mutate(prob_from_red = 0.3 * dnorm(x, mean = 3), prob_from_blue = 0.7 * dnorm(x,mean = 5), prob_red = prob_from_red/(prob_from_red + prob_from_blue), prob_blue = prob_from_blue/(prob_from_red + prob_from_blue)) %>%  
+    *     select(x, prob_red, prob_blue) %>% head()  
+  
+EM Algorithm:  
+  
+* Can begin by making naïve assumptions about the distributions, for later refinement  
+	* means_init <- c(1, 2)  
+    * props_init <- c(0.5, 0.5)  
+* Can then run a first iteration of the probabilities - the expectations  
+	* means_estimates <- data_with_probs %>% summarise(mean_red = sum(x * prob_red) / sum(prob_red), mean_blue = sum(x * prob_blue) / sum(prob_blue)) %>% as.numeric()  
+    * props_estimates <- data_with_probs %>% summarise(proportion_red = mean(prob_red), proportion_blue = 1- proportion_red) %>% as.numeric()  
+* Basically, the iterations continue  
+	* Iteration 0: Initial Parameters -> Estimate Probabilities (1)  
+    * Iteration 1: Estimated Probabilities (1) -> Estimated Parameters (2) -> Estimated Probabilities (2)  
+    * Iteration 2: Estimated Probabilities (2) -> Estimated Parameters (3) -> Estimated Probabilities (3)  
+    * Etc.  
+* Can translate the iterative process in to a function that is called by way of a for loop  
+	* expectation <- function(data, means, proportions){  
+    *     data <- data %>%  
+    *         mutate(prob_from_red = proportions[1] * dnorm(x, mean = means[1]),  
+    *                prob_from_blue = proportions[2] * dnorm(x, mean = means[2]),  
+    *                prob_red = prob_from_red/(prob_from_red + prob_from_blue),  
+    *                prob_blue = prob_from_blue/(prob_from_red + prob_from_blue)
+    *                ) %>%  
+    *         select(x, prob_red, prob_blue)  
+    *     return(data)  
+    * }  
+    * for(i in 1:10){  
+    *     new_values <- maximization(expectation(data, means_init, props_init))  
+    *     means_init <- new_values[[1]]  
+    *     props_init <- new_values[[2]]  
+    *     cat(c(i, means_init, proportions_init),"\n")  
+    * }  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+digits <- readr::read_csv("./RInputFiles/digits.csv")
+dim(digits)
+
+show_digit <- function(arr256, col=gray(4:1/4), ...) {
+    arr256 <- as.numeric(arr256)
+    image(matrix(arr256, nrow=16)[,16:1],col=col,...)
+}
+
+# Dimension
+# broom::glance(digits)
+
+# Apply `glimpse` to the data
+glimpse(digits)
+
+# Digit in row 50
+show_digit(digits[50, ])
+
+# Digit in row 100
+show_digit(digits[100, ])
+
+
+gaussian_sample_with_probs <- data.frame(
+    x = c(54.5, 7.7, 55.9, 27.9, 4.6, 59.9, 6.4, 60.5, 32.6, 21.3, 0.5, 8.9, 70.7, 49.3, 40.1, 43, 8.1, 62.9, 56, 54.4, 42.5, 46.1, 58.3, 61.7, -11.6, 10.8, 27.5, 12.2, 67.7, -5.6, 13.3, 62.7, 37.2, 41.4, 47.4, 54.2, 31, 60.2, 69.9, 33.8, 25.4, 21.9, 17.9, 61.5, 49.8, 37.9, 55.8, 14.1, 53.3, 45.6, 44.7, 14.2, -5.7, 10.9, 63.7, -6.5, 50.3, 61.4, 35.1, -3.7, 68.4, -6.2, 64, 24.4, 65.7, 59.7, 52.7, 27.2, 17.5, 22.6, 14.7, 22.1, 61.5, 55.6, 62.6, 5.6, 52.3, 8, 25.4, 48.8, 58.4, 6.2, 52.3, 6.6, 64, 43, 60.6, 33.5, 45.8, 2.5, 63, 58.2, 50.9, 22.1, 36.5, 27.1, 61.4, 56.3, 63.5, 55.6, 53.8, 31.9, 30.7, 15.6, 14.8, 44.4, 51.9, 61.4, 11.8, 51.3, 58.6, 45.4, 8.3, 41.5, 52.7, 9.1, 60.8, 40.2, 20.5, 40.2, 59.2, 36.7, 47.5, 12.2, 7.7, 56.2, -13.2, 6, 58.7, 43.7, 67.3, 53.6, 37.6, 54.3, 37.7, 51.9, 10.5, 42, 24, -0.7, 53.1, 27.4, 57.2, 37.3, 28.6, 13.5, 35.2, 22.7, 35.8, 66.9, 45.9, 45.9, 56.7, 55.6, 58.3, 3.2, 45.9, 59.5, 50.8, 43.7, 42.8, 4.7, 29.5, 50.9, 7.8, 44.3, 53.6, 57, 57.8, 47.3, 56.8, 51.1, 27.7, 44.9, 33, 44, 42.1, 38, 52.3, 44, 28.1, 52.7, 53.6, 4.7, 42.1, 40.8, 5, 8, 49.1, 67.5, 16.2, 11.2, 14.6, 32.8, 61.3, 49.8, 51.5, 54.5, 51.6, 45.8, 55.9, 7.4, -10.2, 41.9, 27.4, 45.1, 17.7, 37.5, 53.5, 25.7, 18.1, 13.4, 40.5, 13.3, 2, 49.8, 66.7, 34.7, 11.4, 42.1, 54.4, 48.3, 38.3, 17.4, 48.2, 48.4, 57.4, 54.5, 13.6, 52.3, -0.1, 12.8, 29.3, 45.6, 62.3, 49.2, 32.6, 38.4, 15, 6.1, 12.2, 5.8, 17.7, 20.7, 43.6, 52.3, 42.4, 64.6, 34.3, 9.5, 3.6, 37.2, 45.7, 56.9, 67, 48.7, -3.1, 50.1, 45.4, 54.4, 38.1, 10.8, 7.4, 50.5, 24.7, 11.4, 59.5, 43.9, 4.4, 53.7, 41.9, 60.2, 49.5, 11.6, 51.1, 69.1, 46.2, 35.5, 15, -6.4, 59.9, 57.3, 49.1, 55.5, 55.6, 43.9, 52.5, 46.4, 5.8, 55.3, 22.2, 42.7, 51.3, 40.1, 62.1, 62.2, 48.8, 6.1, 0.6, 19.6, 36.8, 48, 33.8, 52.8, 66.6, 30.2, 45.9, 5.9, 52.7, 49.7, 37.7, 10.4, 60.1, 35.8, 62.1, 35, 38.7, 13.3, -4.9, 30.6, 55.9, 23.7, 12.6, 45.7, 38.1, 9.9, 39.6, 46.3, -3.5, 31.2, 8.3, -8.1, 31.4, 65.7, 10.7, 5.5, 54.4, 51.8, 59.8, 50.3, 45.1, 8.5, 15.3, 3.2, 19.3, 40.8, 48.4, 30.1, 32.7, 12.7, 59.2, 51.4, 55.3, 58.9, -19, 61.9, 30.3, 77.2, 39.8, 31.3, 23.1, 56, 41.9, 0.5, 33.4, 36.6, 54.4, 12.4, 16.4, 24.4, -2.4, 30.9, 56.4, 12.5, 65.2, 10, -1.7, 45.7, 49.5, 45.3, 17.5, 29, -8.7, 51.7, 17.3, 20.2, 14.6, 47.6, 55.3, 50.2, 4.1, 47.5, 71, 13.2, 75.4, 6.2, 53, 54.2, 40.6, 55.1, 67.4, 45, 47.3, 44.2, 8.4, 46.1, 48.7, 8.3, 40.4, 63, 49, 2.8, 50.4, 17.7, 40.4, 41.1, 56.6, 37.3, -0.1, 62.5, 47.7, 62.1, 16.6, 33.3, 4.1, 61, 49.4, 44.1, 18.7, -1.3, 42.1, -11.8, 40.6, 45.6, 14.9, 51.9, 57.4, 41.3, 59.2, 58.6, 50.5, -3.9, -0.6, 11.5, 54.5, 57.1, 46.2, 51.9, 58.2, 51.6, 50.3, 64.2, 8.3, 49, 42, 43.7, 53.4, 6.5, 36.6, -18.2, 41.8, -6.8, 35, 46.8, 43.8, 60.6, -11.3, 18.5, 0.3, 40.2, 73.3, 58.2, 43.9, 22.2, 12.8, 6.7, 36.3, 51.8, 33.6, 71, 56.8, 26, 43.3, 37.4, 60, 17.2, -10.3, 43.9, 69, 38.7, 57.9, 40.2, 48.6, 57.7, 45.8, 56.2, 7.3, 32.1, 41.2, 39.1), 
+    prob_cluster1=c(0, 1, 0, 0.552, 1, 0, 1, 0, 0.158, 0.947, 1, 1, 0, 0, 0.01, 0.003, 1, 0, 0, 0, 0.004, 0.001, 0, 0, 1, 0.999, 0.591, 0.999, 0, 1, 0.998, 0, 0.03, 0.006, 0.001, 0, 0.268, 0, 0, 0.107, 0.773, 0.933, 0.985, 0, 0, 0.023, 0, 0.997, 0, 0.001, 0.002, 0.997, 1, 0.999, 0, 1, 0, 0, 0.065, 1, 0, 1, 0, 0.834, 0, 0, 0, 0.626, 0.988, 0.912, 0.996, 0.928, 0, 0, 0, 1, 0, 1, 0.773, 0, 0, 1, 0, 1, 0, 0.003, 0, 0.118, 0.001, 1, 0, 0, 0, 0.926, 0.038, 0.631, 0, 0, 0, 0, 0, 0.201, 0.286, 0.994, 0.996, 0.002, 0, 0, 0.999, 0, 0, 0.001, 1, 0.005, 0, 1, 0, 0.009, 0.961, 0.009, 0, 0.036, 0, 0.999, 1, 0, 1, 1, 0, 0.002, 0, 0, 0.025, 0, 0.024, 0, 0.999, 0.004, 0.855, 1, 0, 0.604, 0, 0.028, 0.484, 0.997, 0.062, 0.909, 0.05, 0, 0.001, 0.001, 0, 0, 0, 1, 0.001, 0, 0, 0.002, 0.003, 1, 0.398, 0, 1, 0.002, 0, 0, 0, 0.001, 0, 0, 0.576, 0.001, 0.138, 0.002, 0.004, 0.022, 0, 0.002, 0.533, 0, 0, 1, 0.004, 0.007, 1, 1, 0, 0, 0.993, 0.999, 0.996, 0.147, 0, 0, 0, 0, 0, 0.001, 0, 1, 1, 0.005, 0.606, 0.001, 0.987, 0.026, 0, 0.754, 0.985, 0.998, 0.008, 0.998, 1, 0, 0, 0.076, 0.999, 0.004, 0, 0, 0.019, 0.988, 0, 0, 0, 0, 0.997, 0, 1, 0.998, 0.417, 0.001, 0, 0, 0.162, 0.018, 0.995, 1, 0.998, 1, 0.987, 0.956, 0.002, 0, 0.004, 0, 0.087, 0.999, 1, 0.03, 0.001, 0, 0, 0, 1, 0, 0.001, 0, 0.021, 0.999, 1, 0, 0.82, 0.999, 0, 0.002, 1, 0, 0.005, 0, 0, 0.999, 0, 0, 0.001, 0.057, 0.995, 1, 0, 0, 0, 0, 0, 0.002, 0, 0.001, 1, 0, 0.925, 0.003, 0, 0.009, 0, 0, 0, 1, 1, 0.971, 0.035, 0, 0.104, 0, 0, 0.329, 0.001, 1, 0, 0, 0.024, 0.999, 0, 0.05, 0, 0.067, 0.016, 0.998, 1, 0.298, 0, 0.87, 0.998, 0.001, 0.021, 0.999, 0.012, 0.001, 1, 0.247, 1, 1, 0.233, 0, 0.999, 1, 0, 0, 0, 0, 0.001, 1, 0.995, 1, 0.975, 0.007, 0, 0.34, 0.157, 0.998, 0, 0, 0, 0, 1, 0, 0.325, 0, 0.011, 0.246, 0.895, 0, 0.005, 1, 0.12, 0.037, 0, 0.998, 0.992, 0.834, 1, 0.273, 0, 0.998, 0, 0.999, 1, 0.001, 0, 0.001, 0.987, 0.446, 1, 0, 0.989, 0.964, 0.996, 0, 0, 0, 1, 0, 0, 0.998, 0, 1, 0, 0, 0.008, 0, 0, 0.001, 0.001, 0.002, 1, 0.001, 0, 1, 0.008, 0, 0, 1, 0, 0.986, 0.008, 0.006, 0, 0.028, 1, 0, 0, 0, 0.991, 0.128, 1, 0, 0, 0.002, 0.98, 1, 0.004, 1, 0.008, 0.001, 0.996, 0, 0, 0.006, 0, 0, 0, 1, 1, 0.999, 0, 0, 0.001, 0, 0, 0, 0, 0, 1, 0, 0.004, 0.002, 0, 1, 0.037, 1, 0.005, 1, 0.068, 0.001, 0.002, 0, 1, 0.981, 1, 0.009, 0, 0, 0.002, 0.925, 0.998, 1, 0.042, 0, 0.114, 0, 0, 0.725, 0.003, 0.027, 0, 0.989, 1, 0.002, 0, 0.016, 0, 0.009, 0, 0, 0.001, 0, 1, 0.189, 0.006, 0.014)
+)
+
+gaussian_sample_with_probs <- gaussian_sample_with_probs %>%
+    mutate(prob_cluster2 = 1-prob_cluster1)
+glimpse(gaussian_sample_with_probs)
+
+
+# Estimation of the means
+means_estimates <- gaussian_sample_with_probs %>% 
+    summarise(mean_cluster1= sum(x*prob_cluster1)/sum(prob_cluster1),
+              mean_cluster2 = sum(x*prob_cluster2)/sum(prob_cluster2)
+              )
+means_estimates
+
+# Estimation of the proportions
+props_estimates <- gaussian_sample_with_probs %>% 
+    summarise(props_cluster1 = mean(prob_cluster1),
+              props_cluster2 = mean(prob_cluster2)
+              )
+props_estimates
+
+# Transform to a vector
+means_estimates <- as.numeric(means_estimates)
+
+# Plot histogram with means estimates
+ggplot(gaussian_sample_with_probs) + geom_histogram(aes(x = x), bins = 100) +
+    geom_vline(xintercept = means_estimates)
+
+
+gaussian_sample <- data.frame(
+    x=c(6.4, 5.9, 57.8, 52.6, 54.3, 52.3, 4.4, 49.1, -4, 12.7, 19.8, 51.8, 35.4, 17.1, 38.8, 44.1, 45.6, 7.9, 57.7, 51.1, 14.1, 36.6, 51.6, 4.1, -1.8, 55.1, 52.4, 54.4, 47.9, 36.6, 53.9, 15, 68.8, 8.3, 40.8, 39.3, 37.1, 12.7, 54.6, 34.1, 24.9, 58.5, 50.8, 48.6, 60, 52.1, 61.5, 6.9, 63, 63.5, 54.1, 37.7, 52.6, 49.1, 53.7, 13.4, 23.6, 45.5, 33.4, 46.4, 46.6, 56.1, 37.8, 44.1, 62.4, 12, 54.4, 31.6, -1, 9.4, 16, 53.4, 71.1, 8.9, 64.4, 55.9, 50.5, 57.2, 45.9, 18.5, 53.9, 12.5, 12.2, 1.5, 0.3, 40.1, 13.9, 53.2, 12.1, 57.2, 2.3, -2.6, 2.7, 59.6, 3, 10.3, 66.9, 57.3, 57.6, 9.1, 43.8, 51.1, 7.7, 13.4, 46.3, 57.5, 0.2, 1.9, 43.8, 53.9, 9.3, 45.5, 15.4, -3.2, -1.2, 40.5, 1.9, 14.5, -2, 3.4, 54.1, 2.9, 58.2, 49.5, 49.1, 60.2, 45.3, 59.7, 38, 22.4, 42.6, 53.6, 7.3, 43.9, 2.8, 66.5, 56.5, 44.4, 53.5, 40.6, 57.1, 43.8, -3.1, 47.3, 42.5, 50.8, -12, -12, 15.2, 43.8, 57.3, 32.2, 61.1, 15.1, 5.8, 24.7, 51.5, 7.7, -5.1, 63.1, 50.1, 39.9, 38.7, -5.2, 50.3, 49.1, 58.1, 31.3, 54.6, 39.1, 4.4, 60.5, 45.6, 59.7, 39.5, 60.6, 42.8, 49.5, 12.9, 47.2, 50, 11.4, 50.9, 57.3, 46.7, 35.6, 38.8, 56, -5.7, 50.5, 21.2, 45.9, 60.7, 22.1, 46.7, 12.5, 55.2, 48.4, 36.6, 54, 47, 50.3, 51.7, 11, 56, 42.4, 61.8, 45.6, 60.5, 40.6, 8.8, 21, 5.6, 68.2, 21.3, 11.5, 47.2, 26.4, 35.8, 25.4, 19.6, 56, 9.1, 63.4, 48.5, 3.2, 57.1, 52.7, 11.3, 16.3, 49, 46.5, 12.4, 9.6, 45.5, 55.3, 72.9, 8.1, -3.8, 53.8, 34.1, 45.7, 56.3, 44, 23.4, 57.2, 0.5, 33.2, 63.4, 37.3, 57.3, 52.7, 9.7, 51.9, 39.4, 63.7, 23.3, 39.9, -0.5, 41.6, 11.3, 48, 38.2, 54.2, 41.3, 30.6, 55.2, 48.9, 34.4, 16.2, 45.7, 10.1, 42.7, 12.2, 39.5, 14.1, 64.9, 53.1, 50.4, 47, 58.5, 50.8, 43.9, 56.8, 12.6, 44.5, 54.6, 8.9, 15.5, 50.2, 4.8, 52.8, 14.4, 33.7, 5.4, -0.2, 19.8, 51, 59.4, -8.2, 10.4, 47.8, 31.2, 41.4, 9.4, -3.2, 21.1, 44.7, 22.9, 11.5, 49.6, 26.7, 11.5, 35.2, 9.4, 44.8, 63.1, 8.5, 21, 30.9, 16.1, 54.4, 53.4, 9.7, 49.8, 45.6, -3, 53, 43.4, 43.4, 43.9, 56.6, 33.5, 55.1, 54.4, 62.8, 37.9, 35.1, 8.6, 7.1, 46.1, 6.1, 27, -9.9, 6.4, 44.6, 49, 46, 42.4, 9.5, 47.1, 51.3, -4.7, 14, 64.8, 38, 33.6, -0.4, 53.5, 40.3, 47.2, 58.5, 45.4, 2.5, 52.9, 47.4, 56.1, 17.7, 3.9, 30.7, 44.6, 42.4, 55.4, 47.1, 11.5, 50.7, 47.6, 11.3, 45.1, 44.2, 46.6, 36.9, 47.4, 54.6, -2, 50.7, 63.6, 58.9, 7.6, -3.1, 31.1, 44.9, 55.7, 16.6, 64.3, 27.1, 23, 48.7, -0.8, 23.6, 72.8, 11.9, 57.3, 25.4, 47.1, 9.4, 57.6, 39.6, 25.3, 31.2, 52.4, 51.1, 1.6, 76.5, 50.7, 34.2, 7.6, 25.4, 11.7, 53.5, 17.5, 53.7, 61.2, 49.9, 48.8, 40.8, 61.2, 16.4, 48.6, 7.5, -2, 64.2, 26.2, 11.2, 3.2, -4.3, 37.9, 47.7, 26.3, 58, 66.9, 59.1, 35.8, 14.2, 53, 60.3, 63.3, 53.6, 47.6, 57.1, 37, 47.6, 61.6, 52.7, 0.8, 50.5, 48.1, -3.4, 53.6, 35.7, 49.8, 2.7, 59.9, 36.5, 63.6, 53.3, 3.8, 20.2, 19.7, 20.7, 45.6, 39.8, 37.2, 38.6, 12.4, 56.3, 59.6, 10.5, 11, -6.8, 58.8, 49.5, -3.6, 51.1, 53.1, 46, 57.9, 15.2, -2.3, 22.9, 32.8, 37.6, 52, 77.5, 2.2, 9.5, 40.4, 48.5, 27.2, 37.4)
+)
+str(gaussian_sample)
+
+
+# Create data frame with probabilities
+gaussian_sample_with_probs <- gaussian_sample %>% 
+    mutate(prob_from_cluster1 = 0.35 * dnorm(x, mean = 10, sd = 10),
+           prob_from_cluster2 = 0.65 * dnorm(x, mean = 50, sd = 10),
+           prob_cluster1 = prob_from_cluster1/(prob_from_cluster1 + prob_from_cluster2),
+           prob_cluster2 = prob_from_cluster2/(prob_from_cluster1 + prob_from_cluster2)) %>%
+    select(x, prob_cluster1, prob_cluster2) 
+head(gaussian_sample_with_probs)
+
+
+expectation <- function(data, means, proportions, sds){
+  # Estimate the probabilities
+  exp_data <- data %>% 
+      mutate(prob_from_cluster1 = proportions[1] * dnorm(x, mean = means[1], sd = sds[1]),
+             prob_from_cluster2 = proportions[2] * dnorm(x, mean = means[2], sd = sds[2]),
+             prob_cluster1 = prob_from_cluster1/(prob_from_cluster1 + prob_from_cluster2),
+             prob_cluster2 = prob_from_cluster2/(prob_from_cluster1 + prob_from_cluster2)) %>%
+      select(x, prob_cluster1, prob_cluster2)
+    # Return data with probabilities
+  return(exp_data)
+}
+
+maximization <- function(data_with_probs){
+    means_estimates <- data_with_probs %>%
+        summarise(mean_1 = sum(x * prob_cluster1) / sum(prob_cluster1),
+                  mean_2 = sum(x * prob_cluster2) / sum(prob_cluster2)
+                  ) %>% 
+        as.numeric()
+    props_estimates <- data_with_probs %>% 
+        summarise(proportion_1 = mean(prob_cluster1), proportion_2 = 1 - proportion_1) %>% 
+        as.numeric()
+    list(means_estimates, props_estimates)   
+}
+
+
+means_init <- c(0, 100)
+props_init <- c(0.5, 0.5)
+
+# Iterative process
+for(i in 1:10){
+    new_values <- maximization(expectation(gaussian_sample, means_init, props_init, c(10, 10)))
+    means_init <- new_values[[1]]
+    props_init <- new_values[[2]]
+    cat(c(i, means_init, props_init), "\n")
+}
+
+
+fun_gaussian <- function(x, mean, proportion){
+    proportion * dnorm(x, mean, sd = 10)
+}
+
+means_iter10 <- means_init
+props_iter10 <- props_init
+
+gaussian_sample %>% ggplot() + 
+    geom_histogram(aes(x = x, y = ..density..), bins = 200) +
+    stat_function(geom = "line", fun = fun_gaussian, 
+                  args = list(mean = means_iter10[1], proportion = props_iter10[1])
+                  ) +
+    stat_function(geom = "line", fun = fun_gaussian,
+                  args = list(mean = means_iter10[2], proportion = props_iter10[2])
+                  )
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Mixture of Gaussians with flexmix  
+  
+
 
 
 
