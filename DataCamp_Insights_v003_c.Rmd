@@ -16815,6 +16815,14 @@ Example code includes:
 digits <- readr::read_csv("./RInputFiles/digits.csv")
 dim(digits)
 
+digitData <- digits[, 1:256]
+digitKey <- digits[, 257:266]
+
+# keep a subset of 4 and 8
+digitUse <- rowSums(digitKey[, c(5, 9)]==1)
+digData <- digitData[digitUse, ]
+digKey <- digitKey[digitUse, ]
+
 show_digit <- function(arr256, col=gray(4:1/4), ...) {
     arr256 <- as.numeric(arr256)
     image(matrix(arr256, nrow=16)[,16:1],col=col,...)
@@ -16824,13 +16832,13 @@ show_digit <- function(arr256, col=gray(4:1/4), ...) {
 # broom::glance(digits)
 
 # Apply `glimpse` to the data
-glimpse(digits)
+glimpse(digitData)
 
 # Digit in row 50
-show_digit(digits[50, 1:256])
+show_digit(digitData[50, ])
 
 # Digit in row 100
-show_digit(digits[100, 1:256])
+show_digit(digitData[100, ])
 
 
 gaussian_sample_with_probs <- data.frame(
@@ -16941,6 +16949,168 @@ gaussian_sample %>% ggplot() +
 ***
   
 Chapter 3 - Mixture of Gaussians with flexmix  
+  
+Univariate Gaussian Mixture Models:  
+  
+* Gaussian mixture models are formed by Gaussian distributions, which can have many potential parameters  
+	* Simplest version is the univariate Gaussian, such as the BMI dataset with no labels for gender  
+* Example of using the gender dataset for segmenting assuming that the data are not labeled by gender  
+	* Weight should be a Gaussian - continuous, not linked to integer values, etc.  
+    * Histogram looks like two Gaussians, so begin with the assumption of 2 univariate Gaussians with a resulting 2 segments  
+    * Parameters can initially be estimated with a baseline mean, sd, and proportion (6 total parameters)  
+    * The EM algorithm, implemented in flexmix, can then help to simplify the calculations  
+  
+Univariate Gaussian Mixture Models with flexmix:  
+  
+* Can begin by checking what the most suitable distributions might be  
+	* gender %>% ggplot(aes(x = Weight)) + geom_histogram(bins = 100)  
+    * Univariate Gaussian with 2 clusters  
+* Can use the flexmix::flexmix(formula, data, k, models, control, ...) to make the estimates  
+	* formula - describes the model to be fit (often variable ~ 1)  
+    * data - data frame  
+    * k - number of clusters  
+    * models - distribution to be considered, such as FLXMCnorm1 for the univariate Gaussian  
+    * control - maximum iterations and tolerance  
+* Example of fitting to a dataset using flexmix  
+	* fit_mixture <- flexmix(Weight ~ 1, data = gender, k = 2, model = FLXMCnorm1(), control = list(tol = 1e-15, verbose = 1, iter = 1e4))  
+    * proportions <- prior(fit_mixture)  # proportions from the model  
+    * parameters(fit_mixture)  # all the parameters  
+    * comp_1 <- parameters(fit_mixture, component = 1)  # just the parameters for component 1  
+    * posterior(fit_mixture) %>% head()  # probability of belonging to each cluster by observation  
+    * posterior(fit_mixture) %>% head()  # assignment to the cluster with maximum probability  
+    * table(gender$Gender, clusters(fit_mixture))  
+  
+Bivariate Gaussian Mixture Models with flexmix:  
+  
+* May want to use additional variables to improve the clustering - for example, using both height and weight from the gender dataset  
+	* Bivariate Gaussian with 2 clusters, and needing to estimate additional means and standard deviations (which need to also be between the variables)  
+* The flexmix library implements the Bivariate Gaussian distribution, which is conceptually like  
+	* There would be two means - variable 1 and variable 2  
+    * There would be a 2x2 covariance matrix - sd1, sd2, cov(1, 2), cov(1, 2) - really, three terms since the off-diagonals will be equal  
+  
+Bivariate Gaussian Mixture Models with flexmix:  
+  
+* Example of a covariance matrix without cross-terms  
+	* fit_without_cov <- flexmix(cbind(Weight, BMI) ~ 1, k = 2, data = gender, model = FLXMCmvnorm(diag = TRUE), control = list(tolerance = 1e-15, iter.max = 1000))  # cbind() is because there are two variables; diag=TRUE means no covariance  
+    * proportions <- prior(fit_without_cov)  
+    * parameters(fit_without_cov)  
+    * comp_1 <- parameters(fit_without_corr, component=1)  
+    * comp_2 <- parameters(fit_without_corr, component=2)  
+    * mean_comp_1 <- comp_1[1:2]  
+    * mean_comp_2 <- comp_2[1:2]  
+* Can then visualize the resulting clusters  
+	* library(ellipse)  
+    * ellipse_comp_1 <- ellipse(x = covariance_comp_1, centre = mean_comp_1, npoints = nrow(gender))  
+    * ellipse_comp_2 <- ellipse(x = covariance_comp_2, centre = mean_comp_2, npoints = nrow(gender))  
+    * gender %>%  
+    *     ggplot(aes(x = Weight, y = BMI)) + geom_point() +  
+    *         geom_path(data = data.frame(ellipse_comp_1), aes(x=x,y=y), col = "red") +  
+    *         geom_path(data = data.frame(ellipse_comp_2), aes(x=x,y=y), col = "blue"  
+* Need to include joint variability to improve the modeling  
+	* fit_with_cov <- flexmix(cbind(Weight, BMI) ~ 1, k = 2, data = gender, model = FLXMCmvnorm(diag = FALSE), control = list(tolerance = 1e-15, iter.max = 1000))  # cbind() is because there are two variables; diag=FALSE means covariance  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+xExample <- c(7.3, 58.7, 9.7, 16.9, 6.3, 35.1, 33.5, 61.3, 28.3, 24.3, 58.6, 13.1, 58.7, 34, 29.1, 46.4, 54.6, 5.9, 30.6, 27.9, 27.5, -5.3, 37.6, 9.1, 44.5, 57.5, 30.5, 5, 51.9, 33.6, 37.4, 28.8, 47.9, 5.4, 64.1, 45.1, 41, 36.3, 28.2, 33.8, 9.8, 57.4, 48.4, 58.3, 27.7, 38.4, 36.4, 66.9, 30.7, 34.3, 25.9, 48.5, 52, 0.3, 45.3, 31.9, 21.6, 36.6, 29, 13.2, 41.5, 8.2, 46.6, 30.6, 48.6, 5.6, 39.3, 30.5, 34.2, 61.5, 4.2, 71.3, 42.5, 32.7, 54.4, 19.2, 13.3, 40.3, 72, 21.8, 49.5, 38.7, 9.6, 49.6, 32, 30.9, 28.6, 30.1, 29.8, 67.9, 60.8, 55, 34.6, 32.8, 11.9, 50.5, 32.1, 13.7, 48.6, 32.6, 9.1, 27.6, 35.6, 28.3, 15.1, 54.7, 30.8, 22.2, 27.5, 49.3, 56, 26.1, 57.2, 46.4, 50.3, 43.6, 51.8, 47.5, 15.5, 60.2, 63.6, 45.3, 14.1, 42.1, 31.4, 42.4, 61.7, 60.1, 27.7, 55.9, 3.3, 18.7, 58.1, 46, 14, 41.7, 28.9, 29.1, 56.9, 32.3, -0.8, 29.4, 27.3, 33.5, 39.1, 13.9, 28.7, 29.4, 10.3, 44.3, 57.1, 76, 49.4, 44.9, 23.2, 53.9, 33.6, 32.7, 30, 57, 63.6, 32.9, 8.6, 26.5, 26, 53.3, 40.8, 30.1, 10.5, 47.2, 30.2, 49.3, 52.4, 48.8, 51.4, 40.7, 33.8, 45.7, 28.1, 13.2, 28.4, 31.7, 30, 29.6, 49.5, 35, 62, 51.9, 39, 15.4, 59.1, 54.8, 9.2, 9.7, 35.4, 32.9, 31.3, 30.4, 64.4, 63.4, 32.9, 40.6, 37.5, 52.3, 35.3, 8.1, 6.4, 26.2, 29.2, 29.7, 27.8, 35.2, 34.1, 29.8, 49, 65.6, -1.1, 28.6, 33.7, 48.1, 45.7, 30.3, 32.7, 64.5, 29.8, 52.5, 48.4, 48.8, 26.4, 37.4, 33.2, 46.1, 29.5, -0.9, 49.8, 34.1, 48.9, 12.5, 36.6, 22.1, 57.3, 9.5, 9.4, 58.5, 50.2, 45.3, 25.3, 27.4, 4.5, 58.5, 63.4, 48.7, 42.6, 33, 47.9, 30.3, 54.9, 7.9, 50.2, 11.2, 59.7, 46.5, 57.5, 26.9, 28.5, 29.7, 52.5, 16.9, 29.8, 28.6, 31.2, 65.3, 1.7, 31.4, 52.5, 5.1, 66.1, 51.5, 9.5, 9.8, 41.6, 0.3, 10.4, 15.5, 34.8, 27.5, 43.6, 31.4, 46.3, 4.6, 45.8, 49.2, 10.7, 48.1, 7.3, 33.4, 10.7, 53.4, 28.9, 51.1, 52.4, 55.9, 56.8, 47.2, 46.8, 30.8, 60.3, 53.6, 30.9, 70.8, 11.2, 7.5, 55.8, 14.3, 25.8, 14.5, 30.9, 60.8, 26.8, 16.5, 31.4, 26.6, 10.6, 53.4, 33.1, 33.1, 46.3, 8.2, 56, 14.1, 25.5, 59.6, 61.9, 58.6, 63.1, 47.7, 30.5, 42.4, 56.2, 17, 13.4, 34.4, 1.1, 18.4, 63.9, 38.6, 15, 30.1, 23.9, 5.9, 53.8, 18.2, 22.7, 45.7, 29.2, 8.4, 52.5, 42, 28.7, 61.7, 35.4, 32.5, 5.5, 6.8, 60.1, 29.4, 31.5, 2.3, 28.3, 29.6, 34.9, 33.2, 28.9, 33.9, 51, 35.4, 52.3, 60, 27.1, 24.7, 57.7, 32.7, 52.5, 66.3, 37.8, 46.3, 38.1, 30.6, 55.6, 44.9, 28.4, 28.9, 19, 7.7, 9.4, 36, 49.9, 42.2, 28.2, 11.5, 52.4, 46.3, 52.4, 27.4, 15.6, 62.3, 51.7, 41.6, 6.2, 10.5, 14.7, 30.4, 23.9, 58.7, 36.1, 47.6, 31.2, 29.1, 60.1, 18, 30, 56.5, 42.7, 27.1, 45.5, 36.6, 46.4, 25.9, 15.4, 31.6, 3.3, 33.6, 63.3, 57.1, 32.3, 11.8, 32.9, 47.2, 31.2, 49.3, 61.7, 11.5, 9.7, 49.6, 45.7, 16.1, 27.4, 22.8, 8.5, 56.2, 26, 45.7, 29, 34.6, 29.4, 3.9, 45.7, 31.7, 52.6, 40.2, 35.5, 5.8, 56.4, 49.5, 30.6, 40.2, 20.8, 43.9, 32.1, 40.8, 45.6, 32.8, 7.4, 27.5, 29.4, 50.8, 43.9, 36.8, 5.5, 61.5, 41.5, 47.5, 13.9, 30.1, 67.3, 27.1, 50.8, 37.4, 28, 25, 37.1, 49.3, 25.3, 26.9, 34.9, 51.8, 33.9, 34.7, 44.2, 10.1, 71.3, 47.5, 23.4, 45.7, 49.4, 32.6, 6.9, 67.8, 56.8, 41.9, 50.7, 31.5, 55, 14.2, 34.8, 26.2, 25.8, 64, 63.8, 56.4, 42.1, 29.5, 49.4, 30.2, 16.2, 30, -0.2, 30.7, 29.6, 57, 41.5, 6.4, 9.7, 47.1, 19.4, 39.8)
+xExample <- c(xExample, 32.9, 53.6, 8.4, 32.8, 63.1, 58.4, 7.5, 26, 41.8, 29, 36.9, 41.5, 39.5, 14.1, 27.4, 14.9, 48.4, 34.8, 72.8, 36.9, 27.8, 27.6, 6.1, 43.8, 36.9, 58.5, 55.1, 45.2, 2.6, 20.4, 59, 60.6, 57.7, 29.8, 60.2, 36.9, 29, 28, 46.5, 55, 29.6, 52.6, 38, 45.3, 5.7, 44.8, 35.3, 56.1, 30.3, 32.4, 56.9, 30.8, 44.8, 62.8, 46.1, 57.2, 50.5, 46.4, 37.6, 29.9, 8.6, 35.5, 47.4, 27.2, 36.4, 33.1, 29.4, 25.8, 46, 27.6, 45.7, 32.3, 12.8, 49.8, 13.7, 65.3, 48.5, 39.6, 4, 32.1, 49.6, 44, 74.5, 31, 52.6, 33.3, 56.8, 11.4, 33.7, 34.3, 25.8, 39.8, 7.3, 33.6, 7.9, 49.6, 52.6, 36.5, 43, 14.7, 43.5, 37, 50.8, 46.5, 46.9, 25.4, 32.7, 48.4, 40.3, 45.9, 51.3, 24, 48.3, 39.5, 21.2, 48.1, 56.9, 32.3, 10.2, 9.3, 40.3, 52.8, 34.5, 32.4, 30.1, 10.8, -3.8, 30.4, 58.2, 57.3, 48.9, 36.1, 46.2, 69, 67.8, 58.5, 41.9, 29.6, 51.7, 39.4, 50.8, 29.2, 56.1, 54.4, 17.2, 57.5, 54.1, 48.6, -0.9, 56.3, 27.7, 58.8, 57, 44.1, 6.3, 4.1, 35.9, 60.2, 44.1, 53.9, 33.3, 35.4, 32.1, 56, 56.8, 30.1, 43.1, 64.6, 27.7, 30.7, 53, 66, 29.1, 45, 12.3, 41.3, 54.7, 45.3, 13.3, 9.7, -2, 29.1, 29.5, 31.3, 29.2, 13.8, 26.7, 7.4, 36.8, 42.6, 54.7, 51.3, 42.6, 18, 34, 44.1, 53.6, 44.7, 28.9, 64.9, 60, 66.6, 32.9, 15.5, 37.6, 8.3, 28.5, 16.2, 39.7, 25.9, 8.8, 30.9, 9.9, 39.3, 66.4, 62.4, 53.8, 9.3, 44.7, 50.4, 57.8, 29, 50.1, 28.5, 62.9, 16.3, 54, 45.4, 60.6, 9, 7.7, 64.2, 54.4, 53.3, 45.5, 38, 5.2, 61.7, 10.8, 4.3, 24.8, 26.5, 32.2, 4.5, 49.3, 3.9, 39.6, 26.8, 36.3, 65.1, 59.6, 61.3, 30.1, 65.5, 55.8, 48.2, 49.8, 11.2, 64.2, 29, 44.6, 59.9, 12.6, 51.8, 14.5, 28.8, 49.8, 30.4, 42.7, 2.8, 31.1, 29.2, 27.4, 49.9, 28.2, 59.5, 28.7, 9.4, 30.2, 33.3, 30, 26, 65.1, 55.9, 30.5, 61.1, 50.3, 31.3, 58.2, 41.3, 33.4, 14.8, 51.2, 40.8, 34.1, 33.7, 29.4, 56, 26.4, 30.7, 55.1, 49.7, 37.7, 56.9, 38.5, 28.8, 50.3, 45.7, 13.2, 32.8, 30.5, 30.6, 61.5, 57.7, 33.6, 24.6, 53.9, 36.1, 37.4, 55.5, 27.4, 44.2, 15.4, 56.3, 28.1, 28.8, 67.6, 17.7, 48.5, 57.5, 33.7, 12.9, 19.5, 30.6, 56.8, 75.4, 26, 32.3, 28.3, 10.7, 9, 66.5, 51.6, 30.2, 46, 44.1, 53, 33.9, 28.4, 53.1, 42.3, 55.2, 42.4, 9.4, 36.3, 26.6, 41.2, 33, 42.1, 27, 25.4, 53.8, 56.7, 22.2, 29.5, 30.9, 9.3, 30.4, 48.1, 30.9, 28.4, 38.6, 28.8, 52, 16.5, 64.3, 56.1, 51.4, 50.2, 30.1, 67.3, 62.3, 12.9, 27.9, 38.9, 29.3, 17.4, 30, 62.5, 40.5, 48, 31.9, 54.7, 27.4, 28.2, 46.6, 14, 61.9, 59.4, 65.4, 30.2, 28.9, 35.4, 55.8, 51.4, 47.8, 34, 56.2, 26.5, 30.2, 8.4, 10.9, 63.9, 41.9, 31.3, 52.8, 36, 45.4, -2, 57.3, 80.3, 41, 13.8, 31.9, 33.8, 48.5, 16.7, 29.5, 6.7, 42.1, 32.2, 45.7, 18.9, 30.5, 30.9, 40.2, 14.6, 41.2, 27, 6.1, 34.9, 57.5, 30.1, 56.6, 62.4, 11.5, 25.7, 14.8, 28.2, 43.5, 37.7, 32.1, 44.4, 56.2, 7.6, 29.4, 63.4, 53, 14.6, 50.1, 62.6, 29.3, 33.5, 52.7)
+mix_assign <- c(1, 2, 1, 1, 1, 2, 2, 2, 3, 3, 2, 1, 2, 2, 3, 2, 2, 1, 3, 3, 3, 1, 2, 1, 2, 2, 3, 1, 2, 3, 2, 3, 2, 1, 2, 2, 2, 2, 3, 3, 1, 2, 2, 2, 3, 3, 3, 2, 3, 3, 3, 2, 2, 1, 2, 3, 1, 3, 3, 1, 2, 1, 2, 3, 2, 1, 2, 3, 3, 2, 1, 2, 2, 3, 2, 1, 1, 2, 2, 3, 2, 2, 1, 2, 3, 2, 2, 3, 3, 2, 2, 2, 3, 3, 1, 2, 3, 1, 2, 2, 1, 3, 2, 3, 1, 2, 3, 1, 3, 2, 2, 3, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 1, 2, 3, 2, 2, 2, 3, 2, 1, 1, 2, 2, 1, 2, 3, 3, 2, 3, 1, 3, 3, 2, 2, 1, 3, 3, 1, 2, 2, 2, 2, 2, 1, 2, 3, 2, 2, 2, 2, 3, 1, 3, 3, 2, 2, 3, 1, 2, 3, 2, 2, 2, 2, 2, 3, 2, 3, 1, 3, 3, 3, 3, 2, 3, 2, 2, 2, 1, 2, 2, 1, 1, 3, 3, 3, 3, 2, 2, 3, 2, 3, 2, 2, 1, 1, 3, 3, 3, 3, 3, 3, 2, 2, 2, 1, 3, 3, 2, 2, 3, 3, 2, 3, 2, 2, 2, 3, 2, 3, 2, 3, 1, 2, 3, 2, 1, 3, 3, 2, 1, 1, 2, 2, 2, 2, 3, 1, 2, 2, 2, 2, 2, 2, 3, 2, 1, 2, 1, 2, 2, 2, 3, 3, 3, 2, 1, 3, 3, 2, 2, 1, 3, 2, 1, 2, 2, 1, 1, 2, 1, 1, 1, 3, 3, 2, 3, 2, 1, 2, 2, 1, 2, 1, 3, 1, 2, 3, 2, 2, 2, 2, 2, 2, 3, 2, 2, 3, 2, 1, 1, 2, 1, 3, 1, 3, 2, 3, 1, 3, 3, 1, 2, 3, 2, 2, 1, 2, 1, 3, 2, 2, 2, 2, 2, 3, 2, 2, 1, 1, 3, 1, 1, 2, 3, 1, 3, 3, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 2, 3, 1, 1, 2, 3, 2, 1, 3, 3, 2, 3, 3, 3, 2, 3, 2, 2, 3, 3, 2, 3, 2, 2, 2, 2, 2, 3, 2, 2, 3, 3, 1, 1, 1, 2, 2, 2, 3, 1, 2, 2, 2, 3, 1, 2, 2, 2, 1, 1, 1, 3, 3, 2, 3, 2, 3, 2, 2, 1, 3, 2, 2, 3, 2, 3, 2, 3, 1, 3, 1, 3, 2, 2, 3, 1, 3, 2, 3, 2, 2, 1, 1, 2, 2, 1, 3, 3, 1, 2, 3, 2, 3, 2, 3, 1, 2, 2, 2, 2, 3, 1, 2, 2, 3, 2, 2, 2, 3, 2, 2, 3, 1, 3, 3, 2, 2, 2, 1, 2, 2, 2, 1, 3, 2, 3, 2, 2, 3, 3, 2, 2, 3, 3, 3, 2, 3, 3, 2, 1, 2, 2, 3, 2, 2, 3, 1, 2, 2, 2, 2, 3, 2, 1, 3, 3, 2, 2, 2, 2, 2, 3, 2, 3, 1, 3, 1, 3, 3, 2, 2, 1, 1, 2, 2, 2, 3, 2, 1, 3, 2, 2, 1, 3, 2, 3, 2, 2, 2, 1)
+mix_assign <- c(mix_assign, 3, 1, 2, 3, 2, 3, 3, 3, 1, 2, 3, 2, 2, 2, 1, 2, 2, 2, 2, 3, 2, 3, 3, 3, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 3, 3, 2, 3, 2, 2, 2, 2, 2, 2, 2, 3, 1, 3, 2, 3, 2, 3, 3, 3, 2, 3, 2, 3, 1, 2, 1, 2, 2, 2, 1, 3, 2, 2, 2, 3, 2, 3, 2, 1, 3, 2, 3, 2, 1, 2, 1, 2, 2, 3, 2, 1, 2, 3, 2, 2, 2, 3, 3, 2, 2, 2, 2, 3, 2, 2, 1, 2, 2, 3, 1, 1, 2, 2, 3, 3, 3, 1, 1, 3, 2, 2, 2, 3, 2, 2, 2, 2, 2, 3, 2, 2, 2, 3, 2, 2, 1, 2, 2, 2, 1, 2, 3, 2, 2, 2, 1, 1, 3, 2, 2, 2, 3, 3, 3, 2, 2, 3, 2, 2, 3, 3, 2, 2, 3, 2, 1, 2, 2, 2, 1, 1, 1, 3, 3, 3, 3, 1, 3, 1, 2, 2, 2, 2, 2, 1, 3, 2, 2, 2, 3, 2, 2, 2, 3, 1, 2, 1, 3, 1, 2, 3, 1, 3, 1, 3, 2, 2, 2, 1, 2, 2, 2, 3, 2, 3, 2, 1, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 1, 2, 1, 2, 3, 3, 2, 2, 2, 3, 2, 2, 2, 2, 1, 2, 3, 2, 2, 1, 2, 1, 3, 2, 3, 2, 1, 3, 3, 3, 2, 3, 2, 3, 1, 2, 2, 3, 3, 2, 2, 3, 2, 2, 3, 2, 2, 3, 1, 2, 2, 3, 3, 3, 2, 3, 2, 2, 2, 2, 2, 2, 3, 2, 2, 1, 3, 3, 3, 2, 2, 3, 3, 2, 2, 2, 2, 3, 2, 1, 2, 3, 3, 2, 1, 2, 2, 2, 1, 1, 3, 2, 2, 3, 3, 3, 1, 1, 2, 2, 3, 2, 2, 2, 3, 3, 2, 2, 2, 2, 1, 3, 3, 2, 3, 2, 3, 3, 2, 2, 2, 3, 2, 1, 3, 2, 3, 3, 2, 3, 2, 1, 2, 2, 2, 2, 3, 2, 2, 1, 3, 2, 2, 1, 3, 2, 2, 2, 3, 2, 3, 3, 2, 1, 2, 2, 2, 3, 3, 2, 2, 2, 2, 2, 2, 3, 3, 1, 1, 2, 2, 3, 2, 2, 2, 1, 2, 2, 2, 1, 3, 3, 2, 1, 3, 1, 2, 3, 2, 1, 2, 3, 2, 1, 2, 3, 1, 3, 2, 3, 2, 2, 1, 3, 1, 3, 2, 2, 3, 2, 2, 1, 3, 2, 2, 2, 2, 2, 3, 3, 2)
+
+mix_example <- data.frame(x=xExample, assignment=mix_assign)
+str(mix_example)
+
+library(flexmix)
+set.seed(1515)
+
+fit_mix_example <- flexmix(x ~ 1, data = mix_example, k = 3, model = FLXMCnorm1(), 
+                           control = list(tolerance = 1e-15, verbose = 1, iter = 1e4)
+                           )
+
+proportions <- prior(fit_mix_example)
+comp_1 <- parameters(fit_mix_example, component = 1)
+comp_2 <- parameters(fit_mix_example, component = 2)
+comp_3 <- parameters(fit_mix_example, component = 3)
+
+
+fun_prop <- function(x, mean, sd, proportion){
+    proportion * dnorm(x = x, mean = mean, sd = sd)
+}
+
+ggplot(mix_example) + 
+    geom_histogram(aes(x = x, y = ..density..)) + 
+    stat_function(geom = "line", fun = fun_prop, 
+                  args = list(mean = comp_1[1], sd = comp_1[2], proportion = proportions[1])
+                  ) +
+    stat_function(geom = "line", fun = fun_prop, 
+                  args = list(mean = comp_2[1], sd = comp_2[2], proportion = proportions[2])
+                  ) +
+    stat_function(geom = "line", fun = fun_prop, 
+                  args = list(mean = comp_3[1], sd = comp_3[2], proportion = proportions[3])
+                  )
+
+
+# Explore the first assignments
+head(clusters(fit_mix_example))
+
+# Explore the first real labels
+head(mix_example$assignment)
+
+# Create frequency table
+table(mix_example$assignment, clusters(fit_mix_example))
+
+
+genderData <- readr::read_csv("./RInputFiles/gender.csv")
+str(genderData)
+
+set.seed(1313)
+fit_with_covariance <- flexmix(cbind(Weight, BMI) ~ 1, data = genderData, k = 2, 
+                               model = FLXMCmvnorm(diag = FALSE), 
+                               control = list(tolerance = 1e-15, iter.max = 1000)
+                               )
+
+# Get the parameters
+comp_1 <- parameters(fit_with_covariance, component = 1)
+comp_2 <- parameters(fit_with_covariance, component = 2)
+
+# The means
+mean_comp_1 <- comp_1[1:2]
+mean_comp_1
+mean_comp_2 <- comp_2[1:2]
+mean_comp_2
+
+# The covariance matrices
+covariance_comp_1 <- matrix(comp_1[3:6], nrow = 2)
+covariance_comp_1
+covariance_comp_2 <- matrix(comp_2[3:6], nrow = 2)
+covariance_comp_2
+
+
+# Create ellipse curve 1
+ellipse_comp_1 <- ellipse::ellipse(x = covariance_comp_1, centre = mean_comp_1, npoints = nrow(genderData))
+head(ellipse_comp_1)
+
+# Create ellipse curve 2
+ellipse_comp_2 <- ellipse::ellipse(x = covariance_comp_2, centre = mean_comp_2, npoints = nrow(genderData))
+head(ellipse_comp_2)
+
+
+# Plot the ellipses
+genderData %>% 
+    ggplot(aes(x = Weight, y = BMI)) + geom_point()+
+    geom_path(data = data.frame(ellipse_comp_1), aes(x=x,y=y), col = "red") +
+    geom_path(data = data.frame(ellipse_comp_2), aes(x=x,y=y), col = "blue")
+
+# Check the assignments
+table(genderData$Gender, clusters(fit_with_covariance))
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Mixture Models Beyond Gaussians  
   
 
 
