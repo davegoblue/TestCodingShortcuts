@@ -17114,8 +17114,194 @@ table(genderData$Gender, clusters(fit_with_covariance))
   
 Chapter 4 - Mixture Models Beyond Gaussians  
   
+Bernoulli Mixture Models:  
+  
+* Example of the handwritten images dataset, with images of 3 and 6  
+	* The Bernoulli distribution is appropriate for a binary outcome when you do not want a continuous prediction but rather a probability of success  
+    * p <- 0.7  
+    * bernoulli <- sample(c(0, 1), 100, replace = TRUE, prob = c(1-p, p))  
+* Every pixel in an image can be represented by a Bernoulli with outcomes being either black (filled) or white (empty), with a 16x16 considered to be a 256-length vector; example for a 3-pixel image  
+	* p1 <- 0.7; p2 <- 0.5; p3 <- 0.4  
+    * bernoulli_1 <- sample(c(0, 1), 100, replace = TRUE, prob = c(1-p1, p1))  
+    * bernoulli_2 <- sample(c(0, 1), 100, replace = TRUE, prob = c(1-p2, p2))  
+    * bernoulli_3 <- sample(c(0, 1), 100, replace = TRUE, prob = c(1-p3, p3))  
+    * multi_bernoulli <- cbind(bernoulli_1, bernoulli_2, bernoulli_3)  
+    * p_vector <- c(p1, p2, p3)  
+  
+Bernoulli Mixture Models with flexmix:  
+  
+* Example of using flexmix to predict whether a digit is a 3 or a 6 in the 16x16 data that is stored in digits  
+	* digits_sample <- as.matrix(digits)  # 320 x 256 (flattened array of pixels per image)  
+    * show_digit(digits_sample[320,])  
+* For fitting a Bernoulli mixture model with two segments, can proceed similar to before  
+	* bernoulli_mix_model <- flexmix(digits_sample~1, k=2, model=FLXMCmvbinary(), control = list(tolerance = 1e-15, iter.max = 1000))  # digits_sample is the matrix, with each row as an image  
+    * prior(bernoulli_mix_model)  # proportions in each cluster  
+    * param_comp1 <- parameters(bernoulli_mix_model, component = 1)  
+    * param_comp2 <- parameters(bernoulli_mix_model, component = 2)  
+    * show_digit(param_comp1)  # will show probabilities of pixelation given segment is a 3  
+  
+Poisson Mixture Models:  
+  
+* Can use Chicago crimes data with a Poisson model, since the goal is a count of crimes by type by community, with segments by level of crime danger in the community  
+	* lambda_1 <- 100; lambda_2 <- 200; lambda_3 <- 300  
+    * poisson_1 <- rpois(n = 100, lambda = lambda_1)  
+    * poisson_2 <- rpois(n = 100, lambda = lambda_2)  
+    * poisson_3 <- rpois(n = 100, lambda = lambda_3)  
+    * multi_poisson <- cbind(poisson_1, poisson_2, poisson_3)  
+* Can extend the general concept to a crime dataset with 13 columns  
+	* Multi-Poisson distribution  
+    * Try from 1-15 clusters, and minimize BIC criteria  
+    * Parameters include each lambda for each multi-Poisson distribution  
+  
+Poisson Mixture Models with flexmix:  
+  
+* Example of solving the Poisson mixture model using flexmix, with indeterminate clusters (try 1-15 and minimize BIC), and with parameters of lambdas by cluster and proportions by cluster  
+	* crimes_matrix <- as.matrix(crimes[,-1])  # do not include the community names  
+    * poisson_mix_model <- stepFlexmix(crimes_matrix ~ 1, k = 1:15, nrep = 5, model = FLXMCmvpois(), control = list(tolerance = 1e-15, iter = 1000))  # stepFlexMix is how to run 1:15  
+    * best_fit <- getModel(poisson_mix_model, which = "BIC")  # can also use AIC or ICL  
+    * prior(best_fit)  # proportions  
+    * param_pmm <- data.frame(parameters(best_fit))  # parameters by cluster, converted to data frame  
+    * param_pmm <- param_pmm %>% mutate(Type = colnames(crimes_matrix))  
+    * head(param_pmm)  
+    * param_pmm %>% gather(Components, Lambda, -Type) %>% ggplot(aes(x = Type, y = Lambda, fill = Type)) + geom_bar(stat = "identity") + facet_wrap(~ Components) + theme(axis.text.x = element_text(angle = 90, hjust = 1), legend.position = "none")  
+    * crimes_c <- crimes %>% mutate(CLUSTER = factor(clusters(best_fit)))  
+    * crimes_c %>% group_by(CLUSTER) %>% mutate(NUMBER = row_number()) %>% ggplot(aes(x = CLUSTER, y = NUMBER, col = CLUSTER)) + geom_text(aes(label = COMMUNITY), size = 2.3)+ theme(legend.position="none")  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Create the vector of probabilities
+p_cluster_1 <- c(0.8, 0.8, 0.2, 0.9)
+
+# Create the sample for each pixel
+set.seed(18102308)
+pixel_1 <- sample(c(0, 1), 100, replace = TRUE, prob = c(1-p_cluster_1[1], p_cluster_1[1]))
+pixel_2 <- sample(c(0, 1), 100, replace = TRUE, prob = c(1-p_cluster_1[2], p_cluster_1[2]))
+pixel_3 <- sample(c(0, 1), 100, replace = TRUE, prob = c(1-p_cluster_1[3], p_cluster_1[3]))
+pixel_4 <- sample(c(0, 1), 100, replace = TRUE, prob = c(1-p_cluster_1[4], p_cluster_1[4]))
+
+# Combine the samples
+sample_cluster_1 <- cbind(pixel_1, pixel_2, pixel_3, pixel_4)
+
+# Have a look to the sample
+head(sample_cluster_1)
 
 
+digitUse2 <- rowSums(digitKey[, c(1, 3, 10)]) == 1
+digits_sample_2 <- digitData[digitUse2, ]
+dim(digits_sample_2)
+
+
+# transform into matrix
+digits_sample_2 <- as.matrix(digits_sample_2)
+
+# dimension
+dim(digits_sample_2)
+
+# look to the first observation
+show_digit(digits_sample_2[1, ])
+
+# look to the last observation
+show_digit(digits_sample_2[nrow(digits_sample_2), ])
+
+
+set.seed(1513)
+# Fit Bernoulli mixture model
+bernoulli_mix_model <- flexmix(digits_sample_2 ~ 1, k = 3, model = FLXMCmvbinary(), 
+                               control = list(tolerance = 1e-15, iter.max = 1000)
+                               )
+prior(bernoulli_mix_model)
+
+# Extract the parameters for each cluster
+param_comp_1 <- parameters(bernoulli_mix_model, component = 1)
+param_comp_2 <- parameters(bernoulli_mix_model, component = 2)
+param_comp_3 <- parameters(bernoulli_mix_model, component = 3)
+
+# Visualize the clusters
+show_digit(param_comp_1)
+show_digit(param_comp_2)
+show_digit(param_comp_3)
+
+
+set.seed(1541)
+
+# Create the vector of lambdas
+lambda_1 <- c(150, 300, 50)
+
+# Create the sample of each crime
+assault_1 <- rpois(n = 10, lambda = lambda_1[1])
+robbery_1 <- rpois(n = 10, lambda = lambda_1[2])
+battery_1 <- rpois(n = 10, lambda = lambda_1[3])
+
+# Combine the results
+cities_1 <- cbind(assault_1, robbery_1, battery_1)
+
+# Check the sample
+cities_1
+
+
+crimes <- readr::read_csv("./RInputFiles/CoC_crimes.csv")
+dim(crimes)
+names(crimes) <- stringr::str_replace_all(stringr::str_to_lower(names(crimes)), " ", ".")
+
+# Check with glimpse
+glimpse(crimes)
+
+# Transform into a matrix, without `community`
+matrix_crimes <- crimes %>%
+  select(-community) %>%  
+  as.matrix()
+
+# Check the first values
+head(matrix_crimes)
+
+
+set.seed(2017)
+# Fit the Poisson mixture model
+poisson_mm <- stepFlexmix(matrix_crimes ~ 1, k = 1:15, nrep = 5, model = FLXMCmvpois(), 
+                          control = list(tolerance = 1e-15, iter.max = 1000)
+                          )
+
+# Select the model that minimize the BIC
+best_poisson_mm <- getModel(poisson_mm, which = "BIC")
+
+# Get the parameters into a data frame
+params_lambdas <- data.frame(parameters(best_poisson_mm))
+
+# Add the column with the type of crime
+params_lambdas_crime <- params_lambdas %>% 
+    mutate(crime = colnames(matrix_crimes))
+
+# Plot the clusters with their lambdas
+params_lambdas_crime %>% 
+    gather(cluster, lambdas, -crime) %>% 
+    ggplot(aes(x = crime, y = lambdas, fill = crime)) + 
+    geom_bar(stat = "identity") +
+    facet_wrap(~ cluster) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1), legend.position = "none")
+
+# Add the cluster assignments
+crimes_with_clusters <- crimes %>% 
+    mutate(cluster = factor(clusters(best_poisson_mm)))
+
+# Plot the clusters with the communities
+crimes_with_clusters %>% 
+    group_by(cluster) %>% 
+    mutate(number = row_number()) %>% 
+    ggplot(aes(x = cluster, y = number, col = cluster)) + 
+    geom_text(aes(label = community), size = 2.3) +
+    theme(legend.position="none")
+
+```
+  
+  
+  
+***
+  
+###_Developing R Packages_  
+  
+Chapter 1 - The R Package Structure  
+  
 
 
 
