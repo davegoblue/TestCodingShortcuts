@@ -1184,4 +1184,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 22-OCT-2018  
 * DataCamp_Insights_v003_c captures Mixture Models in R - Chapter 3 (Mixture of Gaussians with flexmix) - code  
 * DataCamp_Insights_v003_c captures Mixture Models in R - Chapter 4 (Mixture Models Beyond Gaussians) - notes  
+* DataCamp_Insights_v003_c captures Mixture Models in R - Chapter 4 (Mixture Models Beyond Gaussians) - code  
   
