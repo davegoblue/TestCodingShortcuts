@@ -1187,4 +1187,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Mixture Models in R - Chapter 4 (Mixture Models Beyond Gaussians) - code  
 * DataCamp_Insights_v003_c captures Developing R Packages - Chapter 1 (The R Package Structure) - notes  
 * DataCamp_Insights_v003_c captures Developing R Packages - Chapter 2 (Documenting Packages) - notes  
+* DataCamp_Insights_v003_c captures Developing R Packages - Chapter 3 (Checking and Building Packages) - notes  
   
