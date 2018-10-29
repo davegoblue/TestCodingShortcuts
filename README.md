@@ -1190,3 +1190,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Developing R Packages - Chapter 3 (Checking and Building Packages) - notes  
 * DataCamp_Insights_v003_c captures Developing R Packages - Chapter 4 (Adding Unit Tests to R Packages) - notes  
   
+### Expansions week of 29-OCT-2018  
+* DataCamp_Insights_v003_c captures Facyor Analysis in R - Chapter 1 (Evaluating Your Measure with Factor Analysis) - notes  
+  
