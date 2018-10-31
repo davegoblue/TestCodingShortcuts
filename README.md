@@ -1193,4 +1193,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 29-OCT-2018  
 * DataCamp_Insights_v003_c captures Facyor Analysis in R - Chapter 1 (Evaluating Your Measure with Factor Analysis) - notes  
 * DataCamp_Insights_v003_c captures Facyor Analysis in R - Chapter 2 (Multidimensional EFA) - notes  
+* DataCamp_Insights_v003_c captures Facyor Analysis in R - Chapter 3 (Confirmatory Factor Analysis) - notes  
   
