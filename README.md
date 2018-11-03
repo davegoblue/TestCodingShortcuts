@@ -1196,4 +1196,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Factor Analysis in R - Chapter 3 (Confirmatory Factor Analysis) - notes  
 * DataCamp_Insights_v003_c captures Factor Analysis in R - Chapter 4 (Refining Your Measure and Model) - notes  
 * DataCamp_Insights_v003_c captures Factor Analysis in R - Chapter 1 (Evaluating Your Measure with Factor Analysis) - code  
+* DataCamp_Insights_v003_c captures Factor Analysis in R - Chapter 2 (Multidimensional EFA) - code  
   
