@@ -1206,4 +1206,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Generalized Linear Models in R - Chapter 3 (Interpreting and Visualizing GLMs) - notes  
 * DataCamp_Insights_v003_c captures Generalized Linear Models in R - Chapter 4 (Multiple Regression with GLMs) - notes  
 * DataCamp_Insights_v003_c captures Introduction to Bioconductor - Chapter 1 (What is Bioconductor?) - notes  
+* DataCamp_Insights_v003_c captures Introduction to Bioconductor - Chapter 2 (Biostrings and When to use Them) - notes  
   
