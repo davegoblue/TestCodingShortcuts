@@ -19262,16 +19262,193 @@ rangefound
   
 Chapter 4 - Introducing ShortRead  
   
+Sequence Files:  
+  
+* Plant genomes tend to be large datasets; one of the plants has 135 million base pairs  
+* Can store with text formats fastq (quality encoding per sequence letter) and fasta  
+* The fastq format includes  
+	* @ unique sequence identifier  
+    * raw sequence string  
+    * + optional id  
+    * quality encoding per sequence letter  
+* The fasta (fasta, fa, seq) format is shorter and includes  
+	* > unique sequence identifier  
+    * raw sequence string  
+* Can read in the fasta files using  
+	* library(ShortRead)  
+    * fasample <- readFasta(dirPath = "data/", pattern = "fasta") # print fasample  
+    * methods(class = "ShortRead")  
+    * writeFasta(fasample, file = "data/sample.fasta")  
+* Can read in the fastq files using  
+	* fqsample <- readFastq(dirPath = "data/", pattern = "fastq")  
+    * methods(class = "ShortReadQ")  
+    * writeFastq(fqsample, file = "data/sample.fastq.gz")  
+* Sometimes valuable to set the seed and run a FastqSampler()  
+	* set.seed(123)  
+    * sampler <- FastqSampler("data/SRR1971253.fastq", 500)  
+    * sample_small <- yield(sampler)  
+  
+Sequence Quality:  
+  
+* Quality scores are lograithmic somewhat like earthquake magnitudes  
+	* 10 = 1 in 10 wrong  
+    * 20 = 1 in 100 wrong  
+    * 30 = 1 in 1,000 wrong (often considered to be the cutoff for "good")  
+    * 50 = 1 in 100,000 wrong  
+    * etc.  
+    * encoding(ShortRead::quality(fqsample))  
+    * ShortRead::quality(fqsample)  
+    * sread(fqsample)[1]  
+    * quality(fqsample)[1]  # quality encoding values  
+    * pq <- PhredQuality(quality(fqsample))  ## PhredQuality instance  
+    * qs <- as(pq, "IntegerList")  # transform encoding into scores  
+* Can run a quality assessment process on files that have been read in  
+	* qaSummary <- qa(fqsample, lane = 1) # optional lane  
+    * names(qaSummary)  
+    * browseURL(report(qaSummary))  # HTML report  
+    * alphabet(sread(fullSample))  
+    * abc <- alphabetByCycle(sread(fullSample))  
+    * nucByCycle <- t(abc[1:4,])  
+    * nucByCycle <- nucByCycle %>%   
+    *     as.tibble() %>% # convert to tibble  
+    *     mutate(cycle = 1:50) # add cycle numbers  
+  
+Match and Filter:  
+  
+* Can run the match and filter process while reading in a large file  
+* Duplicate sequences can result from a biological process, PCR amplification, sequencing more than onbce, etc.  
+	* Duplicates should generally be marked, and an acceptable threshhold set  
+    * table(srduplicated(dfqsample))  
+    * cleanReads <- mydReads[srduplicated(mydReads) == FALSE]  
+    * table(srduplicated(cleanReads))  
+* Can create your own filters using srFilter  
+	* readWidthCutOff <- srFilter(function(x) {width(x) >= minWidth}, name = "MinWidth")  
+    * minWidth <- 51  
+    * fqsample[readWidthCutOff(fqsample)]  
+    * myFilter <- nFilter(threshold = 10, .name = "cleanNFilter")  
+    * filtered <- readFastq(dirPath = "data", pattern = ".fastq", filter = myFilter)  
+* Can also use idFilter and polynFilter  
+	* myFilterID <- idFilter(regex = ":3:1")  
+    * filtered <- readFastq(dirPath = "data", pattern = ".fastq", filter = myFilterID)  
+    * myFilterPolyA <- polynFilter(threshold = 10, nuc = c("A"))  
+    * filtered[myFilterPolyA(filtered)]  
+  
+Multiple Assessment:  
+  
+* Desire to save time and resources when reading in high volume data - parallel processing  
+	* library(Rqc)  # uses many of the basic Bioconductor packages as well as some of the basic CRAN packages  
+    * qaRqc <- rqcQA(files)  # pass a file list as the files object  
+    * class(qaRqc) # "list"  
+    * names(qaRqc) # name of the input files  
+    * qaRqc[1]  
+    * qaRqc <- rqcQA(files, workers = 4))  # run it in parallel, saving only the quality assessment  
+* Can also save a sample of the parallel reads, using a seed for reproducibility  
+	* set.seed(1111)  
+    * qaRqc_sample <- rqcQA(files, workers = 4, sample = TRUE, n = 500))  
+* Can also build paired files using the pair= argument  
+	* pfiles <- "data/seq_11.fq" "data/seq1_2.fq" "data/seq2_1.fq" "data/seq2_2.fq"  
+    * qaRqc_paired <- rqcQA(pfiles, workers = 4, pair = c(1, 1, 2, 2)))  
+    * reportFile <- rqcReport(qaRqc, templateFile = "myReport.Rmd")  
+    * browseURL(reportFile)  
+    * qaRqc <- rqcQA(files, workers = 4))  
+    * perFileInformation(qaRqc)  
+  
+Introduction to Bioconductor:  
+  
+* Installing packages from Bioconductor  
+* Basic techniques for reading, manipulating, filtering, raw genomic data  
+* BSGenome and TxDb built-in datasets  
+* Check the quality of sequence files using ShortRead and Rqc  
+* Explored variety of organisms  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# load ShortRead
+library(ShortRead)
+
+# print fqsample
+fqsample
+
+# class of fqsample
+class(fqsample)
+
+# class sread fqsample
+class(sread(fqsample))
+
+# id fqsample
+id(fqsample)
 
 
+qaSummary <- qa(fqsample, type = "fastq", lane = 1)
+
+# load ShortRead
+library(ShortRead)
+
+# Check quality
+quality(fqsample)
+
+# Check encoding
+encoding(quality(fqsample))
+
+# Check baseQuality
+qaSummary[["baseQuality"]]
 
 
+# glimpse nucByCycle
+glimpse(nucByCycle)
+
+# make an awesome plot!
+nucByCycle %>% 
+  # gather the nucleotide letters in alphabet and get a new count column
+  gather(key = alphabet, value = count , -cycle) %>% 
+  ggplot(aes(x = cycle, y =  count, colour = alphabet)) +
+  geom_line(size = 0.5 ) +
+  labs(y = "Frequency") +
+  theme_bw() +
+  theme(panel.grid.major.x = element_blank())
 
 
+myStartFilter <- srFilter(function(x) substr(sread(x), 1, 5) == "ATGCA")
+
+# Load package ShortRead
+library(ShortRead)
+
+# Check class of fqsample
+class(fqsample)
+
+# filter reads into selectedReads using myStartFilter
+selectedReads <- fqsample[myStartFilter(fqsample)]
+
+# Check class of selectedReads
+class(selectedReads)
+
+# Check detail of selectedReads
+detail(selectedReads)
 
 
+# Load package Rqc
+library(Rqc)
 
+# Average per cycle quality plot
+rqcCycleAverageQualityPlot(qa)
 
+# Average per cycle quality plot with white background
+rqcCycleAverageQualityPlot(qa) + theme_minimal()
+
+# Read quality plot with white background
+rqcReadQualityPlot(qa) + theme_minimal()
+
+```
+  
+  
+  
+***
+  
+###_Non-Linear Modeling in R with GAM_  
+  
+Chapter 1 - Introduction to Generalized Additive Models  
+  
 
 
 
