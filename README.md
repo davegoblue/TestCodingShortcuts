@@ -1210,4 +1210,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 12-NOV-2018  
 * DataCamp_Insights_v003_c captures Introduction to Bioconductor - Chapter 3 (IRanges and GenomicRanges) - notes  
+* DataCamp_Insights_v003_c captures Introduction to Bioconductor - Chapter 4 (Introducing ShortRead) - notes  
   
