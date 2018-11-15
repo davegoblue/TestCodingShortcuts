@@ -1212,4 +1212,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to Bioconductor - Chapter 3 (IRanges and GenomicRanges) - notes  
 * DataCamp_Insights_v003_c captures Introduction to Bioconductor - Chapter 4 (Introducing ShortRead) - notes  
 * DataCamp_Insights_v003_c captures Generalized Linear Models in R - Chapter 1 (GLM - Extension of Regression Toolbox) - code  
+* DataCamp_Insights_v003_c captures Generalized Linear Models in R - Chapter 2 (Logistic Regression) - code  
   
