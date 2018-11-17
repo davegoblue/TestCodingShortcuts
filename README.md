@@ -1214,4 +1214,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Generalized Linear Models in R - Chapter 1 (GLM - Extension of Regression Toolbox) - code  
 * DataCamp_Insights_v003_c captures Generalized Linear Models in R - Chapter 2 (Logistic Regression) - code  
 * DataCamp_Insights_v003_c captures Generalized Linear Models in R - Chapter 3 (Interpreting and Visualizing GLMs) - code  
+* DataCamp_Insights_v003_c captures Generalized Linear Models in R - Chapter 4 (Multiple Regression with GLMs) - code  
   
