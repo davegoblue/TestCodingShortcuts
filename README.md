@@ -1217,3 +1217,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Generalized Linear Models in R - Chapter 4 (Multiple Regression with GLMs) - code  
 * DataCamp_Insights_v003_c captures Non-Linear Modeling in R with GAM - Chapter 1 (Intro to Generalized Additive Models) - notes  
   
+### Expansions week of 19-NOV-2018  
+* DataCamp_Insights_v003_c captures Non-Linear Modeling in R with GAM - Chapter 2 (Interpreting and Visualizing GAMs) - notes  
+  
