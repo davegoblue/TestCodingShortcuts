@@ -1219,4 +1219,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 19-NOV-2018  
 * DataCamp_Insights_v003_c captures Non-Linear Modeling in R with GAM - Chapter 2 (Interpreting and Visualizing GAMs) - notes  
+* DataCamp_Insights_v003_c captures Non-Linear Modeling in R with GAM - Chapter 3 (Spatial GAMs and Interactions) - notes  
   
