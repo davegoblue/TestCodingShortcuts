@@ -19720,6 +19720,167 @@ concurvity(mod, full=FALSE)
   
 Chapter 3 - Spatial GAMs and Interactions  
   
+Two-dimensional smooths and spatial data:  
+  
+* Can expand models to include smooths of multiple variables, including their interactions  
+	* y = s(x1, x2)  
+    * gam(y ~ s(x1, x2), data = dat, method = "REML")  
+    * gam(y ~ s(x1, x2) + s(x3) + x4, data = dat, method = "REML")  
+* Will use the meuse dataset, which is about heavy metals in the soil near a river  
+	* ?sp::meuse  
+  
+Plotting and interpreting GAM interactions:  
+  
+* Can see interactions using plot(mod_2d)  
+	* plot(mod_2d)  
+    * Creates a topographic map of predicted values  
+    * plot(mod_2d, scheme = 1)  # will show the 3D perspective plot  
+    * plot(mod_2d, scheme = 2)  # heat map  
+    * vis.gam(x, view = NULL, cond = list(), n.grid = 30, too.far = 0, col = NA, color = "heat", contour.col = NULL, se = -1, type = "link", plot.type = "persp", zlim = NULL, nCol = 50, ...) # customizes plots  
+* Can run custom plots using the vis.gam() functions  
+	* vis.gam(x = mod, view = c("x1", "x2"), plot.type = "persp")  # scheme=1  
+    * vis.gam(x = mod, view = c("x1", "x2"), plot.type = "contour")  # scheme=2  
+    * vis.gam(mod, view = c("x1", "x2"), plot.type = "contour", too.far = 0.1)  # set a range for not making predictions due to distance from training data  
+    * vis.gam(x = mod, view = c("x1", "x2"), plot.type = "persp", se = 2)  # see confidence intervals for the plots  
+    * vis.gam(g, view = c("x1", "x2"), plot.type = "persp", theta = 220)  # horizontal rotation  
+    * vis.gam(g, view = c("x1", "x2"), plot.type = "persp", phi = 55)  # vertical rotation  
+    * vis.gam(g, view = c("x1", "x2"), plot.type = "persp", r = 0.1)  # zoom level (low r can lead to distortions or parallax)  
+* Additional options are available for contour plots  
+	* vis.gam(g, view = c("x1", "x2"), plot.type = "contour", color = "gray")  
+    * vis.gam(g, view = c("x1", "x2"), plot.type = "contour", contour.col = "blue")  
+    * vis.gam(g, view = c("x1", "x2"), plot.type = "contour", nlevels = 20)  
+  
+Visualizing categorical-continuous interactions:  
+  
+* The categorical-continuous interaction was previously modeled using s(x1, by="x2")  
+* Can instead use a factor smooth with argument bs="fs" (best for controlling for categories that may have an impact but are not the primary categories of interest)  
+	* model4c <- gam(hw.mpg ~ s(weight, fuel, bs = "fs") + fuel, data = mpg, method = "REML")  
+    * plot(model4c)  
+    * vis.gam(model4c, theta = 125, plot.type = "persp")  
+  
+Interactions with different scales: Tensors:  
+  
+* Tensor smooths allow for interactions on different scales, such as space and time  
+* Within the meuse data, horizontal and vertical dstances may have very different wiggliness (incomparable impacts)  
+* A tensor has two smoothing parameters, one for each of it variables  
+	* gam(y ~ te(x1, x2), data = data, method = "REML")  
+    * gam(y ~ te(x1, x2, k = c(10, 20)), data = data, method = "REML")  
+* Tensor smooths can also help to tease out interactions and independent effects  
+	* gam(y ~ te(x1) + te(x2) + ti(x1, x2), data = data, method = "REML")  
+    * gam(y ~ s(x1) + s(x2) + ti(x1, x2), data = data, method = "REML")  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Inspect the data
+data(meuse, package="sp")
+head(meuse)
+str(meuse)
+
+
+# Fit the 2-D model
+mod2d <- gam(cadmium ~ s(x, y), data=meuse, method="REML")
+
+# Inspect the model
+summary(mod2d)
+coef(mod2d)
+
+
+# Models of this form (s(x,y) + s(v1) + ...) are a great way to model spatial data because they incorporate spatial relationships as well as independent predictors
+
+# Fit the model
+mod2da <- gam(cadmium ~ s(x, y) +s(elev) + s(dist), 
+              data = meuse, method = "REML")
+
+# Inspect the model
+summary(mod2da)
+
+# Contour plot
+plot(mod2da, pages = 1)
+
+# 3D surface plot
+plot(mod2da, scheme=1, pages = 1)
+
+# Colored heat map
+plot(mod2da, scheme=2, pages=1)
+
+
+# Make the perspective plot with error surfaces
+vis.gam(mod2d, view = c("x", "y"), plot.type="persp", se=2)
+
+# Rotate the same plot
+vis.gam(mod2d, view = c("x", "y"), plot.type="persp", se=2, theta=135)
+
+# Make plot with 5% extrapolation
+vis.gam(mod2d, view = c("x", "y"), plot.type = "contour", too.far=0.05)
+
+# Overlay data
+points(meuse)
+
+
+# Make plot with 10% extrapolation
+vis.gam(mod2d, view = c("x", "y"), plot.type="contour", too.far=0.1)
+
+# Overlay data
+points(meuse)
+
+# Make plot with 25% extrapolation
+vis.gam(mod2d, view = c("x", "y"), 
+        plot.type = "contour", too.far = 0.25)
+
+# Overlay data
+points(meuse)
+
+
+# Fit a model with separate smooths for each land-use level
+mod_sep <- gam(copper ~ s(dist, by = landuse), data = meuse, method = "REML")
+
+# Examine the summary
+summary(mod_sep)
+
+# Fit a model with a factor-smooth interaction
+mod_fs <- gam(copper ~ s(dist, landuse, bs="fs"), data = meuse, method = "REML")
+
+# Examine the summary
+summary(mod_fs)
+
+
+# Plot both the models with plot()
+plot(mod_sep, pages=1)
+plot(mod_fs, pages=1)
+
+# Plot both the models with vis.gam()
+vis.gam(mod_sep, view = c("dist", "landuse"), plot.type = "persp")
+vis.gam(mod_fs, view = c("dist", "landuse"), plot.type = "persp")
+
+
+# Fit the model
+tensor_mod <- gam(cadmium ~ te(x, y, elev), data=meuse, method="REML")
+
+# Summarize and plot
+summary(tensor_mod)
+plot(tensor_mod)
+
+
+# Fit the model
+tensor_mod2 <- gam(cadmium ~ ti(x, y) + te(elev) + ti(x, y, elev), data=meuse, method="REML")
+
+# Summarize and plot
+summary(tensor_mod2)
+plot(tensor_mod2, pages = 1)
+
+par(mfrow=c(1, 1))
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Logistic GAM for Classification  
+  
+
+
 
 
 
