@@ -1221,4 +1221,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Non-Linear Modeling in R with GAM - Chapter 2 (Interpreting and Visualizing GAMs) - notes  
 * DataCamp_Insights_v003_c captures Non-Linear Modeling in R with GAM - Chapter 3 (Spatial GAMs and Interactions) - notes  
 * DataCamp_Insights_v003_c captures Non-Linear Modeling in R with GAM - Chapter 4 (Logistic GAM for Classification) - notes  
+* DataCamp_Insights_v003_c captures Non-Linear Modeling in R with GAM - Chapter 1 (Intro to Generalized Additive Models) - code  
   
