@@ -1226,3 +1226,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Non-Linear Modeling in R with GAM - Chapter 3 (Spatial GAMs and Interactions) - code  
 * DataCamp_Insights_v003_c captures Non-Linear Modeling in R with GAM - Chapter 4 (Logistic GAM for Classification) - code  
   
+### Expansions week of 26-NOV-2018  
+* DataCamp_Insights_v003_c captures Machine Learning in the Tidyverse - Chapter 1 (Foundations of Tidy Machine Learning) - notes  
+  
