@@ -19990,6 +19990,268 @@ prediction_1
   
 Chapter 1 - Foundations of Tidy Machine Learning  
   
+Introduction:  
+  
+* Tidyverse tools center around the tibble, which includes a "list" column that can store complex objects  
+* There is also a list-column workflow of nest() - map() - unnest()  
+* Course will use a more granular form of the gapminder dataset - 77 countries x 52 years x 6 features per observation  
+* The nest makes each portion of the data in to a row of a new tibble  
+	* nested <- gapminder %>% group_by(country) %>% nest()  # new column data is created; will contain the relevant data  
+    * nested$data[[4]]  # will show the Austria data  
+    * nested %>% unnest(data)  # will convert back to a normal tibble, using column data  
+  
+Map family of functions:  
+  
+* The map family of functions help to fulfill the second and third elements of the workflows  
+* The map functions are all of the form map_(.x=, .f=)  
+	* .x is the vector or list  
+    * .f is the function  
+    * output will be a list  
+    * .f = ~mean(.x) and .f=mean will do the same thing  
+* Can use the map functions on a nested file  
+	* map(.x = nested$data, .f = ~mean(.x$population))  
+    * pop_df <- nested %>% mutate(pop_mean = map(data, ~mean(.x$population)))  
+    * pop_df %>% unnest(pop_mean)  # gets back the numbers rather than a column of lists  
+* Can also use a map function that specifies a requested vector return of a specific type or a list of models such as an lm  
+	* nested %>% mutate(pop_mean = map_dbl(data, ~mean(.x$population)))  # return will be a vector of doubles rather than a list  
+    * nested %>% mutate(model = map(data, ~lm(formula = population~fertility, data = .x)))  
+  
+Tidy models with broom:  
+  
+* Several packages can help with the analysis of the list columns - broom, yardstick, rsample, etc.  
+* The core of the broom is to extract relevant data from models  
+	* tidy - statistical fundings such as coefficients  
+    * glance - concise one-row summary  
+    * augment - adds prediction columns to the data being modeled  
+* Example of using tidy to extract data from the lm() used previously in the chapter  
+	* tidy(algeria_model)  
+    * glance(algeria_model)  
+    * augment(algeria_model)  
+* Plotting the augmented data can give a sense for model fits - predictions vs. actuals  
+	* augment(algeria_model) %>% ggplot(mapping = aes(x = year)) + geom_point(mapping = aes(y = life_expectancy)) + geom_line(mapping = aes(y = .fitted), color = "red")  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Explore gapminder
+data(gapminder, package="gapminder")
+head(gapminder)
+
+# Prepare the nested dataframe gap_nested
+gap_nested <- gapminder %>% 
+  group_by(country) %>% 
+  nest()
+
+# Explore gap_nested
+head(gap_nested)
+
+
+# Create the unnested dataframe called gap_unnnested
+gap_unnested <- gap_nested %>% 
+  unnest()
+  
+# Confirm that your data was not modified  
+identical(gapminder, gap_unnested)
+
+
+# Extract the data of Algeria
+algeria_df <- gap_nested$data[[which(gap_nested$country=="Algeria")]]
+
+# Calculate the minimum of the population vector
+min(algeria_df$pop)
+
+# Calculate the maximum of the population vector
+max(algeria_df$pop)
+
+# Calculate the mean of the population vector
+mean(algeria_df$pop)
+
+
+# Calculate the mean population for each country
+pop_nested <- gap_nested %>%
+  mutate(mean_pop = map(.x=data, .f=~mean(.x$pop)))
+
+# Take a look at pop_nested
+head(pop_nested)
+
+# Extract the mean_pop value by using unnest
+pop_mean <- pop_nested %>% 
+  unnest(mean_pop)
+
+# Take a look at pop_mean
+head(pop_mean)
+
+
+# Calculate mean population and store result as a double
+pop_mean <- gap_nested %>%
+  mutate(mean_pop = map_dbl(.x=data, ~mean(.x$pop)))
+
+# Take a look at pop_mean
+head(pop_mean)
+
+
+# Build a linear model for each country
+gap_models <- gap_nested %>%
+    mutate(model = map(.x=data, .f=~lm(formula = lifeExp ~ year, data = .x)))
+    
+# Extract the model for Algeria    
+algeria_model <- gap_models$model[[which(gap_models$country=="Algeria")]]
+
+# View the summary for the Algeria model
+summary(algeria_model)
+
+
+# Extract the coefficients of the algeria_model as a dataframe
+broom::tidy(algeria_model)
+
+# Extract the statistics of the algeria_model as a dataframe
+broom::glance(algeria_model)
+
+
+# Build the augmented dataframe
+algeria_fitted <- broom::augment(algeria_model)
+
+# Compare the predicted values with the actual values of life expectancy
+algeria_fitted %>% 
+  ggplot(aes(x = year)) +
+  geom_point(aes(y = lifeExp)) + 
+  geom_line(aes(y = .fitted), color = "red")
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Multiple Models with broom  
+  
+Exploring coefficients across models:  
+  
+* The gapminder models contains data about all of the 77 countries  
+	* gap_nested <- gapminder %>% group_by(country) %>% nest()  
+    * gap_models <- gap_nested %>% mutate(model = map(data, ~lm(life_expectancy~year, data = .x)))  
+* Can extract regression coefficients to better understand trends in the gapminder data  
+	* gap_models %>% mutate(coef = map(model, ~tidy(.x))) %>% unnest(coef)  
+  
+Evaluating fit of many models:  
+  
+* Can also look at the R-squared across many models  
+	* gap_models %>% mutate(fit = map(model, ~glance(.x))) %>% unnest(fit)  
+  
+Visually inspect the fit of many models:  
+  
+* Can compare predicted and actual observations from the gapminder dataset  
+	* augmented_models <- gap_models %>% mutate(augmented = map(model,~augment(.x))) %>% unnest(augmented)  
+    * augmented_model %>% filter(country == "Italy") %>% ggplot(aes(x = year, y = life_expectancy)) + geom_point() + geom_line(aes(y = .fitted), color = "red")  
+  
+Improve the fit of your models:  
+  
+* Can instead use multiple linear regressions and again explore the goodness of fits  
+	* gap_fullmodels <- gap_nested %>% mutate(model = map(data, ~lm(formula = life_expectancy ~ ., data = .x)))  
+    * tidy(gap_fullmodels$model[[1]])  
+    * augment(gap_fullmodels$model[[1]])  
+    * glance(gap_fullmodels$model[[1]])  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Extract the coefficient statistics of each model into nested dataframes
+model_coef_nested <- gap_models %>% 
+    mutate(coef = map(.x=model, .f=~broom::tidy(.x)))
+    
+# Simplify the coef dataframes for each model    
+model_coef <- model_coef_nested %>%
+    unnest(coef)
+
+# Plot a histogram of the coefficient estimates for year         
+model_coef %>% 
+  filter(term=="year") %>% 
+  ggplot(aes(x = estimate)) +
+  geom_histogram()
+
+
+# Extract the fit statistics of each model into dataframes
+model_perf_nested <- gap_models %>% 
+    mutate(fit = map(.x=model, .f=~broom::glance(.x)))
+
+# Simplify the fit dataframes for each model    
+model_perf <- model_perf_nested %>% 
+    unnest(fit)
+    
+# Look at the first six rows of model_perf
+head(model_perf)
+
+
+# Plot a histogram of rsquared for the 77 models    
+model_perf %>% 
+  ggplot(aes(x=r.squared)) + 
+  geom_histogram() 
+  
+# Extract the 4 best fitting models
+best_fit <- model_perf %>% 
+  top_n(n = 4, wt = r.squared)
+
+# Extract the 4 models with the worst fit
+worst_fit <- model_perf %>% 
+  top_n(n = 4, wt = -r.squared)
+
+
+best_augmented <- best_fit %>% 
+  # Build the augmented dataframe for each country model
+  mutate(augmented = map(.x=model, .f=~broom::augment(.x))) %>% 
+  # Expand the augmented dataframes
+  unnest(augmented)
+
+worst_augmented <- worst_fit %>% 
+  # Build the augmented dataframe for each country model
+  mutate(augmented = map(.x=model, .f=~broom::augment(.x))) %>% 
+  # Expand the augmented dataframes
+  unnest(augmented)
+
+
+# Compare the predicted values with the actual values of life expectancy 
+# for the top 4 best fitting models
+best_augmented %>% 
+  ggplot(aes(x=year)) +
+  geom_point(aes(y=lifeExp)) + 
+  geom_line(aes(y=.fitted), color = "red") +
+  facet_wrap(~country, scales = "free_y")
+
+# Compare the predicted values with the actual values of life expectancy 
+# for the top 4 worst fitting models
+worst_augmented %>% 
+  ggplot(aes(x=year)) +
+  geom_point(aes(y=lifeExp)) + 
+  geom_line(aes(y=.fitted), color = "red") +
+  facet_wrap(~country, scales = "free_y")
+
+
+# Build a linear model for each country using all features
+gap_fullmodel <- gap_nested %>% 
+  mutate(model = map(data, ~lm(formula = lifeExp ~ year + pop + gdpPercap, data = .x)))
+
+fullmodel_perf <- gap_fullmodel %>% 
+  # Extract the fit statistics of each model into dataframes
+  mutate(fit = map(model, ~broom::glance(.x))) %>% 
+  # Simplify the fit dataframes for each model
+  unnest(fit)
+  
+# View the performance for the four countries with the worst fitting 
+# four simple models you looked at before
+fullmodel_perf %>% 
+  filter(country %in% worst_fit$country) %>% 
+  select(country, adj.r.squared)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Build, Tune, and Evaluate Regression Models  
+  
+
+
 
 
 
