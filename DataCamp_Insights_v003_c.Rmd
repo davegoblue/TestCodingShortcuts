@@ -20250,11 +20250,190 @@ fullmodel_perf %>%
   
 Chapter 3 - Build, Tune, and Evaluate Regression Models  
   
+Training, test, and validation splits:  
+  
+* Questions of how well the data would perform on new (unseen) data  
+* The train-test split can be helpful for assessing out-of-sample performance - rsample has a function for this, with prop= being the proportion in the test data  
+	* library(rsample)  
+    * gap_split <- initial_split(gapminder, prop = 0.75)  
+    * training_data <- training(gap_split)  
+    * testing_data <- testing(gap_split)  
+* The train data can be further split in to train and validate, with validate being used in model building (cross-validation)  
+	* cv_split <- vfold_cv(training_data, v = 3)  # v=3 is for 3-fold cross-validation  
+    * cv_data <- cv_split %>% mutate(train = map(splits, ~training(.x)), validate = map(splits, ~testing(.x)))  
+  
+Measuring cross-validation performance:  
+  
+* Can compare predictions made on the test or validate data to the actual values in the same datasets  
+* The MAE captures the average magnitude of differences in the predictions and the actuals  
+	* cv_prep_lm <- cv_models_lm %>% mutate(validate_actual = map(validate, ~.x$life_expectancy))  
+* There is also a map2(.x=, .y=, .f=) function that allows for two input columns  
+	* cv_prep_lm <- cv_eval_lm %>% mutate(validate_actual = map(validate, ~.x$life_expectancy), validate_predicted = map2(model, validate, ~predict(.x, .y)))  
+    * library(Metrics)  
+    * cv_eval_lm <- cv_prep_lm %>% mutate(validate_mae = map2_dbl(validate_actual, validate_predicted, ~mae(actual = .x, predicted = .y)))  
+  
+Building and tuning a random-forest model:  
+  
+* MAE for the gapminder model above is roughly 1.5 years  
+* Can instead try a random forest model - can handle non-linear relationships and interactions  
+	* rf_model <- ranger(formula = ___, data = ___, seed = ___)  
+    * prediction <- predict(rf_model, new_data)$predictions  
+    * rf_model <- ranger(formula, data, seed, mtry, num.trees)  # tuning the hyper-parameters  
+* Can tune the mtry parameter using the crossing() function for a tidyverse approach  
+	* cv_tune <- cv_data %>% crossing(mtry = 1:5)  # expands the frame for each hyperparameter of interest  
+    * cv_model_tunerf <- cv_tune %>% mutate(model = map2(train, mtry, ~ranger(formula = life_expectancy~., data = .x, mtry = .y)))  
+  
+Measuring the test performance:  
+  
+* Can compare multiple models, including hyper-parameters  
+* The final model is then built using ALL the training data, with the OOB error estimate based on the held-out test data  
+	* best_model <- ranger(formula = life_expectancy~., data = training_data, mtry = 2, num.trees = 100, seed = 42)  
+    * test_actual <- testing_data$life_expectancy  
+    * test_predict <- predict(best_model, testing_data)$predictions  
+    * mae(test_actual, test_predict)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+set.seed(42)
+
+# Prepare the initial split object
+gap_split <- rsample::initial_split(gapminder, prop = 0.75)
+
+# Extract the training dataframe
+training_data <- rsample::training(gap_split)
+
+# Extract the testing dataframe
+testing_data <- rsample::testing(gap_split)
+
+# Calculate the dimensions of both training_data and testing_data
+dim(training_data)
+dim(testing_data)
 
 
+set.seed(42)
+
+# Prepare the dataframe containing the cross validation partitions
+cv_split <- rsample::vfold_cv(training_data, v = 5)
+
+cv_data <- cv_split %>% 
+  mutate(
+    # Extract the train dataframe for each split
+    train = map(splits, ~rsample::training(.x)), 
+    # Extract the validate dataframe for each split
+    validate = map(splits, ~rsample::testing(.x))
+  )
+
+# Use head() to preview cv_data
+head(cv_data)
 
 
+# Build a model using the train data for each fold of the cross validation
+cv_models_lm <- cv_data %>% 
+  mutate(model = map(train, ~lm(formula = lifeExp ~ ., data = .x)))
 
+
+cv_prep_lm <- cv_models_lm %>% 
+  mutate(
+    # Extract the recorded life expectancy for the records in the validate dataframes
+    validate_actual = map(.x=validate, .f=~.x$lifeExp),
+    # Predict life expectancy for each validate set using its corresponding model
+    validate_predicted = map2(.x=model, .y=validate, .f=~predict(.x, .y))
+  )
+
+
+library(Metrics)
+# Calculate the mean absolute error for each validate fold       
+cv_eval_lm <- cv_prep_lm %>% 
+  mutate(validate_mae = map2_dbl(.x=validate_actual, .y=validate_predicted, 
+                                 .f=~mae(actual = .x, predicted = .y)
+                                 )
+         )
+
+# Print the validate_mae column
+cv_eval_lm$validate_mae
+
+# Calculate the mean of validate_mae column
+mean(cv_eval_lm$validate_mae)
+
+
+library(ranger)
+
+# Build a random forest model for each fold
+cv_models_rf <- cv_data %>% 
+  mutate(model = map(train, ~ranger(formula = lifeExp ~ ., data = .x,
+                                    num.trees = 100, seed = 42)))
+
+# Generate predictions using the random forest model
+cv_prep_rf <- cv_models_rf %>% 
+  mutate(validate_predicted = map2(.x=model, .y=validate, .f=~predict(.x, .y)$predictions))
+
+
+# Calculate validate MAE for each fold
+cv_eval_rf <- cv_prep_rf %>% 
+  mutate(validate_actual=map(.x=validate, .f=~.x$lifeExp), 
+         validate_mae = map2_dbl(.x=validate_actual, .y=validate_predicted, 
+                                 .f=~mae(actual = .x, predicted = .y)
+                                 )
+         )
+
+# Print the validate_mae column
+cv_eval_rf$validate_mae
+
+# Calculate the mean of validate_mae column
+mean(cv_eval_rf$validate_mae)
+
+
+# Prepare for tuning your cross validation folds by varying mtry
+cv_tune <- cv_data %>% 
+  tidyr::crossing(mtry = 2:5) 
+
+# Build a model for each fold & mtry combination
+cv_model_tunerf <- cv_tune %>% 
+  mutate(model = map2(.x=train, .y=mtry, ~ranger(formula = lifeExp ~ ., 
+                                           data = .x, mtry = .y, 
+                                           num.trees = 100, seed = 42)))
+
+
+# Generate validate predictions for each model
+cv_prep_tunerf <- cv_model_tunerf %>% 
+  mutate(validate_predicted = map2(.x=model, .y=validate, .f=~predict(.x, .y)$predictions))
+
+# Calculate validate MAE for each fold and mtry combination
+cv_eval_tunerf <- cv_prep_tunerf %>% 
+  mutate(validate_actual=map(.x=validate, .f=~.x$lifeExp),
+         validate_mae = map2_dbl(.x=validate_actual, .y=validate_predicted, 
+                                 .f=~mae(actual = .x, predicted = .y)
+                                 )
+         )
+
+# Calculate the mean validate_mae for each mtry used  
+cv_eval_tunerf %>% 
+  group_by(mtry) %>% 
+  summarise(mean_mae = mean(validate_mae))
+
+
+# Build the model using all training data and the best performing parameter
+best_model <- ranger(formula = lifeExp ~ ., data = training_data,
+                     mtry = 4, num.trees = 100, seed = 42)
+
+# Prepare the test_actual vector
+test_actual <- testing_data$lifeExp
+
+# Predict life_expectancy for the testing_data
+test_predicted <- predict(best_model, testing_data)$predictions
+
+# Calculate the test MAE
+mae(test_actual, test_predicted)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Build, Tune, and Evaluate Classification Models  
+  
 
 
 
