@@ -1229,4 +1229,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 26-NOV-2018  
 * DataCamp_Insights_v003_c captures Machine Learning in the Tidyverse - Chapter 1 (Foundations of Tidy Machine Learning) - notes  
 * DataCamp_Insights_v003_c captures Machine Learning in the Tidyverse - Chapter 2 (Multiple Models with Broom) - notes  
+* DataCamp_Insights_v003_c captures Machine Learning in the Tidyverse - Chapter 3 (Build, Tune, and Evaluate Regression Models) - notes  
   
