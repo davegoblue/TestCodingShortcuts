@@ -1232,4 +1232,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Machine Learning in the Tidyverse - Chapter 3 (Build, Tune, and Evaluate Regression Models) - notes  
 * DataCamp_Insights_v003_c captures Machine Learning in the Tidyverse - Chapter 4 (Build, Tune, and Evaluate Classification Models) - notes  
 * DataCamp_Insights_v003_c captures Predictive Analytics Using Networked Data in R - Chapter 1 (Introductions, Networks, and Labeled Networks) - notes  
+* DataCamp_Insights_v003_c captures Predictive Analytics Using Networked Data in R - Chapter 2 (Homophily) - notes  
   
