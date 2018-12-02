@@ -20870,6 +20870,209 @@ Het
   
 Chapter 3 - Network Featurization  
   
+Basic Network Features:  
+  
+* Provided that the labels of the nodes depend on each other, they can be useful for predictive modeling  
+* Can begin by getting neighborhood features  
+	* degree(g)  # first order degree  
+    * neighborhood.size(g, order=2)  # second order degree, or size of neighborhoods counting all 2+ away  
+    * count_triangles(g)  # triangles that each node is part of (triangle has full connection among three nodes)  
+* Can also look at the centrality features  
+	* Betweenness - measure of how often the node is part of a quickest path between two other nodes  
+    * betweenness(g)  
+    * Closeness - measure of how easily a node can reach the other nodes  
+    * closeness(g)  
+* Can also look at the transitivity (clustering coefficient)  
+	* transitivity(g,type = 'local')  # computed for each node separately  
+    * Triangles vs. Triangles + Triads (triangles with a missing edge)  
+  
+Link-Based Features:  
+  
+* Link-based features are network features that depend on adjacencies  
+	* The adjacency matrix has all nodes on both the x and y axis, with a 1 meaning they are linked by an edge  
+    * A <- get.adjacency(g)  
+    * Can then run the matrix multiplication (dot product) against (for example) a vector indicating preferences  
+    * preference <- c(1,1,1,1,1,1,0,0,0,0)  
+    * rNeighbors <- A %*% preference  
+    * as.vector(rNeighbors)  
+* Could instad get something like the average age of the neighbors  
+	* age <- c(23,65,33,36,28,45,41,24,38,39)  
+    * degree <- degree(g)  
+    * averageAge <- A %*% age / degree  
+  
+Page Rank:  
+  
+* The page rank is the basis of search algorithms such as google  
+* The page rank algorithm assumes that clicks on one page lead to the next page, and checks the degree of connectivity  
+	* Page rank of pages that link to it  
+    * Number of links that the referring pages include  
+* The page rank formula for all pages simultaneously is PR = alpha * A * PR + (1 - alpha) * epsilon  
+	* The alpha is the likelihood of a link being clicked, assumed to be uniform, assuming 85% as the default  
+    * The A is the adjacency matrix  
+    * The PR is the page rank, and is solved with either matrix inversions or iterations  
+    * page.rank(g)  
+    * page.rank(g, personalized = c(1,0,0,0,0,0,0,0,0,0))  # a personalized argument where the first node connections drive higher values  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Extract network degree
+V(network)$degree <- degree(network, normalized=TRUE)
+
+# Extraxt 2.order network degree
+degree2 <- neighborhood.size(network, 2)
+
+# Normalize 2.order network degree
+V(network)$degree2 <- degree2 / (length(V(network)) - 1)
+
+# Extract number of triangles
+V(network)$triangles <- count_triangles(network)
+
+
+# Extract the betweenness
+V(network)$betweenness <- betweenness(network, normalized=TRUE)
+
+# Extract the closeness
+V(network)$closeness <- closeness(network, normalized=TRUE)
+
+# Extract the eigenvector centrality
+V(network)$eigenCentrality <- eigen_centrality(network, scale = TRUE)$vector
+
+
+# Extract the local transitivity
+V(network)$transitivity <- transitivity(network, type="local", isolates='zero')
+
+# Compute the network's transitivity
+transitivity(network)
+
+
+# Extract the adjacency matrix
+AdjacencyMatrix <- as_adjacency_matrix(network)
+
+# Compute the second order matrix
+SecondOrderMatrix <- AdjacencyMatrix %*% AdjacencyMatrix
+
+# Adjust the second order matrix
+SecondOrderMatrix_adj <- ((SecondOrderMatrix) > 0) + 0
+diag(SecondOrderMatrix_adj) <- 0
+
+# Inspect the second order matrix
+SecondOrderMatrix_adj[1:10, 1:10]
+
+
+# Compute the number of churn neighbors
+V(network)$ChurnNeighbors <- as.vector(AdjacencyMatrix %*% V(network)$churn)
+
+# Compute the number of non-churn neighbors
+V(network)$NonChurnNeighbors <- as.vector(AdjacencyMatrix %*% (1 - V(network)$churn))
+
+# Compute the relational neighbor probability
+V(network)$RelationalNeighbor <- as.vector(V(network)$ChurnNeighbors / 
+    (V(network)$ChurnNeighbors + V(network)$NonChurnNeighbors))
+
+
+# Compute the number of churners in the second order neighborhood
+V(network)$ChurnNeighbors2 <- as.vector(SecondOrderMatrix %*% V(network)$churn)
+
+# Compute the number of non-churners in the second order neighborhood
+V(network)$NonChurnNeighbors2 <- as.vector(SecondOrderMatrix %*% (1 - V(network)$churn))
+
+# Compute the relational neighbor probability in the second order neighborhood
+V(network)$RelationalNeighbor2 <- as.vector(V(network)$ChurnNeighbors2 / 
+    (V(network)$ChurnNeighbors2 + V(network)$NonChurnNeighbors2))
+
+
+degree <- degree(network)
+
+# Extract the average degree of neighboring nodes
+V(network)$averageDegree <- 
+    as.vector(AdjacencyMatrix %*% V(network)$degree) / degree
+
+# Extract the average number of triangles of neighboring nodes
+V(network)$averageTriangles <- 
+    as.vector(AdjacencyMatrix %*% V(network)$triangles) / degree
+
+# Extract the average transitivity of neighboring nodes    
+V(network)$averageTransitivity <-
+    as.vector(AdjacencyMatrix %*% V(network)$transitivity) / degree
+
+# Extract the average betweeness of neighboring nodes    
+V(network)$averageBetweenness <- 
+    as.vector(AdjacencyMatrix %*% V(network)$betweenness) / degree
+
+
+# Compute one iteration of PageRank 
+# iter1 <- page.rank(network, algo = 'power', options = list(niter = 1))$vector
+
+# Compute two iterations of PageRank 
+# iter2 <- page.rank(network, algo = 'power', options = list(niter = 2))$vector
+
+# Inspect the change between one and two iterations
+# sum(abs(iter1 - iter2))
+
+# Inspect the change between nine and ten iterations
+# sum(abs(iter9 - iter10))
+
+
+# Create an empty vector
+# value <- c()
+
+# Write a loop to compute PageRank 
+# for(i in 1:15){
+#   value <- cbind(value, page.rank(network, algo = 'power',options = list(niter = i))$vector)
+# }
+  
+# Compute the differences 
+# difference <- colSums(abs(value[,1:14] - value[,2:15]))
+
+# Plot the differences
+# plot(1:14, difference)
+
+
+# boxplots <- function(damping=0.85, personalized=FALSE){
+#   if(personalized){
+#     V(network)$pp<-page.rank(network,damping=damping,personalized = V(network)$Churn)$vector
+#   }
+#   else{
+#   V(network)$pp<-page.rank(network,damping=damping)$vector
+#   }
+#   boxplot(V(network)$pp~V(network)$Churn)#
+# }
+
+# Look at the distribution of standard PageRank scores
+# boxplots(damping = 0.85)
+
+# Inspect the distribution of personalized PageRank scores
+# boxplots(damping = 0.85, personalized = TRUE)
+
+# Look at the standard PageRank with damping factor 0.2
+# boxplots(damping = 0.2)
+
+# Inspect the personalized PageRank scores with a damping factor 0.99
+# boxplots(damping=0.99, personalized = TRUE)
+
+
+# Compute the default PageRank score
+# V(network)$pr_0.85 <- page.rank(network)$vector
+
+# Compute the PageRank score with damping 0.2
+# V(network)$pr_0.20 <- page.rank(network, damping=0.2)$vector
+
+# Compute the personalized PageRank score
+# V(network)$perspr_0.85 <- page.rank(network, damping=0.85, personalized = V(network)$Churn)$vector
+
+# Compute the personalized PageRank score with damping 0.99
+# V(network)$perspr_0.99 <- page.rank(network, damping=0.99, personalized = V(network)$Churn)$vector
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Putting It All Together  
+  
+
 
 
 
