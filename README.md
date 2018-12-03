@@ -1235,3 +1235,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Predictive Analytics Using Networked Data in R - Chapter 2 (Homophily) - notes  
 * DataCamp_Insights_v003_c captures Predictive Analytics Using Networked Data in R - Chapter 3 (Network Featurization) - notes  
   
+### Expansions week of 03-DEC-2018  
+* DataCamp_Insights_v003_c captures Predictive Analytics Using Networked Data in R - Chapter 4 (Putting it all Together) - notes  
+  
