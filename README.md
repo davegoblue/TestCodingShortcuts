@@ -1241,4 +1241,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Predictive Analytics Using Networked Data in R - Chapter 2 (Homophily) - code  
 * DataCamp_Insights_v003_c captures Predictive Analytics Using Networked Data in R - Chapter 3 (Network Featurization) - code  
 * DataCamp_Insights_v003_c captures Predictive Analytics Using Networked Data in R - Chapter 4 (Putting it all Together) - code  
+* DataCamp_Insights_v003_c captures Bayesian Regression with rstanarm - Chapter 1 (Introduction to Bayesian Linear Models) - notes  
   
