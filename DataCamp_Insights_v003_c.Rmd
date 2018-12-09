@@ -21250,8 +21250,8 @@ sapply(list(firstPredictions, secondPredictions, thirdPredictions, rfPredictions
 ```
   
   
-  
 ***
+  
   
 ###_Bayesian Regression Modeling with rstanarm_  
   
@@ -21345,6 +21345,140 @@ posterior_interval(stan_model, prob = 0.8)
 ***
   
 Chapter 2 - Modifying a Bayesian Model  
+  
+What is in a Bayesian Model?  
+  
+* Many levers for modifying a Bayesian model  
+* Posterior distributions are sampled in groups called chains (iterations) that begin in random areas  
+	* Chains move to where there is a good combination of the priors and the parameters  
+    * Lengths of the chains allow for more robust parameter estimates  
+* Convergence is importance, since it ensures a consistent output - chains start at different places, and so the starting iterations (prior to convergence) are discarded  
+    * The chains start with a few thousand warm-up or burn-in for each of the chains  
+* The number of iterations is a balancing act - not enough (convergence problems) or too many (run-time problems)  
+  
+Prior Distributions:  
+  
+* Priors can inform the posterior distribution, given the same data in the experiment  
+	* More informative priors typically have narrower distributions  
+    * Can think of the prior as being like an additional data point - more meaningful the less data that we have  
+    * Generally a best practice to use a weakly informative prior, absent good cause for a strong belief  
+* Example of including prior distributions in rstanarm  
+	* stan_model <- stan_glm(kid_score ~ mom_iq, data = kidiq)  
+    * prior_summary(stan_model){{1}}  
+* Can calculate adjusted scales for the intercept as 10 * sd(y), since 10 is the default for the package  
+* Can calculate adjusted scales for the coefficients as (2.5 / sd(x)) * sd(y), since 2.5 is the default for the package  
+	* prior_summary(stan_model)  
+* Can also use unadjusted priors, such as  
+	* no_scale <- stan_glm(kid_score ~ mom_iq, data = kidiq, prior_intercept = normal(autoscale = FALSE), prior = normal(autoscale = FALSE), prior_aux = exponential(autoscale = FALSE) )  
+    * prior_summary(no_scale)  
+  
+User-Specified Priors:  
+  
+* Can use a specified prior distribution using the same arguments as in the previous paragraph  
+	* Research may suggest the parameter should be near a specific value - take advantage of narrow prior  
+    * Parameters may be constrained, such as a need to be always positive  
+* Can specify the priors to be cast to specific values  
+	* stan_model <- stan_glm(kid_score ~ mom_iq, data = kidiq, prior_intercept = normal(location = 0, scale = 10), prior = normal(location = 0, scale = 2.5), prior_aux = exponential(rate = 1) )  
+    * stan_model <- stan_glm(kid_score ~ mom_iq, data = kidiq, prior_intercept = normal(location = 0, scale = 10, autoscale = FALSE), prior = normal(location = 0, scale = 2.5, autoscale = FALSE), prior_aux = exponential(rate = 1, autoscale = FALSE) )  
+    * The autoscale=FALSE is needed so that stan_glm does not rescale the data before applying the priors  
+    * stan_model <- stan_glm(kid_score ~ mom_iq, data = kidiq, prior_intercept = normal(location = 3, scale = 2), prior = cauchy(location = 0, scale = 1), )  
+* There are many types of prior distributions that can be used  
+	* ?priors  
+* Can also set a flat prior (prior provides zero information)  
+	* stan_model <- stan_glm(kid_score ~ mom_iq, data = kidiq, prior_intercept = NULL, prior = NULL, prior_aux = NULL )  
+    * This is usually a bad idea; rarely in a state where there is zero information, and a weakly informative prior with an adjusted scale is typically better  
+  
+Tuning Models for Stability:  
+  
+* May need to alter estimation parameters  
+* Divergent transitions are when the steps are too big - need to take smaller steps (longer run time)  
+	* stan_model <- stan_glm(popularity ~ song_age, data = songs, control = list(adapt_delta = 0.95))  # 0.95 is default, increase will decrease step size  
+* May have already reached the maximum tree depth in some of the chains (indicates poor efficiency; no good stopping place, and insufficient sampling of the posterior)  
+	* stan_model <- stan_glm(popularity ~ song_age, data = songs, control = list(max_treedepth = 10))  # 10 is the default, increases allow more sampling  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# 3 chains, 1000 iterations, 500 warmup
+model_3chains <- stan_glm(popularity ~ song_age, data = songs,
+    chains = 3, iter = 1000, warmup = 500)
+
+# Print a summary of model_3chains
+summary(model_3chains)
+
+# 2 chains, 100 iterations, 50 warmup
+model_2chains <- stan_glm(popularity ~ song_age, data = songs,
+    chains = 2, iter = 100, warmup = 50)
+
+# Print a summary of model_1chain
+summary(model_2chains)
+
+
+# Estimate the model
+stan_model <- stan_glm(popularity ~ song_age, data = songs)
+
+# Print a summary of the prior distributions
+prior_summary(stan_model)
+
+
+# Calculate the adjusted scale for the intercept
+10 * sd(songs$popularity)
+
+# Calculate the adjusted scale for `song_age`
+(2.5 / sd(songs$song_age)) * sd(songs$popularity)
+
+# Calculate the adjusted scale for `valence`
+(2.5 / sd(songs$valence)) * sd(songs$popularity)
+
+
+# Estimate the model with unadjusted scales
+no_scale <- stan_glm(popularity ~ song_age, data = songs,
+    prior_intercept = normal(autoscale = FALSE),
+    prior = normal(autoscale = FALSE),
+    prior_aux = exponential(autoscale = FALSE)
+)
+
+# Print the prior summary
+prior_summary(no_scale)
+
+
+# Estimate a model with flat priors
+flat_prior <- stan_glm(popularity ~ song_age, data = songs,
+    prior_intercept = NULL, prior = NULL, prior_aux = NULL)
+
+# Print a prior summary
+prior_summary(flat_prior)
+
+
+# Estimate the model with an informative prior
+inform_prior <- stan_glm(popularity ~ song_age, data = songs,
+    prior = normal(location = 20, scale = 0.1, autoscale = FALSE))
+
+# Print the prior summary
+prior_summary(inform_prior)
+
+
+# Estimate the model with a new `adapt_delta`
+adapt_model <- stan_glm(popularity ~ song_age, data = songs,
+  control = list(adapt_delta = 0.99))
+
+# View summary
+summary(adapt_model)
+
+# Estimate the model with a new `max_treedepth`
+tree_model <- stan_glm(popularity ~ song_age, data = songs,
+  control = list(max_treedepth = 15))
+
+# View summary
+summary(tree_model)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Assessing Model Fit  
   
 
 
