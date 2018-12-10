@@ -1244,3 +1244,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Bayesian Regression with rstanarm - Chapter 1 (Introduction to Bayesian Linear Models) - notes  
 * DataCamp_Insights_v003_c captures Bayesian Regression with rstanarm - Chapter 2 (Modifying a Bayesian Model) - notes  
   
+### Expansions week of 10-DEC-2018  
+* DataCamp_Insights_v003_c captures Bayesian Regression with rstanarm - Chapter 3 (Assessing Model Fit) - notes  
+  
