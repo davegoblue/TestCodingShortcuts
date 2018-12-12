@@ -1247,4 +1247,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 10-DEC-2018  
 * DataCamp_Insights_v003_c captures Bayesian Regression with rstanarm - Chapter 3 (Assessing Model Fit) - notes  
 * DataCamp_Insights_v003_c captures Bayesian Regression with rstanarm - Chapter 4 (Presenting and Using Bayesian Regression) - notes  
+* DataCamp_Insights_v003_c captures CnIP-seq Workflows in R - Chapter 1 (Introduction to ChIP-seq) - notes  
   
