@@ -21845,7 +21845,147 @@ upset(fromList(db_sets))
   
 Chapter 2 - Back to Basics - Preparing ChIP-seq Data  
   
+Importing Data:  
+  
+* Read mapping and peak calling are typically carried out with specialized (non-R) tools and then stored in a BAM (Binary Sequence Alignment Map) format  
+* Can use Rsamtools package to interact with BAM files  
+	* Rsamtools provides functions for indexing, reading, filtering and writing of BAM files  
+* Use readGAlignments to import mapped reads  
+	* library(GenomicAlignments)  
+    * reads <- readGAlignments(bam_file)  
+* Use BamViews to define regions of interest  
+	* library(GenomicRanges)  
+    * library(Rsamtools)  
+    * ranges <- GRanges(...)  
+    * views <- BamViews(bam_file, bamRanges=ranges)  
+* Use import.bed to load peak calls from a BED file  
+	* library(rtracklayer)  
+    * peaks <- import.bed(peak_bed, genome="hg19")  
+    * bams <- BamViews(bam_file, bamRanges=peaks)  
+    * reads <- readGAlignments(bams)  
+  
+Closer Look at Peaks:  
+  
+* Can use Gvix to combine data from multiple sources in to a single plot  
+	* Where are the reads located, and the associated coverage  
+    * Annotations of key features of read coverage  
+* Need to load the key library and set context for data to be plotted  
+	* library(Gviz)  
+    * ideogram <- IdeogramTrack("chr12", "hg19")  
+    * axis <- GenomeAxisTrack()  
+    * plotTracks(list(ideogram, axis), from=101360000, to=101380000)  
+* Can then add data to the track  
+	* cover_track <- DataTrack(cover_ranges,window=100000,type='h',name="Coverage")  
+    * plotTracks(list(ideogram, cover_track, axis), from=101360000, to=101380000)  
+    * peak_track <- AnnotationTrack(peaks, name="Peaks")  
+    * plotTracks(list(ideogram, cover_track, peak_track, axis), from=101360000, to=101380000)  
+    * library(TxDb.Hsapiens.UCSC.hg19.knownGene)  
+    * tx <- GeneRegionTrack(TxDb.Hsapiens.UCSC.hg19.knownGene, chromosome="chr12", start=101360000, end=101380000, name="Genes")  
+    * plotTracks(list(ideogram, cover_track, peak_track, tx, axis), from=101360000, to=101380000)  
+  
+Cleaning ChIP-seq Data:  
+  
+* Incorrectly mapped reads can produce false peaks - "genomic repeats"  
+	* Particularly problematic if the reference and the sample differ in the number of false reads  
+    * Low complexity regions (such as end of chromosomes) tend to have poorer quality  
+* Amplification bias can be a concern - just prior to sequencing  
+* Quality Control reports can help diagnose the potential issues  
+	* library(ChIPQC)  
+    * qc_report <- ChIPQC(experiment="sample_info.csv", annotation="hg19")  
+    * ChIPQCreport(qc_report)  
+    * Input is a CSV file mapping samples to input files and descriptions  
+* Cleaning the data has many steps  
+	* Remove duplicate reads  
+    * Remove reads with multiple hits or low mapping quality  
+    * Remove peaks in "blacklisted" regions -- available from the ENCODE project  
+  
+Assessing Enrichment:  
+  
+* Reading finds the ends where a protein is created, meaning there will also be more than one read representing the ends of the fragment (?)  
+* Can be helpful to do read coverage forward and backwards and to then aggregate findings  
+	* reads <- readGAlignments(bam)  
+    * reads_gr <- granges(reads[[1]])  
+    * frag_length <- fragmentlength(qc_report)["GSM1598218"]  
+    * reads_ext <- resize(reads_gr, width=frag_length)  
+    * cover_ext <- coverage(reads_ext)  
+* Question is how does coverage look in peaks relative to the rest of the genome  
+	* bins <- tileGenome(seqinfo(reads), tilewidth=200, cut.last.tile.in.chrom=TRUE)  # create 200 bins along the genome  
+    * peak_bins_overlap <- findOverlaps(bins, peaks)  # can find the overlaps  
+    * peak_bins <- bins[from(peak_bins_overlap), ]  # subset to just the overlaps  
+    * peak_bins$score <- countOverlaps(peak_bins, reads)  # count number of overlapping reads  
+* Can create a function for the binning reads process  
+	* count_bins <- function(reads, target, bins){  
+    *   # Find all bins overlapping peaks  
+    *   overlap <- from(findOverlaps(bins, target))
+    *   target_bins <- bins[overlap, ]  
+    *   # Count the number of reads overlapping each peak bin  
+    *   target_bins$score <- countOverlaps(target_bins, reads)  
+    * target_bins  
+    * }  
+* Can find coverage for the blacklisted regions in much the same way  
+	* peak_bins <- count_bins(reads_ext, peaks, bins)  
+    * bl_bins <- count_bins(reads_ext, blacklist.hg19, bins)  
+* Can then get the background coverage by considering all of the remaining bins  
+	* bkg_bins <- subset(bins, !bins %in% peak_bins & !bins %in% bl_bins)  
+    * bkg_bins$score <- countOverlaps(bkg_bins, reads_ext)  
+  
+Example code includes:  
+```{r eval=FALSE}
 
+# Load reads form chr20_bam file
+reads <- readGAlignments(chr20_bam)
+
+# Create a `BamViews` object for the range 29805000 - 29820000 on chromosome 20
+bam_views <- BamViews(chr20_bam, bamRanges=GRanges("chr20", IRanges(start=29805000, end=29820000)))
+
+# Load only the reads in that view
+reads_sub <- readGAlignments(bam_views)
+
+# Print the `reads_sub` object
+str(reads_sub)
+
+
+# Load peak calls from chr20_peaks
+peaks <- import.bed(chr20_peaks, genome="hg19")
+
+# Create a BamViews object
+bam_views <- BamViews(chr20_bam, bamRanges=peaks)
+
+# Load the reads
+reads <- readGAlignments(bam_views)
+
+
+# Create tracks
+peak_track <- AnnotationTrack(peak_calls, name="Peaks")
+cover_track <- DataTrack(cover_ranges, window=10500, type="polygon", name="Coverage", fill.mountain=c("lighgrey", "lightgrey"), col.mountain="grey")
+
+# Highlight peak locations across tracks
+peak_highlight <- HighlightTrack(trackList = list(cover_track, peak_track), range = peak_calls)
+
+# Produce plot
+plotTracks(list(ideogram, peak_highlight, GenomeAxisTrack()), chromosome="chr20", from=start_pos, to=end_pos)
+
+
+# Load reads with mapping qualities by requesting the "mapq" entries
+reads <- readGAlignments(bam_file, param=ScanBamParam(what="mapq"))
+
+# Identify good quality alignments
+high_mapq <- mcols(reads)$mapq >= 20
+
+# Examine mapping quality distribution for high and low quality alignments
+boxplot(mcols(reads)$mapq ~ high_mapq, xlab="good quality alignments", ylab="mapping quality")
+
+# Remove low quality alignments
+reads_good <- subset(reads, high_mapq)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Comparing ChIP-seq Samples  
+  
 
 
 
