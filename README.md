@@ -1249,4 +1249,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Bayesian Regression with rstanarm - Chapter 4 (Presenting and Using Bayesian Regression) - notes  
 * DataCamp_Insights_v003_c captures CnIP-seq Workflows in R - Chapter 1 (Introduction to ChIP-seq) - notes  
 * DataCamp_Insights_v003_c captures CnIP-seq Workflows in R - Chapter 2 (Preparing ChIP-seq Data) - notes  
+* DataCamp_Insights_v003_c captures CnIP-seq Workflows in R - Chapter 3 (Comparing ChIP-seq Samples) - notes  
   
