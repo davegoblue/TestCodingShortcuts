@@ -22232,7 +22232,7 @@ path_url <- paste(path_url, gene_select, sep="+")
   
 ***
   
-###_Designing and Analyizing Clinical Trials in R_  
+###_Designing and Analyzing Clinical Trials in R_  
   
 Chapter 1 - Principles  
   
@@ -22374,6 +22374,187 @@ resp35.month12.test$estimate1 - resp35.month12.test$estimate2
 ***
   
 Chapter 2 - Trial Designs  
+  
+Randomization Methods:  
+  
+* Good randomization ensures the groups are appropriately stratified  
+* Simple Randomization has every patient with a 50/50 chance of assignment to either group, regardless of how many are already in each group  
+	* treatment <- c("A","B")  
+    * simple.list <- sample(treatment, 20, replace=TRUE)  
+    * cat(simple.list,sep="\n")  
+* May want to instead use blocks, where each block has equal numbers  
+	* library(blockrand)  
+    * block.list <- blockrand(n=20, num.levels = 2,block.sizes = c(2,2))  
+    * Can further randomize the block sizes to avoid the issue of predictability at the end of the block  
+    * block.list2 <- blockrand(n=20, num.levels = 2,block.sizes = c(1,2))  
+* May want to instead used stratified randomization  
+	* Age group, geographical region, disease severity, etc.  
+    * over50.severe.list <- blockrand(n=100, num.levels = 2, block.sizes = c(1,2,3,4), stratum='Over 50, Severe', id.prefix='O50_S', block.prefix='O50_S')  
+  
+Crossover, Factorial, Cluster Randomized Trials:  
+  
+* Sometimes a desire to have each patient be their own control after a "washout" period (long enough to reverse effects) - called a crossover trial  
+	* May increase precision, eliminate inter-pateitn variability, and allow for smaller sample sizes  
+    * However, orders of treatments may impact outcomes, washout periods may be too short, and patients may fall out before finishing  
+* Factorial designs are such that patients may receive A, B, A and B, or placebo only  
+* Sometimes desirable to calculate the odds ratios, especially if the treatments are independent  
+	* Odds of Recovery = nRecover / nNotRecover  
+    * epitools::oddsratio.wald(recovery.trial$A, recovery.trial$recover)  
+* May also want to run cluster-level trials, such as by school or by hospital  
+	* Can run in to problems with sample sizes (need to be large, may not have enough, etc.)  
+  
+Equivalence and Non-Inferiority Trials:  
+  
+* Objective of an equivalence trial is to show similar efficacy - for example, where a generic is being released  
+	* Need to pre-specify a maximum acceptable difference (delta) among the groups  
+    * Equivalence is when the confidence intervals are all inside the deltas  
+    * Non-inferiority is when at least one of the confidence intervals is outside delta, even with the point estimate being inside  
+    * prop.test(table(infection.trial$Treatment,infection.trial$Infection), alternative = "less", conf.level = 0.95, correct=FALSE)  
+    * prop.test(table(infection.trial$Treatment,infection.trial$Infection), alternative = "greater", conf.level = 0.95, correct=FALSE)  
+    * prop.test(table(infection.trial$Treatment,infection.trial$Infection), alternative = "two.sided", conf.level = 0.90, correct=FALSE)  
+* Sometimes the only objective is to show non-inferiority with a one-sided test (Ha: new treatment wose then existing), often at the 2.5% level  
+	* prop.test(table(infection.trial$Treatment,infection.trial$Infection), alternative = "less", conf.level = 0.975, correct=FALSE)  
+* Need to state in advance the delta, the number of sides, and the significance levels  
+	* Lack of superiority does NOT imply equivalence  
+  
+Bioequivalence trials:  
+  
+* Bioequivalence is determined by blood draws after someone has taken a drug - pharmacokinetics (PK)  
+	* Absorbtion, Excretion  
+    * Assumption is often made that similar PK profiles will lead to similar safety and efficacy, saving time on Phase III trials  
+* PK profiles are often assessed based on key statistics  
+	* Cmax - highest concentration  
+    * Tmax - time to highest concentration  
+    * T1/2 - half-life  
+    * AUC - area under the curve  
+    * Crossover designs are frequently used, with washouts being many times greater than the half-life  
+* The AUC is often calculated using the trapezoidal method - objective is to be between (0.8, 1.25) of the reference drug for the 90% CI  
+    * library(PKNCA)  
+    * pk.calc.auc(PKData$plasma.conc.n, PKData$rel.time, interval=c(0.25, 12), method="linear")  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+#Generate a vector to store treatment labels "A" and "B"
+set.seed(123)
+arm<-c("A", "B")
+
+#Randomly select treatment arm 14 times with the sample function and store in a vector
+simple <- sample(arm, 14, replace=TRUE)
+
+#Display the contents of the vector
+simple
+
+#Tabulate the numbers assigned to each treatment.
+table(simple)
+
+
+#Use the blockrand function for 14 patients, two arms and block size 2.
+set.seed(123)
+block2 <- blockrand(n=14, num.levels = 2,  block.prefix='B', block.sizes = c(1,1))
+
+#Display the list.
+block2
+
+#Tabulate the numbers per treatment arm.
+table(block2$treatment)
+
+
+#Use block randomization to produce lists of length 100 and random block sizes between 2 and 8.
+set.seed(123)
+under55 <- blockrand(n=100, num.levels = 2, block.sizes = 1:4, id.prefix='U55', block.prefix='U55',stratum='<55y')
+above55 <- blockrand(n=100, num.levels = 2, block.sizes = 1:4, id.prefix='A55', block.prefix='A55',stratum='>=55y')
+
+#Explore the two lists 
+head(under55)
+head(above55)
+
+#Tabulate the numbers assigned to each treatment within each strata
+table(under55$treatment)
+table(above55$treatment)
+
+
+#Explore the fact.data using the head function.
+head(fact.data)
+
+#Display the numbers with and without infections by supplement combination.
+fact.data %>% count(glutamine, selenium, infection)
+
+#Display the numbers and proportions with infections for those who received glutamine.
+fact.data %>% group_by(glutamine) %>% filter(infection=="Yes") %>%
+  summarise (n = n()) %>% mutate(prop = n / sum(n))
+
+#Display the numbers and proportions with infections for those who received selenium.
+fact.data %>% group_by(selenium) %>% filter(infection=="Yes") %>%
+  summarise (n = n()) %>% mutate(prop = n / sum(n))
+
+
+#Explore the fact.data using the head function.
+head(fact.data)
+
+#Display the numbers with and without infections by supplement combination.
+fact.data %>% count(glutamine, selenium, infection)
+
+#Display the numbers and proportions with infections for those who received glutamine.
+fact.data %>% group_by(infection) %>% filter(glutamine=="Yes") %>%
+  summarise (n = n()) %>% mutate(prop = n / sum(n))
+
+#Display the numbers and proportions with infections for those who received selenium.
+fact.data %>% group_by(infection) %>% filter(selenium=="Yes") %>%
+  summarise (n = n()) %>% mutate(prop = n / sum(n))
+
+
+#Calculate the effect of glutamine on infection
+oddsratio.wald(fact.data$glutamine, fact.data$infection)
+
+#Calculate the effect of selenium on infection
+oddsratio.wald(fact.data$selenium, fact.data$infection)
+
+
+#Use the head function to explore the relapse.trial dataset
+head(relapse.trial)
+
+#Calculate the number of percentages of relapse by treatment group
+relapse.trial %>% group_by(Treatment, Relapse) %>% 
+  summarise(n = n()) %>% mutate(pct = (n / sum(n))*100)
+
+#Calculate the two-sided 90% confidence interval for the difference
+prop.test(table(relapse.trial$Treatment, relapse.trial$Relapse), 
+          alternative = "two.sided", conf.level=0.9, correct=FALSE)
+
+
+#Display the dataset contents
+head(PKData)
+
+#Store a numeric version of the concentration variable in plasma.conc.n
+PKData$plasma.conc.n <- as.numeric(PKData$plasma.conc)
+
+#Use ggplot to plot the concentration levels against relative time
+ggplot(data=PKData, aes(x=rel.time, y=plasma.conc.n)) + 
+  geom_line() +
+  geom_point() + ggtitle("Individual Concentration Profile") +
+  xlab("Time Relative to First Dose, h") + ylab("Plasma Concentration, ng/mL")
+
+
+#Explore the variable names using the str function
+str(PKData)
+
+#Use the summary function to find the max concentration level
+summary(PKData$plasma.conc.n)
+
+#Use pk.calc.tmax to find when Cmax occurred, specifying the concentration and time.
+pk.calc.tmax(PKData$plasma.conc.n, PKData$rel.time)
+
+#Use pk.calc.cmax to estimate AUC between 0.25 and 12hrs.
+pk.calc.auc(PKData$plasma.conc.n, PKData$rel.time, interval=c(0.25, 12), method="linear")
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Sample Size and Power  
   
 
 
