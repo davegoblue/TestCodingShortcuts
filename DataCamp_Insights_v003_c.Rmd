@@ -22802,6 +22802,202 @@ ggplot(data=sample.sizes, aes(x=stdev, y=npergp)) +
   
 Chapter 4 - Statistical Analysis  
   
+Regression Analysis:  
+  
+* May be additional explanatory variables associated with outcomes of interest; these could differ by treatment arms ("explanatory variables")  
+* May be interested to see whether particular variables are associated with trial endpoints of particular interest  
+* Can use simple linear regression to investigate the treatment effects  
+	* asthma.trial$group <- relevel(asthma.trial$group, ref="Placebo")  
+    * asthma.reg1 <- lm(fev.change ~group, asthma.trial)  
+    * summary(asthma.reg1)  
+    * t.test(fev.change~group, var.equal=TRUE, data=asthma.trial)  
+    * asthma.reg2<-lm(fev.change ~group + age, asthma.trial)  
+    * summary(asthma.reg2)  
+* May want to use logistic regression to model binary outcomes  
+	* asthma.logreg1=glm(attack~group + age, family=binomial(link="logit"), asthma.trial)  
+    * summary(asthma.logreg1)  
+    * exp(coefficients(asthma.logreg1)[2])  
+    * exp(confint(asthma.logreg1)[2,])  
+  
+Analysis Sets, Subgroups, and Interactions:  
+  
+* Patient adherence may be imperfect for many reasons; as such, analysis is often re-done for sub-groups  
+* Intention to treat (ITT) means looking at patient outcomes according to planned treatments rather than just those who complied and completed treatment  
+	* Full Analysis Set (FAS) follows IT principles  
+    * Per-Protocol Set (PPS) does not follow ITT principles and instead includes everyone  
+* Can look at both FAS and PPS to compare outcomes  
+	* asthma.fas<-lm(fev.change ~group , asthma.trial)  
+    * asthma.pp<-lm(fev.change ~group , asthma.trial, subset = pp==1)  
+* Can also look at subgroup analyses  
+	* asthma.u65<-lm( fev.change ~group , asthma.trial, subset = age<65)  
+    * asthma.o65<-lm( fev.change ~group , asthma.trial, subset = age>=65)  
+* There is a risk of p-hacking with subgroup analyses, so they should be pre-specified rather than ad hoc  
+* May also want to consider interaction effects for the trial  
+	* asthma.ageg <- lm( fev.change ~group + agegroup , asthma.trial)  
+    * summary(asthma.ageint)  
+  
+Multiplicity of Data:  
+  
+* Multiple subgroups of data - patients, looks, sub-groups, etc.  
+* Goal is to keep the probability of Type I error low - roughly 0.05  
+	* Multiplicity may make Type I errors cumulatively much more likely  
+* Can adjust the p-values to maintain the desired Type I error rate  
+	* p / n (Bonferroni) for n tests with a Type I error rate of p  
+* There is typically a lack of power within the subgroups due to how the study is designed  
+	* Subgroups should thus be limited, and based on hypotheses driven by previous research  
+* There are often multiple endpoints for a study, so there needs to be clarity about which are confirmatory and which are exploratory  
+* Composite endpoints can increase statistical power - for example, adding the causes of cardiac death  
+* May also have repeated measurements due to collecting data at multiple timepoints  
+  
+Wrap up:  
+  
+* Well-conducted human clinical trials are common in the medical indistry and need to follow rigorous protocols and analyses  
+	* Randomization, including several different methods  
+    * Clinical trial designs such as cross-over, equivalence, and non-inferiority  
+    * Sample size determination  
+    * Statistical analysis for the overll group and sub-groups  
+    * T-tests, Wilcoxon rank tests, test for equal proportions, logistic regression  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+#Explore the variable names with the str function
+str(Acupuncture)
+
+#Use the relevel function to set Control as reference group
+Acupuncture$treatment.group <- relevel(Acupuncture$treatment.group, ref="Control")
+
+
+#Use lm to run and store the model in linreg1
+linreg1 <- lm(pct.month12 ~ treatment.group + sex + score.baseline.4, data=Acupuncture, 
+              na.action = na.exclude
+              )
+
+#Display the results of linreg1
+summary(linreg1)
+
+
+#Use lm to run and store the model in linreg2
+linreg2 <- lm(pct.month12 ~ treatment.group + score.baseline.4, data=Acupuncture, na.action = na.exclude)
+
+#Display the results of linreg2
+summary(linreg2)
+
+#Add the predicted values to the Acupuncture dataset for linreg2 using the predict function 
+Acupuncture$pred.linreg2 <- predict(linreg2)
+
+
+#Plot the predicted values against baseline score quartile grouping by treatment.
+ggplot(data = subset(Acupuncture, !is.na(pred.linreg2)), 
+       aes(x = score.baseline.4, y = pred.linreg2, group = treatment.group)
+       ) + 
+    geom_line(aes(color = treatment.group)) +
+    geom_point(aes(color = treatment.group)) + 
+    ggtitle("Predicted Values from Linear Regression Model") + 
+    xlab("Baseline Score Quartile") + 
+    ylab("Percentage Change from Baseline at M12")
+
+
+#Use the relevel function to set "Control" as the reference for treatment
+Acupuncture$treatment.group <- relevel(Acupuncture$treatment.group, ref="Control")
+
+#Use the relevel function to set "less than or eq to 35%" as the reference for resp35.month12
+Acupuncture$resp35.month12 <- relevel(Acupuncture$resp35.month12, ref="less than or eq to 35%")
+
+#Use glm to run and store the model in logreg1
+logreg1 <- glm(resp35.month12 ~ treatment.group + sex  + score.baseline.4, 
+               family=binomial(link="logit"), data=Acupuncture
+               )
+
+#Display the results of logreg1
+summary(logreg1)
+
+#Display the odds ratio and 95% CI for Acupuncture vs Control
+exp(coefficients(logreg1)[2])
+exp(confint(logreg1)[2,])
+
+
+#Tabulate withdrawal.reason
+table(Acupuncture$withdrawal.reason,  useNA="ifany")
+
+#Tabulate completedacupuncturetreatment by treatment.group
+table(Acupuncture$completedacupuncturetreatment, Acupuncture$treatment.group,  useNA="ifany") 
+
+#Create a per protocol flag that is TRUE if patients met the criteria
+Acupuncture <- Acupuncture %>%
+    mutate(pp = is.na(withdrawal.reason) & 
+               ((completedacupuncturetreatment==1 & treatment.group=="Acupuncture") | 
+                    (is.na(completedacupuncturetreatment) & treatment.group=="Control")
+                )
+           )
+Acupuncture$pp[is.na(Acupuncture$pp)] <- FALSE
+Acupuncture$pp <- as.factor(Acupuncture$pp)
+
+#Tabulate the per protocol flag
+table(Acupuncture$pp)
+
+
+#Use the relevel function to set Control as reference group
+Acupuncture$treatment.group <- relevel(Acupuncture$treatment.group, ref="Control")
+
+#Use lm to run and store the model without interaction in linregnoint
+linregnoint <- lm(pct.month12 ~ treatment.group + score.baseline.4, Acupuncture, na.action = na.exclude)
+
+#Use lm to run and store the model with interaction in linregint
+linregint <- lm(pct.month12 ~ treatment.group*score.baseline.4, Acupuncture, na.action = na.exclude)
+
+#Display the results of linregnoint and linregint
+summary(linregnoint)
+summary(linregint)
+
+#Compare the models with the anova command
+anova(linregnoint, linregint)
+
+
+#Tabulate the age group variable to view the categories
+table(Acupuncture$age.group)
+
+#Display the adjusted significance level
+0.05/4
+
+#Run the Wilcoxon Rank Sum test in each of the age subgroups
+age <- c("18-34", "35-44", "45-54", "55-65")
+for(group in age){
+  subgroup <- broom::tidy(wilcox.test(total.days.sick ~ treatment.group, 
+                                      data = subset(Acupuncture, age.group==group), 
+                                      exact=FALSE
+                                      )
+                          )
+  print(group)
+  print(subgroup)
+}
+
+
+#Tabulate the combined endpoint by treatment group
+table(Acupuncture$combined, Acupuncture$treatment.group, useNA="ifany")
+
+#Use the relevel function to set Control as reference group
+Acupuncture$treatment.group <- relevel(Acupuncture$treatment.group, ref="Control")
+
+#Use compareGroups to generate and save the treatment effect for the composite endpoint amd each component
+combined.test <- compareGroups::compareGroups(treatment.group ~ combined + any.therap.visits + any.gp.visits + any.spec.visits, data = Acupuncture)
+
+# Store the results in a table
+combined.test.table <- compareGroups::createTable(combined.test, show.ratio = TRUE, show.p.overall=FALSE)
+
+#Display the results
+combined.test.table
+
+```
+  
+  
+  
+***
+  
+###_Financial Analytics in R_  
+  
+Chapter 1 - Intro to Valuations (Cash is King)  
+  
 
 
 
