@@ -1256,4 +1256,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 17-DEC-2018  
 * DataCamp_Insights_v003_c captures Designing and Analyzing Clinical Trials in R - Chapter 2 (Trial Designs) - notes  
 * DataCamp_Insights_v003_c captures Designing and Analyzing Clinical Trials in R - Chapter 3 (Sample Size and Power) - notes  
+* DataCamp_Insights_v003_c captures Designing and Analyzing Clinical Trials in R - Chapter 4 (Statistical Analysis) - notes  
   
