@@ -1260,4 +1260,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Designing and Analyzing Clinical Trials in R - Chapter 1 (Principles) - code  
 * DataCamp_Insights_v003_c captures Designing and Analyzing Clinical Trials in R - Chapter 2 (Trial Designs) - code  
 * DataCamp_Insights_v003_c captures Designing and Analyzing Clinical Trials in R - Chapter 3 (Sample Size and Power) - code  
+* DataCamp_Insights_v003_c captures Designing and Analyzing Clinical Trials in R - Chapter 4 (Statistical Analysis) - code  
   
