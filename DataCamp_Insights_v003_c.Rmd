@@ -22998,6 +22998,193 @@ combined.test.table
   
 Chapter 1 - Intro to Valuations (Cash is King)  
   
+Valuations Overview:  
+  
+* Can value economic value based on cash flows using R and the tidyverse  
+* Focus for the course is valuation of projects within a company  
+* Discounted cash flows use an interest rate to discount future expenditures and revenues to the present value  
+* Cash flow statements typically have time as the column, with variables such as spend or revenue as rows  
+	* May want to tidy data for analysis where the column is the variable and the row is the observation  
+  
+Business Models and Writing R Functions:  
+  
+* The business model includes the timing of earning revenue and incurring expenses  
+	* Operating revenue is driven by the units sold and the price per unit (for consumer products)  
+    * Operating revenue is driven by enrolment, churn, monthly fees, etc. (for subscription products)  
+    * Direct Expenses are driven by the units sold and the cost per unit (marginal direct costs)  
+    * Operating expenses (overhead) are costs required to run the business but not directly tied to a specific sale - e.g., SG&A, depreciation, etc.  
+* The timing of revenues and expenses are on an accrual basis - for example, raw materials may be purchased well before production, but accrual would be when producing  
+* Gross Profit = Operative Revenue minus Direct Expenses  
+* Can use a function for calculating the business model  
+	* calc_business_model <- function(assumptions, price_per_unit, cost_per_unit){  
+    *     model <- assumptions  
+    *     model$revenue <- model$sales * price_per_unit  
+    *     model$direct_expense <- model$sales * cost_per_unit  
+    *     model$gross_profit <- model$revenue - model$direct_expenses  
+    * model  
+    * }  
+    * calc_business_model( assumptions, price_per_unit = 10, cost_per_unit = 2 )  
+  
+Pro-Forma Income Statements:  
+  
+* The income statement (P&L) translates revenues and expenses to net income  
+	* overhead_expense <- sga + depreciation + amortization  
+    * operating_profit <- gross_profit - overhead_expense  
+* Depreciation is the idea that large capital expenditures should be spread over their useful lifetimes  
+	* Amortization is a similar concept for non-physical investments (such as R&D)  
+    * Depreciation per Year = (Book Value - Salvage Value) / Years of Useful Life  
+    * depreciation_per_period <- (book_value - salvage_value)/useful_life  
+    * depreciation <- rep(depreciation_per_period, useful_life)  
+* Can calculate valuations as either levered (financing, including tax considerations and interest) or unlevered (ignores financing considerations)  
+* Generally need to include the tax considerations  
+	* tax <- operating_income * tax_rate  
+    * net_income <- operating_income - tax  
+  
+Income to Cash:  
+  
+* Net income needs to be adjusted to create free cash flow  
+* Cash is king - need to be able to convert the income in to no-string-attached cash  
+* Income is recognized based on accrual while cash is recognized when it is received or spent  
+	* The income statement may majorly differ from the cash flow particularly due to depreciation  
+* To convert from income to free cash flow, convert as follows  
+	* Add back depreciation and amortization (only care about actual spending)  
+    * Subtract out CAPEX (care about recognizing all of the capital asset when it is purchased)  
+    * Adjust for net working capital (NWC)  
+    * cashflow <- net_income + depreciation_exp - capex + nwc_changes  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# define inputs
+price <- 20
+print_cost <- 0.5
+ship_cost <- 2
+
+assumptions <- data.frame(year=1:5, sales=c(175, 200, 180, 100, 50))
+
+# add revenue, expense, and profit variables
+cashflow <- assumptions
+cashflow$revenue <- cashflow$sales * price
+cashflow$direct_expense <- cashflow$sales * (print_cost + ship_cost) 
+cashflow$gross_profit <- cashflow$revenue - cashflow$direct_expense
+
+# print cashflow
+print(cashflow)
+
+prem_ts <- data.frame(MONTH=1:60, COST_PER_SONG=0.01, SONG_LENGTH=3, REV_PER_SUB=10) %>%
+    mutate(PCT_ACTIVE=0.95**(MONTH-1), HOURS_PER_MONTH=528-0.08*(MONTH-40)**2)
+
+# premium business models
+premium_model <- prem_ts
+premium_model$SONGS_PLAYED <- prem_ts$PCT_ACTIVE * prem_ts$HOURS_PER_MONTH * 1 / prem_ts$SONG_LENGTH
+premium_model$REV_SUBSCRIPTION <- prem_ts$PCT_ACTIVE * prem_ts$REV_PER_SUB
+premium_model$COST_SONG_PLAYED <- premium_model$SONGS_PLAYED * prem_ts$COST_PER_SONG
+
+# inspect results
+head(premium_model)
+
+
+free_ts <- data.frame(MONTH=1:60, PROP_MUSIC=0.95, REV_PER_AD=0.02, REV_PER_CLICK=10, 
+                      COST_PER_SONG=0.01, SONG_LENGTH=3, AD_LENGTH=0.25, CLICK_THROUGH_RATE=0.001
+                      ) %>%
+    mutate(PCT_ACTIVE=0.97**(MONTH-1), HOURS_PER_MONTH=480-0.08*(MONTH-40)**2)
+
+# freemium business models
+freemium_model <- free_ts
+freemium_model$SONGS_PLAYED <- free_ts$PCT_ACTIVE * free_ts$HOURS_PER_MONTH * free_ts$PROP_MUSIC / free_ts$SONG_LENGTH
+freemium_model$ADS_PLAYED <- free_ts$PCT_ACTIVE * free_ts$HOURS_PER_MONTH * (1-free_ts$PROP_MUSIC) / free_ts$AD_LENGTH
+freemium_model$REV_AD_PLAYED <- freemium_model$ADS_PLAYED * free_ts$REV_PER_AD
+freemium_model$REV_AD_CLICKED <- freemium_model$ADS_PLAYED * free_ts$CLICK_THROUGH_RATE * free_ts$REV_PER_CLICK
+freemium_model$COST_SONG_PLAYED <- freemium_model$SONGS_PLAYED * free_ts$COST_PER_SONG
+
+# examine output
+head(freemium_model)
+
+
+# Define function: calc_business_model
+calc_business_model <- function(assumptions, price, print_cost, ship_cost){
+    cashflow <- assumptions
+    cashflow$revenue <- cashflow$sales * price
+    cashflow$direct_expense <- cashflow$sales * (print_cost + ship_cost) 
+    cashflow$gross_profit <- cashflow$revenue - cashflow$direct_expense
+    cashflow
+}
+
+# Call calc_business_model function for different sales prices
+assumptions
+calc_business_model(assumptions, 20, 0.5, 2)$gross_profit
+calc_business_model(assumptions, 25, 0.5, 2)$gross_profit
+
+
+# Inputs
+production <- data.frame(Month=1:60, Units=rep(c(60, 50, 40, 30), times=15))
+
+cost <- 100000
+life <- 60
+salvage <- 10000
+
+# Compute depreciation
+production$Depr_Straight <- (cost - salvage)/life
+production$Depr_UnitsProd <- (cost - salvage)*(production$Units) / sum(production$Units)
+
+# Plot two depreciation schedules
+ggplot(production, aes(x = Month)) + 
+    geom_line(aes(y = Depr_Straight)) + 
+    geom_line(aes(y = Depr_UnitsProd))
+
+
+# Business model
+cashflow
+
+cashflow$revenue <- cashflow$revenue + 2 * cashflow$sales
+cashflow$gross_profit <- cashflow$revenue - cashflow$direct_expense
+
+# Income statement
+cashflow$depr_sl <- (1000 - 0) / 5
+cashflow$operating_profit <- cashflow$gross_profit - cashflow$depr_sl
+cashflow$tax <- cashflow$operating_profit * 0.3
+cashflow$net_income <- cashflow$operating_profit - cashflow$tax
+
+# Inspect dataset
+cashflow
+
+
+# Calculate income statement
+assumptions <- data.frame(unit_sales=100000*c(1, 2, 4, 8), machines_purchased=c(1, 1, 2, 4), 
+                          depreciation=10000000*c(4, 8, 16, 32)
+                          )
+assumptions
+price_per_unit <- 1000
+cogs_per_unit <- 450
+labor_per_unit <- 50
+
+income_statement <- assumptions
+income_statement$revenue <- income_statement$unit_sales * price_per_unit
+income_statement$expenses <- income_statement$unit_sales * (cogs_per_unit + labor_per_unit)
+income_statement$earnings <- income_statement$revenue - income_statement$expenses - income_statement$depreciation
+
+# Summarize cumulative earnings
+sum(income_statement$earnings)
+sum(income_statement$earnings) / sum(income_statement$revenue)
+
+
+# calculate free cashflow
+cashflow <- income_statement
+cashflow$operating_cf <- cashflow$earnings + cashflow$depreciation
+cashflow$capex <- cashflow$machines_purchased * 160000000
+cashflow$free_cf <- cashflow$operating_cf - cashflow$capex
+
+# summarize free cashflow
+sum(cashflow$free_cf)
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Key Financial Concepts (Time is Money)  
+  
 
 
 
