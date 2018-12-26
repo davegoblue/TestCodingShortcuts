@@ -1265,4 +1265,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 24-DEC-2018  
 * DataCamp_Insights_v003_c captures Financial Analytics in R - Chapter 1 (Intro to Valuations) - notes  
 * DataCamp_Insights_v003_c captures Financial Analytics in R - Chapter 1 (Intro to Valuations) - code  
+* DataCamp_Insights_v003_c captures Financial Analytics in R - Chapter 2 (Key Financial Concepts) - notes  
   
