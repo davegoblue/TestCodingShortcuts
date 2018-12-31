@@ -23561,6 +23561,250 @@ ggplot(cashflow_comparison, aes(x = npv, y = irr, col = factor(option))) +
   
 Chapter 4 - Understanding Outcomes  
   
+Building a Business Case:  
+  
+* Can combine metrics to evaluate potential business models  
+* Example of working for a data-driven coffee shop - move from coffee to nitro-brew  
+	* Consider only the incremental costs; for example rent and sunk costs (prior to the project) should not be considered  
+    * May want to consider side-effects such as self-cannibalization  
+* Business modeling is part art and part science; need a good blend  
+  
+Scenario Analysis with tidyr and purrr:  
+  
+* May want to consider additional projects, and there may not be funding for pursuing all of these ideas  
+* May be some variability in the accuracy of our estimates - "what if analysis", aka "scenario analysis"  
+	* scenario1 <- mutate(assumptions, var1 = 1.2 * var1)  
+    * cashflow1 <- calc_model(scenario1)  
+    * calc_npv(cashflow1)  
+* Can use tidyr and purr to automate some of this  
+	* all_scenarios %>% nest(-scenario)  
+    * all_scenarios %>% nest(-scenario) %>% mutate( cashflow = map_df( data, calc_model) )  # data frame in column 'data' will be passed to calc_model  
+    * all_scenarios %>% nest(-scenario) %>% mutate( cashflow = map_df( data, calc_model) ) %>% mutate( npv = map_dbl( cashflow, calc_npv) )  
+  
+Sensitivity analysis:  
+  
+* Sensitivity analysis is an approach to uncertainty that assesses the impact of each base assumption on the outcomes  
+	* sensitivity <- expand.grid( factor = c(0.5, 1, 1.5), metric = c("vbl1", "vbl2") )  
+    * sensitivity <- expand.grid( factor = c(0.5, 1, 1.5), metric = c("vbl1", "vbl2") ) %>% mutate(scenario = map2(metric, factor, ~factor_data(assumptions, .x, .y)))  # The ~ is for the anaonymous function  
+* Can then visualize the impact of the sensitivity analysis; change in overall NPV vs. % change in base metric  
+* Caution that errors are often correlated - this is just a univariate sensitivity analysis  
+* Caution that not all metrics make the same magnitudes of change; analysis could be misinterpreted as a result  
+  
+Communicating Cashflow Concepts:  
+  
+* Long data is tidy - one column per metric and one row per observation (time)  
+* Financial stakeholders will be more accustomed to non-tidy data  
+	* long_cashflow <- gather(cashflow, key = Month, value = Value, -Metric)  # make the data long with key column Month and values in Value and Metric left as a column  
+    * tidy_cashflow <- spread(long_cashflow, key = Metric, value = Value, -Metric)  
+* Waterfall diagrams may be useful for communicating outcomes  
+	* ggplot(data) + geom_rect( aes( xmin = , xmax = , ymin = , ymax = ) )  
+    * ggplot(waterfall_data, aes( xmin = rn - 0.25, xmax = rn + 0.25, ymin = start, ymax = end) ) + geom_rect() + scale_x_continuous( breaks = waterfall_data$rn, labels = waterfall_data$category )  
+  
+Advanced Topics in Cashflow Modeling:  
+  
+* Many additional topics can be covered in financial modeling  
+	* Debt vs. equity financing  
+    * Decisions made today change the options available to us in the future  
+    * Probabilistic simulation (impacts of uncertainty)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+assumptions <- data.frame(year=0:10, 
+                          unit_sales_per_day=c(0, 10, 12, 14, 15, 16, 17, 18, 18, 18, 18),
+                          capex=c(5000, rep(0, 10)),
+                          pct_cannibalization=c(0, rep(0.25, 10)), 
+                          maintenance_cost=c(0, rep(250, 10)), 
+                          depreciation_cost=c(0, rep(500, 10)), 
+                          profit_margin_per_nitro=3, 
+                          profit_margin_per_regular=1, 
+                          labor_cost_per_hour=8, 
+                          days_open_per_year=250
+                          )
+
+# Check the first few rows of the data
+head(assumptions)
+
+# Check the variable names of the data
+names(assumptions)
+
+# Plot the trend of unit_sales_per_day by year
+ggplot(assumptions, aes(x = year, y = unit_sales_per_day)) + 
+    geom_line()
+
+tax_rate <- 0.36
+
+# Create the cashflow_statement dataframe
+cashflow_statement <-
+  mutate(assumptions,
+    sales_per_year = unit_sales_per_day * days_open_per_year,
+    sales_revenue = sales_per_year * profit_margin_per_nitro,
+    total_revenue = sales_revenue,
+    labor_cost = days_open_per_year * 0.5 * labor_cost_per_hour,
+    cannibalization_cost = sales_per_year * pct_cannibalization * profit_margin_per_regular,
+    direct_expense = labor_cost + cannibalization_cost + maintenance_cost,
+    gross_profit = total_revenue - direct_expense,
+    operating_income = gross_profit - depreciation_cost,
+    net_income = operating_income * (1 - tax_rate), 
+    cashflow = net_income + depreciation_cost - capex    
+  )
+
+
+# build individual scenarios
+optimist <- mutate(assumptions, unit_sales_per_day = unit_sales_per_day * 1.2, pct_cannibalization = 0.1)
+pessimist <- mutate(assumptions, unit_sales_per_day = unit_sales_per_day * 0.8, profit_margin_per_nitro = 1)
+
+# combine into one dataset
+scenarios <-
+  bind_rows(
+    mutate(pessimist, scenario = "pessimist"),
+    mutate(assumptions, scenario = "realist"),
+    mutate(optimist, scenario = "optimist")
+  )
+
+
+calc_model <- function(assumptions){
+  mutate( assumptions,
+    sales_per_year = unit_sales_per_day * days_open_per_year,
+    sales_revenue = sales_per_year * profit_margin_per_nitro,
+    total_revenue = sales_revenue,
+    labor_cost = days_open_per_year * 0.5 * labor_cost_per_hour,
+    cannibalization_cost = sales_per_year * pct_cannibalization * profit_margin_per_regular,
+    direct_expense = labor_cost + cannibalization_cost + maintenance_cost,
+    gross_profit = total_revenue - direct_expense,
+    operating_income = gross_profit - depreciation_cost,
+    net_income = operating_income * (1 - 0.36), 
+    cashflow = net_income + depreciation_cost - capex    
+  )
+}
+
+calc_npv_from_cashflow <- function(cashflow, r){
+  cashflow_line <- cashflow$cashflow
+  sum(calc_pv(cashflow_line, r, 0:(length(cashflow_line)-1)))
+}
+
+# calculate scenario NPVs
+scenario_analysis <- scenarios %>%
+    nest(-scenario) %>%
+    mutate(cashflow = map(data, calc_model)) %>%
+    mutate(npv = map_dbl(cashflow, calc_npv_from_cashflow, 0.2))
+
+# inspect results
+select(scenario_analysis, scenario, npv)
+
+
+# scenario analysis bar chart
+ggplot(data = scenario_analysis, aes(x = scenario, y = npv, fill = scenario)) + 
+    geom_bar(stat = "identity") +
+    scale_y_continuous(labels = scales::dollar) +
+    labs(title = "NPV Scenario Analysis of Nitro Coffee Expansion") +
+    guides(fill = FALSE)
+
+
+# define sensitivity factor function
+factor_data <- function(data, metric, factor){
+  data[[metric]] <- data[[metric]] * factor
+  data
+}
+
+# create sensitivity analysis
+sensitivity <-
+  expand.grid(
+    factor = seq(0.5,1.5,0.1), 
+    metric = c("profit_margin_per_nitro", "labor_cost_per_hour", "pct_cannibalization", "unit_sales_per_day")) %>%
+  mutate(scenario = map2(metric, factor, ~factor_data(assumptions, .x, .y))) %>%
+  mutate(cashflow = map(scenario, calc_model)) %>% 
+  mutate(npv = map_dbl(cashflow, calc_npv_from_cashflow, r = 0.2))
+
+
+ggplot(sensitivity,
+       aes(x = factor, y = npv, col = metric)
+       ) +
+  geom_line() +
+  scale_x_continuous(labels = scales::percent) +
+  scale_y_continuous(labels = scales::dollar) +
+  labs(
+    title = "Sensivity Analysis",
+    x = "Factor on Original Assumption",
+    y = "Projected NPV",
+    col = "Metric"
+  )
+
+
+# examine current cashflow strucutre
+tidy_cashflow <- data.frame(Month=1:6, 
+                            Received=c(100, 200, 300, 400, 500, 500), 
+                            Spent=c(150, 175, 200, 225, 250, 250)
+                            )
+
+# create long_cashflow with gather
+# long_cashflow <- tidyr::gather(cashflow, key = Month, value = Value, -Metric)
+
+# create tidy_cashflow with spread
+# tidy_cashflow <- tidyr::spread(long_cashflow, key = Metric, value = Value)
+
+# examine results
+tidy_cashflow
+
+
+# create long_cashflow with gather
+long_cashflow <- tidyr::gather(tidy_cashflow, key = Metric, value = Value, -Month)
+
+# create untidy_cashflow with spread
+untidy_cashflow <- tidyr::spread(long_cashflow, key = Month, value = Value)
+
+# examine results
+untidy_cashflow
+
+
+gross_profit_summary <- data.frame(metric=c("Sales Revenue", "Keg Cost", "Cannibalization Cost", "Labor Cost", "Maintenance Cost"), 
+                                   value=c(187200, -78240, -31200, -10000, -2500)
+                                   )
+
+# compute min and maxes for each line item
+waterfall_items <-
+  mutate(gross_profit_summary,
+         end = cumsum(value), 
+         start = lag(cumsum(value), 1, default = 0))
+
+# compute totals row for waterfall metrics
+waterfall_summary <- 
+  data.frame(metric = "Gross Profit", 
+             end = sum(gross_profit_summary$value), 
+             start = 0)
+
+# combine line items with summary row
+waterfall_data <-
+  bind_rows(waterfall_items, waterfall_summary) %>%
+  mutate(row_num = row_number())
+
+
+# Plot waterfall diagram
+ggplot(waterfall_data, aes(fill = (end > start))) +
+  geom_rect(aes(xmin = row_num - 0.25, xmax = row_num + 0.25, 
+                ymin = start, ymax = end)) +
+  geom_hline(yintercept = 0) +
+  scale_x_continuous(breaks = waterfall_data$row_num, labels = waterfall_data$metric) +
+  # Styling provided for you - check out a ggplot course for more information!
+  scale_y_continuous(labels = scales::dollar) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.x = element_blank()) +
+  guides(fill = FALSE) +
+  labs(
+      title = "Gross Profit for Proposed Nitro Coffee Expansion",
+      subtitle = "Based on pro forma 10-year forecast")
+
+```
+  
+  
+  
+***
+  
+###_Visualizing Big Data with Trelliscope_  
+  
+Chapter 1 - General Strategies for Visualizing Big Data  
+  
+
 
 
 
