@@ -1274,4 +1274,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 31-DEC-2018  
 * DataCamp_Insights_v003_c captures Financial Analytics in R - Chapter 4 (Understanding Outcomes) - code  
 * DataCamp_Insights_v003_c captures Visualizing Big Data with Trelliscope - Chapter 1 (General Strategies for Visualizing Big Data) - notes  
+* DataCamp_Insights_v003_c captures Visualizing Big Data with Trelliscope - Chapter 2 (ggplot2 and Trelliscope JS) - notes  
   
