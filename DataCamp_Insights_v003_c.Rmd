@@ -24037,6 +24037,130 @@ ggplot(gap, aes(year, lifeExp)) +
   
 Chapter 3 - Trelliscope in the Tidyverse  
   
+Trelliscope in the Tidyverse:  
+  
+* Stock market dataset called "stocks" has price data for the 500 highest-traded NASDAQ stocks  
+* Can use ggplot2 to understand stock price changes by year  
+* Might instead want to use the canbdlestick chart from plotly - can also zoom, plot, and hover based on the plotly characteristics  
+	* candlestick_plot <- function(d) plot_ly(d, x = ~date, type = "candlestick", open = ~open, close = ~close, high = ~high, low = ~low)  
+    * candlestick_plot(filter(stocks, symbol == "AAPL"))  
+* Can use nesting to make for a smaller data frame with column data holding a tibble  
+	* by_symbol <- stocks %>% group_by(symbol) %>% nest()  
+    * by_symbol <- mutate(by_symbol, last_close = map_dbl(data, function(x) tail(x$close, 1)))  
+    * by_symbol <- mutate(by_symbol, panel = map_plot(data, candlestick_plot))  # map_plot is from the trelliscope package; one plot for each stock  
+    * trelliscope(by_symbol, name = "candlestick_top500", nrow = 2, ncol = 3)  # show the plot with the given initial layout  
+  
+Cognostics:  
+  
+* Can add variables, which will then be included as cognostics in the trelliscope  
+* Can add metadata to the stocks database, then use nest to have the metadata as a new variable  
+	* by_symbol <- left_join(by_symbol, stocks_meta)  
+    * by_symbol <- mutate(by_symbol, volume_stats = map(data, function(x) { data_frame( min_volume = min(x$volume), max_volume = max(x$volume) ) }))  
+  
+Trelliscope options:  
+  
+* Can further customize multiple options related to a trelliscope plot  
+* Can specify the output directory for sharing the display with others - default is just a temporary directory, and will over-write anything in the directory with the same name  
+	* trelliscope(dat, path = "...", ...)  
+    * ggplot(...) + ... + facet_trelliscope(path = "...", ...)  
+* May want to provide more detailed descriptions of the data - shows in the viewer icon  
+	* trelliscope(by_symbol, name = "candlestick_top500", desc = "Candlestick plot of the 500 most-traded NASDAQ stocks in 2016", md_desc = " ## Candlestick Plot A [candlestick plot](https://en.wikipedia.org/wiki/Candlestick_chart) is a financial plot... ... ")  # multi-line markdown in md_desc  
+* Plot aspect ratio is important for strong visual displays - default is a square of 500px x 500px  
+	* trelliscope(dat, width = 600, height = 300, ...)  # specified in units of pixels  
+    * ggplot(...) + ... + facet_trelliscope(width = 600, height = 300, ...)  
+* Default state can be further specified - interface is currently undergoing active improvement  
+	* trelliscope(dat, state = ..., ...)  
+    * ggplot(...) + ... + facet_trelliscope(state = ..., ...)  
+  
+Visualizing databases of images:  
+  
+* May want to view large collections of images, which is a strong use case for trelliscope - example of the pokemon dataset  
+	* select(pokemon, url_image)  
+    * pokemon <- mutate(pokemon, panel = img_panel(url_image))  
+* May have local images for comparisons instead  
+	* path <- file.path(tempdir(), "pokemon_local")  
+    * dir.create(path)  
+    * for (url in pokemon$url_image)  
+    *     download.file(url, destfile = file.path(path, basename(url)))  
+    * pokemon$image <- basename(pokemon$url_image)  
+    * pokemon <- mutate(pokemon, panel = img_panel_local(image))  
+    * trelliscope(pokemon, name = "pokemon", nrow = 3, ncol = 6, path = path)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# do not have dataset 'stocks'
+by_symbol <- stocks %>%
+  group_by(symbol) %>%
+  nest()
+
+min_volume_fn <- function(x) min(x$volume)
+
+# Create new column
+by_symbol_min <- by_symbol %>%
+  mutate(min_volume = map_dbl(data, min_volume_fn))
+
+
+ohlc_plot <- function(d) {
+  plot_ly(d, x = ~date, type = "ohlc",
+    open = ~open, close = ~close,
+    high = ~high, low = ~low)
+}
+
+by_symbol_plot <- mutate(by_symbol, panel=map_plot(data, ohlc_plot))
+
+trelliscope(by_symbol_plot, name="ohlc_top500")
+
+
+# Create market_cap_log
+by_symbol <- mutate(by_symbol,
+  market_cap_log = cog(
+    val = log10(market_cap),
+    desc = "log base 10 market capitalization"
+  )
+)
+
+
+annual_return <- function(x)
+  100 * (tail(x$close, 1) - head(x$open, 1)) / head(x$open, 1)
+
+# Compute by_symbol_avg
+by_symbol_avg <- mutate(by_symbol,
+  stats = map(data, function(x) {
+    data_frame(
+      mean_close = mean(x$close),
+      mean_volume = mean(x$volume),
+      annual_return = annual_return(x)
+      )
+    }
+  )
+)
+
+
+# Create the trelliscope display
+p <- trelliscope(by_symbol, width=600, height=300, name="ohlc_top500", desc="Example aspect 2 plot")
+
+
+pokemon %>%
+  # Reduce the variables in the dataset
+  select(pokemon, type_1, attack, generation_id, url_image) %>%
+  mutate(
+    # Respecify pokemon
+    pokemon = cog(pokemon, default_label=TRUE),
+    # Create panel variable
+    panel = img_panel(url_image)
+  ) %>%
+  # Create the display
+  trelliscope(name="pokemon", nrow=3, ncol=6)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Case Study: Exploring Montreal BIXI Bike Data  
+  
 
 
 
