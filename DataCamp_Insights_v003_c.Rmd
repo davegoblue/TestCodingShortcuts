@@ -23980,7 +23980,7 @@ gapminder %>%
     ggplot(aes(x=year, y=lifeExp)) +
     geom_line() +
     # Facet on country and continent
-    facet_trelliscope(~ country + continent)
+    facet_trelliscope(~ country + continent, data=gapminder)
 
 gapminder %>%
     filter(continent=="Oceania") %>%
@@ -24161,6 +24161,149 @@ pokemon %>%
   
 Chapter 4 - Case Study: Exploring Montreal BIXI Bike Data  
   
+Montreal BIXI Bike Data:  
+  
+* Bike riding data for 2017 for BIXI Montreal - desire to understand patterns of usages  
+* Aggregations and summary plots for the big picture, followed by deep-dives with trelliscope  
+* Randomly sub-samples down to 1,000,000 records for the examples  
+  
+Summary Visualization Recap:  
+  
+* Clear differences in weekday usage (peaks at 08h00 and 17h00) and weekend usage (peak around 15h00)  
+* Non-members tend to ride as much on weekends (over 2 days) rather than weekdays (over 5 days)  
+	* Hypothesis that members are more likely to be commuters and non-members more likely to be tourists  
+  
+Top 100 routes dataset:  
+  
+* May want to examine route-specific behaviors  
+* Considering a route as a from-to, we want to look at the top-100 routes, ignoring round-trip routes  
+	* route_tab <- bike %>% filter(start_station_code != end_station_code) %>% group_by(start_station_code, end_station_code) %>% summarise(n = n()) %>% arrange(-n)  
+    * top_routes <- paste( route_tab$start_station_code[1:100], route_tab$end_station_code[1:100])  
+    * top100 <- bike %>% filter(paste(start_station_code, end_station_code) %in% top_routes)  
+* Preparing data for visualization  
+	* route_hod <- top100 %>% group_by(start_station_code, end_station_code, start_hod, weekday) %>% summarise(n = n())  
+    * route_hod <- route_hod %>% left_join(start_stations) %>% left_join(end_stations)  
+  
+Wrap up:  
+  
+* Can filter and sort to find key information in the trelliscope facets  
+* Can further investigate routes with rush hour peaks (AM, PM, or both) as well as routes with differences in weekend and weekday  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# DO NOT HAVE FULL BIXI Data
+bike04 <- read_csv("./RInputFiles/BIXIData/OD_2017-04.csv")
+bike05 <- read_csv("./RInputFiles/BIXIData/OD_2017-05.csv")
+bike06 <- read_csv("./RInputFiles/BIXIData/OD_2017-06.csv")
+bike07 <- read_csv("./RInputFiles/BIXIData/OD_2017-07.csv")
+bike08 <- read_csv("./RInputFiles/BIXIData/OD_2017-08.csv")
+bike09 <- read_csv("./RInputFiles/BIXIData/OD_2017-09.csv")
+bike10 <- read_csv("./RInputFiles/BIXIData/OD_2017-10.csv")
+bike11 <- read_csv("./RInputFiles/BIXIData/OD_2017-11.csv")
+stations <- read_csv("./RInputFiles/BIXIData/Stations_2017.csv")
+
+bike <- rbind(bike04, bike05, bike06, bike07, bike08, bike09, bike10, bike11) %>%
+    mutate(membership=factor(is_member, levels=c(1, 0), labels=c("member", "non-member")), 
+           start_day=as.Date(start_date), 
+           start_dow=factor(lubridate::wday(start_date), levels=1:7, labels=c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")),
+           weekday=factor(ifelse(start_dow %in% c("Sat", "Sun"), 2, 1), levels=1:2, labels=c("workweek", "weekend")), 
+           start_hod=lubridate::hour(start_date), 
+           start_mon=lubridate::month(start_date), 
+           start_wk=lubridate::week(start_date)
+           )
+glimpse(bike)
+
+
+# Compute daily counts
+daily <- bike %>%
+  group_by(start_day, weekday) %>%
+  summarise(n = n())
+
+# Plot the result
+ggplot(daily, aes(x=start_day, y=n, color=weekday)) +
+  geom_point()
+
+
+# Compute week_hod
+week_hod <- bike %>%
+  group_by(start_wk, start_hod, weekday) %>%
+  summarize(n=n())
+
+# Plot the result
+ggplot(week_hod, aes(x=start_wk, y=n, color=weekday)) +
+  geom_point() +
+  facet_grid(cols=vars(start_hod)) +
+  scale_y_sqrt()
+
+
+# Compute wk_memb_hod
+wk_memb_hod <- bike %>%
+  group_by(start_wk, start_hod, weekday, membership) %>%
+  summarize(n=n())
+
+# Plot the result
+ggplot(wk_memb_hod, aes(x=start_wk, y=n, color=weekday)) +
+  geom_point() +
+  facet_grid(membership ~ start_hod) +
+  scale_y_sqrt()
+
+
+# Compute daily_may
+daily_may <- bike %>%
+  filter(start_mon == 5) %>%
+  group_by(start_day, start_hod, membership) %>%
+  summarise(n = n())
+
+# Plot the result
+ggplot(daily_may, aes(x=start_hod, y=n, color=membership)) +
+  geom_point() + 
+  facet_wrap(~ start_day, ncol=7)
+
+
+# ggplot(daily_may, aes(x=start_hod, y=n, color = membership)) +
+#   geom_point() +
+  # Facet on start_day
+#   facet_trelliscope(~ start_day, nrow=2, ncol=7)
+
+
+# Function to construct a Google maps URL with cycling directions
+make_gmap_url <- function(start_lat, start_lon, end_lat, end_lon) {
+  paste0("https://www.google.com/maps/dir/?api=1",
+    "&origin=", start_lat, ",", start_lon,
+    "&destination=", end_lat, ",", end_lon,
+    "&travelmode=bicycling")
+}
+
+load("./RInputFiles/route_hod.RData")
+glimpse(route_hod)
+
+# Compute tot_rides, weekday_diff, and map_url
+route_hod_updated <- route_hod %>%
+  group_by(start_station_code, end_station_code) %>%
+  mutate(
+    tot_rides = sum(n),
+    weekday_diff = mean(n[weekday == "workweek"]) - mean(n[weekday == "weekend"]),
+    map_url = make_gmap_url(start_lat, start_lon, end_lat, end_lon))
+
+
+# Create the plot
+# ggplot(route_hod, aes(x=start_hod, y=n, color=weekday)) +
+  # geom_point(size=3) + 
+  # facet_trelliscope(~start_station_name + end_station_name, nrow=2, ncol=4) + 
+  # theme(legend.position = "none")
+
+```
+  
+  
+  
+***
+  
+###_Visualization Best Practices in R_  
+  
+Chapter 1 - Proportions of a Whole  
+  
+
 
 
 
