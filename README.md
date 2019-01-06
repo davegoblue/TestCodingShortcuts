@@ -1278,4 +1278,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Visualizing Big Data with Trelliscope - Chapter 3 (Trelliscope in the Tidyverse) - notes  
 * DataCamp_Insights_v003_c captures Visualizing Big Data with Trelliscope - Chapter 4 (Case Study: Montreal BIXI Bike Data) - notes  
 * DataCamp_Insights_v003_c captures Visualizing Big Data with Trelliscope - Chapter 1 (General Strategies for Visualizing Big Data) - code  
+* DataCamp_Insights_v003_c captures Visualizing Big Data with Trelliscope - Chapter 4 (Case Study: Montreal BIXI Bike Data) - code  
   
