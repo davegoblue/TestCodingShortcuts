@@ -1282,4 +1282,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 07-JAN-2019  
 * DataCamp_Insights_v003_c captures Visualization Best Practices in R - Chapter 1 (Proportions of a Whole) - notes  
+* DataCamp_Insights_v003_c captures Visualization Best Practices in R - Chapter 2 (Point Data) - notes  
   
