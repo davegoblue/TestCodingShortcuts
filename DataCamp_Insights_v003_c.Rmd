@@ -24558,6 +24558,152 @@ amr_pertussis %>% filter(cases > 0) %>%
   
 Chapter 3 - Single Distributions  
   
+Importance of Distributions:  
+  
+* Distribution data includes multiple observations from the same population  
+* Plotting distribution is valuable in many ways  
+	* Identifying errors or outliers  
+    * Identifying multiple peaks; potential segmenting variable  
+    * Distributions are more accurate and truthful to the data than a summary statistic  
+* Histograms are a common approach to showing distributions  
+* Box plots are a common approach for comparing multiple distributions  
+* Will examing the md_speeding dataset from Montgomery County, MD  
+	* md_speeding %>% filter(vehicle_color == 'BLUE') %>% ggplot(aes(x = speed)) + geom_histogram()  
+  
+Histogram Nuances:  
+  
+* Histograms have the advantage of being intuitive to readers and easier to interpret; higher bars mean more frequent  
+* Histograms need care in setting the number of bins for better interpretation; binning can significantly change the plot  
+	* If you have 150+ points, set the bins to 100 and call it a day  
+  
+Kernel Density Estimates:  
+  
+* The KDE (kernel density estimator) is a common approach to managing the binning and other challenges associated with histograms  
+	* Kernel function is created on top of every point, then summed across the distribution  
+    * Typically, a Gaussian kernel is used, though there are other options  
+    * sample_n(md_speeding, 100) %>% ggplot(aes(x = percentage_over_limit)) + geom_density( fill = 'steelblue', bw = 8 )  
+* For the KDE, need to choose the width of the kernel, which is controlled by the bw parameter (analogous to sd for Gaussians)  
+* Can also show all of the data using the rug plot  
+	* p <-sample_n(md_speeding, 100) %>% ggplot(aes(x = percentage_over_limit)) + geom_density( fill = 'steelblue', # fill in curve with color bw = 8 # standard deviation of kernel )  
+    * p + geom_rug(alpha = 0.4)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+colKeep <- c('work_zone', 'vehicle_type', 'vehicle_year', 'vehicle_color', 'race', 'gender', 
+             'driver_state', 'speed_limit', 'speed', 'day_of_week', 'day_of_month', 'month', 
+             'hour_of_day', 'speed_over', 'percentage_over_limit'
+             )
+colRead <- c("Work Zone", "VehicleType", "Year", "Color", "Race", "Gender", 
+             "DL State", "Description", "Date Of Stop", "Time Of Stop")
+regFind <- ".*EXCEEDING MAXIMUM SPEED: ([0-9]+) MPH .* POSTED ([0-9]+) MPH .*"
+
+md_speeding <- readr::read_csv("./RInputFiles/MD_Traffic/Traffic_violations.csv", n_max=200000) %>%
+    select(colRead) %>%
+    filter(grepl("EXCEEDING MAXIMUM SPEED: ", Description)) %>%
+    rename(work_zone="Work Zone", vehicle_type=VehicleType, vehicle_year=Year, 
+           vehicle_color=Color, race=Race, gender=Gender, driver_state="DL State", 
+           stopDate="Date Of Stop", stopTime="Time Of Stop") %>%
+    mutate(speed_limit=as.integer(gsub(regFind, "\\2", Description)), 
+           speed=as.integer(gsub(regFind, "\\1", Description)), 
+           speed_over=speed - speed_limit, 
+           percentage_over_limit=100 * speed_over / speed_limit, 
+           stopDate=as.Date(stopDate, format="%m/%d/%Y"), 
+           day_of_week=lubridate::wday(stopDate), 
+           day_of_month=lubridate::day(stopDate), 
+           month=lubridate::month(stopDate), 
+           hour_of_day=lubridate::hour(stopTime)
+           )
+
+# Print data to console
+glimpse(md_speeding)
+
+# Change filter to red cars
+md_speeding %>% 
+    filter(vehicle_color == 'RED') %>% 
+    # switch x mapping to speed_over column
+    ggplot(aes(x = speed_over)) +
+    geom_histogram() +
+    # give plot a title
+    ggtitle('MPH over speed limit | Red cars')
+
+
+ggplot(md_speeding) + 
+    # Add the histogram geometry with x mapped to speed_over
+    geom_histogram(aes(x=speed_over), alpha=0.7) +
+    # Add minimal theme
+    theme_minimal()
+
+
+ggplot(md_speeding) +
+    geom_histogram(aes(x=hour_of_day, y=stat(density)), alpha=0.8)
+
+
+# Load md_speeding into ggplot
+ggplot(md_speeding) +
+  # add a geom_histogram with x mapped to percentage_over_limit
+    geom_histogram(
+        aes(x=percentage_over_limit), 
+        bins=40,     # set bin number to 40
+        alpha=0.8)    # reduce alpha to 0.8
+
+
+ggplot(md_speeding) +
+    geom_histogram(
+        aes(x = percentage_over_limit),
+        bins = 100 ,         # switch to 100 bins
+        fill="steelblue",   # set the fill of the bars to 'steelblue'
+        alpha = 0.8 )
+
+
+ggplot(md_speeding, aes(x = hour_of_day)) +
+    geom_histogram(
+        binwidth=1,  # set binwidth to 1
+        center=0.5,  # Center bins at the half (0.5) hour
+    ) +
+    scale_x_continuous(breaks = 0:24)
+
+
+# filter data to just heavy duty trucks
+truck_speeding <- md_speeding %>% 
+    filter(vehicle_type == "06 - Heavy Duty Truck")
+ 
+ggplot(truck_speeding, aes(x = hour_of_day)) +
+    # switch to density with bin width of 1.5, keep fill 
+    geom_density(fill = 'steelblue', bw=1.5) +
+    # add a subtitle stating binwidth
+    labs(title = 'Citations by hour', subtitle="Gaussian kernel SD = 1.5")
+
+
+ggplot(truck_speeding, aes(x = hour_of_day)) +
+    # Adjust opacity to see gridlines with alpha = 0.7
+    geom_density(bw = 1.5, fill = 'steelblue', alpha=0.7) +
+    # add a rug plot using geom_rug to see individual datapoints, set alpha to 0.5.
+    geom_rug(alpha=0.5) +
+    labs(title = 'Citations by hour', subtitle = "Gaussian kernel SD = 1.5")
+
+
+ggplot(md_speeding, aes(x = percentage_over_limit)) +
+    # Increase bin width to 2.5
+    geom_density(fill = 'steelblue', bw = 2.5,  alpha = 0.7) + 
+    # lower rugplot alpha to 0.05
+    geom_rug(alpha = 0.05) + 
+    labs(
+        title = 'Distribution of % over speed limit', 
+        # modify subtitle to reflect change in kernel width
+        subtitle = "Gaussian kernel SD = 2.5"
+    )
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Comparing Distributions  
+  
+
+	
 
 
 
