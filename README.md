@@ -1287,4 +1287,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Visualization Best Practices in R - Chapter 4 (Comparing Distributions) - notes  
 * DataCamp_Insights_v003_c captures Visualization Best Practices in R - Chapter 1 (Proportions of a Whole) - code  
 * DataCamp_Insights_v003_c captures Visualization Best Practices in R - Chapter 2 (Point Data) - code  
+* DataCamp_Insights_v003_c captures Visualization Best Practices in R - Chapter 3 (Single Distributions) - code  
   
