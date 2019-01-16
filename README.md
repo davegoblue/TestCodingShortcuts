@@ -1292,4 +1292,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 14-JAN-2019  
 * DataCamp_Insights_v003_c captures Visualization Best Practices in R - Chapter 4 (Comparing Distributions) - code  
 * DataCamp_Insights_v003_c captures Linear Algebra for Data Science in R - Chapter 1 (Introduction to Linear Algebra) - notes  
+* DataCamp_Insights_v003_c captures Linear Algebra for Data Science in R - Chapter 2 (Matrix-Vector Equations) - notes  
   
