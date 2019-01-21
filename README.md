@@ -1298,3 +1298,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Linear Algebra for Data Science in R - Chapter 1 (Introduction to Linear Algebra) - code  
 * DataCamp_Insights_v003_c captures Linear Algebra for Data Science in R - Chapter 2 (Matrix-Vector Equations) - code  
   
+### Expansions week of 21-JAN-2019  
+* DataCamp_Insights_v003_c captures Linear Algebra for Data Science in R - Chapter 3 (Eigenvalues and Eigenvectors) - code  
+  
