@@ -1300,4 +1300,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 21-JAN-2019  
 * DataCamp_Insights_v003_c captures Linear Algebra for Data Science in R - Chapter 3 (Eigenvalues and Eigenvectors) - code  
+* DataCamp_Insights_v003_c captures Linear Algebra for Data Science in R - Chapter 4 (Principal Component Analysis) - code  
   
