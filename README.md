@@ -1302,4 +1302,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Linear Algebra for Data Science in R - Chapter 3 (Eigenvalues and Eigenvectors) - code  
 * DataCamp_Insights_v003_c captures Linear Algebra for Data Science in R - Chapter 4 (Principal Component Analysis) - code  
 * DataCamp_Insights_v003_c captures HR Analytics in R: Predicting Employee Churn - Chapter 1 (Introduction) - notes  
+* DataCamp_Insights_v003_c captures HR Analytics in R: Predicting Employee Churn - Chapter 2 (Feature Engineering) - notes  
   
