@@ -1304,4 +1304,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures HR Analytics in R: Predicting Employee Churn - Chapter 1 (Introduction) - notes  
 * DataCamp_Insights_v003_c captures HR Analytics in R: Predicting Employee Churn - Chapter 2 (Feature Engineering) - notes  
 * DataCamp_Insights_v003_c captures HR Analytics in R: Predicting Employee Churn - Chapter 3 (Predicting Turnover) - notes  
+* DataCamp_Insights_v003_c captures HR Analytics in R: Predicting Employee Churn - Chapter 4 (Model Validation, Intervention, and ROI) - notes  
   
