@@ -1307,3 +1307,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures HR Analytics in R: Predicting Employee Churn - Chapter 4 (Model Validation, Intervention, and ROI) - notes  
 * DataCamp_Insights_v003_c captures Dealing with Missing Data in R - Chapter 1 (Rationale) - notes  
   
+### Expansions week of 28-JAN-2019  
+* DataCamp_Insights_v003_c captures Dealing with Missing Data in R - Chapter 2 (Wrangling and Tidying Missing Values) - notes  
+  
