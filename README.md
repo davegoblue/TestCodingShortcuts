@@ -1310,4 +1310,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 28-JAN-2019  
 * DataCamp_Insights_v003_c captures Dealing with Missing Data in R - Chapter 2 (Wrangling and Tidying Missing Values) - notes  
 * DataCamp_Insights_v003_c captures Dealing with Missing Data in R - Chapter 3 (Testing Missing Relationships) - notes  
+* DataCamp_Insights_v003_c captures Dealing with Missing Data in R - Chapter 4 (Imputation) - notes  
   
