@@ -1311,4 +1311,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Dealing with Missing Data in R - Chapter 2 (Wrangling and Tidying Missing Values) - notes  
 * DataCamp_Insights_v003_c captures Dealing with Missing Data in R - Chapter 3 (Testing Missing Relationships) - notes  
 * DataCamp_Insights_v003_c captures Dealing with Missing Data in R - Chapter 4 (Imputation) - notes  
+* DataCamp_Insights_v003_c captures Dealing with Missing Data in R - Chapter 1 (Rationale) - code  
   
