@@ -1319,4 +1319,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 04-FEB-2019  
 * DataCamp_Insights_v003_c captures Analyzing Election and Polling Data in R - Chapter 1 (Presidential Job Approval Polls) - notes  
 * DataCamp_Insights_v003_c captures Analyzing Election and Polling Data in R - Chapter 2 (US House and Senate Polling) - notes  
+* DataCamp_Insights_v003_c captures Analyzing Election and Polling Data in R - Chapter 3 (Election Results and Political Demography) - notes  
   
