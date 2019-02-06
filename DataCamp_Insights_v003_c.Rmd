@@ -26687,15 +26687,6 @@ Example code includes:
 approval_polls <- readr::read_csv("./RInputFiles/gallup_approval_polls.csv")
 glimpse(approval_polls)
 
-uspres_results <- readr::read_csv("./RInputFiles/us_pres_2016_by_county.csv")
-glimpse(uspres_results)
-
-brexit_polls <- readr::read_csv("./RInputFiles/brexit_polls.csv")
-glimpse(brexit_polls)
-
-brexit_results <- readr::read_csv("./RInputFiles/brexit_results.csv")
-glimpse(brexit_results)
-
 
 # Select President, Date, and Approve from approval_polls
 approval_polls %>% 
@@ -26917,6 +26908,166 @@ predict(model, predictdata)
   
 Chapter 3 - Election Results and Political Demography  
   
+2016 Presidential Election:  
+  
+* County-level results are made available by secretaries of state  
+	* Can be combined with census data to draw findings - for example, is there a correlation between race and vote share by county?  
+* Data are available in the chloroplethr package  
+	* county_merged <- left_join(df_county_demographics, uspres_county, by = "county.fips")  
+    * ggplot(county_merged, aes(x=percent_white,y=Dem.pct)) + geom_point()  
+    * ggplot(county_merged, aes(x=percent_white,y=Dem.pct)) + geom_point() + geom_smooth(method="lm")  
+  
+Making County-Level Maps in R:  
+  
+* Mapping can be helpful for identifying trends and areas of interest in the data - a few options include  
+	* choroplethr  
+    * geom_sf()  
+    * leaflet  
+* The choroplethr package allows for easy creation of maps with minimal pre-processing  
+	* library(choroplethr)  
+    * county_map <- county_merged %>% dplyr::rename("region" = county.fips, "value" = Dem.pct)  # names need to be region and value  
+    * county_choropleth(county_map)  
+  
+Analyzing Results with Linear Regression:  
+  
+* Can further analyze findings using linear regression; both understanding past results and predicting future  
+	* fit <- lm(Dem.pct ~ percent_white, data=county_merged)  
+    * summary(fit)  
+  
+2016 Brexit Referendum:  
+  
+* Data wrangling, modeling, and visualization of 2016 Brexit vote  
+* Can either run a short-term average, or a LOESS with various windows  
+	* head(brexit_polls)  
+    * ggplot(brexit_polls, aes(x = mdy(Date), y = Remain - Leave)) + geom_point() + geom_smooth(method = 'loess')  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+uspres_results <- readr::read_csv("./RInputFiles/us_pres_2016_by_county.csv")
+glimpse(uspres_results)
+
+
+# Deselect the is.national.winner, national.count, and national.party.percent variables
+uspres_results.slim <- uspres_results %>%
+    select(-c(is.national.winner, national.count, national.party.percent))
+
+
+# Spread party and votes to their own columns
+uspres_county <- uspres_results.slim %>%
+    tidyr::spread(key=party,value=vote.count)
+
+# Add a variable to the uspres_county dataset to store the Democrat's percentage of votes
+uspres_county <- uspres_county %>%
+    mutate(Dem.pct = D/county.total.count)
+
+
+# Load the county demographic data
+data(df_county_demographics, package="choroplethr")
+
+# Look at the demographic data
+head(df_county_demographics)
+
+
+# Rename the 'region' variable in df_county_demographics to "county.fips"
+df_county_demographics <- df_county_demographics %>%
+    rename("county.fips" = region)
+
+# Join county demographic with vote share data via its FIPS code
+county_merged <- left_join(df_county_demographics, uspres_county, by = "county.fips")
+head(county_merged)
+
+
+# plot percent_white and Dem.pct on the x and y axes. add points and a trend line
+ggplot(county_merged, aes(x=percent_white, y=Dem.pct)) +
+    geom_point() +
+    geom_smooth(method="lm")
+
+
+# Rename the county.fips and Dem.pct variables from our dataset to "region" and "value"
+county_map <- county_merged %>%
+    rename("region" = county.fips, "value" = Dem.pct)
+
+# Create the map with choroplethrMaps's county_choropleth()
+democratic_map <- choroplethr::county_choropleth(county_map)
+
+# Print the map
+democratic_map
+
+
+# Rename variables from our dataset
+county_map <- county_merged %>%
+    rename("region" = county.fips, "value" = percent_white)
+
+# Create the map with choroplethr's county_choropleth()
+white_map <- choroplethr::county_choropleth(county_map)
+
+# Graph the two maps (democratic_map and white_map) from the previous exercises side-by-side
+gridExtra::grid.arrange(democratic_map, white_map)
+
+
+# Fit a linear model to predict Dem.pct dependent on percent_white in each county
+fit <- lm(Dem.pct ~ percent_white, data=county_merged)
+
+# Evaluate the model
+summary(fit)
+
+
+# Fit a linear model to predict Dem.pct dependent on percent_white and per_capita_income in each county
+fit <- lm(Dem.pct ~ percent_white + per_capita_income, data=county_merged)
+
+# Evaluate the model
+summary(fit)
+
+
+brexit_polls <- readr::read_csv("./RInputFiles/brexit_polls.csv")
+glimpse(brexit_polls)
+
+brexit_results <- readr::read_csv("./RInputFiles/brexit_results.csv")
+glimpse(brexit_results)
+
+
+# Filter the dataset to polls only released after June 16th, 2016, and mutate a variable for the Remain campaign's lead
+brexit_average <- brexit_polls %>%
+    filter(lubridate::mdy(Date)>lubridate::ymd("2016-06-16") )%>%
+    mutate(RemainLead = Remain - Leave)  
+
+# Average the last seven days of polling
+mean(brexit_average$RemainLead)
+
+# Summarise the Remain lead from the entire month of the referendum 
+ggplot(brexit_polls, aes(x=lubridate::mdy(Date), y=Remain-Leave)) +
+    geom_point() + 
+    geom_smooth(method='loess')
+
+
+# Familiarize yourself with the data using the head() function
+head(brexit_results)
+
+# Chart the counstituency-by-constituency relationship between voting for the Labour Party and voting to leave the EU
+ggplot(brexit_results,aes(x=lab_2015, y=leave_share)) + 
+  geom_point()
+
+
+# Show the relationship between UKIP and Leave vote share with points and a line representing the linear relationship between the variables
+ggplot(brexit_results,aes(x=ukip_2015, y=leave_share)) + 
+    geom_point() +
+    geom_smooth(method = "lm")
+
+
+# predict leave's share with the percentage of a constituency that holds a college degree and its 2015 UKIP vote share
+model.multivar <- lm(leave_share ~ ukip_2015 + degree, brexit_results)
+summary(model.multivar)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Predicting the Future of Politics  
+  
+
 
 
 
