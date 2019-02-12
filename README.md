@@ -1327,4 +1327,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 11-FEB-2019  
 * DataCamp_Insights_v003_c captures Analyzing Election and Polling Data in R - Chapter 4 (Predicting the Future of Politics) - code  
+* DataCamp_Insights_v003_c captures Analyzing US Census Data in R - Chapter 1 (Census Data with R in tidycensus) - notes  
   
