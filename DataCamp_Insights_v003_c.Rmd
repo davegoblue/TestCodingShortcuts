@@ -27198,6 +27198,168 @@ predict(fit, data.frame(pres_approve=-15, q2_gdp=2, two_plus_terms=0))
   
 Chapter 1 - Census Data in R with tidycensus  
   
+Overview:  
+  
+* Acquiring census and ACS data through tidycensus, wrangling with tidyverse, acquiring boundary data with tigris, and visualizing with ggplot2  
+* The dicennial (every 10 years) census is a full count of the population  
+	* ACS is a detailed study of 3 million households per year  
+* Need to acquire a census API key and provide to the tidycensus function  
+	* state_pop <- get_decennial(geography = "state", variables = "P001001")  # geography is the level of aggregation and variables are the desired variables  
+    * state_income <- get_acs(geography = "state", variables = "B19013_001")  # default dataset is the 5-year 2012-2016 data; returns both an estimate and an extra column "moe" (margin of error)  
+  
+Basic tidycensus functionality:  
+  
+* Can acquire census data by legal entities (county, state) or statistical entities (census tracks)  
+	* geography = "county"  
+    * geography = "tract"  
+    * county_income <- get_acs(geography = "county", variables = "B19013_001")  
+* Can request the variable(s) of interest  
+* Can further subset the data to only include states or counties of interest  
+	* texas_income <- get_acs(geography = "county", variables = c(hhincome = "B19013_001"), state = "TX")  
+* By default, census data are returned in tidy format, though wide (spread) data may be desirable at times  
+	* get_acs(geography = "county", variables = c(hhincome = "B19013_001", medage = "B01002_001"), state = "TX", output = "wide")  
+  
+Searching for data with tidycensus:  
+  
+* There are 1000s of variables across ACS and the census, so it can be challenging to find variables of interest  
+	* https://censusreporter.org/  
+* Builit-in search capability in tidycensus  
+	* v16 <- load_variables(year = 2016, dataset = "acs5", cache = TRUE)   # year is the end year, so 2012-2016; cache=TRUE will store the dataset locally for future browsing  
+* The ACS variable structure, as shown using B19001_002E (income < 10k dollars)  
+	* B means "base", while C means "collapse", P means "profile", and S means "subject"  
+    * The 19001 is the table ID (household income)  
+    * The 002 is a specific variable  
+    * The E means that it is an estimate (tidycensus by default returns both error and margin of error)  
+  
+Visualizing census data with ggplot2:  
+  
+* Can plot census data using ggplot2  
+	* ne_income <- get_acs(geography = "state", variables = "B19013_001", survey = "acs1", state = c("ME", "NH", "VT", "MA", "RI", "CT", "NY"))  
+    * ggplot(ne_income, aes(x = estimate, y = NAME)) + geom_point()  
+* Can improve plots using sorting and formatting  
+	* ggplot(ne_income, aes(x = estimate, y = reorder(NAME, estimate))) + geom_point(color = "navy", size = 4) + scale_x_continuous(labels = scales::dollar) + theme_minimal(base_size = 14) + labs(x = "2016 ACS estimate", y = "", title = "Median household income by state")  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Load the tidycensus package into your R session
+library(tidycensus)
+
+# Define your Census API key and set it with census_api_key()
+api_key <- "INSERT HERE"
+census_api_key(api_key)
+
+# Check your API key
+Sys.getenv("CENSUS_API_KEY")
+
+
+# Obtain and view state populations from the 2010 US Census
+state_pop <- get_decennial(geography = "state", variables = "P001001")
+
+head(state_pop)
+
+# Obtain and view state median household income from the 2012-2016 American Community Survey
+state_income <- get_acs(geography = "state", variables = "B19013_001")
+
+head(state_income)
+
+
+# Get an ACS dataset for Census tracts in Texas by setting the state
+tx_income <- get_acs(geography = "tract",
+                     variables = "B19013_001",
+                     state = "TX")
+
+# Inspect the dataset
+head(tx_income)
+
+# Get an ACS dataset for Census tracts in Travis County, TX
+travis_income <- get_acs(geography = "tract",
+                         variables = "B19013_001", 
+                         state = "TX",
+                         county = "Travis")
+
+# Inspect the dataset
+head(travis_income)
+
+# Supply custom variable names
+travis_income2 <- get_acs(geography = "tract", 
+                          variables = c(hhincome = "B19013_001"), 
+                          state = "TX",
+                          county = "Travis")
+
+# Inspect the dataset
+head(travis_income2)
+
+
+# Return county data in wide format
+or_wide <- get_acs(geography = "county", state = "OR",
+                   variables = c(hhincome = "B19013_001", medage = "B01002_001"), 
+                   output = "wide"
+                   )
+
+# Compare output to the tidy format from previous exercises
+head(or_wide)
+
+# Create a scatterplot
+plot(or_wide$hhincomeE, or_wide$medageE)
+
+
+# Load variables from the 2012-2016 ACS
+v16 <- load_variables(year = 2016, dataset = "acs5", cache = TRUE)
+
+# Get variables from the ACS Data Profile
+v16p <- load_variables(year = 2016, dataset = "acs5/profile", cache = TRUE)
+
+# Set year and dataset to get variables from the 2000 Census SF3
+v00 <- load_variables(year = 2000, dataset = "sf3", cache = TRUE)
+
+
+# Filter for table B19001
+filter(v16, str_detect(name, "B19001"))
+
+# Use public transportation to search for related variables
+filter(v16p, str_detect(label, fixed("public transportation", ignore_case = TRUE)))
+
+
+# Access the 1-year ACS  with the survey parameter
+ne_income <- get_acs(geography = "state",
+                     variables = "B19013_001", 
+                     survey = "acs1", 
+                     state = c("ME", "NH", "VT", "MA", 
+                               "RI", "CT", "NY"))
+
+# Create a dot plot
+ggplot(ne_income, aes(x = estimate, y = NAME)) + 
+  geom_point()
+
+# Reorder the states in descending order of estimates
+ggplot(ne_income, aes(x = estimate, y = reorder(NAME, estimate))) + 
+  geom_point()
+
+
+# Set dot color and size
+g_color <- ggplot(ne_income, aes(x = estimate, y = reorder(NAME, estimate))) + 
+  geom_point(color = "navy", size = 4)
+
+# Format the x-axis labels
+g_scale <- g_color + 
+  scale_x_continuous(labels = scales::dollar) + 
+  theme_minimal(base_size = 18) 
+
+# Label your x-axis, y-axis, and title your chart
+g_label <- g_scale + 
+  labs(x = "2016 ACS estimate", y = "", title = "Median household income by state")
+  
+g_label
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Wrangling US Census Data  
+  
 
 
 
