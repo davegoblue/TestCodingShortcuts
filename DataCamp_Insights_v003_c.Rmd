@@ -27360,6 +27360,394 @@ g_label
   
 Chapter 2 - Wrangling US Census Data  
   
+Tables and summary variables in tidycensus:  
+  
+* Can grab all of the variables from a table at once using the table= option  
+	* wa_income <- get_acs(geography = "county", state = "WA", table = "B19001")  
+* Can normalize based on denominators  
+	* race_vars <- c(White = "B03002_003", Black = "B03002_004", Native = "B03002_005", Asian = "B03002_006", HIPI = "B03002_007", Hispanic = "B03002_012")  
+    * tx_race <- get_acs(geography = "county", state = "TX", variables = race_vars, summary_var = "B03002_001")  
+    * tx_race_pct <- tx_race %>% mutate(pct = 100 * (estimate / summary_est)) %>% select(NAME, variable, pct)  
+  
+Census data wrangling with tidy tools:  
+  
+* Can use the tidyverse to interact with data that has been retrieved from ACS and the census  
+* The split-apply-combine approach to analysis is commonly used  
+	* tx_largest <- tx_race %>% group_by(GEOID) %>% filter(estimate == max(estimate)) %>% select(NAME, variable, estimate)  
+    * tx_largest %>% group_by(variable) %>% tally()  
+* Can recode variables for group-wise analysis using case_when()  
+	* wa_grouped <- wa_income %>% filter(variable != "B19001_001") %>% mutate(incgroup = case_when( variable < "B19001_008" ~ "below35k", variable < "B19001_013" ~ "35kto75k", TRUE ~ "above75k")) %>% group_by(NAME, incgroup) %>% summarize(group_est = sum(estimate))  
+* Can use purrr to gather data from multiple years and then combine  
+	* mi_cities <- map_df(2012:2016, function(x) { get_acs(geography = "place", variables = c(totalpop = "B01003_001"), state = "MI", survey = "acs1", year = x) %>% mutate(year = x) })  
+  
+Working with margins of error in tidycensus:  
+  
+* Margins of error exist in the ACS data since it is an annual survey of ~3 million; the MOE is the value needed to obtain the 95% CI  
+	* get_acs(geography = "county", variables = c(median_age = "B01002_001"), state = "OR")  
+* With sparse data (small geographies or niche queries), moe can be a meaningful percentage of the estimate, even exceeding it at times  
+	* vt_eldpov <- get_acs(geography = "tract", variables = c(eldpovm = "B17001_016", eldpovf = "B17001_030"), state = "VT")  
+* There are multiple tidycensus functions for calculating margin of error  
+	* moe_sum(): MOE for a derived sum  
+    * moe_product(): MOE for a derived product  
+    * moe_ratio(): MOE for a derived ratio  
+    * moe_prop(): MOE for a derived proportion  
+    * vt_eldpov2 <- vt_eldpov %>% group_by(GEOID) %>% summarize( estmf = sum(estimate), moemf = moe_sum(moe = moe, estimate = estimate) )  
+  
+Visualizing margins of error from ACS:  
+  
+* Can use an error-bar plot to show the range of uncertainty - geom_errorbar() and geom_errorbarh()  
+	* wyoming_age <- get_acs(geography = "county", variables = c(medianage = "B01002_001"), state = "WY")  
+    * ggplot(wyoming_age, aes(x = estimate, y = NAME)) + geom_errorbarh(aes(xmin = estimate - moe, xmax = estimate + moe)) + geom_point()  
+* Can clean up visualizations - remove redundancies in names and order values  
+	* wyoming_age2 <- wyoming_age %>% mutate(NAME = str_replace(NAME, " County, Wyoming", ""))  
+    * ggplot(wyoming_age2, aes(x = estimate, y = reorder(NAME, estimate))) + geom_errorbarh(aes(xmin = estimate - moe, xmax = estimate + moe)) + geom_point(size = 3, color = "darkgreen") + theme_grey(base_size = 14) + labs(title = "Median age, counties in Wyoming", subtitle = "2012-2016 American Community Survey", x = "ACS estimate (bars represent margins of error)", y = "")  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+library(tidycensus)
+
+# Download table "B19001"
+wa_income <- get_acs(geography = "county", 
+                 state = "WA", 
+                 table = "B19001")
+
+# Check out the first few rows of wa_income
+head(wa_income)
+
+
+# Assign Census variables vector to race_vars
+race_vars <- c(White = "B03002_003", Black = "B03002_004", Native = "B03002_005", 
+               Asian = "B03002_006", HIPI = "B03002_007", Hispanic = "B03002_012"
+               )
+
+# Request a summary variable from the ACS
+ca_race <- get_acs(geography = "county", 
+                   state = "CA",
+                   variables = race_vars, 
+                   summary_var = "B03002_001")
+
+# Calculate a new percentage column and check the result
+ca_race_pct <- ca_race %>%
+  mutate(pct = 100 * (estimate / summary_est))
+
+head(ca_race_pct)
+
+
+# Group the dataset and filter the estimate
+ca_largest <- ca_race %>%
+  group_by(GEOID) %>%
+  filter(estimate == max(estimate)) 
+
+head(ca_largest)
+
+# Group the dataset and get a breakdown of the results
+ca_largest %>% 
+  group_by(variable) %>%
+  tally()
+
+
+# Use a tidy workflow to wrangle ACS data
+wa_grouped <- wa_income %>%
+  filter(variable != "B19001_001") %>%
+  mutate(incgroup = case_when(
+    variable < "B19001_008" ~ "below35k", 
+    variable < "B19001_013" ~ "35kto75k", 
+    TRUE ~ "above75k"
+  )) %>%
+  group_by(NAME, incgroup) %>%
+  summarize(group_est = sum(estimate))
+
+wa_grouped
+
+
+# Map through ACS1 estimates to see how they change through the years
+mi_cities <- map_df(2012:2016, function(x) {
+  get_acs(geography = "place", 
+          variables = c(totalpop = "B01003_001"), 
+          state = "MI", 
+          survey = "acs1", 
+          year = x) %>%
+    mutate(year = x)
+})
+
+mi_cities %>% arrange(NAME, year)
+
+
+# Get data on elderly poverty by Census tract in Vermont
+vt_eldpov <- get_acs(geography = "tract", 
+                     variables = c(eldpovm = "B17001_016", 
+                                   eldpovf = "B17001_030"), 
+                     state = "VT")
+
+vt_eldpov
+
+# Identify rows with greater margins of error than their estimates
+moe_check <- filter(vt_eldpov, moe > estimate)
+
+# Check proportion of rows where the margin of error exceeds the estimate
+nrow(moe_check) / nrow(vt_eldpov)
+
+
+# Calculate a margin of error for a sum
+moe_sum(moe = c(55, 33, 44, 12, 4))
+
+# Calculate a margin of error for a product
+moe_product(est1 = 55, est2 = 33, moe1 = 12, moe2 = 9)
+
+# Calculate a margin of error for a ratio
+moe_ratio(num = 1000, denom = 950, moe_num = 200, moe_denom = 177)
+
+# Calculate a margin of error for a proportion
+moe_prop(num = 374, denom = 1200, moe_num = 122, moe_denom = 333)
+
+
+# Group the dataset and calculate a derived margin of error
+vt_eldpov2 <- vt_eldpov %>%
+  group_by(GEOID) %>%
+  summarize(
+    estmf = sum(estimate), 
+    moemf = moe_sum(moe = moe, estimate = estimate)
+  )
+
+# Filter rows where newly-derived margin of error exceeds newly-derived estimate
+moe_check2 <- filter(vt_eldpov2, moemf > estmf)
+
+# Check proportion of rows where margin of error exceeds estimate
+nrow(moe_check2) / nrow(vt_eldpov2)
+
+
+# Request median household income data
+maine_inc <- get_acs(geography = "county", 
+                     variables = c(hhincome = "B19013_001"), 
+                     state = "ME") 
+
+# Generate horizontal error bars with dots
+ggplot(maine_inc, aes(x = estimate, y = NAME)) + 
+  geom_errorbarh(aes(xmin = estimate - moe, xmax = estimate + moe)) + 
+  geom_point()
+
+
+# Remove unnecessary content from the county's name
+maine_inc2 <- maine_inc %>%
+  mutate(NAME = str_replace(NAME, " County, Maine", ""))
+
+# Build a margin of error plot incorporating your modifications
+ggplot(maine_inc2, aes(x = estimate, y = reorder(NAME, estimate))) + 
+  geom_errorbarh(aes(xmin = estimate - moe, xmax = estimate + moe)) + 
+  geom_point(size = 3, color = "darkgreen") + 
+  theme_grey(base_size = 14) + 
+  labs(title = "Median household income", 
+       subtitle = "Counties in Maine", 
+       x = "ACS estimate (bars represent margins of error)", 
+       y = "") + 
+  scale_x_continuous(labels = scales::dollar)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - US Census Geographic Data in R  
+  
+Understanding census geography and tigris basics:  
+  
+* The TIGER line shape files are made publicly available by the US Census Bureau  
+* The tigris package simplifies the process of downloading and mapping with TIGER shapes  
+	* library(tigris)  
+    * az_counties <- counties(state = "AZ")  
+    * plot(az_counties)  
+    * nh_roads <- primary_secondary_roads(state = "NH")  
+    * plot(nh_roads)  
+* By default, tigris returns objects in Spatial DF format - slots encode characteristics of the data  
+  
+Customizing tigris options:  
+  
+* The tigris package allows for customization of plotting options  
+	* ri_tiger <- counties("RI")  
+    * ri_cb <- counties("RI", cb = TRUE)  
+    * par(mfrow = c(1, 2))  
+    * plot(ri_tiger, main = "TIGER/Line")  
+    * plot(ri_cb, main = "Cartographic boundary")  
+* Can use the sf package for further plotting of tigris data  
+	* options(tigris_class = "sf")  
+    * az_sf <- counties("AZ", cb = TRUE)  
+    * class(az_sf)  
+* Can cache tigris shape files on a local computer  
+	* options(tigris_use_cache = TRUE)  
+* The defaults in tigris are to the most recent year of data, though this can be overridden by argument  
+	* williamson90 <- tracts(state = "TX", county = "Williamson", cb = TRUE, year = 1990)  
+    * williamson16 <- tracts(state = "TX", county = "Williamson", cb = TRUE, year = 2016)  
+  
+Combining and joining census geographic districts:  
+  
+* Can combine data obtained from multiple tigris data pulls; for example, studying Kansas City MO/KS  
+	* missouri <- tracts("MO", cb = TRUE)  
+    * kansas <- tracts("KS", cb = TRUE)  
+    * kansas_missouri <- rbind_tigris(kansas, missouri)  
+    * plot(kansas_missouri$geometry)  
+* Can also create a geography such as New England using iteration  
+	* new_england <- c("ME", "NH", "VT", "MA")  
+    * ne_tracts <- map(new_england, function(x) { tracts(state = x, cb = TRUE) }) %>% rbind_tigris()  
+* Can use the standard sf joining tool provided that the data are available in sf format  
+	* tx_house <- state_legislative_districts(state = "TX", house = "lower", cb = TRUE)  
+    * tx_joined <- left_join(tx_house, tx_members, by = c("NAME" = "District"))  
+  
+Plotting data with tigris and ggplot2:  
+  
+* Can create maps of legislative districts by political party currently holding the office  
+	* ggplot(tx_joined) + geom_sf()  
+    * ggplot(tx_joined, aes(fill = Party)) + geom_sf()  
+    * ggplot(tx_joined, aes(fill = Party)) + geom_sf() + scale_fill_manual(values = c("R" = "red", "D" = "blue"))  
+    * ggplot(tx_joined, aes(fill = Party)) + geom_sf() + coord_sf(crs = 3083, datum = NA) + scale_fill_manual(values = c("R" = "red", "D" = "blue")) + theme_minimal() + labs(title = "State House Districts in Texas")  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+library(tigris)
+
+# Get a counties dataset for Colorado and plot it
+co_counties <- counties(state = "CO")
+plot(co_counties)
+
+
+# Get a Census tracts dataset for Denver County, Colorado and plot it
+denver_tracts <- tracts(state = "CO", county = "Denver")
+plot(denver_tracts)
+
+
+# Plot area water features for Lane County, Oregon
+lane_water <- area_water(state = "OR", county = "Lane")
+plot(lane_water)
+
+# Plot primary & secondary roads for the state of New Hampshire
+nh_roads <- primary_secondary_roads(state = "NH")
+plot(nh_roads)
+
+
+# Check the class of the data
+class(co_counties)
+
+# Take a look at the information in the data slot
+head(co_counties@data)
+
+# Check the coordinate system of the data
+co_counties@proj4string
+
+
+# Get a counties dataset for Michigan
+mi_tiger <- counties("MI")
+
+# Get the equivalent cartographic boundary shapefile
+mi_cb <- counties("MI", cb = TRUE)
+
+# Overlay the two on a plot to make a comparison
+plot(mi_tiger)
+plot(mi_cb, add = TRUE, border = "red")
+
+
+# Get data from tigris as simple features
+options(tigris_class = "sf")
+
+# Get countries from Colorado and view the first few rows
+colorado_sf <- counties("CO")
+head(colorado_sf)
+
+# Plot its geometry column
+plot(colorado_sf$geometry)
+
+
+# DO NOT ADD CACHE FOR NOW
+# Set the cache directory
+# tigris_cache_dir("Your preferred cache directory path would go here")
+
+# Set the tigris_use_cache option
+# options(tigris_use_cache = TRUE)
+
+# Check to see that you've modified the option correctly
+# getOption("tigris_use_cache")
+
+
+# Get a historic Census tract shapefile from 1990 for Williamson County, Texas
+williamson90 <- tracts(state = "TX", county = "Williamson", 
+                       cb = TRUE, year = 1990)
+
+# Compare with a current dataset for 2016
+williamson16 <- tracts(state = "TX", county = "Williamson", 
+                       cb = TRUE, year = 2016)
+
+# Plot the geometry to compare the results                       
+par(mfrow = c(1, 2))
+plot(williamson90$geometry)
+plot(williamson16$geometry)
+
+
+# Get Census tract boundaries for Oregon and Washington
+or_tracts <- tracts("OR", cb = TRUE)
+wa_tracts <- tracts("WA", cb = TRUE)
+
+# Check the tigris attributes of each object
+attr(or_tracts, "tigris")
+attr(wa_tracts, "tigris")
+
+# Combine the datasets then plot the result
+or_wa_tracts <- rbind_tigris(or_tracts, wa_tracts)
+plot(or_wa_tracts$geometry)
+
+
+# Generate a vector of state codes and assign to new_england
+new_england <- c("ME", "NH", "VT", "MA")
+
+# Iterate through the states and request tract data for state
+ne_tracts <- map(new_england, function(x) {
+  tracts(state = x, cb = TRUE)
+}) %>%
+  rbind_tigris()
+
+plot(ne_tracts$geometry)
+
+
+# Get boundaries for Texas and set the house parameter
+tx_house <- state_legislative_districts(state = "TX", house = "lower", cb = TRUE)
+
+# Merge data on legislators to their corresponding boundaries
+tx_joined <- left_join(tx_house, tx_members, by = c("NAME" = "District"))
+
+head(tx_joined)
+
+
+# Plot the legislative district boundaries
+ggplot(tx_joined) + 
+  geom_sf()
+
+# Set fill aesthetic to map areas represented by Republicans and Democrats
+ggplot(tx_joined, aes(fill = Party)) + 
+  geom_sf()
+
+# Set values so that Republican areas are red and Democratic areas are blue
+ggplot(tx_joined, aes(fill = Party)) + 
+  geom_sf() + 
+  scale_fill_manual(values = c("R" = "red", "D" = "blue"))
+
+
+# Draw a ggplot without gridlines and with an informative title
+ggplot(tx_joined, aes(fill = Party)) + 
+  geom_sf() + 
+  coord_sf(crs = 3083, datum = NA) + 
+  scale_fill_manual(values = c("R" = "red", "D" = "blue")) + 
+  theme_minimal(base_size = 16) + 
+  labs(title = "State House Districts in Texas")
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Mapping US Census Data  
+  
+
 
 
 
