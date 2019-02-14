@@ -1329,4 +1329,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Analyzing Election and Polling Data in R - Chapter 4 (Predicting the Future of Politics) - code  
 * DataCamp_Insights_v003_c captures Analyzing US Census Data in R - Chapter 1 (Census Data with R in tidycensus) - notes  
 * DataCamp_Insights_v003_c captures Analyzing US Census Data in R - Chapter 2 (Wrangling US Census Data) - notes  
+* DataCamp_Insights_v003_c captures Analyzing US Census Data in R - Chapter 3 (US Census Geographic Data in R) - notes  
   
