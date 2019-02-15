@@ -27747,6 +27747,205 @@ ggplot(tx_joined, aes(fill = Party)) +
   
 Chapter 4 - Mapping US Census Data  
   
+Simple feature geometry and tidycensus:  
+  
+* The tidycensus package can wrap the tigris package for some of its less complex data requests  
+	* geometry = TRUE is available for the following geographies: state, county, tract, 'block group', block, zcta  
+    * cook_value <- get_acs(geography = "tract", state = "IL", county = "Cook", variables = "B25077_001", geometry = TRUE)  
+* For geographies that are not available for grabbing geography by default, can use join instead  
+	* idaho_income <- get_acs(geography = "school district (unified)", variables = "B19013_001", state = "ID")  
+    * idaho_school <- school_districts(state = "ID", type = "unified", class = "sf")  
+    * id_school_joined <- left_join(idaho_school, idaho_income, by = "GEOID")  
+* Maps may move and rescale AK and HI - set shift_geo=TRUE to implement this  
+	* state_value <- get_acs(geography = "state", variables = "B25077_001", survey = "acs1", geometry = TRUE, shift_geo = TRUE)  
+  
+Mapping demographic data with ggplot2:  
+  
+* Can use fills to create instructive maps, and can edit for improved clarity  
+	* ggplot(cook_value, aes(fill = estimate)) + geom_sf()  
+    * ggplot(cook_value, aes(fill = estimate, color = estimate)) + geom_sf() + scale_fill_viridis_c() + scale_color_viridis_c()  
+    * ggplot(cook_value, aes(fill = estimate, color = estimate)) + geom_sf() + scale_fill_viridis_c(labels = scales::dollar) + scale_color_viridis_c(guide = FALSE) + theme_minimal() + coord_sf(crs = 26916, datum = NA) + labs(title = "Median home value by Census tract", subtitle = "Cook County, Illinois", caption = "Data source: 2012-2016 ACS.\nData acquired with the R tidycensus package.", fill = "ACS estimate")  
+  
+Advance demographic mapping:  
+  
+* There are many visual variables in cartography - position, size, shape, value, hue, orientation, texture  
+* The graduated symbol map is a popular plotting method - shapes are differentially sized based on underlying variable values  
+	* centers <- st_centroid(state_value)  
+    * ggplot() + geom_sf(data = state_value, fill = "white") + geom_sf(data = centers, aes(size = estimate), shape = 21, fill = "lightblue", alpha = 0.7, show.legend = "point") + scale_size_continuous(range = c(1, 20))  
+* The "small multiples" plot is another common plot type - achieved with faceting  
+	* ggplot(dc_race, aes(fill = percent, color = percent)) + geom_sf() + coord_sf(datum = NA) + facet_wrap(~variable)  
+* Interactive visualizations are continually more prevalent, and many of the libraries are wrapped for use in R - leaflet, plotly, htmlwidgets  
+	* library(mapview)  
+    * mapview(cook_value, zcol = "estimate", legend = TRUE)  
+  
+Cartographic workflows with tigris and tidycensus:  
+  
+* Can create maps using a dot-density distribution; dots are scattered by a sub-unit (such as census tract), proportional to the size (such as population), colored optionally by a third attriubute (such as race)  
+	* dc_dots <- map(c("White", "Black", "Hispanic", "Asian"), function(group) { dc_race %>% filter(variable == group) %>% st_sample(., size=.$value / 100) %>% st_sf() %>% mutate(group = group) }) %>% reduce(rbind)  
+    * dc_dots <- dc_dots %>% group_by(group) %>% summarize()  # for faster plotting  
+    * dc_dots_shuffle <- sample_frac(dc_dots, size = 1)  # ensures random dots rather than clumped dots by group  
+    * plot(dc_dots_shuffle, key.pos = 1)  
+* Can be valuable to supplement maps with roadways and bodies of water  
+	* options(tigris_class = "sf")  
+    * dc_roads <- roads("DC", "District of Columbia") %>%  filter(RTTYP %in% c("I", "S", "U"))  
+    * dc_water <- area_water("DC", "District of Columbia")  
+    * dc_boundary <- counties("DC", cb = TRUE)  
+    * plot(dc_water$geometry, col = "lightblue")  
+    * ggplot() + geom_sf(data = dc_boundary, color = NA, fill = "white") + geom_sf(data = dc_dots, aes(color = group, fill = group), size = 0.1) + geom_sf(data = dc_water, color = "lightblue", fill = "lightblue") + geom_sf(data = dc_roads, color = "grey") + coord_sf(crs = 26918, datum = NA) + scale_color_brewer(palette = "Set1", guide = FALSE) + scale_fill_brewer(palette = "Set1") + labs(title = "The racial geography of Washington, DC", subtitle = "2010 decennial U.S. Census", fill = "", caption = "1 dot = approximately 100 people.\nData acquired with the R tidycensus and tigris packages.")  
+* Note that ggplot2 plots the layers in order, meaning that they tend to over-write lower layers  
+  
+Next steps for working with demographic data in R:  
+  
+* Additional R packages for deomgraphic data include censusapi, ipumsr (MN data), cancensus (demographic and census data from Canadian census)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+library(sf)
+
+# Get dataset with geometry set to TRUE
+orange_value <- get_acs(geography = "tract", state = "CA", county = "Orange", 
+                        variables = "B25077_001", geometry = TRUE
+                        )
+
+# Plot the estimate to view a map of the data
+plot(orange_value["estimate"])
+
+
+# Get an income dataset for Idaho by school district
+idaho_income <- get_acs(geography = "school district (unified)", 
+                        variables = "B19013_001", 
+                        state = "ID")
+
+# Get a school district dataset for Idaho
+idaho_school <- school_districts(state = "ID", type = "unified", class = "sf")
+
+# Join the income dataset to the boundaries dataset
+id_school_joined <- left_join(idaho_school, idaho_income, by = "GEOID")
+
+plot(id_school_joined["estimate"])
+
+
+# Get a dataset of median home values from the 1-year ACS
+state_value <- get_acs(geography = "state", 
+                       variables = "B25077_001", 
+                       survey = "acs1", 
+                       geometry = TRUE, 
+                       shift_geo = TRUE)
+
+# Plot the dataset to view the shifted geometry
+plot(state_value["estimate"])
+
+
+# Create a choropleth map with ggplot
+ggplot(marin_value, aes(fill = estimate)) + 
+  geom_sf()
+
+
+# Set continuous viridis palettes for your map
+ggplot(marin_value, aes(fill = estimate, color = estimate)) + 
+  geom_sf() + 
+  scale_fill_viridis_c() +  
+  scale_color_viridis_c()
+
+
+# Set the color guide to FALSE and add a subtitle and caption to your map
+ggplot(marin_value, aes(fill = estimate, color = estimate)) + 
+  geom_sf() + 
+  scale_fill_viridis_c(labels = scales::dollar) +  
+  scale_color_viridis_c(guide = FALSE) + 
+  theme_minimal() + 
+  coord_sf(crs = 26911, datum = NA) + 
+  labs(title = "Median owner-occupied housing value by Census tract", 
+       subtitle = "Marin County, California", 
+       caption = "Data source: 2012-2016 ACS.\nData acquired with the R tidycensus package.", 
+       fill = "ACS estimate")
+
+
+# Generate point centers
+centers <- st_centroid(state_value)
+
+# Set size parameter and the size range
+ggplot() + 
+  geom_sf(data = state_value, fill = "white") + 
+  geom_sf(data = centers, aes(size = estimate), shape = 21, 
+          fill = "lightblue", alpha = 0.7, show.legend = "point") + 
+  scale_size_continuous(range = c(1, 20))
+
+
+# Check the first few rows of the loaded dataset dc_race
+head(dc_race)
+
+# Remove the gridlines and generate faceted maps
+ggplot(dc_race, aes(fill = percent, color = percent)) + 
+  geom_sf() + 
+  coord_sf(datum = NA) + 
+  facet_wrap(~variable)
+
+
+# Map the orange_value dataset interactively
+m <- mapview(orange_value)
+m@map
+
+# Map your data by the estimate column
+m <- mapview(orange_value, zcol = "estimate")
+m@map
+
+# Add a legend to your map
+m <- mapview(orange_value, zcol = "estimate", legend=TRUE)
+
+m@map
+
+
+# Generate dots, create a group column, and group by group column
+dc_dots <- map(c("White", "Black", "Hispanic", "Asian"), function(group) {
+  dc_race %>%
+    filter(variable == group) %>%
+    st_sample(., size = .$value / 100) %>%
+    st_sf() %>%
+    mutate(group = group) 
+}) %>%
+  reduce(rbind) %>%
+  group_by(group) %>%
+  summarize()
+
+
+# Filter the DC roads object for major roads only
+dc_roads <- roads("DC", "District of Columbia") %>%
+  filter(RTTYP %in% c("I", "S", "U"))
+
+# Get an area water dataset for DC
+dc_water <- area_water("DC", "District of Columbia")
+
+# Get the boundary of DC
+dc_boundary <- counties("DC", cb = TRUE)
+
+
+# Plot your datasets and give your map an informative caption
+ggplot() + 
+  geom_sf(data = dc_boundary, color = NA, fill = "white") + 
+  geom_sf(data = dc_dots, aes(color = group, fill = group), size = 0.1) + 
+  geom_sf(data = dc_water, color = "lightblue", fill = "lightblue") + 
+  geom_sf(data = dc_roads, color = "grey") + 
+  coord_sf(crs = 26918, datum = NA) + 
+  scale_color_brewer(palette = "Set1", guide = FALSE) +
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "The racial geography of Washington, DC", 
+       subtitle = "2010 decennial U.S. Census", 
+       fill = "", 
+       caption = "1 dot = approximately 100 people.\nData acquired with the R tidycensus and tigris packages.")
+
+```
+  
+  
+  
+***
+  
+###_Multivariate Probability Distributions in R_  
+  
+Chapter 1 - Reading and Plotting Mutivariate Data  
+  
+
 
 
 
