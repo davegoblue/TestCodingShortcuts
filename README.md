@@ -1338,4 +1338,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Multivariate Probability Distributions in R - Ch 3 (Other Multivariate Distributions) - notes  
 * DataCamp_Insights_v003_c captures Multivariate Probability Distributions in R - Chapter 4 (Principal Component Analysis and Multidimensional Scaling) - notes  
 * DataCamp_Insights_v003_c captures Multivariate Probability Distributions in R - Chapter 1 (Reading and Plotting Multivariate Data) - code  
+* DataCamp_Insights_v003_c captures Multivariate Probability Distributions in R - Ch 2 (Multivariate Normal Distribution) - code  
   
