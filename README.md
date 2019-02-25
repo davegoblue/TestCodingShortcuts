@@ -1343,3 +1343,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Multivariate Probability Distributions in R - Chapter 4 (Principal Component Analysis and Multidimensional Scaling) - code  
 * DataCamp_Insights_v003_c captures Intermediate Functional Programming with purrr - Chapter 1 (Programming with purrr) - notes  
   
+### Expansions week of 25-FEB-2019  
+* DataCamp_Insights_v003_c captures Intermediate Functional Programming with purrr - Chapter 2 (Functional Programming from Theory to Practice) - notes  
+  
