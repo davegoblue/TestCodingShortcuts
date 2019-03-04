@@ -1352,3 +1352,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Foundations of Functional Programming with purrr - Chapter 3 (Troubleshooting Lists with purrr) - notes  
 * DataCamp_Insights_v003_c captures Foundations of Functional Programming with purrr - Chapter 4 (Problem Solving w/ purrr) - notes  
   
+### Expansions week of 04-MAR-2019  
+* DataCamp_Insights_v003_c captures Intermediate Functional Programming with purrr - Chapter 1 (Programming with purrr) - code  
+  
