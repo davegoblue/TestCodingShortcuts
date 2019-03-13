@@ -1363,5 +1363,6 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 11-MAR-2019  
 * DataCamp_Insights_v003_c captures Foundations of Functional Programming with purrr - Chapter 4 (Problem Solving w/ purrr) - code  
-* DataCamp_Insights_v003_c captures Foundations of Joining Data in R with data.table - Chapter 1 (Join Multiple data.tables) - code  
+* DataCamp_Insights_v003_c captures Foundations of Joining Data in R with data.table - Chapter 1 (Join Multiple data.tables) - notes  
+* DataCamp_Insights_v003_c captures Foundations of Joining Data in R with data.table - Chapter 2 (Joins Using data.table Syntax) - notes  
   
