@@ -29961,6 +29961,153 @@ avg_life_expectancy
   
 Chapter 3 - Diagnosing and Fixing Common Join Problems  
   
+Complex keys:  
+  
+* A misspecified join is when an incorrect join key has been used  
+* A malformed join is when they keys have no values in common (stacked join)  
+* Best practice is to study the data in each column prior to attempting a join  
+* When the keys have different names, can manage the merge with code  
+	* merge(customers, web_visits, by.x = "name", by.y = "person")  
+    * customers[web_visits, on = .(name = person)]  
+    * customers[web_visits, on = c("name" = "person")]  
+* Can also merge with multiple keys  
+	* merge(purchases, web_visits, by = c("name", "date"))  
+    * merge(purchases, web_visits, by.x = c("name", "date"), by.y = c("person", "date")  # matches in the order that the appear  
+    * purchases[web_visits, on = c("name" = "person", "date")]  
+  
+Tricky columns:  
+  
+* Tables sometimes share column names that are not intended as join keys  
+* With the data.table syntax, duplicate names from the i= area have i. as a prefix  
+	* By contrast, with merge() duplicate names may have a .x and .y suffix  
+* Can be helpful instead to rename columns prior to the join using setnames()  
+	* setnames(parents, c("parent", "parent.gender", "parent.age"))  
+* May want to join a data.frame and data.table, but rownames is the key for the data.table  
+	* parents <- as.data.table(parents, keep.rownames = "parent")  
+  
+Duplicate matches:  
+  
+* May want to join columns that have many-many on the keys  
+	* This will throw a long error message, and requires setting parameters to show this is intentional  
+    * Note that NA will match all other NA; behavior can be over-ridden by filtering out the NA  
+    * site2_ecology <- site2_ecology[!is.na(genus)]  
+* Can keep only the first match or only the last match  
+	* site1_ecology[site2_ecology, on = .(genus), mult = "first"]  
+    * children[parents, on = .(parent = name), mult = "last"]  
+* Can find the duplicated values  
+	* duplicated(site1_ecology)  # boolean  
+    * duplicated(site1_ecology, by = "genus")  # boolean, lookin just at column genus  
+    * unique(site1_ecology, by = "genus")  # removes the duplicates  
+    * duplicated(site1_ecology, by = "genus", fromLast = TRUE)  
+    * unique(site1_ecology, by = "genus", fromLast = TRUE)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+guardians <- fread("./RInputFiles/school_db_guardians.tsv")
+locations <- fread("./RInputFiles/school_db_locations.tsv")
+students <- fread("./RInputFiles/school_db_students.tsv")
+subjects <- fread("./RInputFiles/school_db_subjects.tsv")
+teachers <- fread("./RInputFiles/school_db_teachers.tsv")
+
+
+# Full join
+merge(students, guardians, by="name", all=TRUE)
+students[guardians, on="name"]
+
+# Change the code to an inner join
+students[guardians, on = .(name), nomatch=0L]
+
+# What are the correct join key columns?
+students[guardians, on = c("guardian"="name"), nomatch = 0L]
+
+
+# Intentionally errors out due to type mismatch
+# subjects[locations, on=c("class", "semester")]
+
+# Structure 
+str(subjects)
+str(locations)
+
+# Does semester have the same class? 
+same_class <- FALSE
+
+# Fix the column class
+locations[, semester := as.integer(semester)]
+
+# Right join
+subjects[locations, on=c("class", "semester")]
+
+
+# Identify and set the keys
+join_key <- c("subject"="class")
+
+# Right join
+teachers[locations, on=join_key]
+
+
+# Inner join 1
+capital_pop <- merge(australia_capitals, australia_cities_top20, by="city", nomatch=0L)
+
+# Inner join 2
+merge(capital_pop, australia_area, by="state", suffixes=c(".pop", ".area"), nomatch=0L)
+
+
+netflixOrig <- fread("./RInputFiles/netflix_2017.csv", sep=",")
+imdb <- fread("./RInputFiles/imdb_ratings.csv", sep=",")
+netflix <- as.data.frame(netflixOrig)[, c("episodes", "release_date")]
+rownames(netflix) <- netflixOrig$title
+
+# Convert netflix to a data.table
+netflix <- as.data.table(netflix, keep.rownames="series")
+
+# Rename "title" to "series" in imdb
+setnames(imdb, c("series", "rating"))
+
+# Right join
+imdb[netflix, on="series"]
+
+
+cardio <- fread("./RInputFiles/affymetrix_chd_genes.csv")
+framingham <- fread("./RInputFiles/framingham_chd_genes.csv")
+heart <- fread("./RInputFiles/illumina_chd_genes.csv")
+
+
+# Try an inner join
+merge(heart, cardio, by=c("gene"), allow.cartesian=TRUE)
+
+# Filter missing values
+heart_2 <- heart[!is.na(gene)]
+cardio_2 <- cardio[!is.na(gene)]
+
+# Repeat the inner join
+merge(heart_2, cardio_2, by=c("gene"), allow.cartesian=TRUE)
+
+
+# Keep only the last probe for each gene
+heart_3 <- unique(heart_2, by="gene", fromLast=TRUE)
+cardio_3 <- unique(cardio_2, by="gene", fromLast=TRUE)
+
+# Inner join
+reproducible <- merge(heart_3, cardio_3, by="gene", suffixes=c(".heart", ".cardio"))
+reproducible
+
+
+# Right join taking the first match
+heart_2[framingham, on="gene", mult="first"]
+
+# Anti-join
+reproducible[!framingham, on="gene"]
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Concatenating and Reshaping data.table  
+  
+
 
 
 
