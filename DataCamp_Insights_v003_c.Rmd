@@ -30107,7 +30107,195 @@ reproducible[!framingham, on="gene"]
   
 Chapter 4 - Concatenating and Reshaping data.table  
   
+Concatenating two or more data.table:  
+  
+* Can concatenate tables that have rows split across multiple tables (e.g., multiple file reads)  
+	* rbind(sales_2015, sales_2016)  
+    * rbind("2015" = sales_2015, "2016" = sales_2016, idcol = "year")  # new column year will use the names for the tables  
+    * rbind(sales_2015, sales_2016, idcol = TRUE)  # column gets the default name .id  
+    * rbind("2015" = sales_2015, "2016" = sales_2016, idcol = "year", fill = TRUE)  # allows for misaligned columns, filled with NA as appropriate  
+* Can also rbindlist() for tables that are stored as lists  
+	* table_files <- c("sales_2015.csv", "sales_2016.csv")  
+    * list_of_tables <- lapply(table_files, fread)  
+    * rbindlist(list_of_tables)  
+    * rbind("2015" = sales_2015, "2016" = sales_2016, idcol = "year", use.names = TRUE)  # use.names matches columns by name  
+    * rbind("2015" = sales_2015, "2016" = sales_2016, idcol = "year", use.names = FALSE)  # matches columns by ORDER rather than by name (name mismatch explicitly allowed)  
+  
+Set operations:  
+  
+* Can run set operations with data.tables()  
+	* fintersect(): what rows do these two data.tables share in common?  Duplicate rows are ignored by default, but can set all=TRUE to get all the copies printed  
+    * fsetdiff(): what rows are unique to this data.table?  Will return the rows in the first table that are not in the second table; can set all=TRUE to get ALL the rows from the first table  
+    * funion(): what is the unique set of rows across these two data.tables?  Returns all the unique rows found in either table, with duplicates ignired by default; set all=TRUE to get everything, which is equivalent to rbind  
+  
+Melting data.tables:  
+  
+* May want to melt a data.table from wide format to long format  
+	* melt(sales_wide, measure.vars = c("2015", "2016"))  # the default for the new column names are "variable" and "value"  
+    * melt(sales_wide, id.vars = "quarter", variable.name = "year", value.name = "amount")  # give the columns names that differ from the defaults; keeps only the columns specified, dropping all the others (?)  
+  
+Casting data.tables:  
+  
+* Can cast a long data.table to a wide format  
+	* sales_wide <- dcast(sales_long, quarter ~ year, value.var = "amount")  # the value.var is the name of the column that will be split, while a ~ b means a will be the new rows and b is the column to throw in to the new columns  
+    * dcast(profit_long, quarter ~ year, value.var = c("revenue", "profit"))  
+    * dcast(sales_long, quarter ~ department + year, value.var = "amount")  # by default, department and year will be combined with an "_"  
+    * sales_wide <- dcast(sales_long, season ~ year, value.var = "amount")  
+    * mat <- as.matrix(sales_wide, rownames = "season")  
+  
+Example code includes:  
+```{r eval=FALSE}
 
+ebola_W50 <- fread("./RInputFiles/ebola_2014_W50.csv")
+ebola_W51 <- fread("./RInputFiles/ebola_2014_W51.csv")
+ebola_W52 <- fread("./RInputFiles/ebola_2014_W52.csv")
+
+
+# Concatenate case numbers from weeks 50 and 51
+rbind(ebola_W50, ebola_W51)
+
+# Intentionally throws an error
+# Concatenate case numbers from all three weeks
+# rbind(ebola_W50, ebola_W51, ebola_W52)
+
+# Modify the code
+rbind(ebola_W50, ebola_W51, ebola_W52, fill=TRUE)
+
+
+gdp_africa <- fread("./RInputFiles/gdp_africa_2000.csv")
+gdp_asia <- fread("./RInputFiles/gdp_asia_2000.csv")
+gdp_europe <- fread("./RInputFiles/gdp_europe_2000.csv")
+gdp_north_america <- fread("./RInputFiles/gdp_north_america_2000.csv")
+gdp_oceania <- fread("./RInputFiles/gdp_oceania_2000.csv")
+gdp_south_america <- fread("./RInputFiles/gdp_south_america_2000.csv")
+
+gdp <- list(africa=gdp_africa, asia=gdp_asia, europe=gdp_europe, 
+            north_america=gdp_north_america, oceania=gdp_oceania, south_america=gdp_south_america
+            )
+
+
+# Concatenate its data.tables
+gdp_all_1 <- rbindlist(gdp)
+
+# Concatenate its data.tables
+gdp_all_2 <- rbindlist(gdp, idcol="continent")
+str(gdp_all_2)
+gdp_all_2[95:105]
+
+# Fix the problem
+gdp_all_3 <- rbindlist(gdp, idcol = "continent", use.names=TRUE)
+gdp_all_3
+
+
+# Obtain countries in both Asia and Europe
+fintersect(gdp$europe, gdp$asia)
+
+# Concatenate all data tables
+gdp_all <- rbindlist(gdp, use.names=TRUE)
+
+# Find all countries that span multiple continents
+gdp_all[duplicated(gdp_all)]
+
+
+# Get all countries in either Asia or Europe
+funion(gdp$europe, gdp$asia)
+
+# Concatenate all data tables
+gdp_all <- rbindlist(gdp, use.names=TRUE)
+
+# Print all unique countries
+unique(gdp_all)
+
+
+gdp_middle_east <- fread("./RInputFiles/gdp_middle_east_2000.csv")
+
+# Which countries are in Africa but not considered part of the middle east?
+fsetdiff(gdp$africa, gdp_middle_east)
+
+# Which countries are in Asia but not considered part of the middle east?
+fsetdiff(gdp$asia, gdp_middle_east)
+
+# Which countries are in Europe but not considered part of the middle east?
+fsetdiff(gdp$europe, gdp_middle_east)
+
+
+gdp_per_capita_wrong <- fread("./RInputFiles/gdp_per_capita_oceania.csv")
+
+colNames <- gdp_per_capita_wrong$V1
+colNames[1] <- "year"
+numData <- t(gdp_per_capita_wrong[, -1])
+
+gdp_per_capita <- as.data.table(numData)
+colnames(gdp_per_capita) <- colNames
+
+
+# Print gdp_per_capita
+gdp_per_capita
+
+# Reshape gdp_per_capita to the long format
+melt(gdp_per_capita, id.vars="year")
+
+# Rename the new columns
+melt(gdp_per_capita, id.vars = "year", variable.name="country", value.name="gdp_pc")
+
+
+# Print ebola_wide
+ebola_wide <- rbind(ebola_W50, ebola_W51) %>% 
+    mutate(Week_50=ifelse(period_code=="2014-W50", Confirmed, NA), 
+           Week_51=ifelse(period_code=="2014-W51", Confirmed, NA)
+           ) %>%
+    select(Location, period_start, period_end, Week_50, Week_51) %>%
+    arrange(Location, period_start)
+ebola_wide
+
+
+# Stack Week_50 and Week_51
+melt(ebola_wide, measure.vars=c("Week_50", "Week_51"), variable.name="period", value.name="cases")
+
+# Modify the code
+melt(ebola_wide, measure.vars = c("Week_50", "Week_51"), 
+     variable.name = "period", value.name = "cases", id.vars="Location"
+     )
+
+
+gdp_oceania <- fread("./RInputFiles/gdp_and_pop_oceania.csv")
+gdp_oceania$continent <- "Oceania"
+
+
+# Split the population column by year
+dcast(gdp_oceania, formula = country ~ year, value.var = "population")
+
+# Split the gdp column by country
+dcast(gdp_oceania, formula = year ~ country, value.var = "gdp")
+
+
+# Reshape from wide to long format
+wide <- dcast(gdp_oceania, formula = country ~ year, value.var = c("gdp", "population"))
+
+# convert to a matrix
+as.matrix(wide, rownames="country")
+
+# Modify your previous code
+dcast(gdp_oceania, formula = continent + country ~ year, value.var = c("gdp", "population"))
+
+
+gdp_by_industry_oceania <- fread("./RInputFiles/gdp_by_industry_oceania.tsv")
+
+
+# Split gdp by industry and year
+gdp_by_industry_oceania
+dcast(gdp_by_industry_oceania, formula = country ~ industry + year, value.var=c("gdp"))
+
+```
+  
+  
+  
+***
+  
+###_Fraud Detection in R_  
+  
+Chapter 1 - Introduction and Motivation  
+  
 
 
 
