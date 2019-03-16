@@ -30296,6 +30296,278 @@ dcast(gdp_by_industry_oceania, formula = country ~ industry + year, value.var=c(
   
 Chapter 1 - Introduction and Motivation  
   
+Introduction and Motivation:  
+  
+* Fraud is an uncommon, well-considered, imperceptibly concealed, time-evolving and often carefully organized crime which appears in many types and forms  
+* Fraud is rare, but the cost of not detecting fraud is very large  
+* Fraud detection models need to have multiple charcteristics  
+	* Statistical accuracy  
+    * Interpretability  
+    * Regulatory compliance  
+    * Economical impact - total cost of ownership and ROI  
+    * Complement expert-based findings  
+* Multiple challenges with fraud detection  
+	* Imbalanced samples - credit card fraud is typically less than 0.5% ("needle in a haystack" problem)  
+    * Operational efficiency (e.g., credit card decisions need to be made in ~8 seconds)  
+    * Avoid harassing good customers over legitimate transactions  
+* Confusion matrices are commonly used - true positive, true negative, false positive, false negative  
+	* caret::confusionMatrix(data = predictions, reference = fraud_label)  
+    * Accuracy is not a good measure when there is an imbalanced sample  
+  
+Time features:  
+  
+* Time is an important aspect of fraud detection; transactions tend to occur at similar hours  
+	* There is no perfect natural ordering to time though, since time is cricular; arithmetic mean does not accout for the periodicity  
+* Can create a circular histogram based off the time series data  
+	* ts <- as.numeric(lubridate::hms(timestamps)) / 3600  
+    * clock <- ggplot(data.frame(ts), aes(x = ts)) + geom_histogram(breaks = seq(0, 24), colour = "blue", fill = "lightblue") + coord_polar()  
+    * arithmetic_mean <- mean(ts)  
+    * clock + geom_vline(xintercept = arithmetic_mean, linetype = 2, color = "red", size = 2)  
+* Can instead use the von Mises distribution for modeling time (variable wrapped around a circle)  
+	* mu - periodic mean  
+    * kappa - 1/k is the periodic variance (k is a measure of concentration)  
+    * library(circular)  
+    * ts <- circular(ts, units = "hours", template = "clock24")  
+    * estimates <- mle.vonmises(ts)  
+    * p_mean <- estimates$mu %% 24  
+    * concentration <- estimates$kappa  
+* Can then obtain a binary feature as to whether a given timestamp falls inside the interval  
+	* densities <- dvonmises(ts, mu = p_mean, kappa = concentration)  
+    * alpha <- 0.90  
+    * quantile <- qvonmises((1 - alpha)/2, mu = p_mean, kappa = concentration) %% 24  
+    * cutoff <- dvonmises(quantile, mu = p_mean, kappa = concentration)  
+    * time_feature <- densities >= cutoff  
+* Can also run confidence intervals with rolling windows  
+	* time_feature = c(NA, NA)  
+    * for (i in 3:length(ts)) {  
+    *     ts_history <- ts[1:(i-1)]  
+    *     estimates <- mle.vonmises(ts_history)  
+    *     p_mean <- estimates$mu %% 24  
+    *     concentration <- estimates$kappa  
+    *     dens_i <- dvonmises(ts[i], mu = p_mean, kappa = concentration)  
+    *     alpha <- 0.90  
+    *     quantile <- qvonmises((1-alpha)/2, mu=p_mean, kappa=concentration) %% 24  
+    *     cutoff <- dvonmises(quantile, mu = p_mean, kappa = concentration)  
+    *     time_feature[i] <- dens_i >= cutoff  
+    * }  
+  
+Frequency features:  
+  
+* May need to add features for a good-performing fraud detection algorithm  
+	* trans %>% select(fraud_flag, orig_account_id, benef_country, authentication_cd, channel_cd, amount)  
+* For example, may want to look at the authentication methods by person and associations to fraud  
+	* trans <- trans %>% arrange(timestamp)  
+    * trans_Alice <- trans %>% filter(account_name == "Alice")  
+    * frequency_fun <- function(steps, auth_method) {  
+    *     n <- length(steps)  
+    *     frequency <- sum(auth_method[1:n] == auth_method[n + 1])  
+    *     return(frequency)  
+    * }  
+    * freq_auth <- zoo::rollapply(trans_Alice$transfer_id, width=list(-1:-length(trans_Alice$transfer_id)),  partial = TRUE, FUN = frequency_fun, trans_Alice$authentication_cd)  
+    * freq_auth <- c(0, freq_auth)  
+* Can run a similar process for multiple accounts  
+	* trans %>% group_by(account_name)  
+    * trans <- trans %>% group_by(account_name) %>% mutate(freq_auth = c(0, zoo::rollapplyr(transfer_id, width = list(-1:-length(transfer_id)), partial = TRUE, FUN = count_fun, authentication_cd) ) )  
+  
+Recency features:  
+  
+* Recency features capture the dimension of time in a manner designed to highlight potential fraud  
+	* Example of an authentication method that has not recently been used  
+    * Recency=0 means not used recently (or never used before), while recency=1 means used recently  
+    * recency=exp(-gamma*time)  # gamma is a tuning parameter, typically a small number  
+    * Gamma is often chosen such that recency will be 0.01 after 180 days  
+* Can create the recency feature in R  
+	* recency_fun <- function(t, gamma, auth_cd, freq_auth) {  
+    *     n_t <- length(t)  
+    *     if (freq_auth[n_t] == 0) { recency <- 0 } else {  
+    *         time_diff <- t[1] - max(t[2:n_t][auth_cd[(n_t-1):1] == auth_cd[n_t]])
+    *         recency <- exp(-gamma * time_diff)  
+    *     }
+    *     return(recency)  
+    * }  
+* Can then calculate gamma and apply to each individual account  
+	* gamma <- -log(0.01)/180 # = 0.0256  
+    * trans <- trans %>% 
+    *     group_by(account_name) %>%   
+    *     mutate(rec_auth = zoo::rollapply(timestamp, width = list(0:-length(transfer_id)), partial = TRUE, FUN = recency_fun, gamma, authentication_cd, freq_auth))  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+load("./RInputFiles/transfers02_v2.RData")  # data.frame transfers is 628x12
+
+# Print the first 6 rows of the dataset
+head(transfers)
+
+# Display the structure of the dataset
+str(transfers)
+
+# Determine fraction of legitimate and fraudulent cases
+class_distribution <- prop.table(table(transfers$fraud_flag))
+print(class_distribution)
+
+# Make pie chart of column fraud_flag
+df <- data.frame(class = c("no fraud", "fraud"), pct = as.numeric(class_distribution)) %>%
+    mutate(class = factor(class, levels = c("no fraud", "fraud")),
+           cumulative = cumsum(pct), midpoint = cumulative - pct / 2,
+           label = paste0(class, " ", round(pct*100, 2), "%")
+           )
+
+ggplot(df, aes(x = 1, weight = pct, fill = class)) +
+    scale_fill_manual(values = c("dodgerblue", "red")) +
+    geom_bar(width = 1, position = "stack") +
+    coord_polar(theta = "y") +
+    geom_text(aes(x = 1.3, y = midpoint, label = label)) +
+    ggmap::theme_nothing()
+
+
+# Create vector predictions containing 0 for every transfer
+predictions <- factor(rep(0, nrow(transfers)), levels = c(0, 1))
+
+# Compute confusion matrix
+caret::confusionMatrix(data = predictions, reference = transfers$fraud_flag)
+
+# Compute cost of not detecting fraud
+cost <- sum(transfers$amount[transfers$fraud_flag == 1])
+print(cost)
+
+
+# load("./RInputFiles/timestamps_circular.RData")  # 'circular' num[1:25] ts
+load("./RInputFiles/timestamps_digital.RData")  # chr[1:25] timestamps
+
+# Convert the plain text to hours
+ts <- as.numeric(lubridate::hms(timestamps)) / 3600
+
+# Convert the data to class circular
+ts <- circular::circular(ts, units = "hours", template = "clock24")
+
+# Plot a circular histogram
+clock <- ggplot(data.frame(ts), aes(x = ts)) +
+    geom_histogram(breaks = seq(0, 24), colour = "blue", fill = "lightblue") +
+    coord_polar() + 
+    scale_x_continuous("", limits = c(0, 24), breaks = seq(0, 24))
+plot(clock)
+
+# Create the von Mises distribution estimates
+estimates <- circular::mle.vonmises(ts)
+
+# Extract the periodic mean from the estimates
+p_mean <- estimates$mu %% 24
+
+# Add the periodic mean to the circular histogram
+clock <- ggplot(data.frame(ts), aes(x = ts)) +
+    geom_histogram(breaks = seq(0, 24), colour = "blue", fill = "lightblue") +
+    coord_polar() + 
+    scale_x_continuous("", limits = c(0, 24), breaks = seq(0, 24)) +
+    geom_vline(xintercept = as.numeric(p_mean), color = "red", linetype = 2, size = 1.5)
+plot(clock)
+
+
+# Estimate the periodic mean and concentration on the first 24 timestamps
+alpha <- 0.95
+p_mean <- estimates$mu %% 24
+concentration <- estimates$kappa
+
+# Estimate densities of all 25 timestamps
+densities <- circular::dvonmises(ts, mu = p_mean, kappa = concentration)
+
+# Check if the densities are larger than the cutoff of 95%-CI
+cutoff <- circular::dvonmises(circular::qvonmises((1 - alpha)/2, mu = p_mean, kappa = concentration), 
+                              mu = p_mean, kappa = concentration
+                              )
+
+# Define the variable time_feature
+time_feature <- densities >= cutoff
+print(cbind.data.frame(ts, time_feature))
+
+
+load("./RInputFiles/transfers_Bob.RData")  # data.frame trans_Bob 17x12
+
+# Frequency feature based on channel_cd
+frequency_fun <- function(steps, channel) {
+    n <- length(steps)
+    frequency <- sum(channel[1:n] == channel[n+1])
+    return(frequency)
+}
+
+# Create freq_channel feature
+freq_channel <- zoo::rollapply(trans_Bob$transfer_id, width = list(-1:-length(trans_Bob$transfer_id)),
+                               partial = TRUE, FUN = frequency_fun, trans_Bob$channel_cd
+                               )
+
+# Print the features channel_cd, freq_channel and fraud_flag next to each other
+freq_channel <- c(0, freq_channel)
+cbind.data.frame(trans_Bob$channel_cd, freq_channel, trans_Bob$fraud_flag)
+
+
+# load("./RInputFiles/transfers_AliceBob.RData")  # data.frame trans 40x12
+load("./RInputFiles/transfers_AliceBob_freq.RData")  # data.frame trans 40x14
+
+# Group the data
+trans <- trans %>% group_by(account_name) %>%
+    # Mutate the data to add a new feature
+    mutate(freq_channel = c(0, zoo::rollapply(transfer_id, width = list(-1:-length(transfer_id)),
+                                              partial = TRUE, FUN = frequency_fun, channel_cd
+                                              )
+                            )
+           )
+
+# Print the features as columns next to each other
+as.data.frame(trans %>% select(account_name, channel_cd, freq_channel, fraud_flag))
+
+
+# Create the recency function
+recency_fun <- function(t, gamma, channel_cd, freq_channel) {
+    n_t <- length(t)
+    # If the channel has never been used, return 0 else, return the exponent
+    if (freq_channel[n_t] == 0) { 
+        return(0) 
+    } else {
+        time_diff <- t[1] - max(t[2:n_t][channel_cd[(n_t-1):1] == channel_cd[n_t]])
+        exponent <- -gamma * time_diff
+        return(exp(exponent))
+    }
+}
+
+# Group, mutate and rollapply
+gamma <- -log(0.01)/90
+trans <- trans %>% 
+    group_by(account_name) %>%
+    mutate(rec_channel = zoo::rollapply(timestamp, width = list(0:-length(transfer_id)), 
+                                        partial = TRUE, FUN = recency_fun, 
+                                        gamma, channel_cd, freq_channel
+                                        )
+           )
+
+# Print a new dataframe
+as.data.frame(trans %>% 
+                  select(account_name, channel_cd, timestamp, rec_channel, fraud_flag)
+              )
+
+
+load("./RInputFiles/transfers_chap1_L4.RData")  # data.frame transfers 222x16
+
+# Statistics of frequency & recency features of legitimate transactions:
+summary(transfers %>% 
+            filter(fraud_flag==0) %>% 
+            select(freq_channel, freq_auth, rec_channel, rec_auth)
+        )
+
+# Statistics of frequency & recency features of fraudulent transactions:
+summary(transfers %>% 
+            filter(fraud_flag==1) %>% 
+            select(freq_channel, freq_auth, rec_channel, rec_auth)
+        )
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Social Network Analytics  
+  
+
 
 
 
