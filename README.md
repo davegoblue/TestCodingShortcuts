@@ -1370,3 +1370,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Fraud Detection in R - Chapter 1 (Introduction and Motivation) - notes  
 * DataCamp_Insights_v003_c captures Fraud Detection in R - Chapter 2 (Social Network Analysis) - notes  
   
+### Expansions week of 18-MAR-2019  
+* DataCamp_Insights_v003_c captures Fraud Detection in R - Chapter 3 (Imbalanced Class Distributions) - notes  
+  
