@@ -30958,6 +30958,258 @@ cost_model(predicted_class_smote, test$Class, test$Amount, fixedcost=10)
   
 Chapter 4 - Digit Analysis and Robust Statistics  
   
+Digit analysis using Benford's Law:  
+  
+* Benford's Law considers the left-most digit in a number  
+	* The distribution will often have 30% 1s with only 4.6% 9s  
+    * Generally, frequencies will be proportional to log10(1 + 1/d) where d is the digit  
+    * Pinkham discovered that Benford's Law is scale invariant (e.g., Euros to pesos should preserve the distribution)  
+* Example of Benford's Law in code  
+	* benlaw <- function(d) log10(1 + 1 / d)  
+    * df <- data.frame(digit = 1:9, probability = benlaw(1:9))  
+    * ggplot(df, aes(x = digit, y = probability)) + geom_bar(stat = "identity", fill = "dodgerblue") + xlab("First digit") + ylab("Expected frequency") + scale_x_continuous(breaks = 1:9, labels = 1:9) + ylim(0, 0.33) + theme(text = element_text(size = 25))  
+    * n <- 1000  
+    * fibnum <- numeric(len)  
+    * fibnum[1] <- 1  
+    * fibnum[2] <- 1  
+    * for (i in 3:n) { fibnum[i] <- fibnum[i-1]+fibnum[i-2] }  
+    * pow2 <- 2^(1:n)  
+    * library(benford.analysis)  
+    * bfd.fib <- benford(fibnum, number.of.digits = 1)  
+    * plot(bfd.fib)  
+    * bfd.pow2 <- benford(pow2, number.of.digits = 1)  
+    * plot(bfd.pow2)  
+  
+Benford's Law for fraud detection:  
+  
+* Many datasets follow Benford's law  
+	* data where numbers represent sizes of facts or events  
+    * data in which numbers have no relationship to each other  
+    * data sets that grow exponentially or arise from multiplicative fluctuations  
+    * mixtures of different data sets  
+    * Some well-known infinite integer sequences  
+* Fraud is typically committed by changing numbers, and changes often fail to conform with Benford's Law  
+* Caution that many types of data can never be expected to comply with Benford's Law  
+	* If there is lower and/or upper bound or data is concentrated in narrow interval, e.g. hourly wage rate, height of people  
+    * If numbers are used as identification numbers or labels, e.g. social security number, flight numbers, car license plate numbers, phone numbers  
+    * Additive fluctuations instead of multiplicative fluctuations, e.g. heartbeats on a given day  
+* Benford's Law can be applied for the first two digits of a series of numbers  
+	* P(d1d2) = log10(1 + 1/(d1d2))  # note that this is NOT multiplicative; d1d2 for d1=1 and d2=2 is 12, not 2  
+    * bfd.cen <- benford(census.2009$pop.2009,number.of.digits = 2)  
+    * plot(bfd.cen)  
+  
+Detecting univariate outliers:  
+  
+* Can use global statistics to detect outliers; not all outliers are fraudulent, so follow-up and validation are needed  
+* One popular tool for outlier detection is the z-score - (x - mu) / sigma  
+	* One challenge is that the sample mean and sample standard deviation are artificially driven by an extreme outlier  
+* "Robust statistics" attempt to flag outliers better than the classical z-scores  
+	* Classical statistical methods rely on (normality) assumptions, but even single outlier can influence conclusions significantly and may lead to misleading results  
+    * Robust statistics produce also reliable results when data contains outliers and yield automatic outlier detection tools  
+    * It is perfect to use both classical and robust methods routinely, and only worry when they differ enough to matter... But when they differ, you should think hard. J.W. Tukey (1979)  
+* The median is more robust than the mean, while the median-absolute-deviation (MAD) and IQR are more robust than the standard deviation  
+* The Boxplot is a common way to identify outliers  
+	* ggplot(data.frame(los), aes(x = "", y = los)) + geom_boxplot(outlier.colour = "red", outlier.shape = 16, outlier.size = 3, fill = "lightblue", width = 0.5) + xlab("") + ylab("Length Of Stay (LOS)") + theme(text = element_text(size = 25))  
+* The boxplot has assumptions of normality, even though in reality data may not be normally distributed  
+	* At asymmetric distributions, boxplot may flag many regular points as outliers  
+    * The skewness-adjusted boxplot corrects for this by using a robust measure of skewness in determining the fence  
+    * library(robustbase)  
+    * adjbox_stats <- adjboxStats(los)$stats  
+    * ggplot(data.frame(los), aes(x = "", y = los)) +  
+    *     stat_boxplot(geom = "errorbar", width = 0.2, coef = 1.5*exp(3*mc(los))) +  
+    *     geom_boxplot(ymin = adjbox_stats[1], ymax = adjbox_stats[5], middle = adjbox_stats[3], upper = adjbox_stats[4], lower = adjbox_stats[2], outlier.shape = NA, fill = "lightblue", width = 0.5) +  
+    *     geom_point(data=subset(data.frame(los), los < adjbox_stats[1] | los > adjbox_stats[5]), col = "red", size = 3, shape = 16) + xlab("") +  
+    *     ylab("Length Of Stay (LOS)") +  
+    *     theme(text = element_text(size = 25))  
+    * adjbox(los,col="lightblue", ylab="LOS data")$out  
+  
+Detecting multivariate outliers:  
+  
+* Multivariate outliers have unusual combinations of data across multiple dimensions  
+* Example of animals data - brain vs. body  
+	* X <- data.frame(body = log(Animals$body), brain = log(Animals$brain))  
+    * fig <- ggplot(X, aes(x = body, y = brain)) + geom_point(size = 5) + xlab("log(body)") + ylab("log(brain)") + ylim(-5, 15) + scale_x_continuous(limits = c(-10, 16), breaks = seq(-15, 15, 5)))  
+* Mahalanobis distance is a multidimensional distance (distance on each axis is scaled based on length of ellipse in that direction  
+	* Classical Mahalanobis distances : sample mean as estimate for location and sample covariance matrix as estimate for scatter  
+    * To detect multivariate outliers the mahalanobis distance is compared with a cut-off value, which is derived from the chisquare distribution  
+    * In two dimensions we can construct corresponding 97.5% tolerance ellipsoid, which is defined by those observations whose Mahalanobis distance does not exceed the cut-off value  
+* Extending the Mahalanobis distance to the animal data  
+	* animals.clcenter <- colMeans(X)  
+    * animals.clcov <- cov(X)  
+    * rad <- sqrt(qchisq(0.975, df = ncol(X)))  
+    * library(car)  
+    * ellipse.cl <- data.frame(ellipse(center = animals.clcenter, shape = animals.clcov,radius = rad, segments = 100, draw = FALSE))  
+    * colnames(ellipse.cl) <- colnames(X)  
+    * fig <- fig + geom_polygon(data=ellipse.cl, color = "dodgerblue", fill = "dodgerblue", alpha = 0.2) + geom_point(aes(x = animals.clcenter[1], y = animals.clcenter[2]), color = "blue", size = 6)  
+    * fig  
+* Can improve the Mahalanobis distance with a more robust estimate of location and scatter  
+	* Minimum Covariance Determinant (MCD) estimator of Rousseeuw is a popular robust estimator of multivariate location and scatter  
+    * MCD looks for those hh observations whose classical covariance matrix has the lowest possible determinant  
+    * MCD estimate of location is then mean of these hh observations  
+    * MCD estimate of scatter is then sample covariance matrix of these hh points (multiplied by consistency factor)  
+    * Reweighting step is applied to improve efficiency at normal data  
+    * Computation of MCD is difficult, but several fast algorithms are proposed  
+* Examples of using robust statistics on the animals data  
+	* library(robustbase)  
+    * animals.mcd <- covMcd(X)  
+    * animals.mcd$center  
+    * animals.mcd$cov  
+    * library(robustbase)  
+    * animals.mcd <- covMcd(X)  
+    * ellipse.mcd <- data.frame(ellipse(center = animals.mcd$center, shape = animals.mcd$cov, radius=rad, segments=100, draw=FALSE))  
+    * colnames(ellipse.mcd) <- colnames(X)  
+    * fig <- fig + geom_polygon(data=ellipse.mcd, color="red", fill="red", alpha=0.3) + geom_point(aes(x = animals.mcd$center[1], y = animals.mcd$center[2]), color = "red", size = 6)  
+    * fig  
+* The distance-distance plot is a common alternative when the number of dimensions is 4+  
+	* When p>3 it is not possible to visualize the tolerance ellipsoid  
+    * The distance-distance plot shows the robust distance of each observation versus its classical Mahalanobis distance, obtained immediately from MCD object  
+    * plot(animals.mcd, which = "dd")  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Implement Benford's Law for first digit
+benlaw <- function(d) log10(1 + 1 / d)
+
+# Calculate expected frequency for d=5
+benlaw(d=5)
+
+# Create a dataframe of the 9 digits and their Benford's Law probabilities
+df <- data.frame(digit = 1:9, probability = benlaw(1:9))
+
+# Create barplot with expected frequencies
+ggplot(df, aes(x = digit, y = probability)) + 
+    geom_bar(stat = "identity", fill = "dodgerblue") + 
+    xlab("First digit") + 
+    ylab("Expected frequency") + 
+    scale_x_continuous(breaks = 1:9, labels = 1:9) + 
+    ylim(0, 0.33) + 
+    theme(text = element_text(size = 25))
+
+
+data(census.2009, package="benford.analysis")
+
+# Check conformity
+bfd.cen <- benford.analysis::benford(census.2009$pop.2009, number.of.digits = 1) 
+plot(bfd.cen, except = c("second order", "summation", "mantissa", "chi squared", 
+                         "abs diff", "ex summation", "Legend"), 
+     multiple = F
+     ) 
+
+# Multiply the data by 3 and check conformity again
+data <- census.2009$pop.2009 * 3
+bfd.cen3 <- benford.analysis::benford(data, number.of.digits=1)
+plot(bfd.cen3, except = c("second order", "summation", "mantissa", "chi squared", 
+                          "abs diff", "ex summation", "Legend"), 
+     multiple = F
+     )
+
+
+load("./RInputFiles/fireinsuranceclaims.RData")  # num[1:40000] fireinsuranceclaims
+
+# Validate data against Benford's Law using first digit
+bfd.ins <- benford.analysis::benford(fireinsuranceclaims, number.of.digits = 1) 
+plot(bfd.ins, except=c("second order", "summation", "mantissa", "chi squared",
+                       "abs diff", "ex summation", "Legend"), 
+     multiple = F
+     )
+
+# Validate data against Benford's Law using first-two digits
+bfd.ins2 <- benford.analysis::benford(fireinsuranceclaims, number.of.digits = 2)
+plot(bfd.ins2, except=c("second order", "summation", "mantissa", "chi squared",
+                        "abs diff", "ex summation", "Legend"), 
+     multiple = F
+     )
+
+
+load("./RInputFiles/expensesCEO.RData")  # num[1:988] expensesCEO
+
+# Validate data against Benford's Law using first digit
+bfd.exp <- benford.analysis::benford(expensesCEO, number.of.digits = 1) 
+plot(bfd.exp, except=c("second order", "summation", "mantissa", "chi squared",
+                       "abs diff", "ex summation", "Legend"), 
+     multiple = F
+     )
+
+# Validate data against Benford's Law using first-two digits
+bfd.exp2 <- benford.analysis::benford(expensesCEO, number.of.digits = 2) 
+plot(bfd.exp2, except=c("second order", "summation", "mantissa", "chi squared",
+                        "abs diff", "ex summation", "Legend"), 
+     multiple = F
+     )
+
+
+load("./RInputFiles/transfers_chap1_L4.RData")  # data.frame transfers 222x16
+
+# Get observations identified as fraud
+which(transfers$fraud_flag == 1)
+
+# Compute median and mean absolute deviation for `amount`
+m <- median(transfers$amount)
+s <- mad(transfers$amount)
+
+# Compute robust z-score for each observation
+robzscore <- abs((transfers$amount - m) / (s))
+
+# Get observations with robust z-score higher than 3 in absolute value
+which(abs(robzscore) > 3)
+
+
+thexp <- c(40517, 33541, 5182, 40385, 40302, 23189, 13503, 5110, 15754, 40763, 23061, 30839, 25206, 15891, 38821, 11766, 4934, 13754, 14142, 27813, 21005, 11511, 41750, 32855, 62043, 19415, 51815, 26961, 19185, 19704, 21831, 40768, 49079, 12766, 13030, 8841, 17943, 6214, 21114, 7898, 30707, 69698, 70155, 15032, 55858, 31747, 11562, 12390, 7016, 96396, 24614, 22735, 20483, 36907, 31822, 13619, 34401, 10281, 32165, 52226, 13941, 40850, 15270, 21143, 26029, 10209, 10950, 19745, 54153, 33668, 7562, 34231, 34219, 25784, 52952, 32959, 17459, 25611, 14998, 36229, 26485, 20563, 41865, 29821, 26792, 42406, 20083, 10205, 31353, 33674, 13523, 51835, 18136, 54736, 33499, 95389, 44967, 67707, 40879, 17729, 15643, 15648, 19150, 9789, 27978, 40469, 30696, 48195, 12817, 10527, 42946, 72281, 13773, 17189, 14340, 47962, 29063, 34477, 84354, 37943, 13584, 12184, 49563, 36263, 18313, 25399, 50235, 14230, 25617, 18226, 31542, 24262, 17617, 22068, 43534, 14574, 6471, 57500, 8535, 85065, 22749, 10481, 42094, 24436, 27975, 28347, 32929, 20106, 30992, 22202, 17005, 29900, 16871, 10790, 38355, 10315, 7782, 16084, 11788, 20005, 70859, 21706, 11929, 69816, 6351, 27217, 30178, 10597, 13715, 13687, 17116, 27426, 56579, 31655, 86577, 27051, 10477, 11178, 49785, 12626, 44817, 15758, 21396, 5590, 40538, 38834, 32693, 47330, 17823, 92957, 44439, 27188, 22972, 40020, 33067, 24562, 8408, 36088, 8823, 8022, 36395, 14523, 49188, 19744, 17536, 32456, 38400, 6451, 31766, 24727, 60013, 15664, 17356, 50482, 20752, 28048, 10932, 35337, 18755, 6572, 16065, 67257, 36303, 14846, 50468, 27237, 7165, 38067, 22040, 23794, 106032, 19303, 63934, 16818, 11621, 40566, 14921, 15188, 28087, 21026, 38907, 39727, 49794, 49112, 6886, 31674, 25053, 23835, 12160, 45640, 7898, 107065, 58206, 8270, 69529, 25776, 57742, 18456, 53523, 27514, 14089, 7291, 4727, 7319, 22650, 8462, 14980, 39085, 13627, 14998, 29686, 22750, 25487, 40127, 22844, 7597, 19265, 14869, 33010, 74958, 30320, 16602, 36376, 16467, 26946, 26870, 33433, 61134, 20121, 58389, 61594, 24150, 32594, 20177, 3133, 22330, 16905, 25053, 10837, 20807, 6647, 29696, 34457, 78286, 21551, 26533, 52237, 58745, 19607, 25062, 23823, 108756, 12067, 28813, 17803, 35795, 20860, 14307, 11991, 71409, 74111, 25916, 25914, 14092, 24780, 43417, 12767, 43919, 28205, 34075, 68173, 28509, 78760, 52329, 31858, 54088, 6670, 29371, 30066, 16554, 13866, 13806, 40504, 49841, 19729, 30881, 35484, 11373, 10624, 7544, 49465, 12499, 18316, 27963, 31601, 52243, 48927, 42339, 34707, 13034, 9452, 69461, 64335, 9964, 8993, 11217, 116262, 16693, 28622, 35251, 8587, 28414, 15552, 49460, 57721, 16398, 20597, 28592, 13795, 19534, 37065, 22847, 10679, 37552, 63611, 12023, 19659, 16040, 63519, 56897, 55381, 44055, 65130, 8251, 4857, 6225, 74197, 20986, 47412, 35014, 39263, 19486, 22648, 7826, 52697, 9196, 31890, 8836, 62723, 60814, 42018, 20671, 7444, 21584, 13213, 23959, 16394, 21742, 71587, 16866, 63788, 39375, 37087, 9370, 37440, 10666, 60304, 34391, 55988, 9921, 11709, 69198, 49491, 39201, 10065, 32063, 10380, 18818, 35576, 15695, 30336, 74993, 48089, 24255, 56063, 11932, 23251, 9537, 7757, 67473, 44949, 11842, 12681, 36156, 71957, 37576, 36120, 53232, 6743, 36142, 62565, 49525, 33161, 28272, 24179, 15227, 46151, 32764, 32374, 22462, 9593, 9442, 13202, 24634, 35284, 44800, 11044, 45655, 5502, 18124, 18007, 39303, 14012, 26558, 10926, 25389, 16447, 8720, 12977, 12942, 25020, 6430, 18919, 24916, 55667, 51081, 99834, 31840, 147498)
+thexp <- c(thexp, 27913, 40044, 24278, 41614, 50038, 54307, 27598, 18022, 34789, 24503, 51856, 12160, 19107, 40845, 46171, 66460, 22241, 15245, 10925, 17671, 5666, 25305, 9394, 20357, 32948, 7942, 14555, 24012, 25235, 17292, 81646, 46737, 15012, 49861, 10012, 15076, 7693, 18513, 46293, 50770, 36122, 25598, 8633, 15568, 16954, 47036, 38076, 18458, 8092, 38576, 28692, 27211, 37485, 15162, 32968, 55021, 7060, 16714, 34581, 14939, 27056, 15090, 56905, 29528, 21282, 39487, 24239, 35466, 21982, 10334, 15133, 41591, 23260, 12882, 32149, 16219, 41605, 8346, 8549, 23818, 36217, 42766, 11239, 59532, 31806, 52218, 73118, 31701, 32761, 18745, 17949, 8017, 12833, 25583, 36468, 8706, 94587, 42900, 74298, 17201, 25618, 14888, 16308, 75043, 68056, 50797, 15956, 13820, 13985, 22742, 17692, 30214, 57582, 17273, 31885, 14307, 22597, 46389, 23366, 35128, 51769, 9251, 35663, 34474, 18748, 60091, 31137, 14366, 25347, 32175, 16065, 16672, 45192, 42039, 19665, 24933, 29570, 23400, 13517, 23993, 18140, 9545, 16042, 24425, 28400, 25035, 28316, 19001, 27203, 8016, 15199, 14069, 12037, 30455, 13877, 10696, 11010, 41384, 37241, 38328, 54434, 27174, 14015, 27354, 12944, 19718, 21558, 22239, 31076, 32940, 17810, 13462, 16122, 20417, 36205, 9871, 11892, 50737, 32511, 29767, 17032, 40276, 24005, 33884, 16278, 11326, 7187, 50434, 70436, 38353, 27723, 32811, 14833, 28465, 83158, 18866, 21823, 39125, 45372, 33933, 29469, 79147, 24190, 37007, 4259, 41346, 25087, 27216, 32780, 21190, 29067, 11316, 36103, 15389, 27257, 26051, 22853, 10551, 6661, 15878, 17131, 18220, 12045, 10573, 34645, 19517, 13933, 14452, 33694, 35605, 48376, 19567, 35762, 12931, 6286, 25321, 22167, 24243, 19433, 26852, 25802, 26647, 26423, 11537, 16011, 56547, 22690, 20391, 10487, 16994, 25690, 19260, 57525, 17802, 28135, 14365, 21640, 20817, 55771, 31693, 31859, 27496, 39715, 22775, 27933, 58875, 39133, 7604, 29409, 29296, 44377, 33107, 21235, 59129, 33427, 10164, 14595, 4744, 49674, 27827, 48830, 36196, 24979, 47800, 108752, 52300, 38343, 19381, 35881, 43688, 32938, 13341, 29297, 38603, 30202, 14797, 38529, 29055, 61303, 27109, 53496, 16665, 65132, 23903, 36096, 21247, 42292, 11176, 7542, 15210, 5289, 58444, 33295, 30456, 60595, 59624, 19642, 13317, 9262, 17611, 35079, 45469, 59510, 26852, 51484, 20195, 27751, 33555, 27692, 70407, 18102, 130773, 16637, 60463, 11653, 19275, 47114, 6117, 29645, 57846, 51033, 11790, 24970, 32391, 19278, 27778, 19596, 17761, 56884, 66230, 40617, 80495, 27704, 22815, 23390, 18092, 13037, 27954, 6979, 6942, 46155, 34240, 24484, 22375, 45916, 32788, 28017, 31922, 25357, 7314)
+
+# Create boxplot
+bp.thexp <- boxplot(thexp, col = "lightblue", main = "Standard boxplot", 
+                    ylab = "Total household expenditure"
+                    )
+
+# Extract the outliers from the data
+bp.thexp$out
+
+# Create adjusted boxplot
+adj.thexp <- robustbase::adjbox(thexp, col = "lightblue", main = "Adjusted boxplot", 
+                                ylab = "Total household expenditure"
+                                )
+
+
+load("./RInputFiles/hailinsurance.RData")  # matrix num[1:100, 1:2] hailinsurance
+
+# Create a scatterplot
+plot(hailinsurance, xlab = "price house", ylab = "claim")
+
+# Compute the sample mean and sample covariance matrix
+clcenter <- colMeans(hailinsurance)
+clcov <- cov(hailinsurance)
+
+# Add 97.5% tolerance ellipsoid
+rad <- sqrt(qchisq(0.975, df=ncol(hailinsurance)))
+car::ellipse(center = clcenter, shape = clcov, radius = rad,col = "blue", lty = 2)
+
+
+# Create a scatterplot of the data
+plot(hailinsurance, xlab = "price house", ylab = "claim")
+
+# Compute robust estimates for location and scatter
+mcdresult <- robustbase::covMcd(hailinsurance)
+robustcenter <- mcdresult$center
+robustcov <- mcdresult$cov
+
+# Add robust 97.5% tolerance ellipsoid
+rad <- sqrt(qchisq(0.975, df=ncol(hailinsurance)))
+car::ellipse(center = robustcenter, shape = robustcov, radius = rad, col = "red")
+
+```
+  
+  
+  
+***
+  
+###_Dimensionality Reduction in R_  
+  
+Chapter 1 - Principal Component Analysis  
+  
+
+
 
 
 
