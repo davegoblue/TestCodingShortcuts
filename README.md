@@ -1372,4 +1372,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 18-MAR-2019  
 * DataCamp_Insights_v003_c captures Fraud Detection in R - Chapter 3 (Imbalanced Class Distributions) - notes  
+* DataCamp_Insights_v003_c captures Fraud Detection in R - Chapter 4 (Digit Analysis and Robust Statistics) - notes  
   
