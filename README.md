@@ -1374,4 +1374,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Fraud Detection in R - Chapter 3 (Imbalanced Class Distributions) - notes  
 * DataCamp_Insights_v003_c captures Fraud Detection in R - Chapter 4 (Digit Analysis and Robust Statistics) - notes  
 * DataCamp_Insights_v003_c captures Dimensionality Reduction in R - Chapter 1 (Principal Component Analysis) - notes  
+* DataCamp_Insights_v003_c captures Dimensionality Reduction in R - Chapter 2 (Advanced PCA and Non-Negative Matrix Factorization) - notes  
   
