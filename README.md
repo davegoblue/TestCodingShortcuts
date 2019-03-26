@@ -1381,4 +1381,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 25-MAR-2019  
 * DataCamp_Insights_v003_c captures Foundations of Joining Data in R with data.table - Chapter 2 (Joins Using data.table Syntax) - code  
+* DataCamp_Insights_v003_c captures Foundations of Joining Data in R with data.table - Chapter 3 (Diagnosing and Fixing Common Join Problems) - code  
   
