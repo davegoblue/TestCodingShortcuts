@@ -1384,4 +1384,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Foundations of Joining Data in R with data.table - Chapter 3 (Diagnosing and Fixing Common Join Problems) - code  
 * DataCamp_Insights_v003_c captures Foundations of Joining Data in R with data.table - Chapter 4 (Concatenating and Reshaping data.table) - code  
 * DataCamp_Insights_v003_c captures Fraud Detection in R - Chapter 1 (Introduction and Motivation) - code  
+* DataCamp_Insights_v003_c captures Fraud Detection in R - Chapter 2 (Social Network Analysis) - code  
   
