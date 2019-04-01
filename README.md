@@ -1388,3 +1388,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Fraud Detection in R - Chapter 3 (Imbalanced Class Distributions) - code  
 * DataCamp_Insights_v003_c captures Fraud Detection in R - Chapter 4 (Digit Analysis and Robust Statistics) - code  
   
+### Expansions week of 01-APR-2019  
+* DataCamp_Insights_v003_c captures Anomaly Detection in R - Chapter 1 (Statistical Outlier Detection) - notes  
+  
