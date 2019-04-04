@@ -1392,4 +1392,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Anomaly Detection in R - Chapter 1 (Statistical Outlier Detection) - notes  
 * DataCamp_Insights_v003_c captures Anomaly Detection in R - Chapter 2 (Distance and Density Based Anomaly Detection) - notes  
 * DataCamp_Insights_v003_c captures Anomaly Detection in R - Chapter 3 (Isolation Forest) - notes  
+* DataCamp_Insights_v003_c captures Anomaly Detection in R - Chapter 4 (Comparing Performance) - notes  
   
