@@ -1397,3 +1397,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Dimensionality Reduction in R - Chapter 2 (Advanced PCA and Non-Negative Matrix Factorization) - code  
 * DataCamp_Insights_v003_c captures Dimensionality Reduction in R - Chapter 3 (Exploratory Factor Analysis) - code  
   
+### Expansions week of 08-APR-2019  
+* DataCamp_Insights_v003_c captures Dimensionality Reduction in R - Chapter 4 (Advanced EFA) - notes  
+  
