@@ -32249,7 +32249,197 @@ range(as.matrix(thyroid_dist))
   
 Chapter 1 - Standard GARCH Model as the Workhorse  
   
+Analyzing volatility:  
   
+* GARCH models in R help maximize returns while properly managing risk  
+	* Relative gains are key; gain divided by starting point  
+* Properties of daily returns include that average return is zero and variability changes over time  
+	* sd(sp500ret)  # daily  
+    * sqrt(252)*sd(sp500ret)  # annualized, assuming 252 trading days  
+* Can use rolling windows to estimate how variability is changing over time - commonly, window is a multiple of 22 (trading days in a month)  
+	* library(PerformanceAnalytics)  
+    * chart.RollingPerformance(R = sp500ret , width = 22, FUN = "sd.annualized", scale = 252, main = "Rolling 1 month volatility")  
+* The GARCH model helps drive greater precision and accuracy than the simple rolling window  
+  
+GARCH equation for volatility prediction:  
+  
+* GARCH models attempt to model forward-looking volatility  
+	* Input is a time series of returns  
+    * May want to predict a future return based on all current and previous returns - arithmeitc mean or ARMA  
+    * Can also predict the future volatility based on previous returns and volatilities - weighted average (more recent weighted more highly) most recent prediction errors   
+* ARCH is the overall model while GARCH(1, 1) is a generalized form of the model  
+	* omega, alpha, beta should all be positive  
+    * alpha plus beta must be less than 1 (meaning that variance always reverts to its long-run average)  
+* Example of implementing GARCH variance using R (loop starting at 2 because of the lagged predictor)  
+    * alpha <- 0.1  
+    * beta <- 0.8  
+    * omega <- var(sp500ret)*(1-alpha-beta)  # Then: var(sp500ret) = omega/(1-alpha-beta)  
+    * e <- sp500ret - mean(sp500ret) # Constant mean  
+    * e2 <- e^2  
+    * nobs <- length(sp500ret)  
+    * predvar <- rep(NA, nobs)  
+    * predvar[1] <- var(sp500ret)  # Initialize the process at the sample variance  
+    * for (t in 2:nobs){  
+    *     predvar[t] <- omega + alpha * e2[t - 1] + beta * predvar[t-1]  # GARCH(1,1) equation  
+    * }  
+    * predvol <- sqrt(predvar)  # Volatility is sqrt of predicted variance  
+    * predvol <- xts(predvol, order.by = time(sp500ret))  
+    * uncvol <- sqrt(omega / (1 - alpha-beta))  # We compare with the unconditional volatility  
+    * uncvol <- xts(rep(uncvol, nobs), order.by = time(sp500ret))  
+  
+rugarch package:  
+  
+* The normal GARCH(1, 1) model with a constant mean is a starting point  
+	* Can use maximum likelihood to estimate mean, omega, alpha, and beta  
+    * library(rugarch)  
+    * garchspec <- ugarchspec( mean.model = list(armaOrder = c(0,0)), variance.model = list(model = "sGARCH"), distribution.model = "norm")  # first step is ugarchspec  
+    * garchfit <- ugarchfit(data = sp500ret , spec = garchspec)  # ugarchfit is the second step  
+    * garchforecast <- ugarchforecast(fitORspec = garchfit, n.ahead = 5)  # ugarchforecast is final step  
+* Can access the results in a ugarchfit object  
+	* The ugarchfit yields an object that contains all the results related to the estimation of the garch model  
+    * Methods coef, uncvar, fitted and sigma:  
+    * garchcoef <- coef(garchfit)  
+    * garchuncvar <- uncvariance(garchfit)  
+    * garchmean <- fitted(garchfit)  
+    * garchvol <- sigma(garchfit)  
+    * sigma(garchforecast)   
+    * fitted(garchforecast)   
+* Frequently, portfolios are set to a target volatility, with a portion of the portfolio held in cash to manage that  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+library(xts)
+library(PerformanceAnalytics)
+
+
+load("./RInputFiles/sp500prices.RData")
+str(sp500prices)
+
+
+# Plot daily S&P 500 prices
+plot(sp500prices)
+
+# Compute daily returns
+sp500ret <- CalculateReturns(sp500prices)
+
+# Check the class of sp500ret
+class(sp500ret)
+
+# Plot daily returns
+plot(sp500ret)
+
+
+# Compute the daily standard deviation for the complete sample   
+sd(sp500ret)
+
+# Compute the annualized volatility for the complete sample
+sd(sp500ret) * sqrt(252)
+
+# Compute the annualized standard deviation for the year 2009 
+sqrt(252) * sd(sp500ret["2009"])
+
+# Compute the annualized standard deviation for the year 2017 
+sqrt(252) * sd(sp500ret["2017"])
+
+
+# Showing two plots onthe same figure
+par(mfrow=c(2,1)) 
+
+# Compute the rolling 1 month estimate of annualized volatility
+chart.RollingPerformance(R = sp500ret["2000::2017"], width = 22,
+     FUN = "sd.annualized", scale = 252, main = "One month rolling volatility")
+
+# Compute the rolling 3 months estimate of annualized volatility
+chart.RollingPerformance(R = sp500ret["2000::2017"], width = 66,
+     FUN = "sd.annualized", scale = 252, main = "Three months rolling volatility")
+
+par(mfrow=c(1,1)) 
+
+
+sp500ret <- sp500ret[2:length(sp500ret), ]
+
+# Compute the mean daily return
+m <- mean(sp500ret)
+
+# Define the series of prediction errors
+e <- sp500ret - m
+
+# Plot the absolute value of the prediction errors
+par(mfrow = c(2,1), mar = c(3, 2, 2, 2))
+plot(abs(e))
+
+# Plot the acf of the absolute prediction errors
+acf(abs(e))
+par(mfrow = c(1,1), mar = c(5.1, 4.1, 4.1, 2.1))
+
+
+nobs <- length(sp500ret)
+predvar <- numeric(nobs)
+omega <- 1.2086e-05
+alpha <- 0.1
+beta <- 0.8
+e2 <- e**2
+
+# Compute the predicted variances
+predvar[1] <- var(sp500ret) 
+for(t in 2:nobs){
+   predvar[t] <- omega + alpha * e2[t-1] + beta * predvar[t-1]
+}
+
+# Create annualized predicted volatility
+ann_predvol <- xts(sqrt(predvar) * sqrt(252), order.by = time(sp500ret))
+
+# Plot the annual predicted volatility in 2008 and 2009
+plot(ann_predvol["2008::2009"], main = "Ann. S&P 500 vol in 2008-2009")
+
+
+# Specify a standard GARCH model with constant mean
+garchspec <- rugarch::ugarchspec(mean.model = list(armaOrder = c(0, 0)),
+                 variance.model = list(model = "sGARCH"), 
+                 distribution.model = "norm")
+
+# Estimate the model
+garchfit <- rugarch::ugarchfit(data = sp500ret, spec = garchspec)
+
+# Use the method sigma to retrieve the estimated volatilities 
+garchvol <- rugarch::sigma(garchfit) 
+
+# Plot the volatility for 2017
+plot(garchvol["2017"])
+
+
+# Compute unconditional volatility
+sqrt(rugarch::uncvariance(garchfit))
+
+# Print last 10 ones in garchvol
+tail(garchvol, 10)
+
+# Forecast volatility 5 days ahead and add 
+garchforecast <- rugarch::ugarchforecast(fitORspec = garchfit, n.ahead = 5)
+
+# Extract the predicted volatilities and print them
+print(rugarch::sigma(garchforecast))
+
+
+# Compute the annualized volatility
+annualvol <- sqrt(252) * rugarch::sigma(garchfit)
+
+# Compute the 5% vol target weights  
+vt_weights <- 0.05 / annualvol
+
+# Compare the annualized volatility to the portfolio weights in a plot
+plot(merge(annualvol, vt_weights), multi.panel = TRUE)
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Improvements of the Normal GARCH Model  
+  
+
 
 
 
