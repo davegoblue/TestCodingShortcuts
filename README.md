@@ -1400,4 +1400,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 08-APR-2019  
 * DataCamp_Insights_v003_c captures Dimensionality Reduction in R - Chapter 4 (Advanced EFA) - notes  
 * DataCamp_Insights_v003_c captures GARCH Models in R - Chapter 1 (Standard GARCH Model as the Workhorse) - notes  
+* DataCamp_Insights_v003_c captures GARCH Models in R - Chapter 2 (Improvements of the Normal GARCH Model) - notes  
   
