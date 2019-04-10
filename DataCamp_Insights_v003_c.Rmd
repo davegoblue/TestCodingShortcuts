@@ -32439,6 +32439,224 @@ plot(merge(annualvol, vt_weights), multi.panel = TRUE)
   
 Chapter 2 - Improvements of the Normal GARCH Model  
   
+Non-normality of standardized returns:  
+  
+* Normal distributions are generally inconsistent with stock markets - "stairs up and elevators down"  
+	* garchspec <- ugarchspec( mean.model=list(armaOrder=c(0,0)), variance.model=list(model="sGARCH"), distribution.model = "sstd")  
+    * Caveat: The normality of the standardized returns follows from an assumption  
+    * Let's compute the standardized returns and test whether the assumption is correct.  
+    * stdret <- residuals(garchfit, standardize = TRUE)  
+    * chart.Histogram(sp500ret, methods = c("add.normal", "add.density"), colorset=c("gray","red","blue"))  
+* A more realistic distribution needs fat tails and skew  
+	* The shape (nu) determines the fatness of the tails  
+    * The skew parameter of 1 is symmetry while less than 1 is negative skew  
+    * garchspec <- ugarchspec(mean.model = list(armaOrder = c(0,0)), variance.model = list(model = "sGARCH"), distribution.model = "sstd")  
+  
+Leverage effect:  
+  
+* Volatility predictions are unsigned, though the sign of the error matters (large negative returns drive more volatility than large positive returns)  
+	* In the case of a negative surprise, it is common to scale-up the squared prediction error - alpha becomes (alpha + gamma) with gamma being positive  
+    * GJR model proposed Glosten, Jagannathan and Runkle.  
+    * garchspec <- ugarchspec( mean.model=list(armaOrder=c(0,0)), variance.model=list(model="gjrGARCH"), distribution.model = "sstd")  
+    * garchfit <- ugarchfit(data = msftret, spec = garchspec)  
+    * out <- newsimpact(garchfit)  
+    * plot(out$zx, out$zy, xlab = "prediction error", ylab = "predicted variance")  
+  
+Mean model:  
+  
+* Higher returns come with greater risks; can quantify these using GARCH mean models  
+	* The lambda parameter is typically a positive parameter that relates increases in volatility to increases in return  
+    * garchspec <- ugarchspec( mean.model = list(armaOrder = c(0,0), archm = TRUE, archpow = 2), variance.model = list(model = "gjrGARCH"), distribution.model = "sstd")  
+    * garchfit <- ugarchfit( data = sp500ret , spec = garchspec)  
+    * plot(fitted(garchfit))  
+* The AR(1) model is a common approach used to drive correlation in returns - can be a negative or a positive parameter  
+	* garchspec <- ugarchspec( mean.model = list(armaOrder = c(1,0)), variance.model = list(model = "gjrGARCH"), distribution.model = "sstd")  
+    * garchfit <- ugarchfit(data = sp500ret, spec = garchspec)  
+    * round(coef(garchfit)[1:2], 4)  
+* The MA(1) and ARMA(1, 1) are also popular models  
+	* garchspec <- ugarchspec( mean.model = list(armaOrder = c(0,1)), variance.model = list(model = "gjrGARCH"), distribution.model = "sstd")  
+    * garchspec <- ugarchspec( mean.model = list(armaOrder = c(1,1)), variance.model = list(model = "gjrGARCH"), distribution.model = "sstd")  
+  
+Avoid unnecessary complexity:  
+  
+* Complexity has a price including loss of parsimony; avoid unneeded complexity  
+* Can use setfixed() or setbounds() to set boundaries for the data  
+	* setfixed(garchspec) <- list(alpha1 = 0.05, shape = 6)  
+    * garchfit <- ugarchfit(data = EURUSDret, spec = garchspec)  
+    * setbounds(garchspec) <- list("alpha1" = c(0.05,0.2), "beta1" = c(0.8,0.95))  
+* Can also use variance targeting  
+	* garchspec <- ugarchspec(mean.model = list(armaOrder = c(0,0)), variance.model = list(model = "sGARCH", variance.targeting = TRUE), distribution.model = "std")  
+    * garchfit <- ugarchfit(data = EURUSDret, spec = garchspec)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+load("./RInputFiles/ret.RData")
+str(ret)
+
+
+# Plot the return series
+plot(ret)
+
+# Specify the garch model to be used
+garchspec <- rugarch::ugarchspec(mean.model = list(armaOrder = c(0,0)),
+                                 variance.model = list(model = "sGARCH"),
+                                 distribution.model = "sstd"
+                                 )
+
+# Estimate the model
+garchfit <- rugarch::ugarchfit(data = ret, spec = garchspec)
+
+# Inspect the coefficients
+rugarch::coef(garchfit)
+
+
+# Compute the standardized returns
+stdret <- rugarch::residuals(garchfit, standardize = TRUE)
+
+# Compute the standardized returns using fitted() and sigma()
+stdret <- (ret - rugarch::fitted(garchfit)) / rugarch::sigma(garchfit)
+
+# Load the package PerformanceAnalytics and make the histogram
+chart.Histogram(stdret, methods = c("add.normal","add.density" ), colorset = c("gray","red","blue"))
+
+
+load("./RInputFiles/msftret.RData")
+str(msftret)
+
+
+# Specify the GJR GARCH model
+garchspec <- rugarch::ugarchspec(mean.model = list(armaOrder = c(0,0)),
+                                 variance.model = list(model = "gjrGARCH"),
+                                 distribution.model = "sstd"
+                                 )
+
+# Estimate the model and compute volatility
+gjrgarchfit <- rugarch::ugarchfit(data = msftret, spec = garchspec)
+gjrgarchvol <- rugarch::sigma(gjrgarchfit)
+
+# Compare volatility
+plotvol <- plot(abs(msftret), col = "grey")
+plotvol <- addSeries(gjrgarchvol, col = "red", on=1)
+# plotvol <- addSeries(sgarchvol, col = "blue", on=1)
+plotvol
+
+
+# Specify AR(1)-GJR GARCH model
+garchspec <- rugarch::ugarchspec(mean.model = list(armaOrder = c(1, 0)),
+                                 variance.model = list(model = "gjrGARCH"),
+                                 distribution.model = "sstd"
+                                 )
+
+# Estimate the model
+garchfit <- rugarch::ugarchfit(data=msftret, spec=garchspec)
+
+# Print the first two coefficients
+rugarch::coef(garchfit)[c(1:2)]
+
+
+# GARCH-in-Mean specification and estimation
+gim_garchspec <- rugarch::ugarchspec(mean.model = list(armaOrder = c(0,0), archm = TRUE, archpow = 2),
+                                     variance.model = list(model = "gjrGARCH"), 
+                                     distribution.model = "sstd"
+                                     )
+gim_garchfit <- rugarch::ugarchfit(data = msftret , spec = gim_garchspec)
+
+# Predicted mean returns and volatility of GARCH-in-mean
+gim_mean <- rugarch::fitted(gim_garchfit)
+gim_vol <- rugarch::sigma(gim_garchfit)
+
+
+ar1_garchspec <- rugarch::ugarchspec(mean.model = list(armaOrder = c(1,0), archm = TRUE, archpow = 2),
+                                     variance.model = list(model = "sGARCH"), 
+                                     distribution.model = "sstd"
+                                     )
+ar1_garchfit <- rugarch::ugarchfit(data = msftret , spec = ar1_garchspec)
+ar1_mean <- rugarch::fitted(ar1_garchfit)
+ar1_vol <- rugarch::sigma(ar1_garchfit)
+
+cmu_garchspec <- rugarch::ugarchspec(mean.model = list(armaOrder = c(0,0), archm = TRUE, archpow = 2),
+                                     variance.model = list(model = "sGARCH"), 
+                                     distribution.model = "sstd"
+                                     )
+cmu_garchfit <- rugarch::ugarchfit(data = msftret , spec = cmu_garchspec)
+constmean_mean <- rugarch::fitted(cmu_garchfit)
+constmean_vol <- rugarch::sigma(cmu_garchfit)
+
+# Correlation between predicted return using AR(1) and GARCH-in-mean models
+cor(ar1_mean, gim_mean)
+
+# Correlation between predicted volatilities across mean.models
+cor(merge(constmean_vol, ar1_vol, gim_vol))
+
+
+load("./RInputFiles/EURUSDret.RData")
+str(EURUSDret)
+
+
+flexgarchspec <- rugarch::ugarchspec(mean.model = list(armaOrder = c(1,0), archm = FALSE),
+                                     variance.model = list(model = "sGARCH"), 
+                                     distribution.model = "sstd"
+                                     )
+flexgarchfit <- rugarch::ugarchfit(data = EURUSDret , spec = flexgarchspec)
+
+
+# Print the flexible GARCH parameters
+rugarch::coef(flexgarchfit)
+
+# Restrict the flexible GARCH model by impose a fixed ar1 and skew parameter
+rflexgarchspec <- flexgarchspec
+rugarch::setfixed(rflexgarchspec) <- list(ar1 = 0, skew = 1)
+
+# Estimate the restricted GARCH model
+rflexgarchfit <- rugarch::ugarchfit(data = EURUSDret,  spec = rflexgarchspec)
+
+# Compare the volatility of the unrestricted and restriced GARCH models
+plotvol <- plot(abs(EURUSDret), col = "grey")
+plotvol <- addSeries(rugarch::sigma(flexgarchfit), col = "black", lwd = 4, on=1 )
+plotvol <- addSeries(rugarch::sigma(rflexgarchfit), col = "red", on=1)
+plotvol
+
+
+# Define bflexgarchspec as the bound constrained version
+bflexgarchspec <- flexgarchspec
+rugarch::setbounds(bflexgarchspec) <- list(alpha1 = c(0.05, 0.2), beta1 = c(0.8, 0.95))
+
+# Estimate the bound constrained model
+bflexgarchfit <- rugarch::ugarchfit(data = EURUSDret, spec = bflexgarchspec)
+
+# Inspect coefficients
+rugarch::coef(bflexgarchfit)
+
+# Compare forecasts for the next ten days
+cbind(rugarch::sigma(rugarch::ugarchforecast(flexgarchfit, n.ahead = 10)),
+      rugarch::sigma(rugarch::ugarchforecast(bflexgarchfit, n.ahead = 10))
+      )
+
+
+# Complete the specification to do variance targeting
+garchspec <- rugarch::ugarchspec(mean.model = list(armaOrder = c(0,0)),
+                                 variance.model = list(model = "sGARCH", variance.targeting = TRUE),
+                                 distribution.model = "std"
+                                 )
+
+# Estimate the model
+garchfit <- rugarch::ugarchfit(data = EURUSDret, spec = garchspec)
+
+# Print the GARCH model implied long run volatility
+sqrt(rugarch::uncvariance(garchfit))
+
+# Verify that it equals the standard deviation (after rounding)
+all.equal(sqrt(rugarch::uncvariance(garchfit)), sd(EURUSDret), tol = 1e-4)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Performance Evaluation  
+  
 
 
 
