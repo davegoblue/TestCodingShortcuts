@@ -32657,6 +32657,217 @@ all.equal(sqrt(rugarch::uncvariance(garchfit)), sd(EURUSDret), tol = 1e-4)
   
 Chapter 3 - Performance Evaluation  
   
+Statistical Significance:  
+  
+* The model should only use meaningful and significant variables  
+	* Can simplify by removing non-significant parameters  
+    * Since we do not know the true parameters, the zero parameters need to be estimated  
+    * round(coef(flexgarchfit), 6)  
+* Tests for statistical significance are available in the rgarch package - general rule of thumb is to keep is abs(t-value) >= 2  
+	* flexgarchspec <- ugarchspec(mean.model = list(armaOrder = c(1,0)), variance.model = list(model = "gjrGARCH"), distribution.model = "sstd")  
+    * flexgarchfit <- ugarchfit(data = msftret, spec = flexgarchspec)  
+    * round(flexgarchfit@fit$matcoef, 6)  
+  
+Goodness of Fit:  
+  
+* Evaluation criterion depend on the elements that you want to assess  
+* Goodness of fit for mean predictions  
+	* e <- residuals(tgarchfit)  
+    * mean(e^2)  
+* Goodness of fit for variance predictions  
+	* e <- residuals(tgarchfit)  
+    * d <- e^2 - sigma(tgarchfit)^2  
+    * mean(d^2)  
+* Goodness of fit for the distribution - higher density means more likely to see returns  
+	* The higher the density, the more likely the return is under the estimated GARCH model  
+    * The likelihood of the sample is based on the product of all these densities. It measures how likely it is to that the observed returns come from the estimated GARCH model  
+    * The higher the likelihood, the better the model fits with your data  
+    * likelihood(tgarchfit)  # compare with likelihood achieved using other models; higher likelihood is better  
+* There is a risk of over-fitting since the in-sample data is used for the goodness of fit tests - should add penalties for non-parsimonious models  
+	* information criteria = - likelihood + penalty(number of parameters)  
+    * infocriteria(tgarchfit)  
+  
+Diagnosing Absolute Standardized Returns:  
+  
+* Can check the standardized returns - scaled for mean 0 and standard deviation 1  
+	* Standardized returns should be constant over time, provided the model is making good estimates of mean and sigma over time  
+    * Should also be no correlations (auto-correlations) in the standardized returns over time  
+* Example application to the daily MSFT returns  
+	* garchspec <- ugarchspec(mean.model = list(armaOrder = c(1,0)), variance.model = list(model = "gjrGARCH"), distribution.model = "sstd")  
+    * garchfit <- ugarchfit(data = msftret, spec = garchspec)  
+    * stdmsftret <- residuals(garchfit, standardize = TRUE)  
+    * acf(abs(msftret), 22)  
+    * acf(abs(stdmsftret), 22)  
+* Can check the auto-correlations using the Ljung-Box test - desire for p to be GREATER than 5% (no significant auto-correlations found)  
+	* Box.test(abs(stdmsftret), 22, type = "Ljung-Box")  
+  
+Back-testing using ugarchroll:  
+  
+* Can use rolling estimation to avoid look-ahead bias  
+	* tgarchspec <- ugarchspec(mean.model = list(armaOrder = c(1,0)), variance.model = list(model = "sGARCH"), distribution.model = "std")  
+    * garchroll <- ugarchroll(tgarchspec, data = EURUSDret, n.start = 2500, refit.window = "moving", refit.every = 500)  
+* There are five arguments to specify  
+	* GARCH specification used  
+    * data : return data to use  
+    * n.start: the size of the initial estimation sample  
+    * refit.window: how to change that sample through time: "moving" or "expanding  
+    * refit.every: how often to re-estimate the model  
+* Can convert results to data frames  
+	* preds <- as.data.frame(garchroll)  
+    * preds$Mu: series of predicted mean values  
+    * preds$Sigma: series of predicted volatility values  
+    * garchvol <- xts(preds$Sigma, order.by = as.Date(rownames(preds)))  
+    * plot(garchvol)  
+    * preds <- as.data.frame(garchroll)  
+    * Evaluate accuracy of preds$Mu and preds$Sigma by comparing with preds$Realized  
+    * e <- preds$Realized - preds$Mu  
+    * mean(e^2)  
+    * d <- e^2 - preds$Sigma^2  
+    * mean(d^2)  
+* Can run a comparison of two models  
+	* tgarchspec <- ugarchspec(mean.model = list(armaOrder = c(1,0)), variance.model = list(model = "sGARCH"), distribution.model = "std")  
+    * garchroll <- ugarchroll(tgarchspec, data = EURUSDret, n.start = 2500, refit.window = "moving", refit.every = 500)  
+    * gjrgarchspec <- ugarchspec(mean.model = list(armaOrder = c(1,0)), variance.model = list(model = "gjrGARCH"), distribution.model = "sstd")  
+    * gjrgarchroll <- ugarchroll(gjrgarchspec, data = EURUSDret, n.start = 2500, refit.window = "moving", refit.every = 500)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Specify model with AR(1) dynamics, GJR GARCH and skewed student t
+flexgarchspec <- rugarch::ugarchspec(mean.model = list(armaOrder = c(1,0)),
+                                     variance.model = list(model = "gjrGARCH"),
+                                     distribution.model = "sstd"
+                                     )
+
+# Estimate the model
+flexgarchfit <- rugarch::ugarchfit(data = EURUSDret, spec = flexgarchspec)
+
+# Complete and study the statistical significance of the estimated parameters  
+round(flexgarchfit@fit$matcoef, 6)
+
+
+# Specify model with constant mean, standard GARCH and student t
+tgarchspec <- rugarch::ugarchspec(mean.model = list(armaOrder = c(1, 0)),
+                                  variance.model = list(model = "sGARCH", variance.targeting = TRUE),
+                                  distribution.model = "sstd"
+                                  )
+
+# Fix the mu parameter at zero
+rugarch::setfixed(tgarchspec) <- list("mu" = 0)
+
+# Estimate the model
+tgarchfit <- rugarch::ugarchfit(data = EURUSDret, spec = tgarchspec)
+
+# Verify that the differences in volatility are small
+plot(rugarch::sigma(tgarchfit) - rugarch::sigma(flexgarchfit))
+
+
+# Compute prediction errors
+garcherrors <- rugarch::residuals(flexgarchfit)
+gjrerrors  <- rugarch::residuals(tgarchfit)
+
+# Compute MSE for variance prediction of garchfit model
+mean((rugarch::sigma(flexgarchfit)**2 - garcherrors^2)**2)
+
+# Compute MSE for variance prediction of gjrfit model
+mean((rugarch::sigma(tgarchfit)**2 - gjrerrors^2)**2)
+
+
+# Print the number of estimated parameters
+length(rugarch::coef(flexgarchfit))
+length(rugarch::coef(tgarchfit))
+
+# Print likelihood of the two models
+rugarch::likelihood(flexgarchfit)
+rugarch::likelihood(tgarchfit)
+
+# Print the information criteria of the two models
+rugarch::infocriteria(flexgarchfit)
+rugarch::infocriteria(tgarchfit)
+
+
+# Compute the standardized returns
+stdEURUSDret <- rugarch::residuals(tgarchfit, standardize = TRUE)
+
+# Compute their sample mean and standard deviation
+mean(stdEURUSDret)
+sd(stdEURUSDret)
+
+# Correlogram of the absolute (standardized) returns
+par(mfrow = c(1, 2))
+acf(abs(EURUSDret), 22)
+acf(abs(stdEURUSDret), 22)
+par(mfrow = c(1, 1))
+
+# Ljung-Box test
+Box.test(abs(stdEURUSDret), 22, type = "Ljung-Box")
+
+
+# Estimate the model on the last 2500 observations
+tgarchspec <- rugarch::ugarchspec(mean.model = list(armaOrder = c(0,0)),
+                                  variance.model = list(model = "sGARCH"),
+                                  distribution.model = "std"
+                                  )
+tgarchfit <- rugarch::ugarchfit(data = tail(EURUSDret, 2500) , spec = tgarchspec)
+
+# Compute standardized returns
+stdEURUSDret <- rugarch::residuals(tgarchfit, standardize = TRUE)
+
+# Do the Ljung-Box test on the absolute standardized returns
+Box.test(abs(stdEURUSDret), 22, type = "Ljung-Box")
+
+
+# Estimate the GARCH model using all the returns and compute the in-sample estimates of volatility
+garchinsample <- rugarch::ugarchfit(data = sp500ret, spec = flexgarchspec)
+garchvolinsample <- rugarch::sigma(garchinsample)
+
+# Use ugarchroll for rolling estimation of the GARCH model 
+garchroll <- rugarch::ugarchroll(flexgarchspec, data = sp500ret, 
+                                 n.start = 2000, refit.window = "moving",  refit.every = 2500
+                                 )
+
+# Set preds to the data frame with rolling predictions
+preds <- rugarch::as.data.frame(garchroll)
+
+# Compare in-sample and rolling sample volatility in one plot
+garchvolroll <- xts(preds$Sigma, order.by = as.Date(rownames(preds)))
+volplot <- plot(garchvolinsample, col = "darkgrey", lwd = 1.5, 
+                main = "In-sample versus rolling vol forecasts"
+                )
+volplot <- addSeries(garchvolroll, col = "blue", on = 1)
+plot(volplot)
+
+
+# Inspect the first three rows of the dataframe with out of sample predictions
+head(preds, 3)
+
+# Compute prediction errors
+e <- preds$Realized - preds$Mu  
+d <- e^2 - preds$Sigma^2 
+
+# Compute MSE for the garchroll variance prediction
+garchMSE <- mean(d^2)
+
+# Use ugarchroll for rolling estimation of the GARCH model 
+gjrgarchroll <- rugarch::ugarchroll(tgarchspec, data = sp500ret, 
+                                    n.start = 2000, refit.window = "moving",  refit.every = 2500
+                                    )
+
+# Compute MSE for gjrgarchroll
+gjrgarchpreds <- rugarch::as.data.frame(gjrgarchroll)
+e <- gjrgarchpreds$Realized - gjrgarchpreds$Mu  
+d <- e^2 - gjrgarchpreds$Sigma^2 
+gjrgarchMSE <- mean(d**2)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Applications  
+  
+
 
 
 
