@@ -1409,4 +1409,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 15-APR-2019  
 * DataCamp_Insights_v003_c captures Anomaly Detection in R - Chapter 3 (Isolation Forest) - code  
 * DataCamp_Insights_v003_c captures Anomaly Detection in R - Chapter 4 (Comparing Performance) - code  
+* DataCamp_Insights_v003_c captures RNA-Seq Differential Expression Analysis - Chapter 1 (Introduction to RNA-Seq Theory and Workflow) - notes  
   
