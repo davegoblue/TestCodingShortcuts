@@ -33440,7 +33440,152 @@ smoc2_res_sig <- subset(smoc2_res_all, padj < 0.05)
   
 Chapter 4 - Exploration of Differential Expression Results  
   
+Visualization of Results:  
+  
+* Expression heatmaps explore the expression of key genes  
+	* sig_norm_counts_wt <- normalized_counts_wt[wt_res_sig$ensgene, ]  
+    * library(RColorBrewer)  
+    * heat_colors <- brewer.pal(6, "YlOrRd")  
+    * display.brewer.all()  
+    * pheatmap(sig_norm_counts_wt, color = heat_colors, cluster_rows = T, show_rownames = F, annotation = select(wt_metadata, condition), scale = "row")  
+* Can also plot using the volcano plot  
+	* wt_res_all <- wt_res_all %>% rownames_to_column(var = "ensgene") %>% mutate(threshold = padj < 0.05)  
+    * ggplot(wt_res_all) + geom_point(aes(x = log2FoldChange, y = -log10(padj), color = threshold)) + xlab("log2 fold change") + ylab("-log10 adjusted p-value") + theme(legend.position = "none", plot.title = element_text(size = rel(1.5), hjust = 0.5), axis.title = element_text(size = rel(1.25)))  
+* The expression plot can also be helpful - e.g., top 20 genes plot  
+	* top_20 <- data.frame(sig_norm_counts_wt)[1:20, ] %>% rownames_to_column(var = "ensgene")  
+    * top_20 <- gather(top_20, key = "samplename", value = "normalized_counts", 2:8)  
+    * top_20 <- inner_join(top_20, rownames_to_column(wt_metadata, var = "samplename"), by = "samplename")  
+    * ggplot(top_20) + geom_point(aes(x = ensgene, y = normalized_counts, color = condition)) + scale_y_log10() + xlab("Genes") + ylab("Normalized Counts") + ggtitle("Top 20 Significant DE Genes") + theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + theme(plot.title = element_text(hjust = 0.5))  
+  
+RNA-Seq DE Analysis Setup:  
+  
+* Can explore and filter for relevant and/or expected genes  
+	* Samples/library preparation  
+    * Sequence reads  
+    * Quality control  
+    * Splice-aware mapping to genome  
+    * Counting reads associated with genes  
+    * Statistical analysis to identify differentially expressed genes  
+* The initial preparation uses the DESeq2 library  
+	* dds <- DESeqDataSetFromMatrix(countData = rawcounts, colData = metadata, design = ~ condition)  
+  
+RNA-Seq DE Analysis Summary:  
+  
+* Need to normalize the data for DESeq analysis  
+	* dds <- estimateSizeFactors(dds)  
+    * normalized_counts <- counts(dds, normalized=TRUE)  
+* Can cluster and plot for quality assurance and exploratory analysis  
+	* vsd <- vst(dds, blind=TRUE)  
+    * vsd %>% assay() %>% # Extract the vst matrix from the object cor() %>% # Compute pairwise correlation values pheatmap(annotation = metadata[ , c("column_name1", "column_name2])  
+    * plotPCA(vsd, intgroup="condition")  
+* Can then run the DE analysis  
+	* dds <- DESeqDataSetFromMatrix(countData = rawcounts, colData = metadata, design = ~ source_of_variation + condition)  
+    * dds <- DESeq(dds)  
+* Can then explore fits using dispersions - should decrease with increasing mean - and then run LFC shrinkage  
+	* plotDispEsts(dds)  
+    * res <- results(dds, contrast=c("condition_factor", "level_to_compare", "base_level"), alpha = 0.05)  
+    * res_all <- data.frame(res) %>% rownames_to_column(var = "ensgene")  
+    * res_all <- left_join(x=res_all, y=grcm38[, c("ensgene", "symbol", "description")], by = "ensgene")  
+    * res_all <- arrange(res_all, padj)  
+* Identify significantly differently expressed genes  
+	* res_sig <- subset(res_all, padj < 0.05)  
+    * plotMA(), volcano plot, expression heatmap  
+  
+RNA-Seq Next Steps:  
+  
+* Several resources available for additional exploration  
+	* http://bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html  
+    * https://support.bioconductor.org/  
+* May want to run more complicated experiments and analyses  
+* Course covered differential expression of genes associated with fibrosis in wild type and SMOC2  
+	* Can further analyze differentially expressed genes  
+    * Can compare with the list of expected genes for differential expression  
+  
+Example code includes:  
+```{r eval=FALSE}
 
+# Create MA plot
+plotMA(smoc2_res)
+
+# Generate logical column 
+smoc2_res_all <- data.frame(smoc2_res) %>% mutate(threshold = padj < 0.05)
+              
+# Create the volcano plot
+ggplot(smoc2_res_all) + 
+        geom_point(aes(x = log2FoldChange, y = -log10(padj), color = threshold)) + 
+        xlab("log2 fold change") + 
+        ylab("-log10 adjusted p-value") + 
+        theme(legend.position = "none", 
+              plot.title = element_text(size = rel(1.5), hjust = 0.5), 
+              axis.title = element_text(size = rel(1.25)))
+
+
+# Subset normalized counts to significant genes
+sig_norm_counts_smoc2 <- normalized_counts_smoc2[rownames(smoc2_res_sig), ]
+
+# Choose heatmap color palette
+heat_colors <- brewer.pal(n = 6, name = "YlOrRd")
+
+# Plot heatmap
+pheatmap(sig_norm_counts_smoc2, 
+         color = heat_colors, 
+         cluster_rows = TRUE, 
+         show_rownames = FALSE,
+         annotation = select(smoc2_metadata, condition), 
+         scale = "row")
+
+
+# Check that all of the samples are in the same order in the metadata and count data
+all(colnames(all_rawcounts) %in% rownames(all_metadata))
+
+# DESeq object to test for the effect of fibrosis regardless of genotype
+dds_all <- DESeqDataSetFromMatrix(countData = all_rawcounts,
+                        colData = all_metadata,
+                        design = ~ genotype + condition)
+
+# DESeq object to test for the effect of genotype on the effect of fibrosis                        
+dds_complex <- DESeqDataSetFromMatrix(countData = all_rawcounts,
+                        colData = all_metadata,
+                        design = ~ genotype + condition + genotype:condition)
+
+
+# Log transform counts for QC
+vsd_all <- vst(dds_all, blind = TRUE)
+
+# Create heatmap of sample correlation values
+vsd_all %>% 
+        assay() %>%
+        cor() %>%
+        pheatmap(annotation = select(all_metadata, c("condition", "genotype")))
+
+# Create the PCA plot for PC1 and PC2 and color by condition       
+plotPCA(vsd_all, intgroup="condition")
+
+# Create the PCA plot for PC1 and PC2 and color by genotype       
+plotPCA(vsd_all, intgroup="genotype")
+
+
+# Select significant genese with padj < 0.05
+smoc2_sig <- subset(res_all, padj < 0.05) %>%
+    data.frame() %>%
+    rownames_to_column(var = "geneID")
+
+# Extract the top 6 genes with padj values
+smoc2_sig %>%
+    arrange(padj) %>%
+    select(geneID, padj) %>%
+    head()
+
+```
+  
+  
+  
+***
+  
+###_Survival Analysis in R_  
+  
+Chapter 1 - What is Survival Analysis?  
+  
 
 
 
