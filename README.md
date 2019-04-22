@@ -1415,3 +1415,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures RNA-Seq Differential Expression Analysis - Chapter 4 (Exploration of Differential Expression Results) - notes  
 * DataCamp_Insights_v003_c captures Survival Analysis in R - Chapter 1 (What is Survival Analysis?) - notes  
   
+### Expansions week of 22-APR-2019  
+* DataCamp_Insights_v003_c captures Survival Analysis in R - Chapter 2 (Estimation of Survival Curves) - notes  
+  
