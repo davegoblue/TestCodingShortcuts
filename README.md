@@ -1417,4 +1417,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 22-APR-2019  
 * DataCamp_Insights_v003_c captures Survival Analysis in R - Chapter 2 (Estimation of Survival Curves) - notes  
+* DataCamp_Insights_v003_c captures Survival Analysis in R - Chapter 3 (Weibull Model) - notes  
   
