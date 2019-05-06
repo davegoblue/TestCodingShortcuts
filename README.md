@@ -1433,3 +1433,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Building Reponse Models in R - Chapter 2 (Extended Sales Response Modeling) - code  
 * DataCamp_Insights_v003_c captures Building Reponse Models in R - Chapter 3 (Response Models for Individual Demand) - code  
   
+### Expansions week of 06-MAY-2019  
+* DataCamp_Insights_v003_c captures Building Reponse Models in R - Chapter 4 (Extended Demand Modeling) - code  
+  
