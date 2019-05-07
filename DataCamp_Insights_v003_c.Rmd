@@ -34576,6 +34576,193 @@ table(predicted, observed)/300
   
 Chapter 1 - Review of data.table  
   
+Introduction:  
+  
+* Data frames are a general purpose data structure - rectangular structure reflecting a list of lists, though unlike matrices, the lists may be of multiple data types  
+* The data.table package is an extension of data.frame - more efficient memory usage and more expressive syntax  
+    * library(data.table)  
+    * someDT <- data.table(x = rnorm(100), y = rep(TRUE, 100))  
+    * str(someDT)  # Classes 'data.table' and 'data.frame':    100 obs. of  2 variables:  
+* Can select columns using .()  
+	* baseballDT[, .(timestamp, winning_team)]  
+* Can use .SD for column selection  
+	* cols <- c("timestamp", "winning_team")  
+    * baseballDT[, .SD, .SDcols = cols]  
+* Can use grep() to help with the matching  
+	* count_cols <- grep('COUNT$', names(baseballDT), value = TRUE)  
+    * countDT <- baseballDT[, .SD, .SDcols = count_cols]  
+* Can simultaneously select rows and columns, and they are objects inside the data.table environment  
+	* cols <- c("timestamp", "winning_team")  
+    * baseballDT[ which.max(timestamp), .SD, .SDcols = cols ]  
+  
+Flexible Data Selection:  
+  
+* The get() function allows for evaluating a string as a column reference  
+	* locDT <- data.table( cities = c("Chicago", "Boston", "Milwaukee"), ppl_mil = c(2.7, 0.673, 0.595) )  
+    * city_col <- "cities"  
+    * locDT[, get(city_col)]  
+    * square_col <- function(DT, col_name){ return(DT[, get(col_name) ^ 2]) }  
+* The () mean that you are accessing something that is external to the data.table  
+	* add_bil_ppl <- function(DT, new_name){ DT[, (new_name) := ppl_mil * 1000 }  
+    * add10 <- function(DT, cols){ for (col in cols){ new_name <- paste0(col, "_plus10") ; DT[, (new_name) := get(col) + 10] } }  
+    * add10(locDT, cols = "ppl_mil")  
+* Can change names using setnames() - modifies the table in place (no copies)  
+	* setnames(locDT, old = "cities", new = "city_names")  
+    * tag_important_columns <- function(DT, cols){ setnames(DT, old = cols, new = paste0(cols, "_important")) }  
+    * tag_important_columns(locDT, "ppl_mil")  
+  
+Executing Functions Inside data.tables:  
+  
+* Can evaluate functions inside the data.table operators  
+* Functions in the "I" block can be used to select rows, with booleans used for subsetting  
+	* stockDT <- data.table( close_date = seq.POSIXt(as.POSIXct("2017-01-01"), as.POSIXct("2017-01-30"), length.out = 100), MSFT = runif(100, 70, 80), AAPL = runif(100, 140, 180) )  
+    * stockDT[close_date > max(close_date) - 60 * 60 * 8]  
+* Functions in the "j" block can be used to summarize data  
+	* cor(stockDT[, .SD, .SDcols = c('AAPL', 'MSFT')])  
+    * corr_mat <- stockDT[, cor(.SD), .SDcols = c('AAPL', 'MSFT')]  
+    * stockDT[, rand_noise := AAPL + rnorm(100)]  
+* Can use the "by" group to dynamically group data  
+	* stockDT[, hour_of_day := as.integer(strftime(close_date, "%H"))]  
+    * stockDT[, mean(AAPL), by = hour_of_day][order(hour_of_day)]  
+    * stockDT[, mean(AAPL), by = .( hour_of_day = as.integer(strftime(close_date, "%H")) )][order(hour_of_day)]  # same as above, but with a 1-step process  
+* Since a data.table is a list of lists, can use lapply or sapply on the data.table  
+	* Use lapply() if you want a data.table back  
+    * Use sapply() if you want a vector or list back  
+    * stockDT[, lapply(.SD, function(x){mean(is.na(x))})]  
+    * num_obs <- stockDT[, sapply(.SD, function(x){sum(!is.na(x), na.rm = TRUE)})]  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+library(data.table)
+
+diagnosticDT <- as.data.table(feather::read_feather("./RInputFiles/Feather_Data/diagnosticDT.feather"))
+str(diagnosticDT)
+
+
+# Select system voltage directly
+voltageDT <- diagnosticDT[, .(timestamp, system_voltage)]
+
+# Select system voltage with .SD
+voltageDT <- diagnosticDT[, .SD, .SDcols = c("timestamp", "system_voltage")]
+
+# Select system voltage with .SD + a vector of names
+voltage_cols <- c("timestamp", "system_voltage")
+voltageDT <- diagnosticDT[, .SD, .SDcols = voltage_cols]
+
+diagnosticDT[which.max(timestamp), .SD, .SDcols=c("timestamp", "system_voltage")]
+
+
+# Store the names of all columns starting with "engine_" in a vector
+engine_cols <- grep(pattern = "engine_", x = names(diagnosticDT), value = TRUE)
+
+# Use that vector to create a new data.table with only engine signals
+engineDT <- diagnosticDT[, .SD, .SDcols = engine_cols]
+
+
+# Complete the function
+add_interaction <- function(someDT, col1, col2){
+    new_col_name <- paste0(col1, "_times_", col2)
+    someDT[, (new_col_name) := get(col1) * get(col2)]
+}
+
+# Add an interaction
+add_interaction(diagnosticDT, "engine_speed", "engine_temp")
+
+# Check it out!
+head(diagnosticDT)
+
+
+# Write a function to scale a column by 10
+scale_by_10 <- function(someDT, col_to_scale, new_col_name){
+    someDT[, (new_col_name) := get(col_to_scale) * 10]
+}
+
+# Try it out
+scale_by_10(diagnosticDT, "engine_temp", "temp10")
+
+# Check the state of the data.table
+head(diagnosticDT)
+
+
+# Write a function that squares every numeric column
+add_square_features <- function(someDT, cols){
+    for (col_name in cols){
+        new_col_name <- paste0(col_name, "_squared")
+        someDT[, (new_col_name) := get(col_name)^2 ]
+    }
+}
+
+# Look at the difference!
+add_square_features(diagnosticDT, c("engine_speed", "engine_temp", "system_voltage"))
+head(diagnosticDT)
+
+
+# Change names
+setnames(diagnosticDT, old = c("timestamp"), new = "obs_time")
+
+# Tag all the numeric columns with "_NUMERIC"
+tag_numeric_cols <- function(DT, cols){
+    setnames(DT, old = cols, new = paste0(cols, "_NUMERIC"))
+}
+
+# Tag numeric columns
+tag_numeric_cols(diagnosticDT, c("engine_speed", "engine_temp", "system_voltage"))
+
+
+diagnosticDT <- as.data.table(feather::read_feather("./RInputFiles/Feather_Data/diagnosticDT.feather"))
+str(diagnosticDT)
+diagnosticDT2 <- as.data.table(feather::read_feather("./RInputFiles/Feather_Data/diagnosticDT.feather"))
+str(diagnosticDT2)
+
+
+# Mean of engine temp
+diagnosticDT[, mean(engine_temp)]
+
+# Correlation between engine_temp and system_voltage
+diagnosticDT[, cor(engine_temp, system_voltage)]
+
+# Get classes of column names
+correlations <- function(DT){
+    # Find numeric columns
+    num_cols <- diagnosticDT[, sapply(.SD, is.numeric)]
+    numeric_cols <- names(diagnosticDT)[num_cols]
+    return(DT[, cor(.SD), .SDcols = numeric_cols])
+}
+
+
+# Mean of system voltage
+diagnosticDT[, lapply(.SD, mean), .SDcols = c("system_voltage")]
+
+# Mean of all engine cols
+engine_cols <- c("engine_speed", "engine_temp")
+meanDT <- diagnosticDT[, lapply(.SD, mean), .SDcols = engine_cols]
+print(meanDT)
+
+
+get_numeric_cols <- function(DT){
+    num_cols <- DT[, sapply(.SD, is.numeric)]
+    return(names(DT)[num_cols])
+}
+
+# Function to get correlation matrix from a data.table
+corrmat_from_dt <- function(DT){
+    numeric_cols <- get_numeric_cols(DT)
+    return(DT[, cor(.SD), .SDcols = numeric_cols])
+}
+
+# Get correlation matrices
+corrmat_from_dt(diagnosticDT)
+corrmat_from_dt(diagnosticDT2)
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Getting Time Series Data into data.table  
+  
 
 
 
