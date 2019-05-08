@@ -1436,4 +1436,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 06-MAY-2019  
 * DataCamp_Insights_v003_c captures Building Reponse Models in R - Chapter 4 (Extended Demand Modeling) - code  
 * DataCamp_Insights_v003_c captures Time Series with data.table in R - Chapter 1 (Review of data.table) - notes  
+* DataCamp_Insights_v003_c captures Time Series with data.table in R - Chapter 2 (Getting Time Series Data into data.table) - notes  
   
