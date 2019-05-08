@@ -34763,6 +34763,246 @@ corrmat_from_dt(diagnosticDT2)
   
 Chapter 2 - Getting Time Series Data into data.table  
   
+Overview of the POSIXct Type:  
+  
+* The name POSIX means "Portable Operating System for Unix"  
+	* POSIXlt = a list object with date-time components like year and day stored in individual attributes  
+    * POSIXct = a signed integer representing seconds since 1970-01-01, with a single attribute capturing timezone  
+    * POSIXct is generally preferred in databases, since it is easiest to sort and manipulate  
+    * This course always uses UTC (constant time zone)  
+* Can convert other formats to POSIXct  
+	* as.POSIXct("2004-10-27", tz = "UTC")  
+    * as.POSIXct(1540153601, origin = "1970-01-01", tz = "UTC")  # if the integer is number of seconds since 1970-01-01  
+    * as.POSIXct(as.Date(42885, origin = "1900-01-01"), tz = "UTC")  # if the integer is number of days since 1970-01-01  
+* The as.POSIXct is vectorized  
+	* dates <- c("2004-10-24", "2004-10-25", "2004-10-26")  
+    * as.integer(as.POSIXct(dates, tz = "UTC"))  
+    * someDT <- data.table(dates = c("2004-10-24", "2004-10-25", "2004-10-26"))  
+    * someDT[, posix := as.POSIXct(dates, tz = "UTC")]  
+* Example for converting columns in a dataset without overwriting the original data  
+	* gameDT <- data.table( game_date = c("2004-10-23", "2004-10-24", "2004-10-26", "2004-10-27") )  
+    * gameDT[, posix_date := as.POSIXct(game_date, tz = "UTC")]  
+* The lubridate family of functions can be applied also  
+	* the_date <- "10-27-2004 22:29:00"  
+    * lubridate::mdy_hms(the_date)  
+  
+Creating data.tables from vectors:  
+  
+* Can create data.tables from vectors sinmilar to the process for data.frames  
+	* candyDT <- data.table( color = c("red", "blue", "green"), size = c("S", "L", "S"), num = c(100, 50, 210) )  
+    * testDT <- data.table( rand_numbers = rnorm(100), rand_strings = sample(LETTERS, n = 100, replace = TRUE), simple_index = 1:100, sample_dates = seq.POSIXt( from = as.POSIXct("1990-01-01"), to = as.POSIXct("1992-08-01"), length.out = 100), fifty_fifty_split = c(rep(TRUE, 50), rep(FALSE, 50)) )  
+* The seq.POSIXt() is an extension of seq() for time data  
+	* start <- as.POSIXct("2010-06-17", tz = "UTC")  
+    * end <- as.POSIXct("2010-06-18", tz = "UTC")  
+    * hourlyDT <- data.table( timestamp = seq.POSIXt(start, end, length.out = 1 + 24) )  
+    * minuteDT <- data.table( timestamp = seq.POSIXt(start, end, length.out = 1 + 24 * 60) )  
+* Can use the .N to dynamically size the input vector  
+	* add_stock_data <- function(DT){ DT[, COMPANY1 := rnorm(n = .N)] DT[, COMPANY2 := rnorm(n = .N)] }  
+  
+Coercing from xts:  
+  
+* The xts format is popular, and can be used for conversions to data.table  
+	* dates <- seq.POSIXt(from = as.POSIXct("2017-06-15"), to = as.POSIXct("2017-06-16"), length.out = 24)  
+    * ex_tee_ess<- xts::xts( x = rnorm(24), order.by = dates )  
+* The xts object has several attributes  
+	* tclass = R class for the date-time index  
+    * tzone = timezone for date-time index  
+    * attr(ex_tee_ess, "tclass")  
+    * attr(ex_tee_ess, "tzone")  
+* The expressive subsetting is one of the reasons for xts popularity  
+	* ['/'] = "the whole dataset"  
+    * ['2017'] = "data from 2017"  
+    * ['2017-01/'] = "data from January 2017 to the end of the data"  
+    * ['2014/2015'] = "data from 2014 to 2015"  
+* Can also use functions for converting the units of time  
+	* to.minutes(), to.minutes10(), to.daily()  
+    * xts::to.daily(hourlyXTS)  
+* Can convert to data.table using as.data.table() - may need to modify column names to be more meaningful  
+	* hourlyDT <- data.table::as.data.table( hourlyXTS )  
+    * data.table::setnames(hourlyDT, "V1", "stock_price")  
+  
+Combining datasets with merge() and rbindlist():  
+  
+* Merging with timestamps depends on numeric precision, since POSIXct is a number  
+* Precision-safe merges can be managed using the round() function  
+	* secDT[, timestamp := as.POSIXct(round(as.numeric(timestamp)), origin = "1970-01-01")]  
+    * milliDT[, timestamp := as.POSIXct(round(as.numeric(timestamp)), origin = "1970-01-01")]  
+    * merge(secDT, milliDT, by = "timestamp", all = TRUE)   
+* May need to run down-sampling process to match up records appropriately  
+	* salesDT[, .(ts, year = year(ts), mday = mday(ts), hour = hour(ts))]  
+    * dailySalesDT[, day_int := mday(timestamp)]  
+    * dailyPriceDT <- hourlyPriceDT[, .(price = mean(price)), by = mday(timestamp)]  
+    * mergeDT <- merge( dailySalesDT, dailyPriceDT, by.x = "day_int", by.y = "day" )  
+* Can also use rbindlist to stack data.tables - but, be careful about matching data types and names  
+	* allDT <- rbindlist(list(DT1, DT2, DT3), fill = TRUE)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+excelDT <- data.table(timecol=42885:42889, sales=c(105, 92, 500, 81, 230))
+stringDT <- data.table(timecol=c("2017-06-01", "2017-06-02", "2017-06-03", "2017-06-04", "2017-06-05"),
+                       sales=c(105, 92, 500, 81, 230)
+                       )
+epochSecondsDT <- data.table(timecol=1496275200 + 24*60*60*0:4, sales=c(105, 92, 500, 81, 230))
+epochMillisDT <- data.table(timecol=1000 * c(1496275200 + 24*60*60*0:4), sales=c(105, 92, 500, 81, 230))
+
+
+# Create POSIXct dates from a hypothetical Excel dataset
+excelDT[, posix := as.POSIXct(as.Date(timecol, origin = "1900-01-01"), tz = "UTC")]
+
+# Convert strings to POSIXct
+stringDT[, posix := as.POSIXct(timecol, tz = "UTC")]
+
+# Convert epoch seconds to POSIXct
+epochSecondsDT[, posix := as.POSIXct(timecol, tz = "UTC", origin = "1970-01-01")]
+
+# Convert epoch milliseconds to POSIXct
+epochMillisDT[, posix := as.POSIXct(timecol/1000, origin = "1970-01-01", tz="UTC")]
+
+
+stringDT <- data.table(timecol1=c("2017-06-01 10", "2017-06-02 5", "2017-06-03 10", 
+                                  "2017-06-04 7", "2017-06-05 9"
+                                  ),
+                       timecol2=c("06-01-2017 10:00:00", "06-02-2017 05:00:00", "06-03-2017 10:00:00", 
+                                  "06-05-2017 07:00:00", "06-04-2017 09:00:00"
+                                  ),
+                       sales=c(105, 92, 500, 81, 230)
+                       )
+stringDT
+
+
+# Convert timecol1
+str(stringDT)
+stringDT[, posix1 := lubridate::ymd_h(timecol1)]
+str(stringDT)
+
+# Convert timecol2
+str(stringDT)
+stringDT[, posix2 := lubridate::mdy_hms(timecol2)]
+str(stringDT)
+
+
+# Generate a series of dates
+march_dates <- seq.POSIXt(as.POSIXct("2017-03-01", tz="UTC"), 
+                          as.POSIXct("2017-03-31", tz="UTC"), 
+                          length.out = 31
+                          )
+
+# Generate hourly data
+hourly_times <- seq.POSIXt(as.POSIXct("2017-05-01 00:00:00", tz="UTC"), 
+                           as.POSIXct("2017-05-02 00:00:00", tz="UTC"), 
+                           length.out = 1 + 24
+                           )
+
+# Generate sample IoT data
+iotDT <- data.table(timestamp = seq.POSIXt(as.POSIXct("2016-04-19 00:00:00", tz="UTC"), 
+                                           as.POSIXct("2016-04-20 00:00:00", tz="UTC"), 
+                                           length.out = 1 + 24
+                                           ),
+                    engine_temp = rnorm(n=1+24),
+                    ambient_temp = rnorm(n=1+24)
+                    )
+head(iotDT)
+
+
+# Create a 500-row data.table
+start_date <- "2016-01-01"
+end_date <- "2018-01-01"
+someDT <- data.table(timestamp = seq.POSIXt(as.POSIXct(start_date), 
+                                            as.POSIXct(end_date), 
+                                            length.out = 500
+                                            )
+                     )
+
+# Function to add random columns
+add_random_cols <- function(DT, colnames){
+    for (colname in colnames){
+        DT[, (colname) := rnorm(n = .N)]
+    }
+}
+
+# Check out the new data.table
+add_random_cols(someDT, c("copper", "chopper", "stopper"))
+
+
+# Simulated data
+some_data <- rnorm(100)
+some_dates <- seq.POSIXt(from = as.POSIXct("2017-06-15 00:00:00Z", tz = "UTC"),
+                         to = as.POSIXct("2017-06-15 01:00:00Z", tz = "UTC"),
+                         length.out = 100
+                         )
+
+# Make your own 'xts' object
+myXTS <- xts::xts(some_data, order.by=some_dates)
+
+# View the timezone
+print(attr(myXTS, "tzone"))
+
+
+nickelXTS <- readRDS("./RInputFiles/nickelXTS.rds")
+
+# All observations after 2018-01-01 00:45:00
+fifteenXTS <- nickelXTS["2018-01-01 00:45:00/"]
+
+# Check the structure
+str(fifteenXTS)
+
+# 10-minute aggregations
+tenMinuteXTS <- xts::to.minutes10(nickelXTS)
+print(tenMinuteXTS)
+
+# 1-minute aggregations
+oneMinuteXTS <- xts::to.minutes(nickelXTS)
+
+
+# Convert to a data.table
+nickelDT <- as.data.table(nickelXTS)
+str(nickelDT)
+
+# Change names
+setnames(nickelDT, old="index", new="spot_price_timestamp")
+print(nickelDT)
+
+
+treasuryDT <- data.table(timestamp=as.POSIXct("2018-03-01 00:00:00", tz="UTC") + 0:4 + 0.001, 
+                         treasury_10y=c(0.71, 0.8, 0.78, 0.77, 0.73)
+                         )
+oilDT <- data.table(timestamp=as.POSIXct("2018-03-01 00:00:00", tz="UTC") + 0:4, 
+                    oil=c(44.07, 44.15, 44.14, 44.06, 44.09)
+                    )
+
+# Naive approach (merge on timestamp)
+newDT <- merge(treasuryDT, oilDT, on = "timestamp")
+str(newDT)
+
+# Check out the precision
+treasuryDT[, as.numeric(timestamp)]
+oilDT[, as.numeric(timestamp)]
+
+# Clean up and merge
+treasuryDT[, timestamp := as.POSIXct(round(as.numeric(timestamp)), origin = "1970-01-01")]
+newDT <- merge(treasuryDT, oilDT, on = "timestamp")
+str(newDT)
+
+
+# Add grouping indicator 
+# fxDT[, yearmonth := paste0(year(timestamp), "_", month(timestamp))]
+# exportDT[, yearmonth := paste0(year(timestamp), "_", month(timestamp))]
+
+# Monthly exchange rate
+# monthlyFXDT <- fxDT[, .(exch_rate = mean(exchange_rate)), by = yearmonth]
+
+# Merge 
+# merge(exportDT, monthlyFXDT, by="yearmonth")
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Generating Lags, Differences, and Windowed Aggregations  
+  
 
 
 
