@@ -1439,4 +1439,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Time Series with data.table in R - Chapter 2 (Getting Time Series Data into data.table) - notes  
 * DataCamp_Insights_v003_c captures Time Series with data.table in R - Chapter 3 (Generating Lags, Differences, and Windowed Aggregations) - notes  
 * DataCamp_Insights_v003_c captures Time Series with data.table in R - Chapter 4 (Case Study: Financial Data) - notes  
+* DataCamp_Insights_v003_c captures Interactive Data Visualization with plotly in R - Chapter 1 (Introduction to plotly) - notes  
   
