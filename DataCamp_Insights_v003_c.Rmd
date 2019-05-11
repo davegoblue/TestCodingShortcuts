@@ -35143,6 +35143,303 @@ passengerDT[, .(min_passengers = min(passengers), max_passengers = max(passenger
   
 Chapter 4 - Case Study: Financial Data  
   
+Modeling Metals Prices:  
+  
+* Data sets have been pulled from quandl; can then convert to data.table, including fixing variable/column names  
+	* aluminumDF <- Quandl::Quandl(code = "LME/PR_AL", start_date = "2001-12-31", end_date = "2018-03-12")  
+    * aluminumDT <- as.data.table(aluminumDF)  
+    * newDT <- aluminumDT[, .(obstime = Date, aluminum_price = `Cash Seller & Settlement` )]  # The .() allows for both selecting by name and changing names  
+* Can also apply functions using .()  
+	* newDT <- aluminumDT[, .(obstime = as.POSIXct(Date, tz = "UTC"), aluminum_price = `Cash Seller & Settlement` )]  
+* Can also apply merges based on timestamps  
+	* mergedDT <- merge( x = aluminumDT, y = nickelDT, all = TRUE, by = "obstime" )  
+* Can also use Reduce()  
+	* Reduce( f = function(x,y){paste0(x, y, "|")}, x = c("a", "b", "c") )  
+  
+Time Series Feature Engineering:  
+  
+* May want to add differences and growth rates to the data  
+	* gdpDT[, diff1 := gdp - shift(gdp, type = "lag", n = 1)]  
+    * add_diffs <- function(DT){ DT[, diff1 := gdp - shift(gdp, type = "lag", n = 1)] ; return(invisible(NULL)) }  # note that a copy of DT is passed and so DT is edited  
+* Can use parentheses for a user-defined name in the data.table  
+	* colname <- "abc"  
+    * someDT[, (colname) := rnorm(10)]  
+    * add_diffs <- function(DT, newcol){ DT[, (newcol) := gdp - shift(gdp, type = "lag", n = 1)] ; return(invisible(NULL)) }  
+    * add_diffs(DT, "diff1")  
+* Can also use get() to have a flexible column for changing  
+	* colname <- "def"  
+    * someDT[, random_stuff := get(colname) * rnorm(10)]  
+    * add_diffs <- function(DT, newcol, dcol){ DT[, (newcol) := get(dcol) - shift(get(dcol), type = "lag", n = 1)] ; return(invisible(NULL)) }  
+    * add_diffs <- function(DT, newcol, dcol, ndiff){ DT[, (newcol) := get(dcol) - shift(get(dcol), type = "lag", n = ndiff)] return(invisible(NULL)) }  # allows for passing the number of time periods  
+* Can also extend the methodology to growth rates  
+	* add_growth_rates <- function(DT, newcol, dcol, ndiff){ DT[, (newcol) := (get(dcol) / shift(get(dcol), type = "lag", n = ndiff)) - 1 ] return(invisible(NULL)) }  
+  
+EDA and Model Building:  
+  
+* Feature selection is sometimes needed for modeling - for example, regressions may perform poorly with too many features  
+* Can look at the correlations using data.table  
+	* someDT <- data.table(x = rnorm(100), y = rnorm(100), z = rnorm(100))  
+    * someDT[complete.cases(someDT)]  
+    * cor(someDT)  
+    * cmat <- cor(someDT[complete.cases(someDT)])  
+    * cmat[, "x"]  
+    * feat_cols <- c("var_1", "var_5")  
+    * mod1 <- lm(target ~ ., data = trainDT[, .SD, .SDcols = feat_cols])  
+  
+Wrap Up:  
+  
+* Modify data.tables by reference  
+* Growth rates and differences  
+* Flexible code for changes in variables  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+copperDT <- as.data.table(feather::read_feather("./RInputFiles/Feather_Data/copperDF.feather"))
+str(copperDT)
+nickelDT <- as.data.table(feather::read_feather("./RInputFiles/Feather_Data/nickelDF.feather"))
+str(nickelDT)
+cobaltDT <- as.data.table(feather::read_feather("./RInputFiles/Feather_Data/cobaltDF.feather"))
+str(cobaltDT)
+tinDT <- as.data.table(feather::read_feather("./RInputFiles/Feather_Data/tinDF.feather"))
+str(tinDT)
+aluminumDT <- as.data.table(feather::read_feather("./RInputFiles/Feather_Data/aluminumDF.feather"))
+str(aluminumDT)
+
+
+# Rename "Cash Buyer" to "copper_price"
+setnames(copperDT, old="Cash Buyer", new="copper_price")
+setnames(cobaltDT, old="Cash Buyer", new="cobalt_price")
+setnames(tinDT, old="Cash Buyer", new="tin_price")
+setnames(aluminumDT, old="Cash Buyer", new="aluminum_price")
+
+# Convert `"Date"` to POSIXct
+copperDT[, close_date := as.POSIXct(Date, tz="UTC")]
+cobaltDT[, close_date := as.POSIXct(Date, tz="UTC")]
+tinDT[, close_date := as.POSIXct(Date, tz="UTC")]
+aluminumDT[, close_date := as.POSIXct(Date, tz="UTC")]
+
+# Create copperDT2 with "close_date" and "copper_price"
+copperDT2 <- copperDT[, .(close_date, copper_price)]
+cobaltDT2 <- cobaltDT[, .(close_date, cobalt_price)]
+tinDT2 <- tinDT[, .(close_date, tin_price)]
+aluminumDT2 <- aluminumDT[, .(close_date, aluminum_price)]
+
+# Create a new data.table using .() subsetting
+nickelDT2 <- nickelDT[, .(
+    close_date = as.POSIXct(Date, tz = "UTC"),
+    nickel_price = `Cash Buyer`
+)]
+str(nickelDT2)
+
+
+# Merge copperDT and cobaltDT with merge()
+mergedDT <- merge(cobaltDT2, copperDT2, by="close_date", all=TRUE)
+
+# Merge five tables into one
+mergedDT <- Reduce(f = function(x, y) { merge(x, y, by="close_date", all=TRUE) },
+                   x = list(aluminumDT2, copperDT2, cobaltDT2, nickelDT2, tinDT2)
+                   )
+
+
+# Function to add differences
+add_diffs <- function(DT, cols, ndiff){
+    for (colname in cols){
+        new_name <- paste0(colname, "_diff", ndiff)
+        DT[, (new_name) := get(colname) - shift(get(colname), type = "lag", n = ndiff)]
+    }
+}
+
+# Add 2-period diffs
+add_diffs(mergedDT, paste0(c("aluminum", "cobalt", "copper", "nickel", "tin"), "_price"), 2)
+
+
+# Function to add growth rates
+add_growth_rates <- function(DT, cols, ndiff){
+    for (colname in cols){
+        new_name <- paste0(colname, "_pctchg", ndiff)
+        DT[, (new_name) := (get(colname) / shift(get(colname), type = "lag", n = ndiff)) - 1]
+    }
+}
+
+# Add 1-period growth rate
+add_growth_rates(mergedDT, paste0(c("aluminum", "cobalt", "copper", "nickel", "tin"), "_price"), 1)
+
+
+# Function to get correlation matrix from a data.table
+corrmat_from_dt <- function(DT, cols){
+    # Subset to the requested columns
+    subDT <- DT[, .SD, .SDcols=cols]
+    subDT <- subDT[complete.cases(subDT)]
+    return(cor(subDT))
+}
+
+# Get correlations of prices
+corrmat_from_dt(mergedDT, paste0(c("aluminum", "cobalt", "copper", "nickel", "tin"), "_price"))
+
+
+# Add 1-period first differences
+price_cols <- c("aluminum_price", "cobalt_price", "copper_price", "nickel_price", "tin_price")
+add_diffs(DT = mergedDT, cols = price_cols, ndiff = 1)
+
+# Rename aluminum first difference to "target"
+setnames(mergedDT, "aluminum_price_diff1", "target")
+
+# Add 1-period growth rates
+add_growth_rates(DT = mergedDT, cols = price_cols, ndiff = 1)
+
+# Correlation matrix
+diff_cols <- grep("_diff", x = names(mergedDT), value = TRUE)
+growth_cols <- grep("_pctchg", x = names(mergedDT), value = TRUE)
+corrmat_from_dt(DT = mergedDT, cols = c(diff_cols, growth_cols, "target"))[, "target"]
+
+
+# Add 1-period differences
+add_diffs(mergedDT, paste0(c("cobalt", "copper", "nickel", "tin"), "_price"), 1)
+
+# Add 3-period growth rates
+add_growth_rates(mergedDT, paste0(c("cobalt", "copper", "nickel", "tin"), "_price"), 3)
+
+# Add 12-period difference in nickel price
+add_diffs(mergedDT, paste0(c("nickel"), "_price"), 12)
+
+# Top 4 difference / growth columns
+top_features <- c("copper_price_diff1", "nickel_price_diff1", "tin_price_diff1", "copper_price_pctchg3")
+
+```
+  
+  
+  
+***
+  
+###_Interactive Data Visualization with plotly in R_  
+  
+Chapter 1 - Introduction to plotly  
+  
+What is plotly?  
+  
+* Interface to the plotly javascript library - plots can work in multiple formats  
+	* Active development and support community  
+* Need to consider the relative values of the static graphic and the interactive graphic  
+* Example of the wine plot using ggplot2  
+	* static <- wine %>% ggplot(aes(x = Flavanoids, y = Proline, color = Type)) + geom_point()  
+* Can use ggplotly() to convert a static object to an interactive plot  
+	* plotly::ggplotly(static)  
+  
+Univariate Graphics:  
+  
+* May want to look at distributions of a categorical variable - example using the wine dataset  
+	* wine %>%  
+    *     count(Type) %>%                 # create a frequency table  
+    *     plot_ly(x = ~Type, y = ~n) %>%  # specify aesthetics (similar to ggplot aes() function)  
+    *     add_bars()                      # add the bars trace  
+    * wine %>% count(Type) %>% mutate(Type = forcats::fct_reorder(Type, n, .desc = TRUE)) %>% plot_ly(x = ~Type, y = ~n) %>% add_bars()  # example of using forcats for reordering  
+* Can instead run a histogram using plotly  
+	* wine %>%  
+    *     plot_ly(x = ~Phenols) %>%  # specify aesthetics  
+    *     add_histogram()            # add the histogram trace  
+    * wine %>% plot_ly(x = ~Phenols) %>% add_histogram(nbinsx = 10)  # adjust the number of bins to a precise number  
+    * wine %>% plot_ly(x = ~Phenols) %>% add_histogram(xbins = list(start = 0.8, end = 4, size = 0.25))  # provide specific bin ranges  
+  
+Bivariate Graphics:  
+  
+* Can extend to looking at scatterplots, boxplots, and the like  
+* Example scatterplot for exploring relationships in numeric variables  
+	* winequality %>% plot_ly(x = ~residual_sugar, y = ~fixed_acidity) %>% add_markers()  
+* Example stacked bars  
+	* winequality %>% count(type, quality_label) %>% plot_ly(x = ~type, y = ~n, color = ~quality_label) %>% add_bars() %>% layout(barmode = "stack")  
+* Converting to proportional bars  
+	* winequality %>%  
+    *     count(type, quality_label) %>%  
+    *     group_by(type) %>%                # group the table  
+    *     mutate(prop = n / sum(n)) %>%     # calculate the proportions  
+    *     plot_ly(x = ~type, y = ~n, color = ~quality_label) %>%  
+    *     add_bars() %>%  
+    *     layout(barmode = "stack")  
+* Can also run boxplots to explore numeric distributions vs. a categorical variable  
+	* winequality %>% plot_ly(x = ~quality_label, y = ~alcohol) %>% add_boxplot()  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+vgsales <- readr::read_csv("./RInputFiles/vgsales.csv")
+glimpse(vgsales)
+
+
+# Store the scatterplot of Critic_Score vs. NA_Sales sales in 2016
+scatter <- vgsales %>%
+  filter(Year == 2016) %>%
+  ggplot(aes(x = NA_Sales, y = Critic_Score)) +
+  geom_point(alpha = 0.3)
+
+# Convert the scatterplot to a plotly graphic
+plotly::ggplotly(scatter)
+
+
+library(plotly)
+
+# Create a histogram of Critic_Score
+vgsales %>%
+    filter(!is.na(Critic_Score)) %>%
+    plot_ly(x = ~Critic_Score) %>%
+    add_histogram()
+
+# Create a histogram of Critic_Score with at most 25 bins
+vgsales %>%
+    filter(!is.na(Critic_Score)) %>%
+    plot_ly(x = ~Critic_Score) %>%
+    add_histogram(nbinsx = 25)
+
+# Create a histogram with bins of width 10 between 0 and 100
+vgsales %>%
+    filter(!is.na(Critic_Score)) %>%
+    plot_ly(x = ~Critic_Score) %>%
+    add_histogram(xbins = list(start=0, end=100, size=10))
+
+
+# Create a frequency for Genre
+genre_table <- vgsales %>%
+    count(Genre)
+
+# Reorder the bars for Genre by n
+genre_table %>%
+    filter(!is.na(Genre)) %>%
+    mutate(Genre = fct_reorder(Genre, n, .desc=TRUE)) %>%
+    plot_ly(x = ~Genre, y = ~n) %>% 
+    add_bars()
+
+
+# Create a scatter plot of User_Score against Critic_Score
+vgsales %>% 
+    filter(!is.na(Critic_Score) & !is.na(User_Score)) %>%
+    plot_ly(x=~Critic_Score, y=~User_Score) %>%
+    add_markers()
+
+
+# Filter out the 2016 video games
+vg2016 <- vgsales %>%
+    filter(Year == 2016)
+
+# Create a stacked bar chart of Rating by Genre
+vg2016 %>%
+    count(Genre, Rating) %>%
+    plot_ly(x = ~Genre, y = ~n, color = ~Rating) %>%
+    add_bars() %>%
+    layout(barmode = "stack")
+
+# Create boxplots of Global_Sales by Genre for above data
+vg2016 %>% 
+  plot_ly(x=~Global_Sales, y=~Genre) %>%
+  add_boxplot()
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Styling and Customizing Graphics  
+  
 
 
 
