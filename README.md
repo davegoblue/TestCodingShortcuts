@@ -1442,3 +1442,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Interactive Data Visualization with plotly in R - Chapter 1 (Introduction to plotly) - notes  
 * DataCamp_Insights_v003_c captures Interactive Data Visualization with plotly in R - Chapter 2 (Styling and Customizing Graphics) - notes  
   
+### Expansions week of 13-MAY-2019  
+* DataCamp_Insights_v003_c captures Interactive Data Visualization with plotly in R - Chapter 3 (Advanced Charts) - notes  
+  
