@@ -1445,4 +1445,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 13-MAY-2019  
 * DataCamp_Insights_v003_c captures Interactive Data Visualization with plotly in R - Chapter 3 (Advanced Charts) - notes  
 * DataCamp_Insights_v003_c captures Interactive Data Visualization with plotly in R - Chapter 4 (Case Study) - notes  
+* DataCamp_Insights_v003_c captures Hyperparameter Tuning in R - Chapter 1 (Introduction to Hyperparameters) - notes  
   
