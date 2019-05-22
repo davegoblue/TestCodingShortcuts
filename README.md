@@ -1454,4 +1454,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 20-MAY-2019  
 * DataCamp_Insights_v003_c captures Time Series with data.table in R - Chapter 2 (Getting Time Series Data into data.table) - code  
 * DataCamp_Insights_v003_c captures Time Series with data.table in R - Chapter 3 (Generating Lags, Differences, and Windowed Aggregations) - code  
+* DataCamp_Insights_v003_c captures Time Series with data.table in R - Chapter 4 (Case Study: Financial Data) - code  
   
