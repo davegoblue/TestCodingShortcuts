@@ -1455,4 +1455,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Time Series with data.table in R - Chapter 2 (Getting Time Series Data into data.table) - code  
 * DataCamp_Insights_v003_c captures Time Series with data.table in R - Chapter 3 (Generating Lags, Differences, and Windowed Aggregations) - code  
 * DataCamp_Insights_v003_c captures Time Series with data.table in R - Chapter 4 (Case Study: Financial Data) - code  
+* DataCamp_Insights_v003_c captures Intermediate Functional Programming with purrr - Chapter 1 (Programming with purrr) - notes  
   
