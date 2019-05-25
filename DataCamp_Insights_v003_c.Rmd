@@ -37006,6 +37006,156 @@ url_tester(urls)
   
 Chapter 3 - Better Code with purrr  
   
+Rationale for cleaner code:  
+  
+* Cleaner code is easier to debug (spot typos), easier to interpret, and easier to modify  
+	* tidy_iris_lm <- compose( as_mapper(~ filter(.x, p.value < 0.05)), tidy, partial(lm, data=iris, na.action = na.fail) )  
+    * list( Petal.Length ~ Petal.Width, Petal.Width ~ Sepal.Width, Sepal.Width ~ Sepal.Length ) %>% map(tidy_iris_lm)  
+* Clean code characteristics  
+	* Light - no unnecessary code  
+    * Readable - less repition makes for easier reading (one piece of code for one task)  
+    * Interpretable  
+    * Maintainable  
+* The compose() function is used to compose a function from two or more functions  
+	* rounded_mean <- compose(round, mean)  
+  
+Building functions with compose() and negate():  
+  
+* There is a limitless amount of functions that can be included in compose()  
+	* clean_aov <- compose(tidy, anova, lm)  
+* Can use negate() to flip the predicate - TRUE becomes FALSE and FALSE becomes TRUE  
+	* is_not_na <- negate(is.na)  
+    * under_hundred <- as_mapper(~ mean(.x) < 100)  
+    * not_under_hundred <- negate(under_hundred)  
+    * map_lgl(98:102, under_hundred)  
+    * map_lgl(98:102, not_under_hundred)  
+* The "good" status return codes from GET() are in the low-200s  
+	* good_status <- c(200, 201, 202, 203)  
+    * status %in% good_status  
+  
+Prefilling functions:  
+  
+* The partial() allows for pre-filling a function  
+	* mean_na_rm <- partial(mean, na.rm = TRUE)  
+    * lm_iris <- partial(lm, data = iris)  
+* Can also combine partial() and compose()  
+	* rounded_mean <- compose( partial(round, digits = 2), partial(mean, na.rm = TRUE) )  
+* Can use functions from rvest for web scraping  
+	* read_html()  
+    * html_nodes()  
+    * html_text()  
+    * html_attr()  
+  
+List columns:  
+  
+* A list column is part of a nested data frame - one or more of the data frame columns is itself a list (requires use of tibble rather than data.frame)  
+	* df <- tibble( classic = c("a", "b","c"), list = list( c("a", "b","c"), c("a", "b","c", "d"), c("a", "b","c", "d", "e") ) )  
+    * a_node <- partial(html_nodes, css = "a")  
+    * href <- partial(html_attr, name = "href")  
+    * get_links <- compose( href, a_node,  read_html )  
+    * urls_df <- tibble( urls = c("https://thinkr.fr", "https://colinfay.me", "https://datacamp.com", "http://cran.r-project.org/") )  
+    * urls_df %>% mutate(links = map(urls, get_links))  
+* Can also unnest the data from the list columns  
+	* urls_df %>% mutate(links = map(urls, get_links)) %>% unnest()  
+* Can also nest() a standard data.frame  
+	* iris_n <- iris %>% group_by(Species) %>% tidyr::nest()  
+* Since the list column is a list, the purrr functions can be run on them  
+	* iris_n %>% mutate(lm = map(data, ~ lm(Sepal.Length ~ Sepal.Width, data = .x)))  
+    * summary_lm <- compose(summary, lm)  
+    * iris %>% group_by(Species) %>% nest() %>% mutate(data = map(data, ~ summary_lm(Sepal.Length ~ Sepal.Width, data = .x)), data = map(data, "r.squared")) %>% unnest()  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+urls <- c('https://thinkr.fr', 'https://colinfay.me', 'https://datacamp.com', 'http://cran.r-project.org/')
+
+    
+# Compose a status extractor 
+status_extract <- compose(httr::status_code, httr::GET)
+
+# Try with "https://thinkr.fr" & "http://datacamp.com"
+status_extract("https://thinkr.fr")
+status_extract("http://datacamp.com")
+
+# Map it on the urls vector, return a vector of numbers
+map_dbl(urls, status_extract)
+
+
+# Negate the %in% function 
+`%not_in%` <- negate(`%in%`)
+
+# Complete the function
+strict_code <- function(url){
+    code <- status_extract(url)
+    if (code %not_in% c(200:203)){
+        return(NA)
+    } else {
+        return(code)
+    } 
+}
+
+
+# Map the strict_code function on the urls vector
+res <- map(urls, strict_code)
+
+# Set the names of the results using the urls vector
+res_named <- set_names(res, urls)
+
+# Negate the is.na function
+is_not_na <- negate(is.na)
+
+# Run is_not_na on the results
+is_not_na(res_named)
+
+
+# Prefill html_nodes() with the css param set to h2
+get_h2 <- partial(rvest::html_nodes, css="h2")
+
+# Combine the html_text, get_h2 and read_html functions
+get_content <- compose(rvest::html_text, get_h2, xml2::read_html)
+
+# Map get_content to the urls list
+res <- map(urls, get_content) %>%
+    set_names(urls)
+
+# Print the results to the console
+res
+
+
+# Create a partial version of html_nodes(), with the css param set to "a"
+a_node <- partial(rvest::html_nodes, css="a")
+
+# Create href(), a partial version of html_attr()
+href <- partial(rvest::html_attr, name = "href")
+
+# Combine href(), a_node(), and read_html()
+get_links <- compose(href, a_node, xml2::read_html)
+
+# Map get_links() to the urls list
+res <- map(urls, get_links) %>%
+    set_names(urls)
+
+
+# Create a "links" columns, by mapping get_links() on urls
+df2 <- tibble::tibble(urls=urls) %>%
+    mutate(links = map(urls, get_links)) 
+
+# Print df2 to see what it looks like
+df2
+
+# unnest() df2 to have a tidy dataframe
+df2 %>%
+    unnest()
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Case Study  
+  
+
 
 
 
