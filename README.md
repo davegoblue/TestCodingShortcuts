@@ -1460,3 +1460,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Intermediate Functional Programming with purrr - Chapter 3 (Better Code with purrr) - notes  
 * DataCamp_Insights_v003_c captures Intermediate Functional Programming with purrr - Chapter 4 (Case Study) - notes  
   
+### Expansions week of 27-MAY-2019  
+* DataCamp_Insights_v003_c captures Hyperparameter Tuning in R - Chapter 1 (Introduction to Hyperparameters) - code  
+  
