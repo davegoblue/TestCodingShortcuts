@@ -1463,4 +1463,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 27-MAY-2019  
 * DataCamp_Insights_v003_c captures Hyperparameter Tuning in R - Chapter 1 (Introduction to Hyperparameters) - code  
 * DataCamp_Insights_v003_c captures Hyperparameter Tuning in R - Chapter 2 (Hyperparameter Tuning with caret) - code  
+* DataCamp_Insights_v003_c captures Hyperparameter Tuning in R - Chapter 3 (Hyperparameter Tuning with mlr) - code  
   
