@@ -1465,4 +1465,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Hyperparameter Tuning in R - Chapter 2 (Hyperparameter Tuning with caret) - code  
 * DataCamp_Insights_v003_c captures Hyperparameter Tuning in R - Chapter 3 (Hyperparameter Tuning with mlr) - code  
 * DataCamp_Insights_v003_c captures Hyperparameter Tuning in R - Chapter 4 (Hyperparameter Tuning with h2o) - code  
+* DataCamp_Insights_v003_c captures Longitudinal Analysis in R - Chapter 1 (Introduction to Longitudinal Data) - notes  
   
