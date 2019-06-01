@@ -37479,6 +37479,154 @@ ggplot(calcium, aes(x = factor(visit), y = bmd)) +
   
 Chapter 2 - Modeling Continuous Longitudinal Outcomes  
   
+Longitudinal Analysis for Continuous Outcomes:  
+  
+* Dependencies are introduced based on repeated observations of the same individual  
+	* library(nlme)  
+    * ggplot(BodyWeight, aes(x = Time, y = weight)) + geom_line(aes(group = Rat), alpha = 0.6) + geom_smooth(se = FALSE, size = 2) + theme_bw(base_size = 16) + xlab("Number of Days") + ylab("Weight (grams)")  # se is invalid due to the dependencies  
+* The lmer stands for "Linear Mixed Effects Regression" - aka Hierarchical Linear Model, Linear Mixed Models, Multi-level Models, Growth Models  
+	* lmer(outcome ~ fixed_effects + (random_effects | individual), data = data)  
+    * outcome ~ fixed_effects + (random_effects | individual)  # outcome is the variable to be explained, fixed_effects are like a simple regression, random_effects represents deviation per individual, individual are the individual IDs  
+* Example of model fitting with the rat data  
+	* BodyWeight <- mutate(BodyWeight, Time = Time - 1)  
+    * body_ri <- lmer(weight ~ 1 + Time + (1 | Rat), data = BodyWeight)  
+    * summary(body_ri)  
+* The fixed effects represent the average effects across all the rats  
+  
+Addition of Random Slope Terms:  
+  
+* Random slopes are commonly used along with random intercepts - each individual can have their own random slopes  
+	* weight ~ 1 + Time + (1 + Time | Rat)  # fixed stays the same (though terms may be added)  
+    * BodyWeight <- mutate(BodyWeight, Time = Time - 1)  
+    * body_rs <- lmer(weight ~ 1 + Time + (1 + Time | Rat), data = BodyWeight)  
+* Sometimes a question of whether random intercepts or random slopes fit the data better - can use anova()  
+	* Akaike Information Criterion (AIC): smaller is better (recommended when the true model is unknown)  
+    * Bayesian Information Criterion (BIC): smaller is better (imposes larger penalties for adding predictors)  
+    * Log Likelihood: value minimized during estimation: smaller is better  
+* Nested models can be compared using anova() - subset or simplification of another model  
+	* body_ri <- lmer(weight ~ 1 + Time + (1 | Rat), data = BodyWeight)  
+    * body_rs <- lmer(weight ~ 1 + Time + (1 + Time | Rat), data = BodyWeight)  
+    * anova(body_rs, body_ri)  
+  
+Visualize and Interpret Output:  
+  
+* Visualizing model results is an important component of presenting and interpreting the data  
+	* body_agg <- BodyWeight %>% mutate(pred_values = predict(body_ri))  
+    * ggplot(body_agg, aes(x = Time, y = pred_values)) + geom_line(aes(group = Rats), alpha = 0.6) + theme_bw(base_size = 16) + xlab("Number of Days") + ylab("Model Implied Values")  
+* Random effects help control for dependencies due to repeated measurements  
+	* Custom function (next slide) will help explore model implied correlations  
+* Example of creating and applying a custom function for correlations ("compound symmetry")  
+	* corr_structure <- function(object, num_timepoints, intercept_only = TRUE) {  
+    *     variance <- VarCorr(object)  
+    *     if(intercept_only) {  
+    *         random_matrix <- as.matrix(object@pp$X[1:num_timepoints, 1])  
+    *         var_cor <- random_matrix %*% variance[[1]][1] %*% t(random_matrix) + diag(attr(variance, "sc")^2, nrow = num_timepoints, ncol = num_timepoints)  
+    *     } else {  
+    *     random_matrix <- as.matrix(object@pp$X[1:num_timepoints, ])  
+    *     var_cor <- random_matrix %*% variance[[1]][1:2, 1:2] %*% t(random_matrix) + diag(attr(variance, "sc")^2, nrow = num_timepoints, ncol = num_timepoints)  
+    *     }  
+    *     Matrix::cov2cor(var_cor)  
+    * }  
+    * body_ri <- lmer(weight ~ 1 + Time + (1 | Rat), data = BodyWeight)  
+    * corr_structure(body_ri, 11) %>% round(3)  
+* Can visually show correlation dependencies  
+	* Ggally::ggcorr(data = NULL, cor_matrix = corr_structure(body_ri, 11), label = TRUE, label_round = 3, label_size = 3.5, palette = 'Set2', nbreaks = 5)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Visualize trajectories
+ggplot(calcium, aes(x = visit, y = bmd)) +
+    geom_line(aes(group = person), alpha = .4) +
+    geom_smooth(se = FALSE, size = 2) +
+    theme_bw(base_size = 14) +
+    xlab('Visit Number') +
+    ylab('Bone Mineral Density (g/cm^2)')
+
+
+# Unconditional model
+uncond_model <- lme4::lmer(bmd ~ 1 + visit + (1 | person), data = calcium)
+
+# Show model output
+summary(uncond_model)
+
+
+# Alter the visit variable to start at 0
+calcium <- calcium %>%
+    mutate(visit_0 = visit - 1)
+
+# Fit random intercept model with new time variable
+uncond_model_0 <- lme4::lmer(bmd ~ 1 + visit_0 + (1 | person), data = calcium)
+summary(uncond_model_0)
+
+
+# Random slope
+uncond_model_rs <- lme4::lmer(bmd ~ 1 + visit_0 + (1 + visit_0 | person), data = calcium)
+summary(uncond_model_rs)
+
+
+# Compare random slopes and random intercept only models
+anova(uncond_model_rs, uncond_model_0)
+
+
+# Create predicted values for random intercept only model
+calcium_vis <- calcium %>%
+    mutate(pred_values_ri = predict(uncond_model_0))
+  
+# Visualize random intercepts
+ggplot(calcium_vis, aes(x = visit_0, y = pred_values_ri)) + 
+    geom_line(size = 1, color = 'gray70', aes(group = person)) + 
+    theme_bw() + 
+    xlab("Visit Number") +
+    ylab("Model Predicted Bone Mineral Density (g/cm^2)")
+
+
+# Create predicted values for random intercept and slope model
+calcium_vis <- calcium %>%
+    mutate(pred_values_rs = predict(uncond_model_rs))
+
+# Visualize random intercepts and slopes
+ggplot(calcium_vis, aes(x = visit_0, y = pred_values_rs)) + 
+    geom_line(size = 1, color = 'gray70', aes(group = person)) + 
+    theme_bw() + 
+    xlab("Visit Number") +
+    ylab("Model Predicted Bone Mineral Density (g/cm^2)")
+
+
+corr_structure <- function(object, num_timepoints, intercept_only = TRUE) {
+    variance <- lme4::VarCorr(object)
+    if(intercept_only) {
+        random_matrix <- as.matrix(object@pp$X[1:num_timepoints, 1])
+        var_cor <- random_matrix %*% variance[[1]][1] %*% t(random_matrix) + diag(attr(variance, "sc")^2, nrow = num_timepoints, ncol = num_timepoints)
+    } else {
+        random_matrix <- as.matrix(object@pp$X[1:num_timepoints, ])
+        var_cor <- random_matrix %*% variance[[1]][1:2, 1:2] %*% t(random_matrix) + diag(attr(variance, "sc")^2, nrow = num_timepoints, ncol = num_timepoints)
+    }
+    Matrix::cov2cor(var_cor)
+}
+
+# Random intercept and slope model
+random_slope <- lme4::lmer(bmd ~ 1 + visit_0 + (1 + visit_0 | person), data = calcium)
+
+# Generate model implied correlation matrix
+mod_corr <- corr_structure(random_slope, num_timepoints = 5, intercept_only = FALSE)
+round(mod_corr, 3)
+
+# Create visualization for correlation structure
+GGally::ggcorr(data = NULL, cor_matrix = mod_corr, midpoint = NULL, 
+               limits = NULL, label = TRUE, label_round = 3, label_size = 5, 
+               nbreaks = 100, palette = 'PuBuGn'
+               )
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Add Fixed Predictor Variables  
+  
+
 
 
 
