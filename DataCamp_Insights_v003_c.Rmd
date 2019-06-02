@@ -37626,6 +37626,131 @@ GGally::ggcorr(data = NULL, cor_matrix = mod_corr, midpoint = NULL,
   
 Chapter 3 - Add Fixed Predictor Variables  
   
+Adding Predictors:  
+  
+* Predictors will build up the fixed effects to help explain the outcomes - reduces the variance of the intercepts/slopes  
+	* BodyWeight <- BodyWeight %>% mutate(Time = Time - 1, diet_f = paste("Diet", Diet, sep = " "))  
+    * body_weight <- lmer(weight ~ 1 + Time + diet_f + (1 + Time | Rat), data = BodyWeight)  
+* Visualizing predictors can be especially helpful  
+	* BodyWeight <- BodyWeight %>% mutate(Time = Time - 1, diet_f = paste("Diet", Diet, sep = " "))  
+    * body_weight <- lmer(weight ~ 1 + Time + diet_f + (1 + Time | Rat), data = BodyWeight)  
+    * bodyweight_agg <- BodyWeight %>% mutate(pred_values = predict(body_weight, re.form = NA)) %>% group_by(Time, Diet) %>% summarize(mean_diet_pred = mean(pred_values))  
+    * ggplot(bodyweight_agg, aes(x = Time, y = mean_diet_pred, color = Diet)) + geom_point(data = BodyWeight, aes(x = Time, y = weight)) + geom_line(size = 2) + ylab("Body Weight") + xlab("Time (in days)") + theme_bw(base_size = 16)  
+  
+Adding Predictors - Interactions:  
+  
+* Can add predictor variables to the model  
+	* BodyWeight <- BodyWeight %>% mutate(Time = Time - 1, diet_f = paste("Diet", Diet, sep = " "))  
+    * body_weight <- lmer(weight ~ 1 + Time + diet_f + diet_f:Time + (1 + Time | Rat), data = BodyWeight)  
+* Need to check assumptions to ensure that model results are trustworthy  
+	* Ensure model results are trustworthy  
+    * Explore the distribution of residuals and random effects  
+    * body_weight <- lmer(weight ~ 1 + Time + diet_f + diet_f:Time + (1 + Time | Rat), data = BodyWeight)  
+    * BodyWeight <- BodyWeight %>% mutate(model_residuals = residuals(body_weight))
+ggplot(BodyWeight, aes(x = model_residuals)) + geom_density(aes(color = diet_f), size = 1.25) + xlab("Residuals") + theme_bw(base_size = 14) + scale_color_brewer(palette = "Set2")  
+* Can use the ranef() function to extract random effects from the model  
+	* body_weight <- lmer(weight ~ 1 + Time + diet_f + diet_f:Time + (1 + Time | Rat), data = BodyWeight)  
+    * random_effects <- ranef(body_weight)$Rat %>% mutate(id = 1:n()) %>% gather("variable", "value", -id) 
+* Can also run Q-Q plots to asses normality  
+	* ggplot(random_effects, aes(sample = value)) + geom_qq() + geom_qq_line() + facet_wrap(~variable, scales = 'free_y') + theme_bw(base_size = 14)  
+  
+Model Comparisons and Eplained Variance:  
+  
+* Model comparisons may be made using AIC, AICc (corrected AIC), or BIC  
+	* AICc converges to AIC with large samples  
+* Example of model comparisons  
+	* BodyWeight <- BodyWeight %>% mutate(Time = Time - 1, diet_f = paste("Diet", Diet, sep = " "))  
+    * body_weight_rs <- lmer(weight ~ 1 + Time + (1 + Time | Rat), data = BodyWeight, REML = FALSE)  # REML=TRUE would be for only changes in random effects; REML=FALSE is needed when changing fixed effects (random effects should stay the same)  
+    * body_weight_diet <- lmer(weight ~ 1 + Time + diet_f + (1 + Time | Rat), data = BodyWeight, REML = FALSE)  
+    * body_weight_diet_int <- lmer(weight ~ 1 + Time + diet_f + diet_f:Time + (1 + Time | Rat), data = BodyWeight, REML = FALSE)  
+* Can calculate AICc from AICcmodavg  
+	* AICcmodavg::aictab(list(body_weight_rs, body_weight_diet, body_weight_diet_int), modnames = c('random slope', 'diet intercept', 'diet interaction'))  
+* Explained variance can also be helpful in model assessment - larger values are better  
+	* MuMIn::r.squaredGLMM(body_weight_rs)  
+    * MuMIn::r.squaredGLMM(body_weight_diet) 
+    * MuMIn::r.squaredGLMM(body_weight_diet_int)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Add a categorical predictor
+bmd_group <- lme4::lmer(bmd ~ 1 + visit_0 + group + (1 + visit_0 | person), data = calcium)
+summary(bmd_group)
+
+# Add a continuous predictor
+bmd_group_age <- lme4::lmer(bmd ~ 1 + visit_0 + group + age + (1 + visit_0 | person), data = calcium)
+summary(bmd_group_age)
+
+
+# Calculate aggregate trends
+calcium_agg <- calcium %>%
+    mutate(pred_values = predict(bmd_group_age, re.form = NA)) %>%
+    group_by(visit_0, group) %>%
+    summarize(pred_group = mean(pred_values))
+
+# Visualize the model results
+ggplot(calcium_agg, aes(x = visit_0, y = pred_group, color = group)) +
+    geom_point(data = calcium, aes(x = visit_0, y = bmd, color = group)) +
+    geom_line(size = 1.25) +
+    xlab('Visit Number') +
+    ylab('Model Predicted Bone Mineral Density (g/cm^2)')
+
+
+# Add an interaction
+bmd_group_age_int  <- lme4::lmer(bmd ~ 1 + visit_0 + age + group + visit_0:group + visit_0:age + (1 + visit_0 | person), data = calcium)
+summary(bmd_group_age_int)
+
+
+# Add residuals original data
+calcium <- calcium %>%
+    mutate(model_residuals = residuals(bmd_group_age_int))
+
+# Visualize residuals
+ggplot(calcium, aes(x = model_residuals)) + 
+    geom_density(aes(color = group), size = 1.25) + 
+    theme_bw(base_size = 14) + 
+    xlab("Model Residuals")
+
+
+# Extract random effects
+random_effects <- lme4::ranef(bmd_group_age_int)$person %>%
+    mutate(id = 1:n()) %>%
+    gather("variable", "value", -id)
+
+# Visualize random effects
+ggplot(random_effects, aes(sample = value)) + 
+    geom_qq() + 
+    geom_qq_line() + 
+    facet_wrap(~variable, scales = 'free_y') + 
+    theme_bw(base_size = 14)
+
+
+# Compare random slope, model with group variable, model with group and age, and model with interactions.
+AICcmodavg::aictab(list(uncond_model_rs, bmd_group, bmd_group_age, bmd_group_age_int),
+                   modnames = c('random slope', 'group intercept', 'group and age', 
+                                'group and age interaction'
+                                )
+                   )
+
+
+# Compute explained variance for random slope only model
+MuMIn::r.squaredGLMM(uncond_model_rs)
+
+# Compute explained variance for group and age predicting intercepts model
+MuMIn::r.squaredGLMM(bmd_group_age)
+
+# Compute explained variance for interaction model
+MuMIn::r.squaredGLMM(bmd_group_age_int)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Modeling Longitudinal Dichotomous Outcomes  
+  
+
 
 
 
