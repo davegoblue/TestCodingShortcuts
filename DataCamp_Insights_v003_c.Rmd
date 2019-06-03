@@ -37750,6 +37750,231 @@ MuMIn::r.squaredGLMM(bmd_group_age_int)
   
 Chapter 4 - Modeling Longitudinal Dichotomous Outcomes  
   
+Exploring and Modeling Dichotomous Outcomes:  
+  
+* Binary outcomes include yes/no, presence/absence, etc.  
+	* library(HSAUR2)  
+    * head(toenail, n = 10)  
+* Generalized Linear Mixed Models (GLMM) explore the log-odds of success  
+	* toenail <- toenail %>% mutate(outcome_dich = ifelse(outcome == "none or mild", 1, 0), visit_0 = visit - 1)  
+    * toenail %>% group_by(visit_0) %>% summarise(prop_outcome = mean(outcome_dich), num = n())  
+* Two modificiations to lmer to run GLMM  
+	* use glmer instead of lmer  
+    * specify family = binomial argument  
+    * toe_output <- glmer(outcome_dich ~ 1 + visit_0 + treatment + ( 1 | patientID), data = toenail, family = binomial)  
+    * summary(toe_output)  
+  
+Generalized Estimating Functions (GEE):  
+  
+* GEE is another way to estimate dichotomous data that are not continuous  
+* The geepack package contains data for running GEE  
+	* toenail <- toenail %>% mutate(outcome_dich = ifelse(outcome == "none or mild", 1, 0), visit_0 = visit - 1)  
+    * gee_toe <- geeglm(outcome_dich ~ 1 + visit_0, data = toenail, id = patientID, family = binomial, scale.fix = TRUE)  
+    * summary(gee_toe)  
+* An optional argument, corstr is used to control the working correlation matrix  
+	* Accounts for the dependency due to repeated measures  
+    * The default is independence  
+    * gee_toe <- geeglm(outcome_dich ~ 1 + visit_0, data = toenail, id = patientID, family = binomial, corstr = 'exchangeable', scale.fix = TRUE)  
+    * summary(gee_toe)  
+* Additional correlation matrices can be specified  
+	* corstr = "ar1"  # specified correlation for each time lag  
+    * corstr = "unstructured"  # unique correlation for each time lag  
+  
+Model Selection:  
+  
+* The working correlation matrix can significantly impact study results  
+* The QIC statistic is the quasi-likelihood under the independence model criterion - lower (smaller) is better  
+	* toenail <- toenail %>% mutate(outcome_dich = ifelse(outcome == "none or mild", 1, 0), visit_0 = visit - 1)  
+    * gee_toe <- geeglm(outcome_dich ~ 1 + visit_0, data = toenail, id = patientID, family = binomial, scale.fix = TRUE)  
+    * MuMIn::QIC(gee_toe)  
+* Can evaluate model criterion  
+	* gee_ind <- geeglm(outcome_dich ~ 1 + visit_0, data = toenail, id = patientID, family = binomial, scale.fix = TRUE)  
+    * gee_exch <- geeglm(outcome_dich ~ 1 + visit_0, data = toenail, id = patientID, family = binomial, scale.fix = TRUE, corstr = 'exchangeable')  
+    * gee_ar1 <- geeglm(outcome_dich ~ 1 + visit_0, data = toenail, id = patientID, family = binomial, scale.fix = TRUE, corstr = 'ar1')  
+    * MuMIn::QIC(gee_ind, gee_exch, gee_ar1)  
+* Can also use the aictab() from AICcmodavg  
+	* toe_baseline <- glmer(outcome_dich ~ 1 + visit_0 + ( 1 | patientID), data = toenail, family = binomial)  
+    * toe_output <- glmer(outcome_dich ~ 1 + visit_0 + treatment + ( 1 | patientID), data = toenail, family = binomial)  
+    * AICcmodavg::aictab(list(toe_baseline, toe_output), c("no treatment", "treatement"))  
+  
+Interpreting and Visualizing Model Results:  
+  
+* Can visualize the GLMM outputs  
+	* toe_output <- glmer(outcome_dich ~ 1 + visit_0 + treatment + ( 1 | patientID), data = toenail, family = binomial)  
+    * toenail <- toenail %>% mutate(pred_values = predict(toe_output))  
+    * ggplot(toenail, aes(x = visit_0, y = pred_values)) + geom_line(aes(group = patientID), linetype = 2) + theme_bw(base_size = 16) + xlab("Visit Number") + ylab("Predicted Values")  
+* Probabilities are often more intuitive and can be found using type="response"  
+	* toenail <- toenail %>% mutate(pred_values = predict(toe_output, type = "response"))  
+    * ggplot(toenail, aes(x = visit_0, y = pred_values)) + geom_line(aes(group = patientID), linetype = 2) + theme_bw(base_size = 16) + xlab("Visit Number") + ylab("Prob of none or mild separation")  
+* Can use predict() using GEE similar to GLMM  
+	* gee_toe <- geeglm(outcome_dich ~ 1 + visit_0 + treatment, data = toenail, id = patientID, family = binomial, corstr = 'exchangeable', scale.fix = TRUE)  
+    * toenail_gee <- toenail %>% mutate(pred_gee = predict(gee_toe, type = "response"))  
+    * ggplot(toenail_gee, aes(x = visit_0, y = pred_gee)) + geom_line(aes(color = treatment)) + theme_bw(base_size = 16) + xlab("Visit Number") + ylab("Probability of none or mild separation")  
+* Compare GLMM and GEE  
+	* toenail_glmm <- toenail %>% group_by(visit_0, treatment) %>% summarise(prob = mean(pred_values))  
+    * toenail_gee <- toenail_gee %>% group_by(visit_0, treatment) %>% summarise(prob = mean(pred_values))  
+    * toenail_agg = bind_rows( mutate(toenail_glmm, model = "GLMM"), mutate(toenail_gee, model = "GEE") )  
+    * ggplot(toenail_agg, aes(x = visit_0, y = prob)) + geom_line(aes(color = treatment, linetype = model), size = 1) + theme_bw(base_size = 16) + xlab("Visit Number") + ylab("Prob of non or mild separation")  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+ids <- rep(c(1:82, 85:87, 90), each=12)
+months <- rep(0:11, times=length(unique(ids)))
+symps <- c(1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, NA, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NA, NA, NA, NA, NA, NA, NA, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, NA, NA, NA, NA, NA, NA, NA, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 0, NA, NA, NA, NA, NA, NA, NA, NA, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, NA, NA, NA, NA, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0)
+symps <- c(symps, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, NA, NA, NA, NA, NA, NA, NA, NA, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NA, NA, NA, NA, NA, NA, NA, NA, NA, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, NA, NA, NA, NA, NA, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, NA, NA, NA, NA, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, NA, NA, NA, NA, 0, 1, 1, NA, NA, NA, NA, NA, NA, NA, NA, NA, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, NA, NA, 1, 1, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, NA, NA, NA, NA, NA, NA, NA, NA, NA, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, NA, NA, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0)
+age <- rep(c('Less than 20', 'Less than 20', 'Less than 20', '20 or Older', 'Less than 20', '20 or Older', 'Less than 20', 'Less than 20', '20 or Older', 'Less than 20', '20 or Older', '20 or Older', 'Less than 20', 'Less than 20', 'Less than 20', 'Less than 20', '20 or Older', '20 or Older', 'Less than 20', 'Less than 20', 'Less than 20', 'Less than 20', 'Less than 20', '20 or Older', '20 or Older', 'Less than 20', '20 or Older', 'Less than 20', '20 or Older', 'Less than 20', '20 or Older', 'Less than 20', 'Less than 20', 'Less than 20', '20 or Older', '20 or Older', 'Less than 20', 'Less than 20', 'Less than 20', '20 or Older', '20 or Older', '20 or Older', 'Less than 20', 'Less than 20', 'Less than 20', 'Less than 20', '20 or Older', 'Less than 20', 'Less than 20', 'Less than 20', '20 or Older', 'Less than 20', 'Less than 20', 'Less than 20', 'Less than 20', '20 or Older', 'Less than 20', 'Less than 20', 'Less than 20', '20 or Older', 'Less than 20', '20 or Older', 'Less than 20', '20 or Older', '20 or Older', 'Less than 20', 'Less than 20', 'Less than 20', 'Less than 20', 'Less than 20', 'Less than 20', 'Less than 20', '20 or Older', 'Less than 20', '20 or Older', 'Less than 20', '20 or Older', '20 or Older', 'Less than 20', 'Less than 20', '20 or Older', 'Less than 20', '20 or Older', 'Less than 20', 'Less than 20', 'Less than 20'), each=12)
+sex <- rep(c('Male', 'Female', 'Female', 'Female', 'Female', 'Male', 'Female', 'Female', 'Female', 'Male', 'Female', 'Female', 'Male', 'Male', 'Male', 'Male', 'Female', 'Female', 'Female', 'Female', 'Female', 'Male', 'Male', 'Female', 'Male', 'Female', 'Male', 'Male', 'Female', 'Female', 'Male', 'Female', 'Female', 'Male', 'Female', 'Male', 'Female', 'Female', 'Female', 'Female', 'Female', 'Female', 'Male', 'Male', 'Male', 'Male', 'Female', 'Male', 'Female', 'Male', 'Male', 'Male', 'Male', 'Female', 'Female', 'Male', 'Male', 'Female', 'Male', 'Female', 'Male', 'Male', 'Female', 'Female', 'Male', 'Male', 'Male', 'Male', 'Female', 'Female', 'Male', 'Male', 'Female', 'Female', 'Male', 'Male', 'Male', 'Female', 'Male', 'Male', 'Female', 'Female', 'Male', 'Male', 'Male', 'Male'), each=12)
+madras <- data.frame(id=ids, symptom=symps, month=months, age=age, sex=sex)
+
+
+# Explore the first few rows of the madras data
+str(madras)
+head(madras)
+
+# Descriptives about symptom prevalence over time
+summary_stats <- madras %>%
+    group_by(month) %>%
+    summarize(num_symptom = sum(symptom, na.rm = TRUE), 
+              num = n(),
+              prop_symptom = mean(symptom, na.rm = TRUE)
+              )
+  
+# Print out summary statistics
+summary_stats
+
+
+# Build models
+uncond_ri <- lme4::glmer(symptom ~ 1 + month + (1|id), data = madras, family = binomial)
+summary(uncond_ri)
+
+
+# Add in covariates based on trend plot
+cond_model <- lme4::glmer(symptom ~ 1 + month + sex + age + sex:age + sex:month + (1 | id), data = madras, family = binomial)
+
+# Generate summary of output
+summary(cond_model)
+
+
+# Fit a GEE model with intercept and time variable
+gee_mod <- geepack::geeglm(symptom ~ 1 + month, id = id, family=binomial, data = madras, scale.fix = TRUE)
+
+# Extract model results
+summary(gee_mod)
+
+# Fit a GEE model with an ar(1) working correlation matrix
+gee_mod_ar1 <- geepack::geeglm(symptom ~ 1 + month, id = id, family = binomial, data = madras, corstr="ar1", scale.fix = TRUE)
+
+# Fit a GEE model with an unstructured working correlation matrix
+gee_mod_un <- geepack::geeglm(symptom ~ 1 + month, id = id, family = binomial, data = madras, corstr="unstructured", scale.fix = TRUE)
+
+# Extract model results
+summary(gee_mod_ar1)
+summary(gee_mod_un)
+
+
+# Fit a GEE model with an ar(1) working correlation matrix
+gee_mod_ar1 <- geepack::geeglm(symptom ~ 1 + month + age + sex + age:sex + month:age + month:sex, id = id, data = madras, family = binomial, corstr = 'ar1', scale.fix = TRUE)
+
+# Extract model results
+summary(gee_mod_ar1)
+
+
+# Fit a GEE model with an exchangeable working correlation matrix
+gee_mod_exch <- geepack::geeglm(symptom ~ 1 + month + age + sex, data = madras, id = id, family = binomial, scale.fix = TRUE, corstr = 'exchangeable')
+
+
+glmm_age <- lme4::glmer(symptom ~ 1 + month + age + month:age + (1 | id), data=madras, family=binomial)
+
+# Generate model implied probabilities
+madras <- madras %>%
+    na.omit() %>%
+    mutate(prob=predict(glmm_age, type="response"))
+
+# Visualize subject specific probabilities
+ggplot(madras, aes(x=month, y=prob)) + 
+    geom_line(aes(group=id)) + 
+    theme_bw() +
+    xlab("Month") + 
+    ylab("Probabilities")
+
+
+# Compute the average trajectories
+glmm_prob <- madras %>%
+    group_by(month, age) %>%
+    summarize(prob = mean(prob))
+
+# Visualize average trajectories
+ggplot(glmm_prob, aes(x = month, y = prob)) + 
+    geom_line(aes(color = age)) + 
+    theme_bw() +
+    xlab("Month") + 
+    ylab("Probability")
+
+
+gee_age_sex <- geepack::geeglm(formula = symptom ~ 1 + month + age + month:age + sex, 
+                               family = binomial, data = madras, id = id, corstr = "ar1", scale.fix = TRUE
+                               )
+
+# Compute model implied probabilites using gee_age_sex
+madras_gee <- madras %>% 
+    select(month, symptom, age, sex) %>% 
+    na.omit() %>%
+    mutate(prob = predict(gee_age_sex, type = "response"))
+
+# Visualize trajectories
+ggplot(madras_gee, aes(x = month, y = prob)) + 
+    geom_line(aes(color = age)) + 
+    facet_wrap(~ sex) + 
+    theme_bw() +
+    xlab("Month") +
+    ylab("Probability")
+
+
+# Fit a GLMM mdoel
+glmm_age_sex <- lme4::glmer(symptom ~ 1 + month + age + sex + (1 | id), data = madras, family = binomial)
+
+# Generate model implied probabilites
+madras <- madras %>% mutate(prob_gee = predict(gee_age_sex, type = "response"),
+                            prob_glmm = predict(glmm_age_sex, type = "response")
+                            )
+
+# Compute average GEE probabilities
+madras_gee <- madras %>%
+    group_by(month, age, sex) %>%
+    summarize(prob = mean(prob_gee))
+
+# Compute average GLMM probabilities
+madras_glmm <- madras %>%
+    group_by(month, age, sex) %>%
+    summarize(prob = mean(prob_glmm))
+
+# Create combined data object
+madras_agg = bind_rows(
+    mutate(madras_glmm, model = "GLMM"), 
+    mutate(madras_gee, model = "GEE") 
+)
+
+
+# Visualize differences in trajectories across model types
+ggplot(madras_agg, aes(x = month, y = prob)) + 
+    geom_line(aes(color = sex, linetype = model)) + 
+    facet_wrap(~ age) + 
+    theme_bw() + 
+    xlab("Month") + 
+    ylab("Probability")
+
+```
+  
+  
+  
+***
+  
+###_Data Manipulation in R with data.table_  
+  
+Chapter 1 - Introduction to data.table  
+  
+
 
 
 
