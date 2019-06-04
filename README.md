@@ -1471,4 +1471,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 03-JUN-2019  
 * DataCamp_Insights_v003_c captures Longitudinal Analysis in R - Chapter 4 (Modeling Longitudinal Dichotomous Outcomes) - notes  
+* DataCamp_Insights_v003_c captures Intermediate Functional Programming with purrr - Chapter 1 (Programming with purrr) - code  
   
