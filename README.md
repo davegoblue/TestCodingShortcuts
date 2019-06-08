@@ -1475,4 +1475,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Data Manipulation in R with data.table - Chapter 1 (Introduction to data.table) - notes  
 * DataCamp_Insights_v003_c captures Data Manipulation in R with data.table - Chapter 2 (Selecting and Computing on Columns) - notes  
 * DataCamp_Insights_v003_c captures Data Manipulation in R with data.table - Chapter 3 (Groupwise Operations) - notes  
+* DataCamp_Insights_v003_c captures Data Manipulation in R with data.table - Chapter 4 (Reference Semantics) - notes  
   
