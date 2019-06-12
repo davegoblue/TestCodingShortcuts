@@ -1481,4 +1481,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 10-JUN-2019  
 * DataCamp_Insights_v003_c captures Intermediate Functional Programming with purrr - Chapter 2 (Functional Programming from Theory to Practice) - code  
 * DataCamp_Insights_v003_c captures Intermediate Functional Programming with purrr - Chapter 3 (Better Code with purrr) - code  
+* DataCamp_Insights_v003_c captures Intermediate Functional Programming with purrr - Chapter 4 (Case Study) - code  
   
