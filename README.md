@@ -1483,4 +1483,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Intermediate Functional Programming with purrr - Chapter 3 (Better Code with purrr) - code  
 * DataCamp_Insights_v003_c captures Intermediate Functional Programming with purrr - Chapter 4 (Case Study) - code  
 * DataCamp_Insights_v003_c captures Probability Puzzles in R - Chapter 1 (Introduction and Classic Puzzles) - notes  
+* DataCamp_Insights_v003_c captures Probability Puzzles in R - Chapter 2 (Games with Dice) - notes  
   
