@@ -1491,4 +1491,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Longitudinal Analysis in R - Chapter 1 (Introduction to Longitudinal Data) - code  
 * DataCamp_Insights_v003_c captures Longitudinal Analysis in R - Chapter 2 (Modeling Continuous Longitudinal Outcomes) - code  
 * DataCamp_Insights_v003_c captures Longitudinal Analysis in R - Chapter 3 (Add Fixed Predictor Variables) - code  
+* DataCamp_Insights_v003_c captures Longitudinal Analysis in R - Chapter 4 (Modeling Longitudinal Dichotomous Outcomes) - code    
   
