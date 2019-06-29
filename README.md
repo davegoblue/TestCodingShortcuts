@@ -1502,4 +1502,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Highcharter for Finance in R - Chapter 1 (Introduction to Highcharter) - notes  
 * DataCamp_Insights_v003_c captures Highcharter for Finance in R - Chapter 2 (Highcharter for xts Data) - notes  
 * DataCamp_Insights_v003_c captures Highcharter for Finance in R - Chapter 3 (Highcharter for Wide tibble Data) - notes  
+* DataCamp_Insights_v003_c captures Highcharter for Finance in R - Chapter 4 (Highcharter for Tidy tibble Data) - notes  
   
