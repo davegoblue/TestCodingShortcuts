@@ -40039,6 +40039,247 @@ ggplot(tsne_plot, aes(x = tsne_x, y = tsne_y, color = label)) +
   
 Chapter 2 - Introduction to t-SNE  
   
+Building a t-SNE Embedding:  
+  
+* The t-SNE method was published in 2008  
+	* Non-linear dimensionality reduction technique  
+    * Works well for most of the problems and is a very good method for visualizing high dimensional datasets  
+    * Rather than keeping dissimilar points apart (like PCA) it keeps the low-dimensional representation of similar points together  
+* Generally, the t-SNE method starts with PCA, then moves on to additional steps  
+	* Use PCA to reduce the input dimensions into a small number  
+    * Construct a probability distribution over pairs of original high dimensional records  
+    * Define a similarity probability distribution of the points in the low-dimensional embedding  
+    * Minimize the K-L divergence between the two distributions using gradient descent method  
+* Can run t-SNE in R using the Rtsne package  
+	* library(Rtsne)  
+    * tsne_output <- Rtsne(mnist[, -1])  
+    * tsne_output <- Rtsne(mnist[, -1], PCA = FALSE, dims = 3)  # modifying the default parameters  
+    * tsne_output$itercosts  # K-L divergence cost, samples after 50 iterations  
+    * head(tsne_output$costs)  # cost of each record after the final iteration  
+  
+Optimal Number of t-SNE Iterations:  
+  
+* Hyper-parameters are common in machine learning, and t-SNE has several of them  
+	* Number of iterations  
+    * Perplexity  
+    * Learning rate  
+    * Optimization criterium: K-L divergence  
+* Because t-SNE is not deterministic, running with the same parameters can drive different results  
+	* set.seed(1234)  
+    * tsne_output_1 <- Rtsne(mnist[, -1], max_iter = 1500)   
+    * set.seed(1234)  
+    * tsne_output_2 <- Rtsne(mnist[, -1], max_iter = 1500)  
+    * identical(tsne_output_1, tsne_output_2)  # TRUE  
+* One of the important parameters for t-SNE is the number of iterations (default is 1000)  
+  
+Effect of Perplexity Parameter:  
+  
+* Perplexity is a hyper-parameter for balancing global and local criteria  
+	* A guess about the number of close neighbors  
+    * In a real setting is important to try different values  
+    * Must be lower than the number of input records  
+    * tsne_output <- Rtsne(mnist[, -1], perplexity = 50, max_iter = 1300)  
+  
+Classifying Digits with t-SNE:  
+  
+* Can classify digits (and run other tasks) using t-SNE  
+	* Build a t-SNE model and calculate the centroids  
+    * Classify unknown data points based on proximity to the centroid  
+* Example for step 1 (building the t-SNE)  
+	* tsne <- Rtsne(mnist_10k[, -1], perplexity = 5)  
+    * tsne_plot <- data.frame(tsne_x= tsne_out$Y[1:5000,1], tsne_y = tsne_out$Y[1:5000,2], digit = as.factor(mnist_10k[1:5000,]$label))  
+    * ggplot(tsne_plot, aes(x= tsne_x, y = tsne_y, color = digit)) + ggtitle("MNIST embedding of the first 5K digits") + geom_text(aes(label = digit)) + theme(legend.position="none")  
+* Example for step 1b (calculating the centroids)  
+	* centroids <- as.data.table(tsne_out$Y[1:5000,])  
+    * setnames(centroids, c("X", "Y"))  
+    * centroids[, label := as.factor(mnist_10k[1:5000,]$label)]  
+    * centroids[, mean_X := mean(X), by = label]  
+    * centroids[, mean_Y := mean(Y), by = label]  
+    * centroids <- unique(centroids, by = "label")  
+    * ggplot(centroids, aes(x= mean_X, y = mean_Y, color = label)) + ggtitle("Centroids coordinates") + geom_text(aes(label = label)) + theme(legend.position = "none")  
+* Example for step 2 (classifying new digits)  
+	* distances <- as.data.table(tsne_out$Y[5001:10000,])  
+    * setnames(distances, c("X", "Y"))  
+    * distances[, label := mnist_10k[5001:10000,]$label]  
+    * distances <- distances[label == 4 | label == 9]  
+    * distances[, dist_4:=sqrt(((X - centroids[label==4,]$mean_X) + (Y - centroids[label==4,]$mean_Y))^2)]  
+    * ggplot(distances, aes(x=dist_4, fill = as.factor(label))) + geom_histogram(binwidth=5, alpha=.5, position="identity", show.legend = F)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Compute t-SNE without doing the PCA step
+tsne_output <- Rtsne::Rtsne(mnist_sample[, -1], PCA = FALSE, dims = 3)
+
+# Show the obtained embedding coordinates
+head(tsne_output$Y)
+
+# Store the first two coordinates and plot them 
+tsne_plot <- data.frame(tsne_x = tsne_output$Y[, 1], tsne_y = tsne_output$Y[, 2], 
+                        digit = as.factor(mnist_sample$label)
+                        )
+
+# Plot the coordinates
+ggplot(tsne_plot, aes(x = tsne_x, y = tsne_y, color = digit)) + 
+ggtitle("t-SNE of MNIST sample") + 
+geom_text(aes(label = digit)) + 
+theme(legend.position = "none")
+
+
+# Inspect the output object's structure
+str(tsne_output)
+
+# Show the K-L divergence of each record after the final iteration
+tsne_output$itercosts
+tsne_output$costs
+
+# Plot the K-L divergence of each record after the final iteration
+plot(tsne_output$itercosts, type = "l")
+plot(tsne_output$costs, type = "l")
+
+
+# Generate a three-dimensional t-SNE embedding without PCA
+tsne_output <- Rtsne::Rtsne(mnist_sample[, -1], PCA=FALSE, dims=3)
+
+# Generate a new t-SNE embedding with the same hyper-parameter values
+tsne_output_new <- Rtsne::Rtsne(mnist_sample[, -1], PCA=FALSE, dims=3)
+
+# Check if the two outputs are identical
+identical(tsne_output, tsne_output_new)
+
+# Generate a three-dimensional t-SNE embedding without PCA
+set.seed(1234)
+tsne_output <- Rtsne::Rtsne(mnist_sample[, -1], PCA = FALSE, dims = 3)
+
+# Generate a new t-SNE embedding with the same hyper-parameter values
+set.seed(1234)
+tsne_output_new <- Rtsne::Rtsne(mnist_sample[, -1], PCA = FALSE, dims = 3)
+
+# Check if the two outputs are identical
+identical(tsne_output, tsne_output_new)
+
+
+# Set seed to ensure reproducible results
+set.seed(1234)
+
+# Execute a t-SNE with 2000 iterations
+tsne_output <- Rtsne::Rtsne(mnist_sample[, -1], PCA=TRUE, dims=2, max_iter=2000)
+
+# Observe the output costs 
+tsne_output$itercosts
+
+# Get the 50th iteration with the minimum K-L cost
+which.min(tsne_output$itercosts)
+
+
+# Set seed to ensure reproducible results
+set.seed(1234)
+
+# Execute a t-SNE with perplexity 5
+tsne_output_5 <- Rtsne::Rtsne(mnist_sample[, -1], perplexity=5, max_iter=1200)
+
+# Observe the returned K-L divergence costs at every 50th iteration
+tsne_output_5$itercosts
+
+# Set seed to ensure reproducible results
+set.seed(1234)
+
+# Execute a t-SNE with perplexity 20
+tsne_output_20 <- Rtsne::Rtsne(mnist_sample[, -1], perplexity=20, max_iter=1200)
+
+# Observe the returned K-L divergence costs at every 50th iteration
+tsne_output_20$itercosts
+
+# Set seed to ensure reproducible results
+set.seed(1234)
+
+# Execute a t-SNE with perplexity 50
+tsne_output_50 <- Rtsne::Rtsne(mnist_sample[, -1], perplexity=50, max_iter=1200)
+
+# Observe the returned K-L divergence costs at every 50th iteration
+tsne_output_50$itercosts
+
+
+# Observe the K-L divergence costs with perplexity 5 and 50
+tsne_output_5$itercosts
+tsne_output_50$itercosts
+
+# Generate the data frame to visualize the embedding
+tsne_plot_5 <- data.frame(tsne_x = tsne_output_5$Y[, 1], tsne_y = tsne_output_5$Y[, 2], digit = as.factor(mnist_sample$label))
+tsne_plot_50 <- data.frame(tsne_x = tsne_output_50$Y[, 1], tsne_y = tsne_output_50$Y[, 2], digit = as.factor(mnist_sample$label))
+
+# Plot the obtained embeddings
+ggplot(tsne_plot_5, aes(x = tsne_x, y = tsne_y, color = digit)) + 
+ggtitle("MNIST t-SNE with 1300 iter and Perplexity=5") + geom_text(aes(label = digit)) + 
+theme(legend.position="none")
+ggplot(tsne_plot_50, aes(x = tsne_x, y = tsne_y, color = digit)) + 
+ggtitle("MNIST t-SNE with 1300 iter and Perplexity=50") + geom_text(aes(label = digit)) + 
+theme(legend.position="none")
+
+
+# Prepare the data.frame
+tsne_plot <- data.frame(tsne_x = tsne_output_50$Y[1:100, 1], 
+                        tsne_y = tsne_output_50$Y[1:100, 2], 
+                        digit = as.factor(mnist_sample$label[1:100])
+                        )
+
+# Plot the obtained embedding
+ggplot(tsne_plot, aes(x = tsne_x, y = tsne_y, color = digit)) + 
+ggtitle("MNIST embedding of the first 100 digits") + 
+geom_text(aes(label = digit)) + 
+theme(legend.position="none")
+
+
+# Get the first 5K records and set the column names
+dt_prototypes <- as.data.table(tsne_output_50$Y[1:100, ])
+setnames(dt_prototypes, c("X","Y"))
+
+# Paste the label column as factor
+dt_prototypes[, label := as.factor(mnist_sample[1:100,]$label)]
+
+# Compute the centroids per label
+dt_prototypes[, mean_X := mean(X), by = label]
+dt_prototypes[, mean_Y := mean(Y), by = label]
+
+# Get the unique records per label
+dt_prototypes <- unique(dt_prototypes, by = "label")
+dt_prototypes
+
+
+# Store the last 100 records in distances and set column names
+distances <- as.data.table(tsne_output_50$Y[101:200, ])
+setnames(distances, c("X", "Y"))
+
+# Paste the true label
+distances[, label := mnist_sample[101:200,]$label]
+
+# Filter only those labels that are 1 or 0 
+distances <- distances[label == 1 | label == 0]
+
+# Compute Euclidean distance to prototype of digit 1
+distances[, dist_1 := sqrt(( (X - dt_prototypes[label == 1,]$mean_X) + 
+                             (Y - dt_prototypes[label == 1,]$mean_Y))^2)]
+
+
+# Compute the basic statistics of distances from records of class 1
+summary(distances[label == 1]$dist_1)
+
+# Compute the basic statistics of distances from records of class 1
+summary(distances[label == 0]$dist_1)
+
+# Plot the histogram of distances of each class
+ggplot(distances, aes(x = dist_1, fill = as.factor(label))) +
+geom_histogram(binwidth = 5, alpha = .5, position = "identity", show.legend = FALSE) + 
+ggtitle("Distribution of Euclidean distance 1 vs 0")
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Using t-SNE with Predictive Models  
+  
 
 
 
