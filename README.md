@@ -1507,4 +1507,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 01-JUL-2019  
 * DataCamp_Insights_v003_c captures Advanced Dimensionality Reduction in R - Chapter 2 (Introduction to t-SNE) - notes  
+* DataCamp_Insights_v003_c captures Advanced Dimensionality Reduction in R - Chapter 3 (Using t-SNE with Predictive Models) - notes  
   
