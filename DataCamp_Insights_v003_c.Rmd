@@ -38717,7 +38717,7 @@ Monty Hall:
     * reveal <- sample(x = doors[-1], size = 1)  # assumes contestant chose 1 and actual prize is in 1  
   
 Example code includes:  
-```{r eval=FALSE}
+```{r}
 
 # Set seed to 1
 set.seed(1)
@@ -40476,7 +40476,250 @@ randomForest::varImpPlot(rf_model_tsne)
   
 Chapter 4 - Generalized Low Rank Models  
   
+Exploring Fashion MNIST dataset:  
+  
+* The fashion MNIST dataset contains 70,000 grayscale images at 28x28 pixels of 10 clothing categories  
+	* Identical format to traditional MNIST  
+    * Released by Zalando  
+    * With the goal of replacing MNIST, because:  
+    * MNIST is easy to predict  
+    * MNIST is overused  
+* Exploring and modeling with the fashion MNIST data  
+	* class_names <- c('T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot')  
+    * xy_axis <- data.frame(x = expand.grid(1:28, 28:1)[,1], y = expand.grid(1:28, 28:1)[,2])  
+    * plot_data <- cbind(xy_axis, fill = as.data.frame(t(fashion_mnist[1, -1]))[,1])  
+    * plot_theme <- list( raster = geom_raster(hjust = 0, vjust = 0), gradient_fill = scale_fill_gradient(low = "white", high = "black", guide = FALSE), theme = theme(axis.line = element_blank(), axis.text = element_blank(), axis.ticks = element_blank(), axis.title = element_blank(), panel.background = element_blank(), panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), plot.background = element_blank()) )  
+    * ggplot(plot_data, aes(x, y, fill = fill)) + ggtitle(class_names[as.integer(fashion_mnist[1,1])+1]) + plot_theme  
+  
+Generalized Low Rank Models (GLRM):  
+  
+* There are many benefits to the GLRM approach, including  
+	* Reduces the required storage  
+    * Enables data visualization  
+    * Removes noise  
+    * Imputes missing data  
+    * Simplifies data processing  
+* The low-rank structure converts an mxn matrix to a combination of mxk and kxn  
+	* Parallelized dimensionality reduction algorithm  
+    * Categorical columns are transformed into binary columns  
+* Can run GLRM in R with H2O  
+	* H2O is an open source machine learning framework with R interfaces  
+    * Has a good parallel implementation of GLRM  
+    * Steps: (1) initialize the cluster and (2) store the input data  
+    * h2o.init()  
+    * fashion_mnist.hex <- as.h2o(fashion_mnist, "fashion_mnist.hex")  
+    * model_glrm <- h2o.glrm(training_frame = fashion_mnist.hex, cols = 2:ncol(fashion_mnist), k = 2, max_iterations = 100)  # k is the rank (dimension) of the space  
+  
+Visualizing a GLRM Model:  
+  
+* Often helpful to extract the XY representation of the GLRM  
+	* X <- as.data.table(h2o.getFrame(model_glrm@model$representation_name))  # dim will be nxk  
+    * Y <- model_glrm@model$archetypes  # dim will be kxm  
+    * ggplot(X, aes(x= Arch1, y = Arch2, color = fashion_mnist$label)) + ggtitle("Fashion Mnist GLRM Archetypes") + geom_text(aes(label = fashion_mnist$label)) + theme(legend.position="none")  
+* Can grab the centroids by class, and use as prototypes for classification  
+	* X[, label := as.numeric(fashion_mnist$label)]  
+    * X[, mean_x := mean(Arch1), by = label]  
+    * X[, mean_y := mean(Arch2), by = label]  
+    * X_mean <- unique(X, by = "label")  
+    * class_names = c('T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot')  
+    * ggplot(X_mean, aes(x = mean_x, y = mean_y, color = as.factor(X_mean$label))) + ggtitle("Fashion Mnist GLRM class centroids") + geom_text(aes(label = class_names[label])) + theme(legend.position="none")  
+* Can reconstruct the original data using X*Y, with the predict method  
+	* fashion_pred <- predict(model_glrm, fashion_mnist.hex)  
+    * head(fashion_pred[1:2, 1:4])  
+    * xy_axis <- data.frame(x = expand.grid(1:28,28:1)[,1], y = expand.grid(1:28,28:1)[,2])  
+    * data_reconstructed <- cbind(xy_axis, fill = as.data.frame(t(fashion_pred[1000,]))[,1])  
+    * plot_reconstructed <- ggplot(plot_data, aes(x, y, fill = fill)) + ggtitle("Reconstructed Pullover (K=2)") + plot_theme  
+    * data_original <- cbind(xy_axis, fill = as.data.frame(t(fashion_mnist[1000, -1]))[,1])  
+    * plot_original <- ggplot(plot_data_2, aes(x, y, fill = fill)) + ggtitle("Original Pullover") + plot_theme  
+    * grid.arrange(plot_reconstructed, plot_original, nrow = 1)  
+* Higher values of k will typically lead to better reconstructions - assessed visually or by using the resulting error values  
+  
+Dealing with Missing Data and Speeding-Up Models:  
+  
+* Missing data can confound the analysis, and a good approach to it is required  
+* Common in real-world datasets  
+	* May be Intentionally not provided  
+    * May be Due to an error  
+    * With GLRM we can impute missing data and assign an estimation  
+* Example of randomly generated missing data using the fashion_mnist dataset  
+	* fashion_mnist_miss.hex <- h2o.insertMissingValues(fashion_mnist.hex[,-1], fraction=0.2, seed = 1234)  
+    * summary(fashion_mnist_miss[,781:784])  
+    * model_glrm <- h2o.glrm(training_frame = fashion_mnist_miss.hex, transform = "NORMALIZE", ignore_const_cols = FALSE, k = 64, max_iterations = 200, seed = 123)  
+    * fashion_pred <- h2o.predict(model_glrm, fashion_mnist_miss.hex)  
+    * summary(fashion_pred[,782:784])  
+* Another advantage of GLRM is to speed up training models (lower volumes of data for processing)  
+	* Training machine learning models is faster using a low-dimensional representation  
+    * Key is to have a good compressed representation  
+* Example of training a random forest  
+	* Trained several h2o random forests, 4-Fold Cross-Validation  
+    * Fashion MNIST (60.000) was compressed with GLRM and changing the value of K from 2 to 256  
+    * We measure the accuracy and the required time  
+    * perf_metrics  
+  
+Summary and Wrap-Up:  
+  
+* Can use t-SNE and GLRM to reduce dimensionality  
+* Simplify data processing, enhace visualizing data, etc.  
+  
+Example code includes:  
+```{r eval=FALSE}
 
+# Show the dimensions
+dim(fashion_mnist)
+
+# Create a summary of the last five columns 
+summary(fashion_mnist[, 780:785])
+
+# Table with the class distribution
+table(fashion_mnist$label)
+
+
+xy_axis <- data.frame(x=rep(1:28, times=28), y=rep(28:1, each=28))
+plot_theme <- list( raster = geom_raster(hjust = 0, vjust = 0), 
+                    gradient_fill = scale_fill_gradient(low = "white", high = "black", guide = FALSE), 
+                    theme = theme(axis.line = element_blank(), axis.text = element_blank(), 
+                                  axis.ticks = element_blank(), axis.title = element_blank(),
+                                  panel.background = element_blank(), panel.border = element_blank(),
+                                  panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                  plot.background = element_blank()
+                                  )
+                    )  
+class_names <- c('T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 
+                 'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot'
+                 )  
+
+# Get the data from the last image
+plot_data <- cbind(xy_axis, fill = as.data.frame(t(fashion_mnist[500, -1]))[,1])
+
+# Observe the first records
+head(plot_data)
+
+# Plot the image using ggplot()
+ggplot(plot_data, aes(x, y, fill = fill)) + 
+    ggtitle(class_names[as.integer(fashion_mnist[500, 1])]) + 
+    plot_theme 
+
+
+# Start a connection with the h2o cluster
+h2o::h2o.init()
+
+# Store the data into h2o cluster
+fashion_mnist.hex <- h2o::as.h2o(fashion_mnist, "fashion_mnist.hex")
+
+# Launch a GLRM model over fashion_mnist data
+model_glrm <- h2o::h2o.glrm(training_frame = fashion_mnist.hex, cols = 2:ncol(fashion_mnist), 
+                            k = 2, seed = 123, max_iterations = 100
+                            )
+
+# Plotting the convergence
+plot(model_glrm)
+
+
+# Launch a GLRM model with normalized fashion_mnist data  
+model_glrm <- h2o::h2o.glrm(training_frame = fashion_mnist.hex, transform = "NORMALIZE",
+                            cols = 2:ncol(fashion_mnist), k = 2, seed = 123, max_iterations = 100
+                            )
+
+# Plotting the convergence
+plot(model_glrm)
+
+
+X_matrix <- as.data.table(h2o::h2o.getFrame(model_glrm@model$representation_name))
+
+# Dimension of X_matrix
+dim(X_matrix)
+
+# First records of X_matrix
+head(X_matrix)
+
+# Plot the records in the new two dimensional space
+ggplot(as.data.table(X_matrix), aes(x= Arch1, y = Arch2, color = fashion_mnist$label)) + 
+    ggtitle("Fashion Mnist GLRM Archetypes") + 
+	geom_text(aes(label = fashion_mnist$label)) + 
+	theme(legend.position="none")
+
+
+# Store the label of each record and compute the centroids
+X_matrix[, label := as.numeric(fashion_mnist$label)]
+X_matrix[, mean_x := mean(Arch1), by = label]
+X_matrix[, mean_y := mean(Arch2), by = label]
+
+# Get one record per label and create a vector with class names
+X_mean <- unique(X_matrix, by = "label")
+label_names <- c("T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", 
+                 "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"
+                 )
+
+# Plot the centroids
+ggplot(X_mean, aes(x = mean_x, y = mean_y, color = as.factor(label))) + 
+	ggtitle("Fashion Mnist GLRM class centroids") + 
+	geom_text(aes(label = label_names[label])) +
+	theme(legend.position="none")
+
+
+makeNA <- function(x) {
+    vecNA <- sort(unique(sample(1:length(x), round(0.225*length(x)), replace=TRUE)))
+    x[vecNA] <- NA
+    return(x)
+}
+
+fashion_mnist_miss <- fashion_mnist %>%
+    select(-label) %>%
+    apply(1, FUN=makeNA)
+
+
+# Store the input data in h2o
+fashion_mnist_miss.hex <- h2o::as.h2o(fashion_mnist_miss, "fashion_mnist_miss.hex")
+
+# Build a GLRM model
+model_glrm <- h2o::h2o.glrm(training_frame = fashion_mnist_miss.hex, transform="NORMALIZE", 
+                            k=2, max_iterations=100
+                            )
+
+# Impute missing values
+fashion_pred <- h2o::h2o.predict(model_glrm, fashion_mnist_miss.hex)
+
+# Observe the statistics of the first 5 pixels
+summary(fashion_pred[, 1:5])
+
+
+# Get the starting timestamp
+time_start <- proc.time()
+
+# Train the random forest
+rf_model <- randomForest::randomForest(x = fashion_mnist[, -1], y = fashion_mnist$label, ntree = 20)
+
+# Get the end timestamp
+time_end <- timetaken(time_start)
+
+# Show the error and the time
+rf_model$err.rate[20]
+time_end
+
+
+# Get the starting timestamp
+# time_start <- proc.time()
+
+# Train the random forest
+# rf_model <- randomForest(x = train_x, y = train_y, ntree = 500)
+
+# Get the end timestamp
+# time_end <- timetaken(time_start)
+
+# Show the error and the time
+# rf_model$err.rate[500]
+# time_end
+
+```
+  
+  
+  
+***
+  
+###_Optimizing R Code with Rcpp_  
+  
+Chapter 1 - Introduction  
+  
 
 
 
