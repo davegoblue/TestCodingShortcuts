@@ -1512,4 +1512,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Probability Puzzles in R - Chapter 1 (Introduction and Classic Puzzles) - code  
 * DataCamp_Insights_v003_c captures Probability Puzzles in R - Chapter 2 (Games with Dice) - code  
 * DataCamp_Insights_v003_c captures Probability Puzzles in R - Chapter 3 (Inspired from the Web) - code  
+* DataCamp_Insights_v003_c captures Probability Puzzles in R - Chapter 4 (Poker) - code  
   
