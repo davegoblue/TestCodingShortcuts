@@ -41183,6 +41183,403 @@ sqrt_approx(2, 0.00001)
   
 Chapter 3 - Vector Classes  
   
+Rcpp Classes and Vectors:  
+  
+* Rcpp defines a number of C++ classes that greatly simplify processing and interfacing between C++ and R  
+	* NumericVector to manipulate numeric vectors, e.g. c(1,2,3)  
+    * IntegerVector for integer e.g. 1:3  
+    * LogicalVector for logical e.g. c(TRUE, FALSE)  
+    * CharacterVector for strings e.g. c("a", "b", "c")  
+    * List for lists, aka vectors of arbitrary R objects  
+* There is an API for vectors, which allows for running some key methods  
+	* x.size() gives the number of elements of the vector x  
+    * x[i] gives the element on the ith position in the vector x  
+    * Indexing in C++ starts at 0. The index is an offset to the first position  
+* Example pseudo-code for looping around a vector  
+	* // x comes from somewhere  
+    * NumericVector x = ... ;   
+    * int n = x.size() ;  
+    * for( int i=0; i<n; i++){  
+    *     // manipulate x[i]  
+    * }  
+  
+Creating Vectors:  
+  
+* Exported Rcpp classes are meant to be called from R  
+* Because C++ is a type-sepcific language, Rcpp attempts to coerce types to the needed type prior to passing the data to C++  
+* Example for creating a vector of a given size in Rcpp (numeric vectors are initialized to 0 and string vectors are initialized to blank strings)  
+	* // [[Rcpp::export]]  
+    * NumericVector ones(int n){  
+    *     // create a new numeric vector of size n  
+    *     NumericVector x(n) ;  
+    *     // manipulate it  
+    *     for( int i=0; i<n; i++){  
+    *         x[i] = 1 ;  
+    *     }  
+    *     return x ;  
+    * }  
+* Can override the default initialization values for a new vector by passing an additional argument  
+	* double value = 42.0 ;  
+    * int n = 20 ;  
+    * // create a numeric vector of size 20  
+    * // with all values set to 42  
+    * NumericVector x( n, value ) ;  
+* Can use a static method to initialize the class (???)  
+	* NumericVector x = NumericVector::create( 1, 2, 3 ) ;  
+    * CharacterVector s = CharacterVector::create( "pink", "blue" ) ;  
+    * NumericVector x = NumericVector::create( _["a"] = 1, _["b"] = 2, _["c"] = 3 ) ;  
+    * IntegerVector y = IntegerVector::create( _["d"] = 4, 5, 6, _["f"] = 7 ) ;  
+* Can also clone vectors to avoid changing the original vector (creates a "deep copy")  
+	* // [[Rcpp::export]]  
+    * NumericVector positives( NumericVector x ){  
+    *     // clone x into y  
+    *     NumericVector y = clone(x) ;  
+    *     for( int i=0; i< y.size(); i++){  
+    *         if( y[i] < 0 ) y[i] = 0 ;  
+    *     }  
+    *     return y ;  
+    * }  
+  
+Weighted Mean:  
+  
+* Example for using Rcpp to run the weighted means  
+	* weighted_mean_R <- function(x, w){ sum(x*w) / sum(w) }  # R code version  
+* Example of very inefficient R code  
+	* weighted_mean_loop <- function(x, w){  
+    *     total_xw <- 0  
+    *     total_w  <- 0  
+    *     for( i in seq_along(x)){  
+    *         total_xw <- total_xw + x[i]*w[i]  
+    *         total_w  <- total_w  + w[i]  
+    *     }  
+    *     total_xw / total_w  
+    * }  
+* Translation to C++ code using Rcpp  
+	* // [[Rcpp::export]]  
+    * double weighted_mean_cpp( NumericVector x, NumericVector w){  
+    *     double total_xw = 0.0 ;  
+    *     double total_w  = 0.0 ;  
+    *     int n = ___ ;  
+    *     for( ___ ; ___ ; ___ ){  
+    *         // accumulate into total_xw and total_w  
+    *     }  
+    *     return total_xw / total_w ;  
+    * }  
+* Missing values need to be tested based on special functions (similar to R)  
+	* Each type of vector has its own special missing values  
+    * bool test = NumericVector::is_na(x) ;  
+    * double y = NumericVector::get_na() ;  // The representation of NA in double  
+  
+Vectors From the STL:  
+  
+* Rcpp vectors are thin wrappers around R vectors  
+	* Cannot (cost effectively) change size: data copy every time  
+* STL (Standard Template Library) vectors are independent of R vectors  
+	* Cheap to grow and shrink: amortized copies  
+* Generally, growing vectors is very expensive and should be avoided (in R or C++)  
+	* Can even be more efficient to have two functions; first finds the vector size, second creates vector of that size and then fills it  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+double first_plus_last(NumericVector x) {
+    // The size of x
+    int n = x.size();
+    // The first element of x
+    double first = x[0];
+    // The last element of x
+    double last = x[n-1];
+    return first + last;
+}
+
+/*** R
+x <- c(6, 28, 496, 8128)
+first_plus_last(x)
+# Does the function give the same answer as R?
+all.equal(first_plus_last(x), x[1] + x[4])
+*/
+
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+double sum_cpp(NumericVector x) {
+  // The size of x
+  int n = x.size();
+  // Initialize the result
+  double result = 0;
+  // Complete the loop specification
+  for(int i = 0; i<n; i++) {
+    // Add the next value
+    result = result + x[i];
+  }
+  return result;
+}
+
+/*** R
+set.seed(42)
+x <- rnorm(1e6)
+sum_cpp(x)
+# Does the function give the same answer as R's sum() function?
+all.equal(sum_cpp(x), sum(x))
+*/
+
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// Set the return type to IntegerVector
+// [[Rcpp::export]]
+IntegerVector seq_cpp(int lo, int hi) {
+  int n = hi - lo + 1;
+    
+  // Create a new integer vector, sequence, of size n
+  IntegerVector sequence(n);
+    
+  for(int i = 0; i < n; i++) {
+    // Set the ith element of sequence to lo plus i
+    sequence[i] = lo + i;
+  }
+  
+  return sequence;
+}
+
+/*** R
+lo <- -2
+hi <- 5
+seq_cpp(lo, hi)
+# Does it give the same answer as R's seq() function?
+all.equal(seq_cpp(lo, hi), seq(lo, hi))
+*/
+
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+List create_vectors() {
+  // Create an unnamed character vector
+  CharacterVector polygons = CharacterVector::create("triangle", "square", "pentagon");
+  // Create a named integer vector
+  IntegerVector mersenne_primes = IntegerVector::create(_["first"] = 3, _["second"] = 7, _["third"] = 31);
+  // Create a named list
+  List both = List::create(_["polygons"] = polygons, _["mersenne_primes"] = mersenne_primes);
+  return both;
+}
+
+/*** R
+create_vectors()
+*/
+
+
+# Unlike R, C++ uses a copy by reference system, meaning that if you copy a variable then make changes to the copy, the changes will also take place in the original.
+# To prevent this behavior, you have to use the clone() function to copy the underlying data from the original variable into the new variable
+# The syntax is y = clone(x). In this exercise, we have defined two functions for you:
+# change_negatives_to_zero(): Takes a numeric vector, modifies by replacing negative numbers with zero, then returns both the original vector and the copy.
+# change_negatives_to_zero_with_cloning(): Does the same thing as above, but clones the original vector before modifying it.
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+List change_negatives_to_zero(NumericVector the_original) {
+  // Set the copy to the original
+  NumericVector the_copy = the_original;
+  int n = the_original.size();
+  for(int i = 0; i < n; i++) {
+    if(the_copy[i] < 0) the_copy[i] = 0;
+  }
+  return List::create(_["the_original"] = the_original, _["the_copy"] = the_copy);
+}
+
+// [[Rcpp::export]]
+List change_negatives_to_zero_with_cloning(NumericVector the_original) {
+  // Clone the original to make the copy
+  NumericVector the_copy = clone(the_original);
+  int n = the_original.size();
+  for(int i = 0; i < n; i++) {
+    if(the_copy[i] < 0) the_copy[i] = 0;
+  }
+  return List::create(_["the_original"] = the_original, _["the_copy"] = the_copy);
+}
+
+/*** R
+x <- c(0, -4, 1, -2, 2, 4, -3, -1, 3)
+change_negatives_to_zero_with_cloning(x)
+change_negatives_to_zero(x)
+*/
+
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+double weighted_mean_cpp(NumericVector x, NumericVector w) {
+  // Initialize these to zero
+  double total_w = 0.0;
+  double total_xw = 0.0;
+  
+  // Set n to the size of x
+  int n = x.size();
+  
+  // Specify the for loop arguments
+  for(int i = 0; i<n; i++) {
+    // Add ith weight
+    total_w += w[i];
+    // Add the ith data value times the ith weight
+    total_xw += w[i]*x[i];
+  }
+  
+  // Return the total product divided by the total weight
+  return total_xw / total_w;
+}
+
+/*** R 
+x <- c(0, 1, 3, 6, 2, 7, 13, 20, 12, 21, 11)
+w <- 1 / seq_along(x)
+weighted_mean_cpp(x, w)
+# Does the function give the same results as R's weighted.mean() function?
+all.equal(weighted_mean_cpp(x, w), weighted.mean(x, w))
+*/
+
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+double weighted_mean_cpp(NumericVector x, NumericVector w) {
+  double total_w = 0;
+  double total_xw = 0;
+  
+  int n = x.size();
+  
+  for(int i = 0; i < n; i++) {
+    // If the ith element of x or w is NA then return NA
+    if (NumericVector::is_na(x[i]) | NumericVector::is_na(w[i])) return NumericVector::get_na();
+    total_w += w[i];
+    total_xw += x[i] * w[i];
+  }
+  
+  return total_xw / total_w;
+}
+
+/*** R 
+x <- c(0, 1, 3, 6, 2, 7, 13, NA, 12, 21, 11)
+w <- 1 / seq_along(x)
+weighted_mean_cpp(x, w)
+*/
+
+
+NumericVector bad_select_positive_values_cpp(NumericVector x) {
+  NumericVector positive_x(0);
+  for(int i = 0; i < x.size(); i++) {
+    if(x[i] > 0) {
+      positive_x.push_back(x[i]);
+    }
+  }
+  return positive_x;
+}
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+NumericVector good_select_positive_values_cpp(NumericVector x) {
+  int n_elements = x.size();
+  int n_positive_elements = 0;
+  
+  // Calculate the size of the output
+  for(int i = 0; i < n_elements; i++) {
+    // If the ith element of x is positive
+    if(x[i] > 0) {
+      // Add 1 to n_positive_elements
+      n_positive_elements++;
+    }
+  }
+  
+  // Allocate a vector of size n_positive_elements
+  NumericVector positive_x(n_positive_elements);
+  
+  // Fill the vector
+  int j = 0;
+  for(int i = 0; i < n_elements; i++) {
+    // If the ith element of x is positive
+    if(x[i] > 0) {
+      // Set the jth element of positive_x to the ith element of x
+      positive_x[j] = x[i];
+      // Add 1 to j
+      j++;
+    }
+  }
+  return positive_x;
+}
+
+/*** R
+set.seed(42)
+x <- rnorm(1e4)
+# Does it give the same answer as R?
+all.equal(good_select_positive_values_cpp(x), x[x > 0])
+# Which is faster?
+microbenchmark(
+  bad_cpp = bad_select_positive_values_cpp(x),
+  good_cpp = good_select_positive_values_cpp(x)
+)
+*/
+
+
+# The standard template library (stl) is a C++ library containing flexible algorithms and data structures
+# For example, the double vector from the stl is like a "native C++" equivalent of Rcpp's NumericVector
+# The following code creates a standard double vector named x with ten elements
+std::vector<double> x(10);
+# Usually it makes more sense to stick with Rcpp vector types because it gives you access to many convenience methods that work like their R equivalents, including mean(), round(), and abs()
+# However, the stl vectors have an advantage that they can dynamically change size without paying for data copy every time
+
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// Set the return type to a standard double vector
+// [[Rcpp::export]]
+std::vector<double> select_positive_values_std(NumericVector x) {
+  int n = x.size();
+  
+  // Create positive_x, a standard double vector
+  std::vector<double> positive_x(0);
+    
+  for(int i = 0; i < n; i++) {
+    if(x[i] > 0) {
+      // Append the ith element of x to positive_x
+      positive_x.push_back(x[i]);
+    }
+  }
+  return positive_x;
+}
+
+/*** R
+set.seed(42)
+x <- rnorm(1e6)
+# Does it give the same answer as R?
+all.equal(select_positive_values_std(x), x[x > 0])
+# Which is faster?
+microbenchmark(
+  good_cpp = good_select_positive_values_cpp(x),
+  std = select_positive_values_std(x)
+)
+*/
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Case Studies  
+  
 
 
 
