@@ -1518,4 +1518,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 08-JUL-2019  
 * DataCamp_Insights_v003_c captures Optimizing R Code with Rcpp - Chapter 2 (Functions and Control Flow) - notes  
 * DataCamp_Insights_v003_c captures Optimizing R Code with Rcpp - Chapter 3 (Vector Classes) - notes  
+* DataCamp_Insights_v003_c captures Optimizing R Code with Rcpp - Chapter 4 (Case Studies) - notes  
   
