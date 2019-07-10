@@ -41580,6 +41580,486 @@ microbenchmark(
   
 Chapter 4 - Case Studies  
   
+Random Number Generation:  
+  
+* Can use functions from the R namespace for features like drawing random numbers from a distribution  
+	* // one number from a N(0,1) - function only gives a single number  
+    * double x = R::rnorm( 0, 1 ) ;  
+* Can also use the functions of the same name available in the Rcpp namespace - Rcpp::rnorm() and the like  
+* Example for creating numbers from a truncated distribution (e.g., a normal with only positive values) - rejected sampling  
+	* // we generate n numbers  
+    * NumericVector x(n) ;  
+    * // fill the vector in a loop  
+    * for( int i=0; i<n; i++){  
+    *     // keep generating d until it gets positive  
+    *     double d  ;  
+    *     do {  
+    *         d = ... ;  
+    *     } while( d < 0 ) ;  
+    * x[i] = d ;  
+    * }  
+* Example for creating numbers from a mixture of distributions  
+	* int component( NumericVector weights, double total_weight ){  
+    * // return the index of the selected component  
+    * }  
+    * NumericVector rmix( int n, NumericVector weights, NumericVector means, NumericVector sds ){  
+    *     NumericVector res(n) ;  
+    *     for( int i=0; i<n; i++){  
+    *         // find which component to use  
+    *         ...  
+    *         // simulate using the mean and sd from the selected component  
+    *         ...  
+    *     }  
+    *     return res ;  
+    * }  
+  
+Rolling Operations:  
+  
+* Rolling means are vectors where the value at position j is the mean of the next n elements  
+	* The process runs much faster if just the first element is deleted and then the last element is added  
+* Using C++ code can help make processes like these easy to read while maintaining very strong performance  
+* Example of running last observation carried forward (LOCF)  
+	* # iterative version (can be converted to C++ code)  
+    * na_meancf2 <- function(x){  
+    *     total <- 0  
+    *     n <- 0  
+    *     for( i in seq_along(x) ){  
+    *         if( is.na(x[i]) ){  
+    *             x[i] <- total / n  
+    *         } else {  
+    *             total <- x[i] + total  
+    *             n <- n + 1  
+    *         }  
+    *     }  
+    * }  
+  
+Auto-Regressive Model:  
+  
+* Example for AR code in R (works well, but is inefficient)  
+	* ar <- function(n, phi, sd){  
+    *     x <- epsilon <- rnorm(n, sd = sd)  
+    *     np <- length(phi)  
+    *     for( i in seq(np+1, n)){  
+    *         x[i] <- sum(x[seq(i-1, i-np)] * phi) + epsilon[i]  
+    *     }  
+    *     x  
+    * }  
+* Example skeleton for writing the same code using C++  
+	* NumericVector x(n) ;  
+    * // initial loop  
+    * for( ___ ; __ < np ; ___ ){  
+    *     x[i] = R::rnorm(___) ;  
+    * }  
+    * // outer loop  
+    * for( ___ ; ___ ; ___ ){  
+    *     double value = rnorm(___) ;  
+    *     // inner loop  
+    *     for( ___ ; ___ ; ___ ){  
+    *         value += ___ ;  
+    *     }  
+    *     x[i] = value ;  
+    * }  
+* Similar example for the R code for an MA (moving average)  
+	* ma <- function(n, theta, sd){  
+    *     epsilon <- rnorm(n, sd = sd)  
+    *     x <- numeric(n)  
+    *     nq <- length(theta)  
+    *     for( i in seq(nq+1, n)){  
+    *         x[i] <- sum(epsilon[seq(i-1, i-nq)] * theta) + epsilon[i]  
+    *     }  
+    *     x  
+    * }  
+* Example of running the MA (skeleton) using C++  
+	* #include <Rcpp.h>  
+    * using namespace Rcpp ;  
+    * // [[Rcpp::export]]  
+    * NumericVector ma( int n, double mu, NumericVector theta, double sd ){  
+    *     int nq = theta.size() ;  
+    *     // generate the noise vector at once  
+    *     // using the Rcpp::rnorm function, similar to the R function  
+    *     NumericVector eps = Rcpp::rnorm(n, 0.0, sd) ;  
+    *     // init the output vector of size n with all 0.0  
+    *     NumericVector x(___) ;  
+    *     // start filling the values at index nq + 1  
+    *     for( int i=nq+1; i<n; i++){  
+    *         ____  
+    *     }  
+    *     return x ;  
+    * }  
+* Can also combine AR-MA in to an ARMA model  
+  
+Wrap Up:  
+  
+* The Rcpp package combines the ease of R syntax with the speed and efficiency of C++  
+* Vectorized code is basically a loop in a compiled language such as C++  
+* Recap of key topics from this course - for loops in C++ are an extremely common use case  
+	* evalCpp and cppFunction  
+    * for loops in C++ - for( init ; condition ; increment ){ body }  
+    * Vectors, including that vector indexing starts at 0  
+* C++ files with Rcpp  
+	* #include <Rcpp.h>  
+    * using namespace Rcpp ;  
+    * // [[Rcpp::export]]  
+    * double add( double x, double y){  
+    *     return x + y ;  
+    * }  
+    * // [[Rcpp::export]]  
+    * double twice( double x){  
+    *     return 2.0 * x;  
+    * }  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# When you write R code, it usually makes sense to generate random numbers in a vectorized fashion
+# When you are in C++ however, you are allowed (even by your guilty conscience) to use loops and process the data element by element
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+NumericVector positive_rnorm(int n, double mean, double sd) {
+    // Specify out as a numeric vector of size n
+    NumericVector out(n);
+    // This loops over the elements of out
+    for(int i = 0; i < n; i++) {
+        // This loop keeps trying to generate a value
+        do {
+            // Call Rs rnorm()
+            out[i] = R::rnorm(mean, sd);
+            // While the number is negative, keep trying
+        } while(out[i] < 0);
+    }
+    return out;
+}
+
+/*** R
+positive_rnorm(10, 2, 2)
+*/
+
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+int choose_component(NumericVector weights, double total_weight) {
+    // Generate a uniform random number from 0 to total_weight
+    double x = R::runif(0, total_weight);
+    // Remove the jth weight from x until x is small enough
+    int j = 0;
+    while(x >= weights[j]) {
+        // Subtract jth element of weights from x
+        x -= weights[j];
+        j++;
+    }
+    return j;
+}
+
+/*** R
+weights <- c(0.3, 0.7)
+# Randomly choose a component 5 times
+replicate(5, choose_component(weights, sum(weights)))
+*/
+
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// From previous exercise; do not modify
+// [[Rcpp::export]]
+int choose_component(NumericVector weights, double total_weight) {
+    double x = R::runif(0, total_weight);
+    int j = 0;
+    while(x >= weights[j]) {
+        x -= weights[j];
+        j++;
+    }
+    return j;
+}
+
+// [[Rcpp::export]]
+NumericVector rmix(int n, NumericVector weights, NumericVector means, NumericVector sds) {
+    // Check that weights and means have the same size
+    int d = weights.size();
+    if(means.size() != d) {
+        stop("means size != weights size");
+    }
+    // Do the same for the weights and std devs
+    if(sds.size() != d) {
+        stop("sds size != weights size");
+    }
+    // Calculate the total weight
+    double total_weight = 0.0;
+    for (int i=0; i<d; i++) { 
+        total_weight += weights[i];
+    };
+    // Create the output vector
+    NumericVector res(n);
+    // Fill the vector
+    for(int i = 0; i < n; i++) {
+        // Choose a component
+        int j = choose_component(weights, total_weight);
+        // Simulate from the chosen component
+        res[i] = R::rnorm(means[j], sds[j]);
+    }
+    return res;
+}
+
+/*** R
+weights <- c(0.3, 0.7)
+means <- c(2, 4)
+sds <- c(2, 4)
+rmix(10, weights, means, sds)
+*/
+
+
+# Complete the definition of rollmean3()
+rollmean3 <- function(x, window = 3) {
+    # Add the first window elements of x
+    initial_total <- sum(head(x, window))
+    # The elements to add at each iteration
+    lasts <- tail(x, - window)
+    # The elements to remove
+    firsts <- head(x, - window)
+    # Take the initial total and add the 
+    # cumulative sum of lasts minus firsts
+    other_totals <- initial_total + cumsum(lasts - firsts)
+    # Build the output vector
+    c(rep(NA, window - 1), # leading NA
+      initial_total / window, # initial mean
+      other_totals / window   # other means
+      )
+}
+
+# From previous step; do not modify
+rollmean3 <- function(x, window = 3) {
+    initial_total <- sum(head(x, window))   
+    lasts <- tail(x, - window)
+    firsts <- head(x, - window)
+    other_totals <- initial_total + cumsum(lasts - firsts)
+    c(rep(NA, window - 1), initial_total / window, other_totals / window)
+}
+
+# This checks rollmean1() and rollmean2() give the same result
+all.equal(rollmean1(x), rollmean2(x))
+
+# This checks rollmean1() and rollmean3() give the same result
+all.equal(rollmean1(x), rollmean3(x))
+
+# Benchmark the performance
+microbenchmark(rollmean1(x), rollmean2(x), rollmean3(x), times = 5)
+
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+NumericVector rollmean4(NumericVector x, int window) {
+    int n = x.size();
+    // Set res as a NumericVector of NAs with length n
+    NumericVector res(n, NumericVector::get_na());
+    // Sum the first window worth of values of x
+    double total = 0.0;
+    for(int i = 0; i < window; i++) {
+        total += x[i];
+    }
+    // Treat the first case seperately
+    res[window - 1] = total / window;
+    // Iteratively update the total and recalculate the mean 
+    for(int i = window; i < n; i++) {
+        // Remove the (i - window)th case, and add the ith case
+        total += - x[i-window] + x[i];
+        // Calculate the mean at the ith position
+        res[i] = total / window;
+    }
+    return res;  
+}
+
+/*** R
+# Compare rollmean2, rollmean3 and rollmean4   
+set.seed(42)
+x <- rnorm(1e4)
+microbenchmark(rollmean2(x, 4), rollmean3(x, 4), rollmean4(x, 4), times = 5)   
+*/
+
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+NumericVector na_locf2(NumericVector x) {
+    // Initialize to NA
+    double current = NumericVector::get_na();
+    int n = x.size();
+    NumericVector res = no_init(n);
+    for(int i = 0; i < n; i++) {
+        // If ith value of x is NA
+        if(NumericVector::is_na(x[i])) {
+            // Set ith result as current
+            res[i] = current
+        } else {
+            // Set current as ith value of x
+            current = x[i];
+            res[i] = x[i]
+        }
+    }
+    return res ;
+}
+
+/*** R
+library(microbenchmark)
+set.seed(42)
+x <- rnorm(1e5)
+# Sprinkle some NA into x
+x[sample(1e5, 100)] <- NA  
+microbenchmark(na_locf1(x), na_locf2(x), times = 5)
+*/
+
+
+#include <Rcpp.h>
+using namespace Rcpp; 
+
+// [[Rcpp::export]]
+NumericVector na_meancf2(NumericVector x) {
+    double total_not_na = 0.0;
+    double n_not_na = 0.0;
+    NumericVector res = clone(x);
+    int n = x.size();
+    for(int i = 0; i < n; i++) {
+        // If ith value of x is NA
+        if(NumericVector::is_na(x[i])) {
+            // Set the ith result to the total of non-missing values 
+            // divided by the number of non-missing values
+            res[i] = total_not_na / n_not_na;
+        } else {
+            // Add the ith value of x to the total of non-missing values
+            total_not_na += x[i];
+            // Add 1 to the number of missing values
+            n_not_na ++;
+        }
+    }
+    return res;
+}
+
+/*** R
+library(microbenchmark)
+set.seed(42)
+x <- rnorm(1e5)
+x[sample(1e5, 100)] <- NA  
+microbenchmark(na_meancf1(x), na_meancf2(x), times = 5)
+*/
+
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+NumericVector ar2(int n, double c, NumericVector phi, double eps) {
+    int p = phi.size();
+    NumericVector x(n);
+    // Loop from p to n
+    for(int i = p; i < n; i++) {
+        // Generate a random number from the normal distribution
+        double value = R::rnorm(c, eps);
+        // Loop from zero to p
+        for(int j = 0; j < p; j++) {
+            // Increase by the jth element of phi times 
+            // the "i minus j minus 1"th element of x
+            value += phi[j] * x[i-j-1];
+        }
+        x[i] = value;
+    }
+    return x;
+}
+
+/*** R
+d <- data.frame(x = 1:50, y = ar2(50, 10, c(1, -0.5), 1))
+ggplot(d, aes(x, y)) + 
+    geom_line()
+*/
+
+
+#include <Rcpp.h>
+using namespace Rcpp ;
+
+// [[Rcpp::export]]
+NumericVector ma2( int n, double mu, NumericVector theta, double sd ){
+    int q = theta.size(); 
+    NumericVector x(n);
+    // Generate the noise vector
+    NumericVector eps = rnorm(n, 0.0, sd);
+    // Loop from q to n
+    for(int i = q; i < n; i++) {
+        // Value is mean plus noise
+        double value = mu + eps[i];
+        // Loop from zero to q
+        for(int j = 0; j < q; j++) {
+            // Increase by the jth element of theta times
+            // the "i minus j minus 1"th element of eps
+            value += theta[j] * eps[i - j - 1];
+        }
+        // Set ith element of x to value
+        x[i] = value;
+    }
+    return x ;
+}
+
+/*** R
+d <- data.frame(x = 1:50, y = ma2(50, 10, c(1, -0.5), 1))
+ggplot(d, aes(x, y)) + 
+    geom_line()
+*/
+
+
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+NumericVector arma(int n, double mu, NumericVector phi, NumericVector theta, double sd) {
+    int p = phi.size();
+    int q = theta.size();
+    NumericVector x(n);
+    // Generate the noise vector
+    NumericVector eps = rnorm(n, 0.0, sd);
+    // Start at the max of p and q plus 1
+    int start = std::max(p, q) + 1;
+    // Loop i from start to n
+    for(int i = start; i < n; i++) {
+        // Value is mean plus noise
+        double value = mu + eps[i];
+        // The MA(q) part
+        for(int j = 0; j < q; j++) {
+            // Increase by the jth element of theta times
+            // the "i minus j minus 1"th element of eps
+            value += theta[j] * eps[i - j - 1];
+        }
+        // The AR(p) part
+        for(int j = 0; j < p; j++) {
+            // Increase by the jth element of phi times
+            // the "i minus j minus 1"th element of x
+            value += phi[j] * x[i - j - 1];
+        }
+        x[i] = value;
+    }
+    return x;
+}
+
+/*** R
+d <- data.frame(x = 1:50, y = arma(50, 10, c(1, -0.5), c(1, -0.5), 1))
+ggplot(d, aes(x, y)) + 
+    geom_line()
+*/
+
+```
+  
+  
+  
+***
+  
+###_Regression Modeling in R: Case Studies_  
+  
+Chapter 1 - GLMs  
+  
 
 
 
