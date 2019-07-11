@@ -1519,4 +1519,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Optimizing R Code with Rcpp - Chapter 2 (Functions and Control Flow) - notes  
 * DataCamp_Insights_v003_c captures Optimizing R Code with Rcpp - Chapter 3 (Vector Classes) - notes  
 * DataCamp_Insights_v003_c captures Optimizing R Code with Rcpp - Chapter 4 (Case Studies) - notes  
+* DataCamp_Insights_v003_c captures Regression Modeling in R: Case Studies - Chapter 1 (GLM) - notes  
   
