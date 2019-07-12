@@ -42201,6 +42201,207 @@ dispersion(poisson_glm, modeltype="poisson")
   
 Chapter 2 - Extending GLMs  
   
+Adding Factors and Interactions:  
+  
+* Can use residuals to attempt to find additional factors for modeling (address over-dispersion)  
+	* pr_fac(poisson_glm, dragonflies$season, xlabel = "season", modeltype = "poisson")  
+* May want to add factors and interactions among the predictor variables  
+	* Multiple predictor variables (factors) may influence the response variable  
+    * Interaction: the effect of one predictor may depend on the level of the other predictor variable  
+    * poisson_glm_factor <- glm(abundance ~ stream_flow * season, data = dragonflies, family = "poisson")  # The star is an interaction effect - each alone, plus the interaction of the two  
+* Can then use expand.grid to help with prediction for the interaction data  
+	* pred_df <- expand.grid(stream_flow = seq(from = 1, to = 5, length = 10), season = c("summer", "autumn"))  
+    * pred_df$predicted <- predict(poisson_glm_factor, pred_df, type = "response")  
+    * ggplot(dragonflies) + geom_point(aes(x = stream_flow, y = abundance)) + geom_line(aes(x = stream_flow,     * y = predicted, col = season), data = pred_df)  
+    * diag <- data.frame(residuals = resid(poisson_glm_factor), fitted = fitted(poisson_glm_factor))  
+    * ggplot(diag) + geom_point(aes(x = fitted, y = residuals))  
+    * dispersion(poisson_glm_factor, modeltype = "poisson")  
+  
+Adding an Offset to the Model:  
+  
+* There are unequal areas sampled in the data, which needs to be accounted for in the count modeling  
+	* May want to look at metrics on a "per square meter" or similar model  
+    * Can introduce issues of non-integer data, which fails the assumptions of a count model  
+* Can add an offset to use for count modeling  
+	* dragonflies$logarea <- log(dragonflies$area)  
+    * poisson_glm_offset <- glm(abundance ~ stream_flow * season + offset(logarea), data = dragonflies, family = "poisson")  
+  
+Negative Binomial Model and Model Selection:  
+  
+* Because the Poisson model uses a single parameter for both mean and variance, overdispersion is common  
+* The negative binomial GLM adds an additional term, allowing for variance different (often larger) than mean  
+	* Have an extra parameter, theta, which relaxes the assumptions of equality between the mean and the variance  
+    * This improves upon the Poisson GLM by addressing the issue of overdispersion  
+    * Use the same link function as Poisson GLMs  
+* The MASS package has functions for running the negative binomial model  
+	* neg_binom_glm <- MASS::glm.nb(abundance ~ stream_flow * season + offset(logarea), data=dragonflies)  
+	* Use drop1 to test influence of each term  
+    * drop1(neg_binom_glm, test = "Chisq")  
+    * neg_binom_glm_small <- glm.nb(abundance ~ stream_flow + season + offset(logarea), data=dragonflies)  
+    * remove the interaction term, since it has a high p-value  
+    * drop1(neg_binom_glm_small, test = "Chisq")  
+* Can now look at model performances and pick the best  
+	* dispersion(neg_binom_glm, modeltype = "nb")  
+    * dispersion(neg_binom_glm_small, modeltype = "nb")  
+  
+Model Selection and Visualization:  
+  
+* Eventually need to select and defend a model even if there are some flaws or potential improvements  
+* The AIC (Akaike Information Criteria) can be helpful for comparing nested models  
+	* AIC(neg_binom_glm, neg_binom_glm_small)  
+    * Lower values indicate better fit  
+    * A difference of three or more indicates a model is a better fit than the other  
+    * Generally, prefer the less complex model when the performances are similar  
+* Can then generate predicted values from the selected model  
+	* pred_df <- expand.grid(stream_flow = seq(from = 1, to = 5, length = 10), season = c("summer", "autumn"), logarea = mean(dragonflies$logarea))  
+    * pred_df$predicted <- predict(neg_binom_glm_small, pred_df, type = "response")  
+    * ggplot(dragonflies) + geom_point(aes(x = stream_flow, y = abundance)) + geom_line(aes(x = stream_flow, y = predicted, col = season), data = pred_df)  
+    * raw_fit <- predict(neg_binom_glm_small, pred_df, type = "link")  # fitted values on the link scale  
+    * raw_se <- predict(neg_binom_glm_small, pred_df, type = "link", se.fit = TRUE)$se  # SE on the link scale  
+    * pred_df$lower <- exp(raw_fit - 1.96 * raw_se)  
+    * pred_df$upper <- exp(raw_fit + 1.96 * raw_se)  
+    * ggplot(dragonflies) + geom_point(aes(x = stream_flow, y = abundance)) + geom_line(aes(x = stream_flow, y = predicted, col = season), data = pred_df) + geom_line(aes(x = stream_flow, y = upper, col = season), linetype = "dashed", data = pred_df) + geom_line(aes(x = stream_flow, y = lower, col = season), linetype = "dashed", data = pred_df)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+pr_fac <- function(model, plotfactor, xlabel = "", modeltype = "lm"){
+    if(modeltype %in% c("linear", "lm", "poisson", "p", "quasipossion", "qp")){
+        skiprows <- unique(summary(model)$na.action)
+    }
+    if(modeltype %in% c("negativebinomial", "nb")){
+        skiprows <- unique(summary(model)[21])
+    }
+    if(length(skiprows) > 0) {Factor <- plotfactor[-skiprows]}
+    if(length(skiprows) == 0) {Factor <- plotfactor}
+    plot1 <- data.frame(PR = resid(model, type = "pearson"),Factor)
+    if(is.factor(Factor) == FALSE){
+        PR.plot1 <- ggplot(plot1) + 
+            geom_point(aes(y = PR, x = Factor)) + 
+            geom_hline(yintercept = 0, linetype = 'dashed', col = 'red')+ 
+            ylab("Residuals") + xlab(xlabel) + theme_bw(18)
+    }
+    if(is.factor(Factor) == TRUE){
+        PR.plot1 <- ggplot(plot1) +
+            geom_boxplot(aes(y = PR, x = Factor)) +
+            geom_hline(yintercept = 0, linetype = 'dashed', col = 'red') + 
+            ylab("Residuals") + xlab(xlabel) +
+            theme_bw(18)
+    }
+    return(PR.plot1)
+}
+
+
+# Compare residuals across factor levels
+pr_fac(poisson_glm, dragonflies$time, xlabel = "time", modeltype = "poisson")
+
+# Add time as a factor, including an interaction
+poisson_glm_factor <- glm(feeding_events ~ stream_flow * time, data = dragonflies, family = "poisson")
+
+# Generate predicted values of feeding_events
+pred_df <- expand.grid(stream_flow = seq(from = 1, to = 5, length = 10), time = c("day", "night"))
+pred_df$predicted <- predict(poisson_glm_factor, pred_df, type = "response")
+
+# Visualize predicted values of feeding events
+ggplot(dragonflies) +
+    geom_point(aes(x = stream_flow, y = feeding_events)) +
+    geom_line(aes(x = stream_flow, y = predicted, col = time), data = pred_df)
+
+
+# Generate data frame of residuals and fitted values
+diag <- data.frame(residuals=resid(poisson_glm_factor), fitted=fitted(poisson_glm_factor))
+
+# Visualize residuals vs fitted values
+ggplot(diag) +
+    geom_point(aes(x=fitted, y=residuals))
+
+# Calculate the dispersion of the model
+dispersion(poisson_glm_factor, modeltype="poisson")
+
+
+# Create a column containing the natural log of area
+dragonflies$logarea <- log(dragonflies$area)
+
+# Apply Poisson GLM with interaction and offset
+poisson_glm_offset <- glm(feeding_events ~ stream_flow * time + offset(logarea), 
+                          data = dragonflies, family = "poisson"
+                          )
+
+
+# Apply Negative Binomial GLM
+neg_binom_glm <- MASS::glm.nb(feeding_events ~ stream_flow*time + offset(logarea), data=dragonflies)
+
+# Use drop1 to determine which term(s) can be dropped
+drop1(neg_binom_glm, test="Chisq")
+
+# Apply a new Negative Binomial GLM
+neg_binom_glm_small <- MASS::glm.nb(feeding_events ~ stream_flow + time + offset(logarea), data=dragonflies)
+
+
+# Calculate dispersion for each model
+dispersion(neg_binom_glm, modeltype="nb")
+dispersion(neg_binom_glm_small, modeltype="nb")
+
+
+# Generate data frame of residuals and fitted values for neg_binom_glm
+diag <- data.frame(fitted=fitted(neg_binom_glm), residuals=resid(neg_binom_glm))
+
+# Visualize residuals vs fitted values for neg_binom_glm
+ggplot(diag) + 
+    geom_point(aes(x=fitted, y=residuals))
+
+# Generate data frame of residuals and fitted values for neg_binom_glm
+diag_small <- data.frame(residuals = resid(neg_binom_glm_small), fitted = fitted(neg_binom_glm_small))
+
+# Visualize residuals vs fitted values for neg_binom_glm
+ggplot(diag_small) +
+    geom_point(aes(x = fitted, y = residuals))
+
+
+# Compare AIC scores
+AIC(neg_binom_glm, neg_binom_glm_small)
+
+# View the selected model
+neg_binom_glm_small
+
+
+# Create data frame
+pred_df <- expand.grid(stream_flow=seq(1, 5, length=5), time=c("day", "night"), logarea=log(6))
+
+# Generate predicted values
+pred_df$predicted <- predict(neg_binom_glm_small, newdata=pred_df, type="response")
+
+# Visualize predicted values
+ggplot(dragonflies) +
+    geom_point(aes(x = stream_flow, y = feeding_events)) +
+    geom_line(aes(x=stream_flow, y=predicted, color=time), data=pred_df)
+
+
+# Extract fitted values
+raw_fit <- predict(neg_binom_glm_small, pred_df, type = "link")
+
+# Extract standard errors
+raw_se <- predict(neg_binom_glm_small, pred_df, type = "link", se = TRUE)$se
+
+# Generate predictions of upper and lower values
+pred_df$upper <- exp(raw_fit + 1.96 * raw_se)
+pred_df$lower <- exp(raw_fit - 1.96 * raw_se)
+
+# Visualize the standard errors around the predicted values
+ggplot(dragonflies) +
+    geom_point(aes(x = stream_flow, y = feeding_events)) +
+    geom_line(aes(x = stream_flow, y = predicted, col = time), data = pred_df) +
+    geom_line(aes(x = stream_flow, y = lower, col = time), linetype="dashed", data = pred_df) +
+    geom_line(aes(x = stream_flow, y = upper, col = time), linetype="dashed", data = pred_df)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Mixed Effects Model I  
+  
 
 
 
