@@ -1522,4 +1522,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Regression Modeling in R: Case Studies - Chapter 1 (GLM) - notes  
 * DataCamp_Insights_v003_c captures Regression Modeling in R: Case Studies - Chapter 2 (Extending GLM) - notes  
 * DataCamp_Insights_v003_c captures Regression Modeling in R: Case Studies - Chapter 3 (Mixed Effects Models - Part I) - notes  
+* DataCamp_Insights_v003_c captures Regression Modeling in R: Case Studies - Chapter 4 (Mixed Effects Models - Part II) - notes  
   
