@@ -1527,4 +1527,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 15-JUL-2019  
 * DataCamp_Insights_v003_c captures Highcharter for Finance in R - Chapter 1 (Introduction to Highcharter) - code  
 * DataCamp_Insights_v003_c captures Highcharter for Finance in R - Chapter 2 (Highcharter for xts Data) - code  
+* DataCamp_Insights_v003_c captures Highcharter for Finance in R - Chapter 3 (Highcharter for Wide tibble Data) - code  
   
