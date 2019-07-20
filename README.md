@@ -1530,4 +1530,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Highcharter for Finance in R - Chapter 3 (Highcharter for Wide tibble Data) - code  
 * DataCamp_Insights_v003_c captures Highcharter for Finance in R - Chapter 4 (Highcharter for Tidy tibble Data) - code  
 * DataCamp_Insights_v003_c captures Advanced Dimensionality Reduction in R - Chapter 1 (Introduction) - code  
+* DataCamp_Insights_v003_c captures Advanced Dimensionality Reduction in R - Chapter 2 (Introduction to t-SNE) - code  
   
