@@ -1533,3 +1533,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Advanced Dimensionality Reduction in R - Chapter 2 (Introduction to t-SNE) - code  
 * DataCamp_Insights_v003_c captures Advanced Dimensionality Reduction in R - Chapter 3 (Using t-SNE with Predictive Models) - code  
   
+### Expansions week of 22-JUL-2019  
+* DataCamp_Insights_v003_c captures Advanced Dimensionality Reduction in R - Chapter 4 (Generalized Low-Rank Models) - code   
+  
