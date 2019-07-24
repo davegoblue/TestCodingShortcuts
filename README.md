@@ -1536,4 +1536,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 22-JUL-2019  
 * DataCamp_Insights_v003_c captures Advanced Dimensionality Reduction in R - Chapter 4 (Generalized Low-Rank Models) - code   
 * DataCamp_Insights_v003_c captures Topic Modeling in R - Chapter 1 (Introduction to the Workflow) - notes  
+* DataCamp_Insights_v003_c captures Topic Modeling in R - Chapter 2 (Word Clouds, Stop Words, Control Arguments) - notes  
   
