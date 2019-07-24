@@ -42894,6 +42894,227 @@ broom::tidy(mod, matrix="gamma") %>%
   
 Chapter 2 - Word Clouds, Stop Words, Control Arguments  
   
+Random Nature of LDA Algorithm:  
+  
+* The LDA call has a random component - random search through the parameter space to find the best match (uses log-likelihood)  
+	* Gibbs sampling - a type of Monte Carlo Markov Chain (MCMC) algorithm  
+    * Tries different combinations of probabilities of topics in documents, and probabilities of words in topics: e.g. (0.5, 0.5) vs. (0.8, 0.2)  
+    * The combinations are influenced by parameters alpha and delta  
+    * Argument seed sets the starting point for the pseudo-random number generator  
+    * Setting seeds ensures replication of results between runs  
+    * Argument iter controls the number of iterations of algorithm - more iterations takes longer while maximizing the likelihood of finding the best solution  
+* Intermediate results can be managed using control parameters for C code that is called by topicmodels  
+	* topicmodels calls a piece of code written in C  
+    * Argument thin specifies how often to return the result of search  
+    * control=list(thin=1)  
+    * Setting thin=1 will return result for every step, and the best one will be picked  
+    * Most efficient, but slows down the execution  
+* Approach for getting the most probable words in each topic  
+	* LDA model object contains matrix beta with probabilities of words in topics  
+    * Use function tidy to extract  
+    * If we want to get top 5 words from each topic:  
+    * Retrieve the matrix by calling tidy(model, matrix="beta") and sort by probabilities, filter by row number  
+    * tidy(mod, matrix="beta") %>% group_by(topic) %>% arrange(desc(beta)) %>% filter(row_number() <=3) %>% ungroup() %>% arrange(topic, desc(beta))  
+* Can get the top-k words (or words above a threshhold) using the function terms()  
+	* Function terms from topicmodels will return either top k words or all words with probability above threshold  
+    * terms(mod, k=5)  
+    * terms(mod, threshold=0.05)  
+  
+Manipulating Vocabulary:  
+  
+* Often there are either words we want to keep or words we want to discard (stopwords)  
+	* Stopwords are service words that are considered as noise and must be removed - they obscure word associations in topics  
+* Can use the anti_join for filtering out stopwords  
+	* tidytext comes with a table stop_words containing stop words from several lexicons  
+    * d = data.frame(term=c("we", "went", "fishing", "slept"), count=c(2, 1, 3, 1), stringsAsFactors = F)  
+    * d %>% anti_join(stop_words, by=c("term"="word"))  
+* Can instead keep a targeted list of needed words using inner_join()  
+	* d = data.frame(term=c("we", "went", "fishing", "slept"), count=c(2, 1, 3, 1), stringsAsFactors = F)  
+    * dictionary = data.frame(term=c("fishing", "slept"), stringsAsFactors = F)  
+    * d %>% inner_join(dictionary, by="term")  
+  
+Word Clouds:  
+  
+* Word clouds can be better than bar charts when there are a large number of words  
+	* wordcloud will draw a cloud of text labels, with font size proportionate to frequency of the word  
+    * Required arguments - a vector of words, and the vector of word frequencies  
+    * No need to sort the words by frequency  
+    * word_frequencies <- corpus %>% unnest_tokens(input=text, output=word) %>% count(word)  
+* The wordcloud::wordcloud() function takes word frequencies and several key arguments  
+	* Specify number of words shown max.words  
+    * Specify the range of word frequencies, min.freq and max.freq  
+    * wordcloud::wordcloud(words=word_frequencies$word, freq=word_frequencies$n, min.freq=1, max.words=20)  
+* Can further add colors and rotations to the wordcloud for an improved aesthetic  
+	* colors takes a vector of colors  
+    * rot.per is percentage of rotated words. Default is 0.1  
+    * wordcloud::wordcloud(words=word_frequencies$word, freq=word_frequencies$n, min.freq=1, colors=c("DarkOrange", "CornflowerBlue", "DarkRed"), rot.per=0.3, max.words=20)  
+* Need to convert LDA data (percentages) to data formatted as expected by wordcloud (integers)  
+	* wordcloud expects integer values for word frequencies  
+    * LDA returns probabilities - decimal fractions  
+    * Solution: multiply by a large number, truncate the fractional part  
+    * mod <- LDA(x=dtm, k=2, method="Gibbs", control=list(alpha=1, thin=1, seed=10005))  
+    * word_frequencies <- tidy(mod, matrix="beta") %>% mutate(n = trunc(beta * 10000)) %>% filter(topic == 1)  
+    * wordcloud::wordcloud(words=word_frequencies$term, freq=word_frequencies$n, max.words=20, colors=c("DarkOrange", "CornflowerBlue", "DarkRed"), rot.per=0.3)  
+  
+History of the Byzantine Empire:  
+  
+* The Byzantine Empire (East Rome) existed from 330 CE to 1453 CE - capital was in Constantinople  
+	* The text: The Byzantine Empire, by Charles Oman, printed in 1902, available from Project Guttenberg (https://www.gutenberg.org/)  
+    * Twenty six chapters arranged in chronological order  
+    * Package gutenbergr enables direct download of texts - dataframe with lines of text  
+    * Dataframe history with two columns: text and chapter  
+* Goal is to find predominant themes in each of the periods, then compare with domain expertise and plot using ggplot2  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+dtm <- dtm[, c("bank", "fines", "loans", "pay", "new", "opened", "restaurant")]
+dtm
+
+
+# Display column names
+colnames(dtm)
+
+# Fit an LDA model for 2 topics using Gibbs sampling
+mod <- topicmodels::LDA(x=dtm, k=2, method="Gibbs", control=list(alpha=1, seed=10005, thin=1))
+
+# Convert matrix beta into tidy format and filter on topic number and term
+broom::tidy(mod, matrix="beta") %>%
+    filter(topic==2, term=="opened")
+
+
+# The call to posterior(mod)$topics returns the probabilities of topics.
+dtm <- corpus %>% 
+    # Specify the input column
+    tidytext::unnest_tokens(input=text, output=word, drop=TRUE) %>% 
+    count(id, word) %>% 
+    # Specify the token
+    tidytext::cast_dtm(document=id, term=word, value=n)
+
+
+# Fit LDA topic model using Gibbs sampling for 2 topics
+mod1 <- topicmodels::LDA(x=dtm, k=2, method="Gibbs", control=list(alpha=1, seed=10005, thin=1))
+
+# Display the probabilities of topics in documents side by side
+broom::tidy(mod1, "gamma") %>% spread(topic, gamma)
+
+# Fit LDA topic model using Gibbs sampling for 2 topics
+mod2 <- topicmodels::LDA(x=dtm, k=2, method="Gibbs", control=list(alpha=25, seed=10005, thin=1))
+
+# Display the probabilities of topics in documents side by side
+broom::tidy(mod2, "gamma") %>% spread(topic, gamma)
+
+
+# Create the document-term matrix
+dtm <- corpus %>%
+  unnest_tokens(output=word, input=text) %>%
+  count(id, word) %>%
+  cast_dtm(document=id, term=word, value=n)
+
+# Display dtm as a matrix
+as.matrix(dtm)
+
+
+# Create the document-term matrix with stop words removed
+dtm <- corpus %>%
+    tidytext::unnest_tokens(output=word, input=text) %>%
+    anti_join(tidytext::stop_words) %>% 
+    count(id, word) %>%
+    tidytext::cast_dtm(document=id, term=word, value=n)
+
+# Display the matrix
+as.matrix(dtm)
+
+
+dictionary <- tibble::tibble(word=c("bank", "fines", "loans", "pay", "new", "opened", "restaurant"))
+dictionary
+
+# Perform inner_join with the dictionary table
+dtm <- corpus %>%
+    tidytext::unnest_tokens(output=word, input=text) %>%
+    inner_join(dictionary) %>%
+    count(id, word) %>%
+    tidytext::cast_dtm(document=id, term=word, value=n)
+
+# Display the summary of dtm
+as.matrix(dtm)
+
+
+# Generate the counts of words in the corpus
+word_frequencies <- corpus %>% 
+    tidytext::unnest_tokens(input=text, output=word) %>%
+    count(word)
+
+# Create a wordcloud
+wordcloud::wordcloud(words=word_frequencies$word, freq=word_frequencies$n, min.freq=1, max.words=10, 
+                     colors=c("DarkOrange", "Blue"), random.order=FALSE, random.color=FALSE
+                     )
+
+
+# DO NOT HAVE FILE 'history'
+# Construct a document-term matrix
+# dtm <- history %>% 
+#     tidytext::unnest_tokens() %>%
+#     anti_join(stop_words) %>% 
+#     count(chapter, word) %>% 
+#     tidytext::cast_dtm(document=chapter, term=word, value=n)
+# 
+# # Insert the missing arguments
+# mod <- topicmodels::LDA(x=dtm, k=4, method="Gibbs", control=list(alpha=1, seed=10005))
+# 
+# # Display top 15 words of each topic
+# terms(mod, k=15)
+# 
+# 
+# # Display the structure of the verbs dataframe
+# str(verbs)
+# 
+# # Construct a document-term matrix
+# dtm <- history %>% 
+#     tidytext::unnest_tokens() %>%
+#     inner_join(verbs, by=c("word"="past")) %>% 
+#     count(chapter, word) %>% 
+#     tidytext::cast_dtm(document=chapter, term=word, value=n)
+# 
+# # Fit LDA for four topics
+# mod <- topicmodels::LDA(x=dtm, k=4, method="Gibbs", control=list(alpha=1, seed=10005))
+# 
+# # Display top 25 words from each topic
+# terms(mod, k=25)
+# 
+# 
+# # Extract matrix gamma and plot it
+# broom::tidy(mod, "gamma") %>% 
+#     mutate(document=as.numeric(document)) %>% 
+#     ggplot(aes(x=document, y=gamma)) + 
+#     geom_line(aes(color=factor(topic))) + 
+#     labs(x="Chapter", y="Topic probability") +
+#     scale_color_manual(values=brewer.pal(n=4, "Set1"), name="Topic")
+# 
+# 
+# 
+# # Display wordclouds one at a time
+# for (j in 1:4) {
+#     # Generate a table with word frequences for topic j
+#     word_frequencies <- broom::tidy(mod, matrix="beta") %>% 
+#         mutate(n = trunc(beta * 10000)) %>% 
+#         filter(topic == j)
+#     # Display word cloud
+#     wordcloud::wordcloud(word = word_frequencies$term, freq = word_frequencies$n, max.words = 20,
+#                          scale = c(3, 0.5), colors = c("DarkOrange", "CornflowerBlue", "DarkRed"), 
+#                          rot.per = 0.3
+#                          )
+# }
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Named Entity Recognition as Unsupervised Classification  
+  
+
 
 
 
