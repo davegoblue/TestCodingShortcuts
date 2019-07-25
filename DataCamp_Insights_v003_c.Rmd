@@ -43007,9 +43007,9 @@ broom::tidy(mod2, "gamma") %>% spread(topic, gamma)
 
 # Create the document-term matrix
 dtm <- corpus %>%
-  unnest_tokens(output=word, input=text) %>%
-  count(id, word) %>%
-  cast_dtm(document=id, term=word, value=n)
+    tidytext::unnest_tokens(output=word, input=text) %>%
+    count(id, word) %>%
+    tidytext::cast_dtm(document=id, term=word, value=n)
 
 # Display dtm as a matrix
 as.matrix(dtm)
@@ -43113,6 +43113,254 @@ wordcloud::wordcloud(words=word_frequencies$word, freq=word_frequencies$n, min.f
 ***
   
 Chapter 3 - Named Entity Recognition as Unsupervised Classification  
+  
+Using Topic Models as Classifiers:  
+  
+* Can use a topic model as a soft classifier - find probability of belonging to a specific class  
+	* Named entity recognition - is an entity a geographic name or a person?  
+    * "Washington crossed the Delaware river" vs. "They did a road trip across Washington"  
+* The control paramters play an important role  
+	* A very high alpha may drive 50-50 splits everywhere - greater than 1 puts most of the distribution in the center, less than 1 puts most of the distribution at the edges  
+* Bag of M&Ms as an example for how an LDA fits a model  - multinomial distribution  
+	* Several outcomes (colors of candy) repeated n times  
+    * Each outcome has its own probability - fixed by the factory that filled the bag  
+    * Probabilities sum up to 1  
+    * What's the probability of getting 5 yellow, 2 brown, 2 blue, and 1 black when we take out 10 pieces of candy?  
+    * In LDA model, topics are color, and there are two "bags of candy": one for documents, one for words  
+* The Dirichlet aspect of LDA  
+	* Randomized search for the best values of probabilities  
+    * E.g., try 0.2, 0.5 and 0.3 for proportions of three topics 
+    * Hard to do for large number of topics and words  
+    * Instead, use values from Dirichlet distribution as guesses  
+    * Dirichlet distribution returns a set of numbers that add up to 1 - serve as probabilities of colors for M&M candy bags  
+  
+From Word Windows to DTM:  
+  
+* An entity is a personalized noun - often capitalized  
+	* If we take n words on the left and n words on the right of an entity, we get a word window  
+    * E.g., attention of Megara was turned - entity is Megara and context is attention was turned  
+    * Also possible to tag words to differentiate the side - attention_L1 of_L2 was_R1 turned_R2  
+* Can combine the contexts of the same entity using paste to create a document  
+	* docs <- df %>% group_by(entity) %>% summarise(doc_id = first(entity), text = paste(text, collapse=" "))  
+* Can use regex to find entities in a document - take advantage of entities being capitalized  
+	* pattern <- "[A-Z][a-z]+"  
+    * m <- gregexpr(text, pattern)  
+    * entities <- unlist(regmatches(text, m))  
+* Can also run regular expressions using parentheses to group some patterns together  
+	* Some entities include St. in them, e.g. St. Sophia 
+    * p <- "(St[.] )?[A-Z][a-z]+" 
+    * (St[.] ) is a group. The ? quantifier means the group is optional  
+* Can also use capture groups to add a suffix  
+	* t <- "the great Darius threw across"  
+    * gsub("^([a-z]+) ([a-z]+)", "\\1_L1 \\2_L2", t)  # result is "the_L1 great_L2 Darius threw across"  
+    * Two groups, each matches a lowercase word [a-z]+  
+    * The ^ is an anchor - specifies position in the string. ^ - the start, $ - at the end  
+    * The \\1 is back-reference to contents of group 1. Its contents are substituted  
+  
+Corpus Alignment and Classification:  
+ 
+* Can also run models for unsupervised classification - telling the meaning of a named entity  
+	* topics <- tidy(mod, matrix="gamma") %>% spread(topic, gamma)  
+    * topics %>% filter(document %in% c(" Alboin"," Alexander"," Asia Minor"," Amorium"," Cappadocian"))  
+* Ideally, want to use a pre-trained model, as is possible using topicmodels::posterior()  
+	* model = LDA(...)  
+    * result = posterior(model, new_data)  
+    * result$topics  
+    * new_data must be aligned with the vocabulary used in the model  
+    * LDA algorithm iterates over items and their counts, does not "know" that it's dealing with words  
+* Corpus alignment involves ensuring the training and test set have the same vocabularies and rules  
+	* Drop words from dtm that are not part of model's vocabulary  
+    * Function tidy with matrix="beta" extracts the terms and their probabilities  
+    * model_vocab <- tidy(mod, matrix="beta") %>% select(term) %>% distinct()  
+    * Do right-join with the model's vocabulary to keep only the words the model was trained on  
+    * new_table <- new_doc %>% unnest_tokens(input=text, output=word) %>% count(doc_id, word) %>% right_join(model_vocab, by=c("word"="term"))  
+* Can have challenges with NA introduced in to the process - as document name (set to first) and as counts (set to 0)  
+	* new_dtm <- new_table %>% arrange(desc(doc_id)) %>% mutate(doc_id = ifelse(is.na(doc_id), first(doc_id), doc_id), n = ifelse(is.na(n), 0, n)) %>% cast_dtm(document=doc_id, term=word, value=n)  
+* Hold-out data is valuable, similar to any other machine learning process  
+	* Held-out data for testing  
+    * Hold out a percentage of full records (same as with test datasets in ML)  
+    * Hold out a percentage of terms inside a document (unique to topic modeling)  
+    * Estimate quality of fit by looking at the log-likelihood  
+    * held-out log-likelihood  
+    * Our case: withhold full documents, no cross-validation  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# The call to posterior(mod)$topics returns the probabilities of topics.
+dtm <- corpus %>% 
+    # Specify the input column
+    tidytext::unnest_tokens(input=text, output=word, drop=TRUE) %>% 
+    count(id, word) %>% 
+    # Specify the token
+    tidytext::cast_dtm(document=id, term=word, value=n)
+
+
+# Fit a topic model using LDA with Gibbs sampling
+mod = topicmodels::LDA(x=dtm, k=2, method="Gibbs", control=list(iter=500, thin=1, seed = 12345, alpha=NULL))
+
+# Display topic prevalance in documents as a table
+broom::tidy(mod, "gamma") %>% spread(topic, gamma)  
+
+
+# Fit the model for delta = 0.1
+mod <- topicmodels::LDA(x=dtm, k=2, method="Gibbs", control=list(iter=500, seed=12345, alpha=1, delta=0.1))
+
+# Define which words we want to examine
+my_terms = c("loans", "bank", "opened", "pay", "restaurant", "you")
+
+# Make a tidy table
+t <- broom::tidy(mod, "beta") %>% 
+    filter(term %in% my_terms)
+
+# Make a stacked column chart of word probabilities
+ggplot(t, aes(x=term, y=beta)) + 
+    geom_col(aes(fill=factor(topic))) +
+    theme(axis.text.x=element_text(angle=90))
+
+# Fit the model for delta = 0.5
+mod <- topicmodels::LDA(x=dtm, k=2, method="Gibbs", control=list(iter=500, seed=12345, alpha=1, delta=0.5))
+
+# Define which words we want to examine
+my_terms = c("loans", "bank", "opened", "pay", "restaurant", "you")
+
+# Make a tidy table
+t <- broom::tidy(mod, "beta") %>% 
+    filter(term %in% my_terms)
+
+# Make a stacked column chart
+ggplot(t, aes(x=term, y=beta)) + 
+    geom_col(aes(fill=factor(topic))) +
+    theme(axis.text.x=element_text(angle=90))
+
+
+text <- c(ch1, ch2)
+
+# Regex pattern for an entity and word context
+p1 <- "( [a-z]+){2}( (St[.] )?[A-Z][a-z]+)+( [a-z]+){2}"
+
+# Obtain the regex match object from gregexpr
+m <- gregexpr(p1, text)
+
+# Get the matches and flatten the list
+v <- unlist(regmatches(text, m))
+
+# Find the number of elements in the vector
+length(v)
+
+# Regex pattern for an entity and word context
+p2 <- "( [a-z]+){2}( (St[.] )?[A-Z][a-z]+( (of|the) [A-Z][a-z]+)?)+( [a-z]+){2}"
+
+# Obtain the regex match object from gregexpr
+m <- gregexpr(p2, text)
+
+# Get the matches and flatten the list
+v <- unlist(regmatches(text, m))
+
+# Find the number of elements in the vector
+length(v)
+
+
+entity_pattern <- "( (St[.] )?[A-Z][a-z]+( (of|the) [A-Z][a-z]+)?)+"
+v <- c(' into the European shore of', ' settlers were Greeks of the', ' cities of Hellas in the', ' to the West to plant', ' attention of Megara was turned', ' of the Black Sea and the', ' behind the North Wind and know', ' wonders the Greeks sailed ever', ' of the Golden Fleece they did', ' metals of Colchis and the', ' of the Bosphorus and the', ' foundation of Byzantium was but', ' years before Byzantium came into', ' band of Megarian colonists had', ' the opposite Asiatic shore of', ' oracle of Delphi to give', ' that the Chalcedonians were truly', ' less inviting Bithynian side of', ' marked out Byzantium as destined', ' with all Europe behind it', ' early history Byzantium never fell', ' by the Danube mouth or', ' a hundred Hellenic towns on', ' house alone Byzantium would have', ' independent state Byzantium had a', ' the great Darius threw across', ' his son Xerxes crossed the', ' down the Bosphorus to pay', ' from the Oriental yoke seventeen', ' was at Byzantium that the', ' empire of Athens were laid', ' all the Greek states of', ' fifth century Byzantium twice declared', ' and the Byzantines escaped anything', ' blessing gave Byzantium its chief', ' wines of Maronea and other', ' that the Byzantines were eating', ' rise of Philip of Macedon and his', ' by the Byzantines as a', ' after repulsing Philip the Byzantines had to', ' power of Rome invaded the', ' regions of Thrace and the', ' that the Senate gave it', ' till the Roman Republic had long', ' that the Emperor Vespasian stripped it', ' for itself Byzantium lay on', ' and the Syrian emperor put', ' garrison of Byzantium refused to', ' magistrates of Byzantium were slain', ' to the Byzantines the right', ' on the Black Sea whose commerce', ' the old Megarian race who', ' we find Byzantium again a', ' the historian Trebellius Pollio for the', ' repelled a Gothic raid in', ' from the Roman Empire the ruin', ' on the Bithynian side of', ' importance of Byzantium was always', ' abdication of Diocletian the empire', ' and took Byzantium by surprise')
+
+# Print out contents of the `entity_pattern`
+entity_pattern
+
+# Remove the named entity from text
+v2 <- gsub(entity_pattern, "", v)
+
+# Display the head of v2
+head(v2)
+
+# Remove the named entity
+v2 <- gsub(entity_pattern, "", v)
+
+# Pattern for inserting suffixes
+p <- "\\1_L1 \\2_L2 \\3_R1 \\4_R2"
+
+# Add suffixes to words
+context <- gsub("([a-z]+) ([a-z]+) ([a-z]+) ([a-z]+)", p, v2)
+
+# Extract named entity and use it as document ID
+doc_id <- unlist(regmatches(v, gregexpr(entity_pattern, v)))
+
+# Make a data frame with columns doc_id and text
+corpus <- data.frame(doc_id = doc_id, text = context, stringsAsFactors = F)
+
+
+# Summarize the text to produce a document for each doc_id
+corpus2 <- corpus %>% 
+    group_by(doc_id) %>% 
+    summarise(doc = paste(text, collapse=" "))
+
+# Make a document-term matrix
+dtm <- corpus2 %>% 
+    tidytext::unnest_tokens(input=doc, output=word) %>% 
+    count(doc_id, word) %>%
+    tidytext::cast_dtm(document=doc_id, term=word, value=n)
+
+# Fit an LDA model for 3 topics
+mod <- topicmodels::LDA(x=dtm, k=3, method="Gibbs", control=list(alpha=1, seed=12345, iter=1000, thin=1))
+
+# Create a table with probabilities of topics in documents
+topics <- broom::tidy(mod, matrix="gamma") %>% 
+    spread(topic, gamma)
+
+
+# Set random seed for reproducability
+set.seed(12345)
+
+# Take a sample of 20 random integers, without replacement
+r <- sample.int(n=nrow(corpus2), size=20, replace=FALSE)
+
+# Generate a document-term matrix
+train_dtm <- corpus2[-r, ] %>% 
+    tidytext::unnest_tokens(input=doc, output=word) %>% 
+    count(doc_id, word) %>% 
+    tidytext::cast_dtm(document=doc_id, term=word, value=n)
+
+# Fit an LDA topic model for k=3
+train_mod <- topicmodels::LDA(x=train_dtm, k=3, method="Gibbs", 
+                              control=list(alpha=1, seed=10001, iter=1000, thin=1)
+                              )
+
+
+# Get the test row indices
+set.seed(12345)
+r <- sample.int(n=nrow(corpus2), size=20, replace=FALSE)
+
+# Extract the vocabulary of the training model
+model_vocab <- broom::tidy(train_mod, matrix="beta") %>% 
+    select(term) %>% 
+    distinct()
+
+# Create a table of counts with aligned vocabularies
+test_table <- corpus2[r, ] %>% 
+    tidytext::unnest_tokens(input=doc, output=word) %>% 
+    count(doc_id, word) %>%
+    right_join(model_vocab, by=c("word"="term"))
+
+# Prepare a document-term matrix
+test_dtm <- test_table %>% 
+    arrange(desc(doc_id)) %>% 
+    mutate(doc_id = ifelse(is.na(doc_id), first(doc_id), doc_id), n = ifelse(is.na(n), 0, n)) %>% 
+    tidytext::cast_dtm(document=doc_id, term=word, value=n)
+
+
+# Obtain posterior probabilities for test documents
+results <- modeltools::posterior(object=train_mod, newdata=test_dtm)
+
+# Display the matrix with topic probabilities
+results$topics
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - How Many Topics is Enough?  
   
 
 
