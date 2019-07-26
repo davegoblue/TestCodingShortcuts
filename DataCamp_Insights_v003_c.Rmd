@@ -43362,6 +43362,211 @@ results$topics
   
 Chapter 4 - How Many Topics is Enough?  
   
+Finding the Best Number of Topics:  
+  
+* Several approaches to picking the optimal number of topics  
+	* Topic coherence - examine the words in topics, decide if they make sense (e.g. site, settlement, excavation, popsicle - low coherence)  
+    * Quantitative measures  
+    * Log-likelihood - how plausible model parameters are given the data  
+    * Perplexity - model's "surprise" at the data  
+* The log-likelihood measures the plausibility of the parameters given the data - logs allow for summing rather than multiplying  
+	* Likelihood - measure of how plausible model parameters are given the data  
+    * Taking a logarithm makes calculations easier  
+    * All values are negative: when x<1, log(x) < 0  
+    * Numerical optimization - search for the largest log-likelihood (-100 is better than -105)  
+    * Function logLik returns log-likelihood of an LDA model  
+* Perplexity is a measure of the model's surprise with the data - positive number, smaller is better  
+	* perplexity(object=mod, newdata=dtm)  
+* Can run results for multiple values of k, then plot and find optimal performance on log-likelihood and perplexity  
+	* Similar to clustering, the goal is to find an elbow point  
+    * Searching for best k can take a lot of time  
+    * Factors: number of documents, number of terms, and number of iterations  
+    * Model fitting can be resumed  
+    * Function LDA accepts an LDA model as an object for initialization  
+    * mod = LDA(x=dtm, method="Gibbs", k=4, control=list(alpha=0.5, seed=12345, iter=1000, keep=1))  
+    * mod2 = LDA(x=dtm, model=mod, control=list(thin=1, seed=10000, iter=200))  
+  
+Topic Models Fitted to Novels:  
+  
+* A topic model can be used to analyze one long work - for example, a novel such as "Moby Dick"  
+	* Documents are chunks long enough to capture an event or a scene in the plot  
+    * For traditional novels - 1000+ words (roughly 3 pages of text)  
+* Text chunks can be considered as chapters  
+	* corpus %>% unnest_tokens(input=text, output=word) %>% count(chapter, word)  
+    * With text chunks, we need to generate the "chapter number" on our own  
+    * Candidate function: %/% - integer division  
+    * corpus %>%  
+    *     unnest_tokens(input=text, output=word) %>%  
+    *     mutate(word_index = 1:n()) %>%  
+    *     mutate(doc_number = word_index %/% 1000 + 1) %>%  
+    *     count(doc_number, word) %>%  
+    *     cast_dtm(term=word, document=doc_number, value=n)
+* Picking a good chunk size is more an art than a science  
+  
+Locking Topics With Seed Words:  
+  
+* Passing seeds for random numbers helps to ensure reproducibility  
+	* LDA performs randomized search through the space of parameters - Gibbs sampling  
+    * Topic numbering is unstable (topic 1 need not be the same content area when re-run)  
+* Can initialize the Gibbs sampler with seed words, which helps to lock in some of the topic numbers  
+	* Lock topic numbers  
+    * Specify weights for seed words for topics  
+    * seedwords requires a matrix, k rows, N columns  
+    * k is number of topics, N is vocabulary size  
+    * Weights get normalized internally so they sum up to 1 (need not be passed already summing to one)  
+* Example for a tiny dataset with dtm of 5x34 and k=2  
+	* Matrix for seed words needs to be 2x34 - the number of rows is k and the number of columns matches the dtm  
+    * seedwords = matrix(nrow=2, ncol=34, data=0)  
+    * colnames(seedwords) = colnames(dtm)  
+    * seedwords[1, "restaurant"] = 1  
+    * seedwords[2, "loans"] = 1  
+    * lda_mod = LDA(x=dtm, k=2, method="Gibbs", control=list(alpha=1, seed=1234))  
+    * tidy(lda_mod, "beta") %>% spread(key=topic,value=beta) %>% filter(term %in% c("restaurant","loans"))  
+    * lda_mod = LDA(x=dtm, k=2, method="Gibbs", seedwords=seedwords, control=list(alpha=1, seed=1234))  
+    * tidy(lda_mod, "beta") %>% spread(key=topic,value=beta) %>% filter(term %in% c("restaurant","loans"))  
+* Seed words are useful for two reasons  
+	* Convenient for pre-trained models  
+    * Training a model involves multiple runs of the algorithm, even for the same k  
+    * Seedwords let us "lock" topic numbers  
+    * Helpful input for training models  
+    * Speed up algorithm convergence by providing a starting point  
+  
+Wrap Up:  
+  
+* LDA topic modeling returns a probability (soft classifier)  
+* LDA requires count data as an input - can scale/transform non-integer data to counts and use successfully in LDA  
+* Variable Expectation Management (VEM) can also be applied to topic modeling  
+	* Can be applied to correlated topic models  
+    * Topic proportions follow a multivariate normal distribution  
+* Package stm by Margaret Roberts, Brandon Stewart, Dustin Lingley, and Kenneth Benoit  
+	* regression modeling of topic proportions and covariates  
+    * automatic corpus alignment  
+    * held-out data as omitted words in documents  
+    * can use result of LDA model as a seed  
+* Deep learning and word embeddings (word-to-vector) predict word meanings based on word adjacencies - Word2Vec  
+	* Use deep learning neural network to predict words that occur adjacent to a word, \pm n±n with n=2n=2, or 44  
+    * Transform into a vector of smaller dimensions (25, 50, 100)  
+    * word2vec models use very large corpora (e.g., 2 billion words)  
+    * do not make accommodations for multi-word entities  
+    * take a long time to train  
+* Experiment with package wordVectors created by Ben Schmidt  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# DO NOT HAVE THE DATA FRAME df
+# Split the Abstract column into tokens
+dtm <- df %>% 
+   tidytext::unnest_tokens(input=Abstract, output=word) %>% 
+   # Remove stopwords
+   anti_join(stop_words) %>% 
+   # Count the number of occurrences
+   count(AwardNumber, word) %>% 
+   # Create a document term matrix
+   tidytext::cast_dtm(document=AwardNumber, term=word, value=n)
+
+
+dtm <- df %>% 
+   tidytext::unnest_tokens(input=Abstract, output=word) %>% 
+   anti_join(stop_words) %>% 
+   # Count occurences
+   count(AwardNumber, word) %>%
+   # Group the data
+   group_by(word) %>% 
+   # Filter for document wide frequency
+   filter(sum(n) >= 10) %>% 
+   # Ungroup the data andreate a document term matrix
+   ungroup() %>% 
+   tidytext::cast_dtm(document=AwardNumber, term=word, value=n)
+
+
+# Create a LDA model
+mod <- topicmodels::LDA(x=dtm, method="Gibbs", k=3, control=list(alpha=0.5, seed=1234, iter=500, thin=1))
+
+# Retrieve log-likelihood
+topicmodels::logLik(mod)
+
+# Find perplexity
+topicmodels::perplexity(object=mod, newdata=dtm)
+
+
+# Display names of elements in the list
+names(models[[1]])
+
+# Retrieve the values of k and perplexity, and plot perplexity vs k
+x <- sapply(models, '[[', "k")
+y <- sapply(models, '[[', "perplexity")
+plot(x, y, xlab="number of clusters, k", ylab="perplexity score", type="o")
+
+# Record the new perplexity scores
+new_perplexity_score <- numeric(length(models))
+
+# Run each model for 100 iterations
+for (i in seq_along(models)) {
+    mod2 <- topicmodels::LDA(x=dtm, model=models[[i]]$model, control=list(iter=100, seed=12345, thin=1))
+    new_perplexity_score[i] <- topicmodels::perplexity(object=mod2, newdata=dtm)
+}
+
+# Specify the possible values of k and build the plot
+k <- 2:10
+plot(x=k, y=new_perplexity_score, xlab="number of clusers, k", ylab="perplexity score", type="o")
+
+
+t <- history %>% 
+    # Unnest the tokens
+    tidytext::unnest_tokens(input=text, output=word) %>% 
+    # Create a word index column
+    mutate(word_index = row_number()) %>% 
+    # Create a document number column
+    mutate(document_number = word_index %/% 1000 + 1)
+
+
+dtm <- t %>% 
+    # Join verbs on "word" and "past"
+    inner_join(verbs, by=c("word"="past")) %>% 
+    # Count word
+    count(document_number, word) %>%
+    # Create a document-term matrix
+    tidytext::cast_dtm(document=document_number, term=word, value=n)
+
+
+# Store the names of documents in a vector
+required_documents <- c(" Africa", " Emperor Heraclius", " Adrianople", " Daniel", " African")
+
+# Convert table into wide format
+broom::tidy(mod, matrix="gamma") %>% 
+    spread(key=topic, value=gamma) %>% 
+    # Keep only the rows with document names matching the required documents
+    filter(document %in% required_documents)
+
+
+# Set up the column names
+colnames(seedwords) <- colnames(dtm)
+
+# Set the weights
+seedwords[1, "defeated_l2"] = 1
+seedwords[2, "across_l2"] = 1
+
+# Fit the topic model
+mod <- topicmodels::LDA(dtm, k=3, method="Gibbs", seedwords=seedwords, 
+                        control=list(alpha=1, iter=500, seed=1234)
+                        )
+
+# Examine topic assignment in the fitted model
+broom::tidy(mod, "gamma") %>% spread(topic, gamma) %>% 
+    filter(document %in% c(" Daniel", " Adrianople", " African"))
+
+```
+  
+  
+  
+***
+  
+###_Intermediate Interactive Data Visualization with plotly in R_  
+  
+Chapter 1 - Introduction and Review of plotly  
+  
+
 
 
 
