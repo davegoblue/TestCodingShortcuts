@@ -1540,4 +1540,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Topic Modeling in R - Ch 3 (Named Entity Recognition as Unsupervised Classification) - notes  
 * DataCamp_Insights_v003_c captures Topic Modeling in R - Chapter 4 (Number of Topics) - notes  
 * DataCamp_Insights_v003_c captures Regression Modeling in R: Case Studies - Chapter 1 (GLM) - code  
+* DataCamp_Insights_v003_c captures Regression Modeling in R: Case Studies - Chapter 2 (Extending GLM) - code  
   
