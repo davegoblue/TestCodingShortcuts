@@ -1544,4 +1544,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 29-JUL-2019  
 * DataCamp_Insights_v003_c captures Regression Modeling in R: Case Studies - Chapter 3 (Mixed Effects Models - Part I) - notes  
+* DataCamp_Insights_v003_c captures Regression Modeling in R: Case Studies - Chapter 4 (Mixed Effects Models - Part II) - notes  
   
