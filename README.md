@@ -1546,4 +1546,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Regression Modeling in R: Case Studies - Chapter 3 (Mixed Effects Models - Part I) - notes  
 * DataCamp_Insights_v003_c captures Regression Modeling in R: Case Studies - Chapter 4 (Mixed Effects Models - Part II) - notes  
 * DataCamp_Insights_v003_c captures Intermediate Interactive Data Visualization with plotly in R - Chapter 1 (Introduction and Review of plotly) - notes  
+* DataCamp_Insights_v003_c captures Intermediate Interactive Data Visualization with plotly in R - Chapter 2 (Animating Graphics) - notes  
   
