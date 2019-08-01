@@ -43687,7 +43687,152 @@ us_economy %>%
   
 Chapter 2 - Animating Graphics  
   
+Introduction to Animated Graphics:  
+  
+* Animated graphics can help show changes in data over time, especially when there are a large number of time periods such that faceting would be difficult/impossible  
+* Example for the base aesthetic  
+	* myDF %>% plot_ly(x=~myX, y=~myY) %>% add_markers(frame=~myAnimateVar, showlegend=FALSE) %>% layout(xaxis=list(type="log"), yaxis=list(type="log"))  # the frame= variable controls the animation  
+* May want to keep the glyphs consant (not changing when there is an NA above/below them) using the ids variable  
+	* myDF %>% plot_ly(x=~myX, y=~myY) %>% add_markers(frame=~myAnimateVar, ids=~myIDVar, showlegend=FALSE) %>% layout(xaxis=list(type="log"), yaxis=list(type="log"))  # the frame= variable controls the animation  
+  
+Polishing Animations:  
+  
+* Can polish aspects of the animation such as time per change or slider appearance  
+* Can use the animation_opts() function to change the animation  
+	* ani %>% animation_opts(frame=500, transition=frame, easing="linear", redraw=TRUE)  # assumes ani is a properly built plot_ly with animation; frame=500 means 500ms per frame (lower means faster transitions)  
+    * Note that there is a pause of transition-frame between each transition  
+    * Can set easing="bounce" to change right to the next frame  
+* Can change the appearance of the slider  
+	* ani %>% animation_slider(hide=TRUE)  # remove the slider  
+    * ani %>% animation_slider(currentvalue=list(prefix=NULL, font=list(color="black", fontsize=40)))  
+  
+Layering in plotly:  
+  
+* Can layer traces, similar to the process of layering in ggplot2  
+* Example of producing a text layer first (large year), then layering the rest of the plot on top  
+	* myDF %>% plot_ly(x=~myX, y=~myY) %>% add_text(x=xText, y=yText, text=~year, frame=~year, textfont=list(size=150, color=toRGB("gray80"))) %>% add_markers(frame=~year, ., layout(., showlegend=FALSE)) %>% animation_slider(hide=TRUE)  
+  
+Cumulative Animations:  
+  
+* Cumulative time series is a process where the time series seem to be growing over time  
+	* Each frame must contain a path containing all the data up through that year (not just the current year)  
+* Can create a cumulative data frame  
+	* Basically, a frame column is create with the ID being the key year, with a year column retained that shows all the data up through that year  
+* The dplyr and purrr packages have a split() function  
+	* belgium %>% split(.$year) %>% accumulate(~bind_rows(.x, .y)) %>% set_names(1960:2018) %>% bind_rows(.id="frame") %>% plot_ly(x=~year, y=~income) %>% add_lines(frame=~frame, showlegend=FALSE)  
+  
+Example code includes:  
+```{r eval=FALSE}
 
+# Create an animated bubble chart of house_price against gdp
+us_economy %>%
+    plot_ly(x = ~gdp, y = ~house_price) %>%
+    add_markers(size = ~population, color = ~region, frame = ~year, ids = ~state, 
+                marker = list(sizemode = "diameter")
+                )
+
+
+# Animate a bubble chart of house_price against gdp over region
+ani <- us_economy %>%
+    filter(year==2017) %>%
+    plot_ly(x = ~gdp, y = ~house_price) %>%
+    add_markers(size = ~population, color = ~region, 
+                frame = ~region, ids = ~state, marker = list(sizemode = "diameter")
+                )
+ani
+
+
+# Adjust the frame and transition
+ani %>% 
+    animation_opts(frame = 2000, transition = 300)
+
+# Change the type of transition to "elastic"
+ani %>% 
+    animation_opts(frame = 2000, transition = 300, easing = "elastic")
+
+# Remove the prefix from the slider and change the font color to "red"
+ani %>% 
+    animation_opts(frame = 2000, transition = 300, easing = "elastic") %>%
+    animation_slider(currentvalue = list(prefix = NULL, font = list(color = "red")))
+
+# Polish the x- and y-axis titles
+ani %>% 
+    animation_opts(frame = 2000, transition = 300, easing = "elastic") %>% 
+    animation_slider(currentvalue = list(prefix = NULL, font = list(color = "red"))) %>%
+    layout(xaxis = list(title="Real GDP (millions USD)"), yaxis = list(title="Housing price index"))
+
+
+# Reduce the bubble size
+us_economy %>%
+    plot_ly(x = ~gdp, y = ~house_price) %>%
+    add_markers(size = ~population, color = ~region, frame = ~year, ids = ~state,
+                marker = list(sizemode = "diameter", sizeref=3)
+                ) %>%
+    layout(xaxis = list(title = "Real GDP (millions USD)", type = "log"), 
+           yaxis = list(title = "Housing price index")
+           )
+
+# Map state names to the hover info text
+us_economy %>%
+    plot_ly(x = ~gdp, y = ~house_price, hoverinfo = "text", text = ~state) %>%
+    add_markers(size = ~population, color = ~region, frame = ~year, ids = ~state,
+                marker = list(sizemode = "diameter", sizeref = 3)
+                ) %>%
+    layout(xaxis = list(title = "Real GDP (millions USD)", type = "log"),
+           yaxis = list(title = "Housing price index")
+           )
+
+
+# Add the year as background text and remove the slider
+us_economy %>%
+    plot_ly(x = ~gdp, y = ~house_price, hoverinfo = "text", text = ~state) %>%
+    add_text(x = 200000, y = 450, text = ~year, frame = ~year,
+             textfont = list(color = toRGB("gray80"), size = 150)
+             ) %>%
+    add_markers(size = ~population, color = ~region, frame = ~year, ids = ~state,
+                marker = list(sizemode = "diameter", sizeref = 3)
+                ) %>%
+    layout(xaxis = list(title = "Real GDP (millions USD)", type = "log"),
+           yaxis = list(title = "Housing price index")
+           ) %>%
+    animation_slider(hide = TRUE)
+
+
+# extract the 1997 data
+us1997 <- us_economy %>%
+    filter(year == 1997)
+
+# create an animated scatterplot with baseline from 1997
+us_economy %>%
+    plot_ly(x = ~gdp, y = ~house_price) %>%
+    add_markers(data = us1997, marker = list(color = toRGB("gray60"), opacity = 0.5)) %>%
+    add_markers(frame = ~year, ids = ~state, data = us_economy, showlegend = FALSE, alpha = 0.5) %>%
+    layout(xaxis = list(type = "log"))
+
+
+# Find median life HPI for each region in each year
+med_hpi <- us_economy %>%
+    group_by(region, year) %>%
+    summarize(median_hpi=median(house_price))
+
+
+# Animate the cumulative time series of median HPI over time
+med_hpi %>%
+    split(.$year) %>%
+    accumulate(~bind_rows(.x, .y)) %>%
+    set_names(1997:2017) %>%
+    bind_rows(.id = "frame") %>%
+    plot_ly(x=~year, y=~median_hpi, color=~region) %>%
+    add_lines(frame=~frame, showlegend=FALSE)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Linking Graphics  
+  
 
 
 
