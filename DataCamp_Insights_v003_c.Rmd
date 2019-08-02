@@ -43833,6 +43833,226 @@ med_hpi %>%
   
 Chapter 3 - Linking Graphics  
   
+Linking Two Charts:  
+  
+* Linking charts allows for brushing of one chart to highlight other charts  
+* A similar idea applies to linked highlighting for a chart  
+* The crosstalk package allows for linking plots using JavaScript (displays in the Rstudio pane)  
+	* p1 <- <plotlycode>  
+    * p2 <- <plotlycode>  
+    * subplot(p1, p2, titleX=TRUE, titleY=TRUE) %>% hide_legend()  # creates separate views  
+* Example for creating linked views  
+	* library(crosstalk)  
+    * shared_data <- SharedData$new(world2014)  
+    * p1 <- <plotlycode updated for dataset shared_data>  
+    * p2 <- <plotlycode updated for dataset shared_data>  
+    * subplot(p1, p2, titleX=TRUE, titleY=TRUE) %>% hide_legend()  %>% highlight(on="plotly_selected") # creates linked views  
+  
+Brushing Groups:  
+  
+* Can run time series in a similar manner using SharedData()  
+	* world_indicators %>% SharedDara$new(key=~country) %>% .  # this will highlight everything for country all at the same time  
+* Can use dplyr commands within the plotly pipeline AFTER the plot_ly() command  
+	* Cannot directly use the dplyr commands on the shared data object  
+  
+Selection Strategies:  
+  
+* Transient selection (default) is the process where previous selections are forgotten when new selections are made  
+* By contrast, persistent selection allows for making multiple selections that are all maintained - can SHIFT-SELECT or can make persistent using code  
+	* subplot(.) %>% hide_legend() %>% highlight(persistent=TRUE)  
+    * subplot(.) %>% hide_legend() %>% highlight(persistent=TRUE, dynamic=TRUE)  # allows for users to select different colors for different selections  
+* Can also use indirect manipulation, such as user-interaction with plotly by way of a dropdown  
+	* subplot(.) %>% hide_legend() %>% highlight(selectize=TRUE)  
+  
+Making Shinier Charts:  
+  
+* Can create highly interactive charts similar to shiny using plotly  
+	* shared_data <- SharedData$new(world2014)  
+    * p1 <- shared_data %>% plot_ly(.) %>% .  
+    * p2 <- shared_data %>% plot_ly(.) %>% .  
+    * bscols(p1, p2)  # bscols creates two side-by-side html widgets (each has its own control panel)  
+* Can modify the bscols() call to add filters  
+	* bscols(filter_checkbox(id="four_regions", label="region", sharedData=shared_data, group=~four_regions), p1)  
+    * bscols(filter_select(id="four_regions", label="region", sharedData=shared_data, column=~four_regions), p1)  # drop-downs  
+    * bscols(filter_slider(id="co2", label="CO2 Concentrations", sharedData=shared_data, column=~co2), p1)  # sliders  
+* Can fix the axes so they do not scale with data selections  
+	* bscols(filter_slider(id="co2", label="CO2 Concentrations", sharedData=shared_data, column=~co2), p1 %>% layout(xaxis=list(range(2.5, 5)), yaxis=list(range(-1.4, 1.55))))  # sliders  
+* Can put the pieces together in a single call  
+	* bscols(widths=c(2, 5, 5), list(filter_checkbox(.), filter_slider(.), p1, p2)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+us2017 <- us_economy %>% 
+    filter(year == 2017) %>% 
+    group_by(state, year, gdp, home_owners, house_price, population, region, division) %>%
+    summarize(employment=mean(employment)) %>%
+    ungroup()
+str(us2017, give.attr=FALSE)
+
+
+# Create a SharedData object from us2017
+shared_us <- crosstalk::SharedData$new(us2017)
+
+# Create a scatterplot of house_price vs. home_owners
+p1 <- shared_us %>%
+    plot_ly(x = ~home_owners, y = ~house_price) %>%
+    add_markers()
+ 
+# Scatterplot of house_price vs. employment rate
+p2 <- shared_us %>%
+    plot_ly(x = ~employment/population, y = ~house_price) %>%
+    add_markers()
+  
+# Polish the linked scatterplots
+linked_plots <- subplot(p1, p2, titleX = TRUE, shareY = TRUE) %>% hide_legend()
+linked_plots
+
+
+# Add a highlight layer
+linked_plots %>% 
+    highlight()
+
+# Enable linked brushing
+linked_plots %>% 
+    highlight(on = "plotly_selected")
+
+# Enable hover highlighting
+linked_plots %>% 
+    highlight(on = "plotly_hover")
+
+
+# Create a shared data object keyed by individual states
+state_data <- us_economy %>%
+    crosstalk::SharedData$new(key=~state)
+
+# Using the shared data, plot house price vs. year
+state_data %>%
+    plot_ly(x=~year, y=~house_price) %>%
+    # Group by state
+    group_by(state) %>%
+    # Add lines
+    add_lines()
+
+
+# Create a shared data object keyed by region
+shared_region <- us_economy %>% 
+    crosstalk::SharedData$new(key = ~region)
+
+# Create a dotplot of avg house_price by region in 2017
+dp_chart <- shared_region %>%
+    plot_ly() %>%
+    filter(year == 2017) %>%
+    group_by(region) %>%
+    summarize(avg.hpi = mean(house_price, na.rm = TRUE)) %>%
+    add_markers(x = ~avg.hpi, y = ~region)
+  
+# Code for time series plot
+ts_chart <- shared_region %>%
+    plot_ly(x = ~year, y = ~house_price) %>%
+    group_by(state) %>%
+    add_lines()
+  
+# Link dp_chart and ts_chart
+subplot(dp_chart, ts_chart)
+
+
+# Create a shared data object keyed by division
+shared_region <- crosstalk::SharedData$new(us2017, key = ~division)
+
+# Create a bar chart for division
+bc <- shared_region %>%
+    plot_ly() %>%
+    count(division) %>%
+    add_bars(x = ~division, y = ~n) %>%
+    layout(barmode = "overlay")
+  
+# Bubble chart
+bubble <- shared_region %>%
+    plot_ly(x = ~home_owners, y = ~house_price, hoverinfo = "text", text = ~state) %>%
+    add_markers(size = ~population, marker = list(sizemode = "diameter"))
+
+# Remove the legend
+subplot(bc, bubble) %>% hide_legend()
+
+
+# Enable persistent hover selection and a color selector 
+linked_plots %>%
+    highlight(persistent = TRUE, selectize = TRUE, dynamic = TRUE, on="plotly_hover")
+
+
+# Create a shared data object keyed by state
+state_data <- crosstalk::SharedData$new(us2017, key = ~state, group = "Select a state")
+
+# Enable indirect selection by state
+state_data %>%
+    plot_ly(x = ~home_owners, y = ~house_price, hoverinfo = "text", text = ~state) %>%
+    add_markers(size = ~population, marker = list(sizemode = "diameter")) %>%
+    highlight(selectize = TRUE)
+
+# Create a shared data object keyed by region
+region_data <- crosstalk::SharedData$new(us2017, key = ~region, group = "Select a region")
+
+# Enable indirect selection by region
+region_data %>%
+    plot_ly(x = ~home_owners, y = ~house_price, hoverinfo = "text", text = ~state) %>%
+    add_markers(size = ~population, marker = list(sizemode = "diameter")) %>%
+    highlight(selectize = TRUE)
+
+
+# Create a row of subplots containing p97, p07, and p17 with widths 6, 3, 3
+# crosstalk::bscols(widths=c(6, 3, 3) , p97, p07, p17)
+
+# Specify that p07 should span 5 columns
+# crosstalk::bscols(widths=c(NA, 5, NA), p97, p07, p17)
+
+# Stack p07 and p17 in the right column
+# crosstalk::bscols(p97, list(p07, p17))
+
+
+# shared data object
+shared_us <- crosstalk::SharedData$new(us2017, key = ~region)
+
+# scatterplot of housing price index against homeownership
+p17 <- shared_us %>%
+    plot_ly(x = ~home_owners, y = ~house_price, color = ~region, height = 400) %>%
+    add_markers()
+  
+# add a column of checkboxes for region to the left of the plot
+crosstalk::bscols(widths=c(3, NA),
+                  crosstalk::filter_checkbox(id = "region", label = "Region", 
+                                             sharedData = shared_us, group = ~region
+                                             ), p17
+                  )
+
+
+shared_us <- crosstalk::SharedData$new(us2017)
+
+p17 <- shared_us %>%
+    plot_ly(x = ~home_owners, y = ~house_price, color = ~region, height = 400) %>%
+    add_markers() %>%
+    layout(xaxis = list(title = "Home ownership (%)"), yaxis = list(title = "HPI"))
+  
+# add a slider filter for each axis below the scatterplot
+crosstalk::bscols(list(p17,
+                       crosstalk::filter_slider(id = "price", label = "HPI", 
+                                                sharedData = shared_us, column = ~house_price
+                                                ),
+                       crosstalk::filter_slider(id = "owners", label = "Home ownership (%)", 
+                                                sharedData = shared_us, column = ~home_owners
+                                                )
+                       )
+                  )
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Case Study: Space Launches  
+  
+
 
 
 
