@@ -1549,4 +1549,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Intermediate Interactive Data Visualization with plotly in R - Chapter 2 (Animating Graphics) - notes  
 * DataCamp_Insights_v003_c captures Intermediate Interactive Data Visualization with plotly in R - Chapter 3 (Linking Graphics) - notes  
 * DataCamp_Insights_v003_c captures Intermediate Interactive Data Visualization with plotly in R - Chapter 4 (Case Study) - notes  
+* DataCamp_Insights_v003_c captures Intermediate Interactive Defensive R Programming - Chapter 1 (Avoiding Conflict) - notes  
   
