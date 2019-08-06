@@ -1553,4 +1553,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 05-AUG-2019  
 * DataCamp_Insights_v003_c captures Intermediate Interactive Defensive R Programming - Chapter 2 (Early Warning Systems) - notes  
+* DataCamp_Insights_v003_c captures Intermediate Interactive Defensive R Programming - Chapter 3 (Preparing Defenses) - notes  
   
