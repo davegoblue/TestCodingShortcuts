@@ -1557,4 +1557,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Intermediate Interactive Defensive R Programming - Chapter 4 (Creating a Battle Plan) - notes  
 * DataCamp_Insights_v003_c captures Feature Engineering in R - Chapter 1 (Creating Features from Categorical Data) - notes  
 * DataCamp_Insights_v003_c captures Feature Engineering in R - Chapter 2 (Creating Features from Numeric Data) - notes  
+* DataCamp_Insights_v003_c captures Feature Engineering in R - Chapter 3 (Transforming Numerical Features) - notes  
   
