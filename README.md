@@ -1563,4 +1563,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 12-AUG-2019  
 * DataCamp_Insights_v003_c captures Topic Modeling in R - Chapter 1 (Introduction to the Workflow) - code  
 * DataCamp_Insights_v003_c captures Topic Modeling in R - Chapter 2 (Word Clouds, Stop Words, Control Arguments) - code  
+* DataCamp_Insights_v003_c captures Topic Modeling in R - Chapter 3 (Named Entity Recognition as Unsupervised Classification) - code  
   
