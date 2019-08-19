@@ -45649,6 +45649,212 @@ ggplot(word_probs3, aes(x=term2, y=beta, fill=as.factor(topic))) +
   
 Chapter 1 - Preparing to Analyze Survey Data  
   
+Surveys in Marketing Research:  
+  
+* Surveys can consist of items rated on the Likert scale (commonly, but not necessarily, 1-5 scales)  
+	* Step 1 - item generation (expert review, SME, etc.)  
+    * Step 2 - questionnaire administration  
+    * Setp 3 - initial item reduction  
+    * Step 4 - confirmatory factor analysis  
+    * Step 5 - Convergent/Discriminant Validity  
+    * Step 6 - Replication  
+* Example for inter-rater reliability  
+	* library(irr)  
+    * agree(experts)  
+    * cohen.kappa(experts)  # 0-0.4 is poor, 0.4-0.6 is mediocre, 0.6-0.8 is substantial, 0.8+ is very strong  
+* Example for content validity ratios  
+	* Lawshe's Content Validity Ratio (CVR): what percent of experts judge that item essential to what's being measured  
+    * CVR = [ E - (N/2) ] / (N/2)  where N is the total number of experts and E is the number who rated the item as essential  
+    * psychometric::CVratio(NTOTAL=, NESSENTIAL=)  # -1 is consensus againt, +1 is consensus in favor  
+  
+Measurement, Validity, and Reliability:  
+  
+* Measurement is the process of observing and recording events  
+	* Requires a measurement device and a calibration standard  
+* Reliability can be assessed on three prongs  
+	* Equivalence (inter-rater)  
+    * Internal consistency (coefficient alpha, split-half)  
+    * Stability (test-retest)  
+* Validity checks whether measurments are as-claimed  
+	* Content  
+    * Construct (convergent, discriminant)  
+    * Criterion (concurrent, predictive)  
+* Exploratory Data Analysis can be considered as step 2.5 - between questionnaire administration and initial item reduction  
+	* c_sat_likert <- c_sat %>% mutate_if(is.integer, as.factor) %>% likert()  
+    * plot(c_sat_likert)  
+* Can use EDA to check for items that are reverse coded (where 5 would be bad and 1 would be good)  
+	* car::recode(myVar, "1=5; 2=4; 3=3; 4=2; 5=1")  
+  
+Describing Survey Results:  
+  
+* Generally, if there are less than 5% missing values and with equal distribution, then just omit them  
+	* Hmisc::naclus(bad_survey))  
+* Item correlations can be valuable - high correlations with each other, but not outside their own group  
+	* corr.test(myDF)  
+    * corrplot(cor(myDF), method="circle")  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+file001 <- readr::read_csv("./RInputFiles/brandrep-cleansurvey-extraitem.csv")
+file002 <- readr::read_csv("./RInputFiles/brandquall11-recodedbutextraitem.csv")
+file003 <- readr::read_csv("./RInputFiles/customersatisfactionclean.xls")
+file004 <- readr::read_csv("./RInputFiles/brandloyalty.xls")
+
+
+sme <- data.frame(Rater_A=c(1, 2, 3, 2, 1, 1, 1, 2, 3, 3, 2, 1, 1), 
+                  Rater_B=c(1, 2, 2, 3, 3, 1, 1, 1, 2, 3, 3, 3, 1)
+                  )
+
+
+# Print beginning of sme data frame
+head(sme)
+
+# Correlation matrix of expert ratings
+cor(sme)
+
+# Percentage agreement of experts
+irr::agree(sme)
+
+
+# Check inter-rater reliability
+psych::cohen.kappa(sme)
+
+# While our Cohen's kappa and Pearson correlation happen to be similar in value, these are not measuring the same thing
+# We are interested in agreement between the pairs of expert ratings on each item rather than a linear relationship between the item ratings in total
+# In the next exercise, we'll look at content validity
+# This is a measure of the assessment by a panel of experts (not just two, as in in Cohen's kappa) about the strength of an individual item
+
+
+lawshe <- data.frame(item=rep(1:5, each=3), 
+                     expert=rep(LETTERS[1:3], times=5), 
+                     rating=factor(c("Essential", "Useful", "Not necessary", "Useful", "Not necessary", 
+                                     "Useful",  "Not necessary", "Not necessary", "Essential", "Essential", 
+                                     "Useful", "Essential", "Essential", "Essential", "Essential"
+                                     )
+                                   )
+                     )
+
+
+# Calculate the CVR for each unique item in the data frame
+lawshe %>% 
+    group_by(item) %>% 
+    summarize(CVR = psychometric::CVratio(NTOTAL = length(unique(expert)), 
+                                          NESSENTIAL = sum(rating == 'Essential')
+                                          )
+              )
+
+
+brand_rep <- file001
+glimpse(brand_rep)
+
+
+# Convert items to factor
+b_rep_likert <- brand_rep %>% 
+    mutate(poor_workman_r=6-poor_workman_r) %>%
+    mutate_if(is.double, as.factor) %>%
+    as.data.frame()
+
+# Response frequencies - base R
+summary(b_rep_likert)
+
+# Plot response frequencies
+result <- likert::likert(b_rep_likert)
+plot(result)
+
+
+brand_qual <- file002 %>%
+    mutate(tired=6-tired_r) %>%
+    select(-innovator) %>%
+    as.data.frame()
+glimpse(brand_qual)
+
+brand_qual_items <- c('trendy = This brand is trendy.', 'latest = This brand offers the latest products.', 'tired = This is a tired brand.', "happy_pay = I am happy paying what I do for this brand's products.", "reason_price = This brand's products are reasonably priced.", "good_deal = This brand's products are a good deal.", "strong_perform = This brand's products are strong performers.", 'leader = This brand is a leader in its field.', 'serious = This brand takes its product quality seriously.')
+brand_qual_items
+
+
+# Get response frequencies from psych
+psych::response.frequencies(brand_qual)
+
+# Print item descriptions
+brand_qual_items
+
+# Reverse code the "opposite" item
+brand_qual$tired_r <- car::recode(brand_qual$tired, "1 = 5; 2 = 4; 4 = 2; 5 = 1")
+
+# Check recoding frequencies
+brand_qual %>% 
+    select(tired, tired_r) %>%
+    psych::response.frequencies() %>%
+    round(2)
+
+
+missing_lots <- file002 %>%
+    mutate(tired=6-tired_r) %>%
+    select(-tired_r)
+set.seed(1908181013)
+naRow <- sample(1:nrow(missing_lots), round(0.2*nrow(missing_lots)*ncol(missing_lots)), replace=TRUE)
+naCol <- sample(1:ncol(missing_lots), round(0.2*nrow(missing_lots)*ncol(missing_lots)), replace=TRUE)
+for (j in seq_along(naRow)) { missing_lots[naRow[j], naCol[j]] <- NA }
+glimpse(missing_lots)
+    
+
+# Total number of rows
+nrow(missing_lots)
+
+# Total number of incomplete cases
+sum(!complete.cases(missing_lots))
+
+# Number of incomplete cases by variable
+colSums(is.na(missing_lots))
+
+# Hierarchical plot -- what values are missing together?
+plot(Hmisc::naclus(missing_lots))
+
+
+brand_qual_9 <- file002
+glimpse(brand_qual_9)
+
+
+# View significance of item correlations
+psych::corr.test(brand_qual_9)
+
+# Visualize item correlations -- corrplot
+corrplot::corrplot(cor(brand_qual_9), method = "circle")
+
+
+b_rep_items <- c("well_made: Crunchola's products are well-made.", 'consistent: Crunchola offers consistently high-quality products.', 'poor_workman: Crunchola suffers from poor workmanship in its products.', 'higher_price: I am willing to pay a higher price for Crunchola products.', 'lot_more: I am willing to pay a lot more for Crunchola products.', 'go_up: The price of Crunchola products would have to go up quite a bit before I would switch to another brand.', "stands_out: Crunchola's brand really stands out from its competitors.", "unique: Crunchola's brand is unique from other brands.", "one_of_a_kind: Crunchola's brand is truly one of a kind.")
+b_rep_items
+
+
+brand_rep_9 <- file001 %>%
+    mutate(poor_workman = 6-poor_workman_r) %>%
+    select(-poor_workman_r) %>%
+    as.data.frame()
+glimpse(brand_rep_9)
+
+
+# Get response frequencies
+psych::response.frequencies(brand_rep_9)
+
+# Recode the appropriate item 
+brand_rep_9$poor_workman_r <- car::recode(brand_rep_9$poor_workman, "1 = 5; 2 = 4; 4 = 2; 5 = 1")
+
+# Adjust brandrep 9 dataset
+brand_rep_9_new <- select(brand_rep_9, -poor_workman)
+
+# Visualize item correlation
+corrplot::corrplot(cor(brand_rep_9_new), method = "circle")
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Exploratory Factor Analysis and Survey Development  
+  
+
 
 
 
