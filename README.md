@@ -1578,3 +1578,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Feature Engineering in R - Chapter 2 (Creating Features from Numeric Data) - code  
 * DataCamp_Insights_v003_c captures Feature Engineering in R - Chapter 3 (Transforming Numerical Features) - code  
   
+### Expansions week of 26-AUG-2019  
+* DataCamp_Insights_v003_c captures Feature Engineering in R - Chapter 4 (Advanced Methods) - code  
+  
