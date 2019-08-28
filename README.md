@@ -1581,4 +1581,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 26-AUG-2019  
 * DataCamp_Insights_v003_c captures Feature Engineering in R - Chapter 4 (Advanced Methods) - code  
 * DataCamp_Insights_v003_c captures Data Science for Managers - Chapter 1 (Introduction to Data Science) - notes  
+* DataCamp_Insights_v003_c captures Data Science for Managers - Chapter 2 (Data Sources and Risks) - notes  
   
