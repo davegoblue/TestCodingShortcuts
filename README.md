@@ -1584,4 +1584,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Data Science for Managers - Chapter 2 (Data Sources and Risks) - notes  
 * DataCamp_Insights_v003_c captures Data Science for Managers - Chapter 3 (Analysis and Visualization) - notes  
 * DataCamp_Insights_v003_c captures Data Science for Managers - Chapter 4 (Prediction) - notes  
+* DataCamp_Insights_v003_c captures R for SAS Users - Chapter 1 (Getting Started with R) - notes  
   
