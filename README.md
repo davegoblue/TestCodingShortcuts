@@ -1587,3 +1587,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures R for SAS Users - Chapter 1 (Getting Started with R) - notes  
 * DataCamp_Insights_v003_c captures R for SAS Users - Chapter 2 (Data Wrangling) - notes  
   
+### Expansions week of 02-SEP-2019  
+* DataCamp_Insights_v003_c captures R for SAS Users - Chapter 3 (Data Exploration) - notes  
+  
