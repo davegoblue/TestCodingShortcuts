@@ -46984,6 +46984,173 @@ ggplot(abaloneKeep, aes(x=diameter, y=longestShell)) +
   
 Chapter 3 - Data Exploration  
   
+Exploratory Data Analysis:  
+  
+* Can get summary statistics in R using several different packages and functions  
+	* summary()  
+    * Hmisc::describe()  
+    * psych::describe()  
+* Can use the dplyr::summarize() to create new names for statistics  
+* Can use the dplyr::summarize_all() to get key statistic  
+	* myDF %>% select(a, b) %>% summarize_all(funs(mean, sd))  
+* Can also use the dplyr::group_by() to get the output summarized by values of a key variable  
+  
+Correlations and T-tests:  
+  
+* Can assess the strenght of correlations using psych::corr.test()  
+* Can use Ggally::ggpairs() to get the pairs plot, and density plots for all of the key variables  
+	* Can add aes(color=a) to have the charts colored by levels of variable a  
+* Can add the counts in several ways, including use of an extra group_by statement  
+	* myDF %>% select(a, b) %>% group_by(a) %>% group_by(N = n(), add=TRUE) %>% summarize_all(funs(mean, sd))  
+* Can perform F tests for equal variances, and t-tests for equal means  
+	* var.test(a ~ b, data = myDF)  
+    * t.test(a ~ b, data = myDF)  # unpooled t-test is the default  
+    * t.test(a ~ b, data = myDF, var.equal = TRUE)  # pooled t-test to over-ride defaults  
+  
+Categorical Data: Analyze and Visualize:  
+  
+* Can use the table() command inside the with() command  
+	* myDF %>% with(table(a))  
+* Can create contingency tables using either table() or gmodels::CrossTable()  
+	* gmodels::CrossTable(chisq=TRUE)  # will run a Chi-squared test on the table resulting from the gmodels call  
+    * Can also include prop.r=, prop.t=, prop.chisq=, expected= options inside gmodels::CrossTable()  
+* Can get the mosaicplot using mosaicplot()  
+	* mosaicplot(a ~ b, data=myDF, color=c("red", "blue"), main="myTitle")  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Run describe() from Hmisc for sex, length, diameter, height
+abaloneKeep %>% 
+    select(type, longestShell, diameter, height) %>% 
+    Hmisc::describe()
+
+
+# Run describe() from psych for length, diameter, height
+abaloneKeep %>% 
+    select(longestShell, diameter, height) %>% 
+    psych::describe()
+
+
+# Run summary() for shuckedWeight and wholeWeight
+abaloneKeep %>%
+    select(shuckedWeight, wholeWeight) %>%
+    summary()
+
+# Get mean and sd for length
+abaloneKeep %>%
+    summarize(mean_length = mean(longestShell), sd_length = sd(longestShell))
+
+# Get mean and sd for height and diameter
+abaloneKeep %>%
+    select(height, diameter) %>%
+    summarise_all(list(~mean(.), ~sd(.)))
+
+
+# Get min, mean, sd, median, and max for age by sex
+abaloneKeep %>% 
+    group_by(type) %>% 
+    select(type, age) %>%
+    summarise_all(list(~min(.), ~mean(.), ~sd(.), ~median(.), ~max(.)))
+
+# Get median, 25th, 75th percentiles for wholeWeight by adult
+abaloneKeep %>% 
+    group_by(adult) %>%
+    select(adult, wholeWeight) %>%
+    summarise(median_wweight = median(wholeWeight), 
+              q1_wweight = quantile(wholeWeight, probs = 0.25), 
+              q3_wweight = quantile(wholeWeight, probs = 0.75)
+              )
+
+
+# Get correlations age and weights with corr.test()
+abaloneKeep %>% 
+    select(age, wholeWeight, shuckedWeight, shellWeight, visceraWeight) %>%
+    psych::corr.test()
+
+# Get correlations age and dimensions with corr.test()
+abaloneKeep %>% 
+    select(age, longestShell, diameter, height) %>%
+    psych::corr.test()
+
+
+# Make ggpairs plot of age, wholeWeight, shellWeight
+abaloneKeep %>% 
+    select(age, wholeWeight, shellWeight) %>%
+    GGally::ggpairs()
+
+# Make ggpairs plot of age, wholeWeight, shellWeight
+abaloneKeep %>% 
+    select(type, age, wholeWeight, shellWeight) %>%
+    GGally::ggpairs(aes(color=type))
+
+
+# Get n, mean, sd for length by adult groups
+abaloneKeep %>% 
+    select(longestShell, adult) %>%
+    group_by(adult) %>%
+    group_by(N = n(), add = TRUE) %>%
+    summarise_all(list(~mean(.), ~sd(.)))
+
+# Run equal variance and pooled t-tests of length by adult 
+var.test(longestShell ~ adult, data = abaloneKeep)
+t.test(longestShell ~ adult, data = abaloneKeep, var.equal = TRUE)
+
+# Make boxplots of length by adult
+ggplot(abaloneKeep, aes(x=adult, y=longestShell)) +
+    geom_boxplot()
+
+
+# Create frequency table of sex by agecat
+tablesexage <- abaloneKeep %>% 
+    with(table(type, agecat))
+
+# Run chi-square test using tablesexage
+chisq.test(tablesexage)
+  
+# Use CrossTabs, run chisq test
+abaloneKeep %>%
+    with(gmodels::CrossTable(type, agecat, chisq=TRUE, prop.c = FALSE, prop.t = FALSE, 
+                             prop.chisq = FALSE, expected = TRUE
+                             )
+         )
+
+
+# Make mosaicplot of sex by agecat
+mosaicplot(type ~ agecat, data = abaloneKeep, 
+           color = c("light blue", "dark grey"), main = "Abalone Sex by Age"
+           )
+
+# Make mosaicplot of adult by agecat
+mosaicplot(adult ~ agecat, data = abaloneKeep, 
+           color = c("light green", "purple"), main = "Abalone Adult by Age"
+           )
+
+
+# Add shellcat to abaloneKeep
+abaloneKeep <- abaloneKeep %>%
+    mutate(shellcat = ifelse(shellWeight <= 0.235, "<= 0.235g", "> 0.235g"))
+
+# Run chisq.test of agecat by shellcat
+tableageshell <- abaloneKeep %>% 
+    with(table(agecat, shellcat))
+
+chisq.test(tableageshell)
+
+# Make mosaicplot of agecat by shellcat
+mosaicplot(agecat ~ shellcat, data = abaloneKeep, 
+           color = c("light blue", "grey"), main = "Mosaicplot of age by shell categories"
+           )
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Models and Presentation  
+  
+
 
 
 
