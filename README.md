@@ -1592,4 +1592,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures R for SAS Users - Chapter 4 (Models and Presentation) - notes  
 * DataCamp_Insights_v003_c captures Introduction to R for Finance - Chapter 1 (The Basics) - notes  
 * DataCamp_Insights_v003_c captures Introduction to R for Finance - Chapter 2 (Vectors and Matrices) - notes  
+* DataCamp_Insights_v003_c captures Introduction to R for Finance - Chapter 3 (Data Frames) - notes  
   
