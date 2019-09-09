@@ -1596,3 +1596,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to R for Finance - Chapter 4 (Factors) - notes  
 * DataCamp_Insights_v003_c captures Introduction to R for Finance - Chapter 5 (Lists) - notes  
   
+### Expansions week of 09-SEP-2019  
+* DataCamp_Insights_v003_c captures Intermediate R for Finance - Chapter 1 (Dates) - notes  
+  
