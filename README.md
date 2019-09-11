@@ -1599,4 +1599,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 09-SEP-2019  
 * DataCamp_Insights_v003_c captures Intermediate R for Finance - Chapter 1 (Dates) - notes  
 * DataCamp_Insights_v003_c captures Intermediate R for Finance - Chapter 2 (If Statements and Operators) - notes  
+* DataCamp_Insights_v003_c captures Intermediate R for Finance - Chapter 3 (Loops) - notes  
   
