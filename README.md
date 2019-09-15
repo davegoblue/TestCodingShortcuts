@@ -1603,4 +1603,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Intermediate R for Finance - Chapter 4 (Functions) - notes  
 * DataCamp_Insights_v003_c captures Intermediate R for Finance - Chapter 5 (Apply) - notes  
 * DataCamp_Insights_v003_c captures Importing and Managing Financial Data R - Chapter 1 (Introduction and Downloading Data) - notes  
+* DataCamp_Insights_v003_c captures Importing and Managing Financial Data R - Chapter 2 (Extracting and Transforming Data) - notes  
   
