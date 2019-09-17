@@ -49152,6 +49152,170 @@ quantmod::getSymbols(c("BRK.A", "ATT"))
   
 Chapter 4 - Aligning Data with Different Periodicities  
   
+Making irregular data regular:  
+  
+* Regular data series have time observations that are equal intervals apart  
+	* Can be creates using seq.Date() or seq.POSIXt()  
+    * Can also be created using seq(fromDate, toDate, by="day")  
+    * The start() and end() functions will grab the first and last times from an xts object  
+* The zero-width xts object has an index but no columns  
+	* xts(, order.by=)  
+* The zero-width xts object can then be merged with the irregular data to create a regular xts object with NA where there is no observation  
+	* Can carry the last observation forward using na.locf()  
+    * Can also use fill=na.locf as an option in the merge  
+  
+Aggregating to lower frequency:  
+  
+* Low frequency data (such as quarterly) will often have only a single day associated to it - first day of quarter, last day of quarter, middle day of quarter, etc.  
+* Can aggregate data to quarterly using apply.quarterly(myData, FUN=, na.rm=)  
+* The zoo package contains two functions that help address the potential for data to not match/merge based on first day of quarter vs. last day of quarter and the like  
+	* yearmon() for monthly data - as.yearmon()  
+    * yearqtr() for quarterly data - as.yearqtr()  
+* The second best option is to force the merge to go with the earliest date in the relevant time period  
+	* na.locf(myData, fromLast=TRUE) - last observation carried backward  
+    * Can then use the index of the other object to extract only the specific time desired within the time period  
+  
+Aggregating and combining intra-day data:  
+  
+* Intra-day data is impacted by time zones, as per the xts and zoo explanations  
+* Internally, xts keeps its index as the number of seconds since midnight UTC on 1970-01-01  
+	* The merge() data will match all the indices, and will keep the time zone of the first object passed to the merge  
+* Can create smaller time series using seq(,,by="1 min")  
+	* Can subset data for only certain hours using myXTS["T08:00/T18:00"]  
+* To fill missing values by trading day, can use the split-lapply-rbind paradigm first introduced in the xts and zoo instructions  
+	* myDay <- split(myData, "days")  
+    * myFilledDay <- lapply(myDay, FUN=na.locf)  
+    * myFinal <- do.call(rbind, myFilledDay)  
+* Can aggregate irregular intraday data using to.period(myData, period="minutes", k=5) - this will create data by 5 minutes, taking the LAST entry in each 5-minute interval  
+	* To instead align every piece of data to the nearest time interval, use align.time(myData, n=60*5) - this will create data by 5 minutes, rounded to the start of the next period  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# DO NOT HAVE DATA
+
+# Extract the start date of the series
+start_date <- start(irregular_xts)
+
+# Extract the end date of the series
+end_date <- end(irregular_xts)
+
+# Create a regular date sequence
+regular_index <- seq(start_date, end_date, by="day")
+
+# Create a zero-width xts object
+regular_xts <- xts(, order.by=regular_index)
+
+
+# Merge irregular_xts and regular_xts
+merged_xts <- merge(irregular_xts, regular_xts)
+
+# Look at the first few rows of merged_xts
+head(merged_xts)
+
+# Use the fill argument to fill NA with their previous value
+merged_filled_xts <- merge(irregular_xts, regular_xts, fill=na.locf)
+
+# Look at the first few rows of merged_filled_xts
+head(merged_filled_xts)
+
+
+# Aggregate DFF to monthly
+monthly_fedfunds <- apply.monthly(DFF, FUN=mean)
+
+# Convert index to yearmon
+index(monthly_fedfunds) <- as.yearmon(index(monthly_fedfunds))
+
+# Merge FEDFUNDS with the monthly aggregate
+merged_fedfunds <- merge(FEDFUNDS, monthly_fedfunds)
+
+# Look at the first few rows of the merged object
+head(merged_fedfunds)
+
+
+# Look at the first few rows of merged_fedfunds
+head(merged_fedfunds)
+
+# Fill NA forward
+merged_fedfunds_locf <- na.locf(merged_fedfunds)
+
+# Extract index values containing last day of month
+aligned_last_day <- merged_fedfunds_locf[index(monthly_fedfunds)]
+
+# Fill NA backward
+merged_fedfunds_locb <- na.locf(merged_fedfunds, fromLast=TRUE)
+
+# Extract index values containing first day of month
+aligned_first_day <- merged_fedfunds_locb[index(FEDFUNDS)]
+
+
+# Extract index weekdays
+index_weekdays <- .indexwday(DFF)
+
+# Find locations of Wednesdays
+wednesdays <- which(index_weekdays == 3)
+
+# Create custom end points
+end_points <- c(0, wednesdays, nrow(DFF))
+
+# Calculate weekly mean using custom end points
+weekly_mean <- period.apply(DFF, end_points, FUN=mean)
+
+
+# Create merged object with a Europe/London timezone
+tz_london <- merge(london, chicago)
+
+# Look at tz_london structure
+str(tz_london)
+
+# Create merged object with a America/Chicago timezone
+tz_chicago <- merge(chicago, london)
+
+# Look at tz_chicago structure
+str(tz_chicago)
+
+
+# Create a regular date-time sequence
+regular_index <- seq(as.POSIXct("2010-01-04 09:00"), as.POSIXct("2010-01-08 16:00"), by = "30 min")
+
+# Create a zero-width xts object
+regular_xts <- xts(, order.by=regular_index)
+
+# Merge irregular_xts and regular_xts, filling NA with their previous value
+merged_xts <- merge(irregular_xts, regular_xts, fill=na.locf)
+
+# Subset to trading day (9AM - 4PM)
+trade_day <- merged_xts["T09:00/T16:00"]
+
+
+# Split trade_day into days
+daily_list <- split(trade_day , f = "days")
+
+# Use lapply to call na.locf for each day in daily_list
+daily_filled <- lapply(daily_list, FUN = na.locf)
+
+# Use do.call to rbind the results
+filled_by_trade_day <- do.call(rbind, daily_filled)
+
+
+# Convert raw prices to 5-second prices
+xts_5sec <- to.period(intraday_xts, period = "seconds", k = 5)
+
+# Convert raw prices to 10-minute prices
+xts_10min <- to.period(intraday_xts, period = "minutes", k = 10)
+
+# Convert raw prices to 1-hour prices
+xts_1hour <- to.period(intraday_xts, period = "hours", k = 1)
+
+```
+  
+  
+  
+***
+  
+Chapter 5 - Importing Text Data, Adjusting for Corporate Actions  
+  
+
 
 
 
