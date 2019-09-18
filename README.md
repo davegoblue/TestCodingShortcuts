@@ -1608,4 +1608,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 16-SEP-2019  
 * DataCamp_Insights_v003_c captures Importing and Managing Financial Data R - Chapter 3 (Data from Multiple Sources) - notes  
 * DataCamp_Insights_v003_c captures Importing and Managing Financial Data R - Chapter 4 (Aligning Data with Different Periodicities) - notes  
+* DataCamp_Insights_v003_c captures Importing and Managing Financial Data R - Chapter 5 (Importing Text Data; Adjusting for Corporate Actions) - notes  
   
