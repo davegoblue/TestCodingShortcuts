@@ -49315,8 +49315,214 @@ xts_1hour <- to.period(intraday_xts, period = "hours", k = 1)
   
 Chapter 5 - Importing Text Data, Adjusting for Corporate Actions  
   
+Importing text files:  
+  
+* The getSymbols() can import CSV files, provided that the CSV file matches a specific format - getSymbols(fileName, src="csv", dir=)  
+	* One instrument per file  
+    * Columns are date, open, high, low, close, volume, adjusted close  
+    * Files are named [symbol].csv  
+    * The dir= option can be specified to note that the files are in a specific directory  
+* Alternately, can import text files using read.zoo(), which is a wrapper to read.table()  
+	* Need to specify sep= and also flag header=TRUE (provided that your data has a header)  
+    * Can then run as.xts() on the object that has been returned by read.zoo()  
+* Can handle date and time in different columns as part of the read.zoo() process  
+	* Specify the option index.column=c("dayColumn", "timeColumn")  
+* Can handle data that has multiple instruments (such as bid and ask)  
+	* split=c("Symbol", "Type") will create Symbol1.Type1, Symbol1.Type2, . , SymbolN.TypeN columns  
+  
+Checking for weirdness - missing values and corporate actions:  
+  
+* Missing values are common due to things like holidays - treasuries could be closed while stock markets could be open  
+	* na.locf() - carry the last observation forward to fill NA  
+    * na.approx() - fill NA using linear regression  
+    * na.spline() - fill NA using spline  
+* When there is a large price change, it can be helpful to cross-reference it against a second data source  
+	* The adjusted close price is frequently valuable (Yahoo, but not Google), since it accounts for both splits and dividends  
+    * The adjusted close price can be a more realistic way to assess the return to the investors  
+  
+Adjusting financial time series:  
+  
+* The adjustOHLC() function will use Yahoo Finance data to adjust prices for splits and dividends  
+	* getSymbols("MSFT")  
+    * msft_adjusted <- adjustOHLC(MSFT)  # requires that the symbol and object have the same name  
+    * The symbol.name= option can be set inside adjustOHLC in the event that the ticker and symbol name are not the same  
+    * The adjustment process ensures that the returns are corrected, so it is not quite as simple as Price - Dividend throughout all of history  
+* The splits and dividends can be obtaines using getSplits() and getDividends()  
+	* The adjRatios(splits=, dividends=, close=) function will allow for adjustments for splits and dividends data  
+  
+Wrap up:  
+  
+* Tools for wrangling real-world time series data  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# DO NOT RUN DUE TO NOT HAVING DATA
+
+library(quantmod)
 
 
+getSymbols("AMZN", src="yahoo")
+str(AMZN)
+write.zoo(AMZN, "./RInputFiles/AMZN.csv")
+rm(AMZN)
+
+
+# Load AMZN.csv
+getSymbols("./RInputFiles/AMZN.csv", src="csv")
+
+# Look at AMZN structure
+str(AMZN)
+
+
+# Import AMZN.csv using read.zoo
+amzn_zoo <- read.zoo("./RInputFiles/AMZN.csv", sep = ",", header = TRUE)
+
+# Convert to xts
+amzn_xts <- as.xts(amzn_zoo)
+
+# Look at the first few rows of amzn_xts
+head(amzn_xts)
+
+
+# Read data with read.csv
+une_data <- read.csv("UNE.csv", nrows = 5)
+
+# Look at the structure of une_data
+str(une_data)
+
+# Read data with read.zoo, specifying index columns
+une_zoo <- read.zoo("UNE.csv", index.column = c("Date", "Time"), sep = ",", header = TRUE)
+
+# Look at first few rows of data
+head(une_zoo)
+
+
+# Read data with read.csv
+two_symbols_data <- read.csv("two_symbols.csv", nrows = 5)
+
+# Look at the structure of two_symbols_data
+str(two_symbols_data)
+
+# Read data with read.zoo, specifying index columns
+two_symbols_zoo <- read.zoo("two_symbols.csv", split = c("Symbol", "Type"), sep = ",", header = TRUE)
+
+# Look at first few rows of data
+head(two_symbols_zoo)
+
+
+# fill NA using last observation carried forward
+locf <- na.locf(DGS10)
+
+# fill NA using linear interpolation
+approx <- na.approx(DGS10)
+
+# fill NA using spline interpolation
+spline <- na.spline(DGS10)
+
+# merge into one object
+na_filled <- merge(locf, approx, spline)
+
+# plot combined object
+plot(na_filled, col = c("black", "red", "green"))
+
+
+# Look at the last few rows of AAPL data
+tail(AAPL)
+
+# Plot close price
+plot(Cl(AAPL))
+
+# Plot adjusted close price
+plot(Ad(AAPL))
+
+
+# Look at first few rows of aapl_raw
+head(aapl_raw)
+
+# Look at first few rows of aapl_split
+head(aapl_split_adjusted)
+
+# Plot difference between adjusted close and split-adjusted close
+plot(Ad(aapl_raw) - Cl(aapl_split_adjusted))
+
+# Plot difference between volume from the raw and split-adjusted sources
+plot(Vo(aapl_raw) - Vo(aapl_split_adjusted))
+
+
+# Look at first few rows of AAPL
+head(AAPL)
+
+# Adjust AAPL for splits and dividends
+aapl_adjusted <- adjustOHLC(AAPL)
+
+# Look at first few rows of aapl_adjusted
+head(aapl_adjusted)
+
+
+# The previous exercise taught you how to adjust raw historical OHLC prices for splits and dividends using adjustOHLC()
+# But adjustOHLC() only works for OHLC data
+# It will not work if you only have close prices. adjustOHLC() also does not return any of the split or dividend data it uses.
+
+# You will need the dates and values for each split and dividend if you want to adjust a non-OHLC price series, or if you simply want to analyze the raw split and dividend data.
+
+# You can download the split and dividend data from Yahoo Finance using the quantmod functions getSplits() and getDividends(), respectively
+# Note that the historical dividend data from Yahoo Finance is adjusted for splits
+# If you want to download unadjusted dividend data, you need to set split.adjust = FALSE in your call to getDividends()
+
+# Download AAPL split data
+splits <- getSplits("AAPL")
+
+# Print the splits object
+splits
+
+# Download AAPL dividend data
+dividends <- getDividends("AAPL")
+
+# Look at the first few rows of dividends
+head(dividends)
+
+# Download unadjusted AAPL dividend data
+raw_dividends <- getDividends("AAPL", split.adjust=FALSE)
+
+# Look at the first few rows of raw_dividends
+head(raw_dividends)
+
+
+# Remember that adjustOHLC() only works for OHLC data
+# If you only have close prices, you can use the adjRatios() function to calculate the split and dividend adjustment ratios
+# The adjRatios() function has three arguments: splits, dividends, and close
+# It returns an xts object with two columns, "Split" and "Div", that contain the split and dividend adjustment ratios, respectively
+
+# adjRatios() needs split data in order to calculate the split adjustment ratio
+# You provide split data via the splits argument
+# To calculate the dividend adjustment ratio, you need to supply raw dividends and raw prices to adjRatios(), using the dividends and close arguments, respectively
+
+# Once you have the split and dividend adjustment ratios, calculating the adjusted price is simple
+# You just have to multiply the unadjusted price by both the split and dividend adjustment ratios
+
+# Calculate split and dividend adjustment ratios
+ratios <- adjRatios(splits = splits, dividends = raw_dividends, close = Cl(AAPL))
+
+# Calculate adjusted close for AAPL
+aapl_adjusted <- Cl(AAPL) * ratios[, "Split"] * ratios[, "Div"]
+
+# Look at first few rows of Yahoo adjusted close
+head(Ad(AAPL))
+
+# Look at first few rows of aapl_adjusted
+head(aapl_adjusted)
+
+```
+  
+  
+  
+***
+  
+###_Introduction to Portfolio Analysis in R_  
+  
+Chapter 1 - The Building Blocks  
+  
 
 
 
