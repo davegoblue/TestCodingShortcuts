@@ -1612,4 +1612,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to Text Analysis in R - Chapter 1 (Wrangling Text) - code  
 * DataCamp_Insights_v003_c captures Introduction to Text Analysis in R - Chapter 2 (Visualizing Text) - code  
 * DataCamp_Insights_v003_c captures Introduction to Text Analysis in R - Chapter 3 (Sentiment Analysis) - code  
+* DataCamp_Insights_v003_c captures Introduction to Text Analysis in R - Chapter 4 (Topic Modeling) - code  
   
