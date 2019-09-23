@@ -1614,3 +1614,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to Text Analysis in R - Chapter 3 (Sentiment Analysis) - code  
 * DataCamp_Insights_v003_c captures Introduction to Text Analysis in R - Chapter 4 (Topic Modeling) - code  
   
+### Expansions week of 23-SEP-2019  
+* DataCamp_Insights_v003_c captures Survey and Measure Development in R - Chapter 1 (Preparing to Analyze Survey Data) - code  
+  
