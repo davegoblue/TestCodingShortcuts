@@ -1616,4 +1616,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 23-SEP-2019  
 * DataCamp_Insights_v003_c captures Survey and Measure Development in R - Chapter 1 (Preparing to Analyze Survey Data) - code  
+* DataCamp_Insights_v003_c captures Survey and Measure Development in R - Chapter 2 (EFA and Survey Development) - code  
   
