@@ -1570,10 +1570,10 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to Text Analysis in R - Chapter 4 (Topic Modeling) - notes  
   
 ### Expansions week of 19-AUG-2019  
-* DataCamp_Insights_v003_c captures Survey and Measure Development in R - Chapter 1 (Preparing to Analyze Survey Data) - notes  
-* DataCamp_Insights_v003_c captures Survey and Measure Development in R - Chapter 2 (EFA and Survey Development) - notes  
-* DataCamp_Insights_v003_c captures Survey and Measure Development in R - Chapter 3 (CFA and Construct Validation) - notes  
-* DataCamp_Insights_v003_c captures Survey and Measure Development in R - Chapter 4 (Criterion Validity and Replication) - notes  
+* DataCamp_Insights_v003_c_extend captures Survey and Measure Development in R - Chapter 1 (Prepare to Analyze Survey Data) - notes  
+* DataCamp_Insights_v003_c_extend captures Survey and Measure Development in R - Chapter 2 (EFA and Survey Development) - notes  
+* DataCamp_Insights_v003_c_extend captures Survey and Measure Development in R - Chapter 3 (CFA and Construct Validation) - notes  
+* DataCamp_Insights_v003_c_extend captures Survey and Measure Development in R - Chapter 4 (Criterion Validity and Replication) - notes  
 * DataCamp_Insights_v003_c captures Feature Engineering in R - Chapter 1 (Creating Features from Categorical Data) - code  
 * DataCamp_Insights_v003_c captures Feature Engineering in R - Chapter 2 (Creating Features from Numeric Data) - code  
 * DataCamp_Insights_v003_c captures Feature Engineering in R - Chapter 3 (Transforming Numerical Features) - code  
@@ -1615,6 +1615,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to Text Analysis in R - Chapter 4 (Topic Modeling) - code  
   
 ### Expansions week of 23-SEP-2019  
-* DataCamp_Insights_v003_c captures Survey and Measure Development in R - Chapter 1 (Preparing to Analyze Survey Data) - code  
-* DataCamp_Insights_v003_c captures Survey and Measure Development in R - Chapter 2 (EFA and Survey Development) - code  
+* DataCamp_Insights_v003_c_extend captures Survey and Measure Development in R - Chapter 1 (Preparing to Analyze Survey Data) - code  
+* DataCamp_Insights_v003_c_extend captures Survey and Measure Development in R - Chapter 2 (EFA and Survey Development) - code  
+* DataCamp_Insights_v003_c_extend captures Survey and Measure Development in R - Chapter 3 (CFA and Construct Validation) - code  
   
