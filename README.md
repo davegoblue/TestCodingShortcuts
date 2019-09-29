@@ -1620,5 +1620,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c_extend captures Survey and Measure Development in R - Chapter 3 (CFA and Construct Validation) - code  
 * DataCamp_Insights_v003_c_extend captures Survey and Measure Development in R - Ch 4 (Criterion Validity and Replication) - code  
 * DataCamp_Insights_v003_c captures R for SAS Users - Chapter 1 (Getting Started with R) - code  
-* DataCamp_Insights_v003_c captures R for SAS Users - Chapter 2 (Data Wrangling) - notes  
+* DataCamp_Insights_v003_c captures R for SAS Users - Chapter 2 (Data Wrangling) - code  
+* DataCamp_Insights_v003_c captures R for SAS Users - Chapter 3 (Data Exploration) - code  
   
