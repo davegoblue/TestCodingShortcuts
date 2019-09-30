@@ -1623,3 +1623,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures R for SAS Users - Chapter 2 (Data Wrangling) - code  
 * DataCamp_Insights_v003_c captures R for SAS Users - Chapter 3 (Data Exploration) - code  
   
+### Expansions week of 23-SEP-2019  
+* DataCamp_Insights_v003_c captures R for SAS Users - Chapter 4 (Models and Presentation) - code  
+  
