@@ -1635,4 +1635,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 07-OCT-2019  
 * DataCamp_Insights_v003_c captures Introduction to Portfolio Analysis in R - Chapter 2 (Analyzing Performance) - notes  
 * DataCamp_Insights_v003_c captures Introduction to Portfolio Analysis in R - Chapter 3 (Performance Drivers) - notes  
+* DataCamp_Insights_v003_c captures Introduction to Portfolio Analysis in R - Chapter 4 (Optimizing the Portfolio) - notes  
   
