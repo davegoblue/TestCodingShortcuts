@@ -48989,6 +48989,164 @@ chart.Weights(opt_rebal)
   
 Chapter 3 - Objective Functions and Moment Estimation  
   
+Introduction to Moments:  
+  
+* Typically, there are fairly hard constraints on the assets, constraints, and objectives for the portfolio optimization  
+* However, the moments of asset returns needs to be estimated, which induces estimation error  
+	* First moment - expected returns  
+    * Second moment - variance-covariance  
+    * Third moment - coskewness  
+    * Fourth moment - cokurtosis  
+* Asset Return Moment Estimates can be based on any of the following - risk of error increase with the number of estimates required to be made  
+	* Sample  
+    * Shrinkage Estimators  
+    * Factor Model  
+    * Expressing Views  
+    * Robust Statistics  
+* The set.portfolio.moments(R=, portfolio=, method=) will set the portfolio moments approach - R is returns, portfolio is the portfolio.spec(), method can be one of c("sample", "boudt", "black_litterman", "meucci")  
+  
+Custom Moment Functions:  
+  
+* Needs to accept the arguments R for returns and portfolio for the portfolio specification object  
+* Needs to return a named list with elements $mu, $sigma, $m3, and $m4  
+	* Can use MASS package for mcd (minimum covariance determinant) and mve (minimum volume elipsoid)  
+    * custom_fun <- function(R, portfolio, rob_method="mcd") { out <- list() ; out$sigma <- cov.rob(R, method=rob_method); return(out) }  
+    * optimize.portfolio(R, portfolio, momentFUN="custom_fun", rob_method="mcd")  # for MCD  
+    * optimize.portfolio(R, portfolio, momentFUN="custom_fun", rob_method="mve")  # for MVE  
+  
+Objective Functions:  
+  
+* The objective function in PortfolioAnalytics can be any valid R function  
+	* StdDev() and ES() are two of the most cmmonly used - standard deviation and expected shortfall  
+    * Can also use benchmark-relative functions for optimizations  
+* The custom objective function needs to include R, weights, mu, sigma, m3, m4 as arguments, and should return a single value  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Add a return objective with "mean" as the objective name
+port_spec <- add.objective(portfolio = port_spec, type = "return", name = "mean")
+
+# Calculate the sample moments
+moments <- set.portfolio.moments(R = asset_returns, portfolio = port_spec)
+
+# Check if moments$mu is equal to the sample estimate of mean returns
+moments$mu == colMeans(asset_returns)
+
+# Add a risk objective with "StdDev" as the objective name
+port_spec <- add.objective(portfolio = port_spec, type = "risk", name = "StdDev")
+
+# Calculate the sample moments using set.portfolio.moments. Assign to a variable named moments.
+moments <- set.portfolio.moments(R = asset_returns, portfolio = port_spec)
+
+# Check if moments$sigma is equal to the sample estimate of the variance-covariance matrix
+all.equal(moments$sigma, cov(asset_returns))
+
+
+# Print the portfolio specification object
+print(port_spec)
+
+# Fit a statistical factor model to the asset returns
+fit <- statistical.factor.model(R = asset_returns, k = 3)
+
+# Estimate the portfolio moments using the "boudt" method with 3 factors
+moments_boudt <- set.portfolio.moments(R = asset_returns, portfolio = port_spec, method = "boudt", k = 3)
+
+# Check if the covariance matrix extracted from the model fit is equal to the estimate in `moments_boudt`
+all.equal(moments_boudt$sigma, extractCovariance(fit))
+
+
+# Define custom moment function
+moments_robust <- function(R, portfolio, seed=NULL){
+    out <- list()
+    if (is.null(seed)) {
+        out$sigma <- MASS::cov.rob(R, method = "mcd")$cov
+    } else {
+        out$sigma <- MASS::cov.rob(R, method = "mcd", seed=seed)$cov
+    }
+    out
+}
+
+# Estimate the portfolio moments using the function you just defined 
+moments <- moments_robust(R = asset_returns, portfolio = port_spec)
+
+# Check the moment estimate (will be differences due to RNG)
+all.equal(MASS::cov.rob(asset_returns, method = "mcd")$cov, moments$sigma)
+
+
+# Estimate the portfolio moments using the function you just defined 
+set.seed(19101508)
+moments <- moments_robust(R = asset_returns, portfolio = port_spec)
+
+# Check the moment estimate (no more differences due to same seed)
+set.seed(19101508)
+all.equal(MASS::cov.rob(asset_returns, method = "mcd")$cov, moments$sigma)
+
+
+# Create a portfolio specification object using asset_names
+port_spec <- portfolio.spec(assets=asset_names)
+port_spec <- add.constraint(portfolio = port_spec, type = "full_investment")
+port_spec <- add.constraint(portfolio = port_spec, type = "long_only")
+port_spec <- add.objective(portfolio = port_spec, type = "risk", name = "StdDev")
+port_spec
+
+rpData <- c(0.0769, 0.004, 0.014, 0.02, 0.138, 0.004, 0.008, 0, 0.012, 0.018, 0.062, 0.066, 0.176, 0.25, 0, 0.032, 0.1, 0.002, 0.194, 0.326, 0.004, 0.126, 0, 0.036, 0.304, 0.004, 0.002, 0, 0.036, 0, 0, 0.004, 0.146, 0.04, 0.01, 0.192, 0.272, 0.086, 0.074, 0.026, 0.092, 0.024, 0.102, 0, 0.098, 0.102, 0.14, 0.0769, 0.006, 0.046, 0.016, 0, 0.096, 0.146, 0.594, 0.17, 0.16, 0.324, 0.022, 0, 0.054, 0.01, 0.024, 0, 0.002, 0.168, 0.106, 0, 0.002, 0.012, 0.07, 0, 0.388, 0.114, 0.046, 0, 0.406, 0.046, 0.244, 0.254, 0.114, 0.118, 0.07, 0.012, 0, 0.12, 0.002, 0, 0.014, 0, 0.008, 0.048, 0.072, 0.07, 0.0769, 0.02, 0.162, 0.01, 0.014, 0.066, 0, 0.032, 0.002, 0.01, 0.092, 0.026, 0.016, 0, 0.074, 0, 0.012, 0.598, 0.032, 0, 0.042, 0.048, 0.424, 0, 0, 0, 0.622, 0.002, 0.006, 0, 0.036, 0.034, 0, 0.088, 0.002, 0.126, 0.034, 0.07, 0.01, 0.002, 0.17, 0.54, 0.108, 0.002, 0.008, 0.016, 0.124, 0.0769, 0.03, 0.138, 0, 0, 0.096, 0.004, 0, 0, 0, 0.008, 0.05, 0, 0, 0.002, 0.022, 0.018, 0.004, 0.052, 0.02, 0.032, 0.004, 0, 0, 0, 0.276, 0.012, 0.028, 0, 0.004, 0, 0.052, 0, 0, 0.006, 0.034, 0.158, 0, 0.002, 0.004, 0.028, 0.174, 0, 0.178, 0.13, 0.066, 0.054, 0.0769, 0.02, 0.012, 0.014, 0.242, 0.072, 0.54, 0.022, 0.032, 0.07, 0.006, 0, 0.002, 0.02, 0, 0.014, 0.132, 0, 0.05, 0, 0.002, 0.074, 0.004, 0.082, 0, 0.024, 0.008, 0.02, 0.088, 0.168, 0.24, 0.158, 0.116, 0.132, 0.002, 0.022, 0.006, 0.004, 0.008, 0.008, 0.054, 0.01, 0, 0, 0.118, 0.448, 0.18, 0.0769, 0.004, 0.01, 0.116, 0, 0.248, 0.036, 0.208, 0, 0.178, 0.008, 0.16, 0, 0.108, 0, 0.028, 0.048, 0, 0.052, 0, 0.068, 0, 0.25, 0.114, 0.214, 0.044, 0.006, 0.082, 0.76, 0.144, 0.282, 0.028, 0.074, 0.044, 0.598, 0.164, 0.226, 0, 0.264, 0.052, 0.152, 0.002, 0.054, 0.618, 0.552, 0.014, 0, 0.0769, 0, 0.614, 0.484, 0, 0.006, 0, 0.002, 0, 0.07, 0, 0.196, 0.056, 0.004, 0, 0.47, 0, 0, 0.076, 0, 0.18, 0.008, 0.07, 0, 0, 0, 0.04, 0.002, 0, 0.028, 0.016, 0.006, 0.032, 0.002, 0, 0.174, 0.034, 0, 0.04, 0.006, 0, 0.034, 0.014, 0.092, 0.012, 0.112, 0.114, 0.0769, 0.752, 0, 0.116, 0.494, 0.142, 0, 0.138, 0.54, 0.004, 0.004, 0.072, 0, 0.43, 0.212, 0.058, 0.36, 0.014, 0.002, 0, 0.012, 0.308, 0.066, 0.47, 0, 0.002, 0.004, 0.32, 0.004, 0.032, 0.008, 0.036, 0.002, 0.012, 0.008, 0.056, 0.186, 0, 0.286, 0.02, 0, 0.018, 0.02, 0.028, 0, 0.018, 0.008, 0.0769, 0, 0.004, 0.026, 0, 0.086, 0.14, 0, 0.006, 0, 0.266, 0.004, 0.126, 0.02, 0.066, 0.136, 0, 0, 0.006, 0.08, 0.53, 0.006, 0.024, 0, 0.336, 0.002, 0.018, 0.174, 0, 0.032, 0, 0.09, 0.018, 0.022, 0.04, 0.038, 0.006, 0.508, 0, 0.008, 0.076, 0.01, 0.084, 0.012, 0.008, 0.026, 0.012, 0.0769, 0, 0, 0, 0.012, 0.016, 0.026, 0, 0.012, 0.132, 0, 0.008, 0.196, 0, 0, 0, 0.01, 0, 0.002, 0, 0.084, 0.042, 0.01, 0.018, 0.106, 0.24, 0.032, 0.018, 0.008, 0.088, 0.01, 0.088, 0, 0.014, 0.016, 0.048, 0.026, 0.124, 0.006, 0.13, 0.184, 0.038, 0.256, 0.03, 0.024, 0.028, 0.002, 0.0769, 0.004, 0, 0.186, 0, 0.006, 0.036, 0, 0.054, 0, 0.032, 0.254, 0, 0.112, 0.602, 0.03, 0.01, 0.078, 0.038, 0.454, 0.012, 0.034, 0.07, 0.21, 0, 0.01, 0.006, 0.282, 0, 0.068, 0.002, 0.236, 0.038, 0.044, 0.018, 0.072, 0.026, 0.028, 0.078, 0.134, 0.16, 0.13, 0.064, 0, 0, 0.004, 0.05, 0.0769, 0.002, 0, 0.01, 0, 0.154, 0.056, 0.004, 0.05, 0.204, 0.022, 0.12, 0, 0.002, 0.034, 0.154, 0.016, 0.288, 0.238, 0.004, 0.02, 0.284, 0.056, 0, 0, 0.008, 0.114, 0.004, 0.086, 0.012, 0.102, 0.02, 0.314, 0.092, 0.182, 0.002, 0.012, 0, 0.106, 0.258, 0.032, 0, 0.298, 0.032, 0, 0.08, 0.098, 0.0769, 0.158, 0, 0.002, 0.1, 0.008, 0.008, 0, 0.122, 0.154, 0.176, 0.022, 0.428, 0, 0, 0.032, 0.294, 0.014, 0.09, 0.01, 0.014, 0.064, 0.014, 0, 0.04, 0.002, 0.022, 0.022, 0.012, 0.018, 0.258, 0.004, 0.006, 0.396, 0, 0.002, 0.002, 0.18, 0.006, 0.35, 0.052, 0.006, 0, 0, 0.002, 0.014, 0.148)
+
+rp <- matrix(rpData, ncol=13)
+rp <- t(apply(rp, 1, FUN=function(x) { x/sum(x) }))
+dimnames(rp) <- list(NULL, nameData)
+str(rp)
+
+
+# Run the optimization with custom moment estimates
+opt_custom <- optimize.portfolio(R = asset_returns, portfolio = port_spec, 
+                                 optimize_method = "random", rp = rp, momentFUN = "moments_robust"
+                                 )
+
+# Print the results of the optimization with custom moment estimates
+print(opt_custom)
+
+# Run the optimization with sample moment estimates
+opt_sample <- optimize.portfolio(R = asset_returns, portfolio = port_spec, 
+                                 optimize_method = "random", rp = rp
+                                 )
+
+# Print the results of the optimization with sample moment estimates
+print(opt_sample)
+
+
+# Custom annualized portfolio standard deviation
+pasd <- function(R, weights, sigma, scale = 12){
+    sqrt(as.numeric(t(weights) %*% sigma %*% weights)) * sqrt(scale)
+}
+
+# Add custom objective to portfolio specification
+port_spec <- add.objective(portfolio = port_spec, type = "risk", name = "pasd")
+
+# Print the portfolio specificaton object
+port_spec
+
+set_sigma <- function(R){
+  out <- list()
+  out$sigma <- cov(R)
+  out
+}
+
+opt <- optimize.portfolio(R = asset_returns, portfolio = port_spec, momentFUN = set_sigma, 
+                          optimize_method = "random", rp = rp
+                          )
+
+# Print the results of the optimization
+print(opt)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Application  
+  
 
 
 
