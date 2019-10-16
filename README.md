@@ -1644,4 +1644,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 14-OCT-2019  
 * DataCamp_Insights_v003_c captures Intermediate Portfolio Analysis in R - Chapter 1 (Introduction to Portfolio Theory) - notes  
 * DataCamp_Insights_v003_c captures Intermediate Portfolio Analysis in R - Chapter 2 (Portfolio Optimization Workflow) - notes  
+* DataCamp_Insights_v003_c captures Intermediate Portfolio Analysis in R - Chapter 3 (Objective Functions and Moment Estimation) - notes  
   
