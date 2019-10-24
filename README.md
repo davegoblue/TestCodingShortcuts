@@ -1654,4 +1654,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Bond Valuation and Analysis in R - Chapter 4 (Comprehensive Example) - notes  
 * DataCamp_Insights_v003_c captures Importing and Managing Financial Data R - Chapter 1 (Introduction and Downloading Data) - code  
 * DataCamp_Insights_v003_c captures Importing and Managing Financial Data R - Chapter 2 (Extracting and Transforming Data) - code  
+* DataCamp_Insights_v003_c captures Intermediate R for Finance - Chapter 1 (Dates) - code  
   
