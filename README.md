@@ -1659,3 +1659,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Intermediate R for Finance - Chapter 3 (Loops) - code  
 * DataCamp_Insights_v003_c captures Intermediate R for Finance - Chapter 4 (Functions) - code  
   
+### Expansions week of 28-OCT-2019  
+* DataCamp_Insights_v003_c captures Intermediate R for Finance - Chapter 5 (Apply) - code  
+  
