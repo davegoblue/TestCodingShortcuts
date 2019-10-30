@@ -1662,4 +1662,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 28-OCT-2019  
 * DataCamp_Insights_v003_c captures Intermediate R for Finance - Chapter 5 (Apply) - code  
 * DataCamp_Insights_v003_c captures Equity Valuation in R - Chapter 1 (Present Value Approaches) - notes  
+* DataCamp_Insights_v003_c captures Equity Valuation in R - Chapter 2 (Perpetuity Growth Rate, Analyzing Projections, Dividend Discount Model) - notes  
   
