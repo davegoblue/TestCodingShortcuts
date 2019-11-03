@@ -1666,4 +1666,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Equity Valuation in R - Chapter 3 (Discount Rate and Cost of Capital) - notes  
 * DataCamp_Insights_v003_c captures Equity Valuation in R - Chapter 4 (Relative Valuation) - notes  
 * DataCamp_Insights_v003_c captures Equity Valuation in R - Chapter 5 (Comprehensive Valuation) - notes  
+* DataCamp_Insights_v003_c captures Credit Risk Modeling in R - Chapter 1 (Introduction and Data Pre-Processing) - notes  
   
