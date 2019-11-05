@@ -50667,6 +50667,226 @@ acc_cloglog <- sum(diag(tab_class_cloglog)) / nrow(test_set)
   
 Chapter 3 - Decision Trees  
   
+Background - decision trees tend to be popular due to the ease of interpretation:  
+  
+* For each node of the tree, there are two possible splitting decisions, and grouping needs to be found  
+* Tree nodes are defined based on "impurity", commonly calculated using the Gini measure  
+	* Gini = 2 * P(yes) * P(no) within the node  
+    * Purity gain is often defined as the change (weighted) in purity in moving down the split  
+    * Algorithms frequently look for the greatest gain in purity to decide on the splitting variable and cutoffs  
+  
+Building decision trees using rpart:  
+  
+* The rpart::rpart() function will build decision trees automatically, though this is not always great for unbalanced data if using the default values  
+* There are three potential techniques for overcoming the imbalances  
+	* Undersampling (of common events) or oversampling (of rare events) in the training set can help  
+    * Changing the prior probabilities (making the rare event look more common) can also be helpful  
+    * The rpart::rpart() will allow for a loss matrix, where a greater penalty can be given to missing on the rare event  
+* The validation (test) set is vital for any of these techniques, since there is a high risk that there will be training set artifacts  
+  
+Pruning decision trees:  
+  
+* Large decision trees can be both hard to interpret and subject to significant over-fitting  
+* The R packages have both printcp() and plotcp() to help drive better pruning  
+	* The printcp() can show the cross-validated errors in a column xerror  
+    * The plotcp() can show the cross-validation error as a function of the complexity parameter, cp  
+* The function prunt(myTree, cp=) will prune a tree based on the provided parameter  
+	* plot(myPruneTree, uniform=TRUE)  
+    * text(myPruneTree, use.n=TRUE)  # the use.n means the resulting categories for the leaf are shown  
+* More intuitive plots are available using rpart.plot::prp()  
+	* prp(myPruneTree, extra=1)  # the extra=1 asks for detail about membership by leaf to be shown  
+  
+Other tree options and confusion matrices:  
+  
+* One argument in rpart is weights, allowing for case weights to counter imbalance  
+* The rpart.control() function has many parameters that can be adjusted, including  
+	* cp - the complexity parameter  
+    * minsplit - the minimum number of elements in a node to consider splitting (default is 20)  
+    * minbucket - minimum number of elements in a leaf node  
+* Can use predict(myPruneTree, newdata=, type="class") to make predictions using the final tree  
+	* Omitting the type="class" will instead provide probabilities based on the proportions inside the leaf values  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# As a small reminder, remember that Gini of a certain node = 2 * proportion of defaults in this node * proportion of non-defaults in this node. Have a look at the code for a refresher.
+# gini_root <- 2 * (89 / 500) * (411 / 500)
+
+# Look at the following code to get an idea of how you can use the gini measures you created to calculate the gain of a node.
+# Gain = gini_root - (prop(cases left leaf) * gini_left) - (prop(cases right leaf * gini_right))
+
+
+ssStatus <- c(0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0)
+ssAge <- c(48, 36, 35, 33, 46, 24, 35, 33, 41, 49, 47, 44, 54, 42, 26, 50, 41, 30, 17, 34, 37, 41, 41, 33, 39, 40, 40, 55, 45, 45, 45, 49, 47, 29, 42, 42, 60, 40, 52, 50, 45, 39, 38, 41, 37, 43, 49, 54, 50, 55, 18, 44, 43, 36, 49, 30, 51, 38, 42, 38, 47, 39, 57, 56, 33, 51, 45, 53, 48, 37, 40, 51, 23, 22, 52, 57, 41, 33, 42, 43, 45, 26, 57, 40, 37, 40, 54, 40, 43, 45, 43, 45, 34, 57, 53, 46, 52, 35, 27, 39, 47, 23, 50, 43, 40, 56, 40, 44, 44, 42, 41, 43, 31, 35, 48, 50, 43, 29, 36, 35, 53, 37, 51, 39, 43, 60, 51, 28, 25, 50, 46, 37, 55, 43, 28, 49, 29, 53, 48, 51, 33, 35, 41, 27, 39, 47, 33, 53, 42, 56, 46, 46, 43, 52, 48, 33, 47, 55, 36, 56, 33, 44, 29, 47, 43, 54, 47, 54, 29, 22, 32, 34, 35, 36, 52, 32, 39, 57, 47, 40, 29, 51, 54, 48, 34, 35, 51, 38, 38, 31, 47, 41, 60, 42, 43, 49, 41, 35, 44, 49, 36, 46, 45, 43, 43, 43, 48, 37, 40, 48, 48, 48, 54, 37, 39, 41, 49, 47, 42, 42, 56, 49, 48, 51, 16, 43, 38, 48, 54, 47, 39, 51, 44, 46, 48, 37, 41, 33, 45, 43, 31, 44, 36, 44, 36, 12, 48, 40, 47, 38, 36, 52, 41, 36, 33, 45, 58, 44, 54, 37, 56, 29, 34, 44, 46, 46, 47, 40, 52, 36, 44, 49, 61, 55, 28, 39, 45, 40, 57, 41, 53, 39, 45, 33, 43, 38, 59, 42, 22, 47, 40, 44, 31, 13, 58, 43, 53, 45, 45, 51, 41, 51, 47, 45, 12, 46, 55, 31, 57, 41, 22, 33, 56, 36, 42, 38, 41, 49, 46, 41, 39, 51, 45, 48, 44, 47, 43, 24, 36, 51, 45, 40, 32, 54, 41, 37, 41, 40, 38, 28, 33, 47, 42, 45, 48, 52, 40, 45, 40, 30, 44, 49, 50, 32, 46, 40, 54, 50, 44, 48, 26, 41, 43, 47, 52, 47, 48, 53, 42, 50, 47, 43, 36, 41, 50, 41, 41, 35, 46, 45, 59, 15, 37, 41, 47, 56, 36, 41, 21, 27, 25, 53, 48, 50, 47, 53, 49, 57, 40, 43, 47, 52, 52, 44, 52, 44, 37, 61, 42, 37, 41, 50, 31, 40, 50, 43, 39, 44, 49, 49, 43, 54, 41, 43, 44, 47, 33, 47, 52, 66, 54, 53, 57, 38, 44, 45, 23, 52, 38, 36, 49, 38, 53, 45, 60, 45, 46, 41, 23, 41, 38, 26, 46, 37, 42, 42, 36, 46, 55, 50, 47, 41, 54, 44, 49, 35, 38, 43, 33, 39, 37, 41, 45, 38, 45, 25, 33, 46, 43, 38, 43, 45, 34, 42, 37, 55, 44, 50, 33, 40, 61, 18, 46, 41, 43, 38, 21, 35, 45, 55)
+small_set <- data.frame(status=ssStatus, age=ssAge)
+str(small_set)
+
+small_tree <- rpart::rpart(formula = status ~ age, data = small_set, method = "class", 
+                           control = rpart::rpart.control(minsplit = 5, cp = 0.001, maxdepth = 1)
+                           )
+
+
+# The Gini-measure of the root node is given below
+gini_root <- 2 * 89 / 500 * 411 / 500
+
+# Compute the Gini measure for the left leaf node
+gini_ll <- 2 * (401/446) * (45/446)
+
+# Compute the Gini measure for the right leaf node
+gini_rl <- 2 * (10/54) * (44/54)
+
+# Compute the gain
+gain <- gini_root - 446 / 500 * gini_ll - 54 / 500 * gini_rl
+
+# compare the gain-column in small_tree$splits with our computed gain, multiplied by 500, and assure they are the same
+small_tree$splits
+improve <- gain * 500
+
+
+set.seed(1911041357)
+usDef <- training_set %>%
+    filter(loan_status==1)
+usOK <- training_set %>%
+    filter(loan_status==0) %>%
+    sample_n(size=2*nrow(usDef))
+undersampled_training_set <- rbind(usDef, usOK)
+str(undersampled_training_set)
+
+
+# Change the code provided in the video such that a decision tree is constructed using the undersampled training set. Include rpart.control to relax the complexity parameter to 0.001.
+tree_undersample <- rpart::rpart(loan_status ~ ., method = "class", data = undersampled_training_set, 
+                                 control = rpart::rpart.control(cp = 0.001)
+                                 )
+
+# Plot the decision tree
+plot(tree_undersample, uniform=TRUE)
+
+# Add labels to the decision tree
+text(tree_undersample)
+
+
+# Change the code below such that a tree is constructed with adjusted prior probabilities.
+tree_prior <- rpart::rpart(loan_status ~ ., method = "class", data = training_set, 
+                           parms = list(prior=c(0.7, 0.3)), control = rpart::rpart.control(cp = 0.001)
+                           )
+
+# Plot the decision tree
+plot(tree_prior, uniform=TRUE)
+
+# Add labels to the decision tree
+text(tree_prior)
+
+
+# Change the code below such that a decision tree is constructed using a loss matrix penalizing 10 times more heavily for misclassified defaults.
+tree_loss_matrix <- rpart::rpart(loan_status ~ ., method = "class", data =  training_set, 
+                                 parms = list(loss = matrix(c(0, 10, 1, 0), ncol=2)), 
+                                 control = rpart::rpart.control(cp = 0.001)
+                                 )
+
+# Plot the decision tree
+plot(tree_loss_matrix, uniform=TRUE)
+
+# Add labels to the decision tree
+text(tree_loss_matrix)
+
+
+# Plot the cross-validated error rate as a function of the complexity parameter
+rpart::plotcp(tree_prior)
+
+# Use printcp() to identify for which complexity parameter the cross-validated error rate is minimized.
+rpart::printcp(tree_prior)
+
+# Create an index for of the row with the minimum xerror
+index <- which.min(tree_prior$cptable[ , "xerror"])
+
+# Create tree_min
+tree_min <- tree_prior$cptable[index, "CP"]
+
+#  Prune the tree using tree_min
+ptree_prior <- rpart::prune(tree_prior, cp = tree_min)
+
+# Use prp() to plot the pruned tree
+rpart.plot::prp(ptree_prior)
+
+
+# set a seed and run the code to construct the tree with the loss matrix again
+set.seed(345)
+tree_loss_matrix  <- rpart::rpart(loan_status ~ ., method = "class", data = training_set,
+                                  parms = list(loss=matrix(c(0, 10, 1, 0), ncol = 2)),
+                                  control = rpart::rpart.control(cp = 0.001)
+                                  )
+
+# Plot the cross-validated error rate as a function of the complexity parameter
+rpart::plotcp(tree_loss_matrix)
+
+# Prune the tree using cp = 0.0012788
+ptree_loss_matrix <- rpart::prune(tree_loss_matrix, cp = 0.0012788)
+
+# Use prp() and argument extra = 1 to plot the pruned tree
+rpart.plot::prp(ptree_loss_matrix, extra=1)
+
+
+# set a seed and run the code to obtain a tree using weights, minsplit and minbucket
+set.seed(345)
+case_weights <- ifelse(training_set$loan_status==0, 1, 3)
+
+tree_weights <- rpart::rpart(loan_status ~ ., method = "class", 
+                             data = training_set, weights = case_weights,
+                             control = rpart::rpart.control(minsplit = 5, minbucket = 2, cp = 0.001)
+                             )
+
+# Plot the cross-validated error rate for a changing cp
+rpart::plotcp(tree_weights)
+
+# Create an index for of the row with the minimum xerror
+# index <- which.min(tree_weights$cp[ , "xerror"])
+index <- 1 + tree_weights$cp %>% 
+    as.data.frame() %>% 
+    slice(2:nrow(.)) %>% 
+    pull(xerror) %>% 
+    which.min()
+
+# Create tree_min
+tree_min <- tree_weights$cp[index, "CP"]
+
+# Prune the tree using tree_min
+ptree_weights <- rpart::prune(tree_weights, cp=tree_min)
+
+# Plot the pruned tree using the rpart.plot()-package
+rpart.plot::prp(ptree_weights, extra=1)
+
+
+ptree_undersample <- rpart::rpart(formula = loan_status ~ ., data = undersampled_training_set, 
+                                  method = "class", control = rpart::rpart.control(cp = 0.001)
+                                  )
+
+# Make predictions for each of the pruned trees using the test set.
+pred_undersample <- predict(ptree_undersample, newdata = test_set,  type = "class")
+pred_prior <- predict(ptree_prior, newdata = test_set,  type = "class")
+pred_loss_matrix <- predict(ptree_loss_matrix, newdata = test_set,  type = "class")
+pred_weights <- predict(ptree_weights, newdata = test_set,  type = "class")
+
+# construct confusion matrices using the predictions.
+confmat_undersample <- table(test_set$loan_status, pred_undersample)
+confmat_prior <- table(test_set$loan_status, pred_prior)
+confmat_loss_matrix <- table(test_set$loan_status, pred_loss_matrix)
+confmat_weights <- table(test_set$loan_status, pred_weights)
+
+# Compute the accuracies
+(acc_undersample <- sum(diag(confmat_undersample)) / nrow(test_set))
+(acc_prior <- sum(diag(confmat_prior)) / nrow(test_set))
+(acc_loss_matrix <- sum(diag(confmat_loss_matrix)) / nrow(test_set))
+(acc_weights <- sum(diag(confmat_weights)) / nrow(test_set))
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Evaluating Credit Risk Models  
+  
+
 
 
 
