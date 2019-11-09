@@ -1674,4 +1674,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Credit Risk Modeling in R - Chapter 4 (Evaluating Credit Risk Models) - notes  
 * DataCamp_Insights_v003_c captures Financial Trading in R - Chapter 1 (Trading Basics) - notes  
 * DataCamp_Insights_v003_c captures Financial Trading in R - Chapter 2 (Boilerplate quantsrat Strategies) - notes  
+* DataCamp_Insights_v003_c captures Financial Trading in R - Chapter 3 (Indicators) - notes  
   
