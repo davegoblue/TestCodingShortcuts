@@ -51684,6 +51684,9 @@ Exploring other risk factors - commodities prices and zero-coupon bonds data:
 Example code includes:  
 ```{r eval=FALSE}
 
+library(xts)
+library(zoo)
+
 # Load DJ index
 data(DJ, package='qrmdata')
 
@@ -51872,6 +51875,239 @@ lines(maturity, zcb[nrow(zcb), ])
   
 Chapter 2 - Real World Returns are Riskier than Normal  
   
+Normal distribution - if risk returns follow GBM, than log-returns would be normal:  
+  
+* The normal distribution (bell curve) depends on a well known formula containing mu and sigma - N(mu, sigma-squared)  
+	* The sum of independent normal variables is itself normally dsitributed  
+* The Central Limit Theorem (CLT) says that the dsitribution of the sum of many iid trials will itself by normally dsitributed (even if the underlying iid distribution is decidedly non-normal)  
+* The "method of moments" is used to estimate the sample mean and the sample variance  
+	* The sigma-squared-hat with a mu subscript is the unbiased estimator (divide by n-1)  
+    * The sigma-squared-hat with no subscript is the maximum likelihood estimator (divide by n)  
+  
+Testing for normality:  
+  
+* The Q-Q test is a graphical test for normality, so the reference distribution is the standard normal  
+	* Q-Q plots can use other reference distributions  
+    * qqnorm(myData)  
+    * qqline(myData)  # qqnorm should tend to fall along the line at all quantiles  
+  
+Skewness, kurtosis, Jarque-Bera test:  
+  
+* The Jarque-Bera test is based on skewness and kurtosis  
+	* The skewness (b) is the third moment, a measure of its asymmetry (b=0 for normal distribution) - moments::skewness()  
+    * The kurtosis (k) is the fourth moment, a measure of its heavy tails (k=3 for normal distribution) - moments::kurtosis()  
+* The Jarque-Bera test compares both skewness and kurtosis using a single test statistic, T  
+	* T = N/6 * (b**2 + 0.25*(k-3)**2)  # uses a chi-squared with 2 degrees of freedom  
+    * moments::jarque.test(myData)  
+* Daily returns tend to be very non-normal, but the CLT suggests that the sum of these returns may become increasingly normal  
+  
+Student t-distribution:  
+  
+* The Student t-distribution has mu, sigma, and df and tends to be better for smaller data sets  
+	* With df at infinite, the student t-distribution becomes the normal distribution (df is also called nu) ; for nu less than 4, the kurtosis is infinite  
+    * The maximum likelihood method can be found using QRM::fit.st() - the $par.ests will have the parameters  
+* Due to some vagaries in how the dt() function is implemented in R, converting for a known mu, sigma, and nu  
+	* dt((myData - mu)/sigma, df=nu) / sigma  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Calculate average and standard deviation of djx
+djx <- as.vector(diff(log(DJ['2008/2009'])))
+djx <- sort(djx[2:length(djx)])
+str(djx)
+
+mu <- mean(djx)
+sigma <- sd(djx)
+
+# Plot histogram of djx
+hist(djx, nclass=20, probability=TRUE)
+
+# Add the normal density as a red line to histogram
+lines(djx, dnorm(djx, mean=mu, sd=sigma), col = "red")
+
+# Plot non-parametric KDE of djx
+plot(density(djx))
+
+# Add the normal density as red line to KDE
+lines(djx, dnorm(djx, mean=mu, sd=sigma), col = "red")
+
+
+# Make a Q-Q plot of djx and add a red line
+qqnorm(djx)
+qqline(djx, col="red")
+
+# Calculate the length of djx as n
+n <- length(djx)
+
+# Generate n standard normal variables, make a Q-Q plot, add a red line
+x1 <- rnorm(n)
+qqnorm(x1)
+qqline(x1, col="red")
+
+# Generate n Student t variables, make a Q-Q plot, add a red line
+x2 <- rt(n, df = 4)
+qqnorm(x2)
+qqline(x2, col="red")
+
+# Generate n standard uniform variables, make a Q-Q plot, add red line
+x3 <- runif(n)
+qqnorm(x3)
+qqline(x3, col="red")
+
+
+dj0811 <- DJ_const["2008/2011"]
+djreturns <- diff(log(dj0811))[2:nrow(dj0811), !(names(dj0811) %in% c("V"))]
+str(djreturns)
+
+# Calculate average and standard deviation of djx
+djx <- as.vector(diff(log(DJ['2008/2011'])))
+djx <- sort(djx[2:length(djx)])
+str(djx)
+
+# Calculate skewness and kurtosis of djx
+moments::skewness(djx)
+moments::kurtosis(djx)
+
+# Carry out a Jarque-Bera test for djx
+moments::jarque.test(djx)
+
+# Calculate skewness and kurtosis of djreturns 
+s <- apply(djreturns, 2, FUN=moments::skewness)
+k <- apply(djreturns, 2, FUN=moments::kurtosis)
+
+# Plot k against s and add text labels to identify stocks
+plot(s, k, type="n")
+text(s, k, names(s), cex = 0.6)
+
+# Carry out Jarque-Bera tests for each constituent in djreturns
+apply(djreturns, 2, FUN=moments::jarque.test)
+
+
+dj0015 <- DJ_const["2000/2015"]
+djx_d <- diff(log(dj0015))[2:nrow(dj0015), !(names(dj0015) %in% c("V"))]
+str(djx_d)
+
+# Calculate weekly and monthly log-returns from djx_d
+djx_w <- apply.weekly(djx_d, FUN=colSums)
+djx_m <- apply.monthly(djx_d, FUN=colSums)
+
+# Calculate the p-value for each series in djx_d
+apply(djx_d, 2, function(v){moments::jarque.test(v)$p.value})
+
+# Calculate the p-value for each series in djx_w
+apply(djx_w, 2, function(v){moments::jarque.test(v)$p.value})
+
+# Calculate the p-value for each series in djx_m
+apply(djx_m, 2, function(v){moments::jarque.test(v)$p.value})
+
+
+# Calculate average and standard deviation of djx
+djx <- diff(log(DJ))['2008/2011']
+str(djx)
+
+# When you aggregate series by summing daily log-returns into longer intervals, you analyze a smaller amount of observations
+# To preserve the quantity of data, you can calculate overlapping returns with the rollapplyr() function; this also creates strong correlations between observations
+
+# There are 5 trading days in the average calendar week
+# By computing the 5-day moving sums of the log-returns of daily index data, you obtain approximate overlapping weekly returns ending on each calendar week
+# Similarly, calculating 21-day moving sums gives approximate overlapping monthly returns, and calculating 63-day moving sums gives approximate overlapping quarterly returns
+
+# Calculate a 21-day moving sum of djx
+djx21 <- rollapplyr(djx, width=21, FUN=sum)[-(1:20)]
+
+# Calculate a 63-day moving sum of djx
+djx63 <- rollapplyr(djx, width=63, FUN=sum)[-(1:62)]
+
+# Merge the three series and plot
+djx2 <- merge(djx, djx21, djx63, all=FALSE)
+plot.zoo(djx2)
+
+# Compute the skewness and kurtosis for each series in djx2
+apply(djx2, 2, FUN=moments::skewness)
+apply(djx2, 2, FUN=moments::kurtosis)
+
+# Conduct the Jarque-Bera test to each series in djx2
+apply(djx2, 2, FUN=moments::jarque.test)
+
+
+djx <- sort(as.vector(djx))
+str(djx)
+
+# Fit a Student t distribution to djx
+tfit <- QRM::fit.st(djx)
+
+# Define tpars, nu, mu, and sigma
+tpars <- tfit$par.ests
+nu <- tpars["nu"]
+mu <- tpars["mu"]
+sigma <- tpars["sigma"]
+
+# Plot a histogram of djx
+hist(djx, nclass = 20, probability = TRUE, ylim = range(0, 40))
+
+# Compute the fitted t density at the values djx
+yvals <- dt((djx - mu)/sigma, df = nu)/sigma
+
+# Superimpose a red line to show the fitted t density
+lines(djx, yvals, col = "red")
+
+
+data(JPY_USD, package="qrmdata")
+USD_JPY <- 1/JPY_USD
+fx_d <- diff(log(merge(GBP_USD, EUR_USD, USD_JPY, all = TRUE)))['2001/2015']
+str(fx_d)
+
+# Plot the daily log-return series in fx_d
+plot.zoo(fx_d)
+
+# Apply the Jarque-Bera test to each of the series in fx_d
+apply(fx_d, 2, FUN=moments::jarque.test)
+
+fx_m <- apply.monthly(fx_d, FUN=colSums)
+str(fx_m)
+
+# Plot the monthly log-return series in fx_m
+plot.zoo(fx_m, type="h")
+
+# Apply the Jarque-Bera test to each of the series in fx_m
+apply(fx_m, 2, FUN=moments::jarque.test)
+
+# Fit a Student t distribution to each of the series in fx_m
+apply(fx_m, 2, function(v){QRM::fit.st(v)$par.ests})
+
+
+zcbx_m <- apply.monthly(zcb_x['2006/2015', c("1.00y", "5.00y", "10.00y")], 2, FUN=colSums)
+str(zcbx_m)
+zcb_x2 <- 100 * diff(zcb)
+zcbx2_m <- apply.monthly(zcb_x2['2006/2015', c("1.00y", "5.00y", "10.00y")], 2, FUN=colSums)
+str(zcbx2_m)
+
+# Plot the interest-rate return series zcbx_m and zcbx2_m
+plot.zoo(zcbx_m, type="h")
+plot.zoo(zcbx2_m, type="h")
+
+# Make Q-Q plots of the 3rd component series of zcbx_m and zcbx2_m
+qqnorm(zcbx_m[, 3])
+qqnorm(zcbx2_m[, 3])
+
+# Compute the kurtosis of each series in zcbx_m and zcbx2_m
+apply(zcbx_m, 2, FUN=moments::kurtosis)
+apply(zcbx2_m, 2, FUN=moments::kurtosis)
+
+# Conduct the Jarque-Bera test on each series in zcbx_m and zcbx2_m
+apply(zcbx_m, 2, FUN=moments::jarque.test)
+apply(zcbx2_m, 2, FUN=moments::jarque.test)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Real World Returns are Volatile and Correlated  
+  
+
 
 
 
