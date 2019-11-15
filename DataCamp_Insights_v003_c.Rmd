@@ -52107,6 +52107,248 @@ apply(zcbx2_m, 2, FUN=moments::jarque.test)
   
 Chapter 3 - Real World Returns are Volatile and Correlated  
   
+Characteristics of volatile return series:  
+  
+* Investigation of whether financial returns can be modeled as iid - "random walk model" (implication that past prices cannot be used to predict future behavior)  
+* Can compare real returns with iid data derived from either normal distributions or t-distributions  
+	* Clear differences between real data and modeled data - real data have "volatility clustering"  
+    * The "volatility clustering" is valuable for risk management as well as for prediction of future volatility  
+  
+Estimating serial correlations:  
+  
+* With serial dependencies, existing volatility is suggestive of continued volatility  
+	* The sample acf with lag k can help to estimate the behavior -- denoted as rho-hat(k)  
+    * The sample acf assumes that the series has the property of stationarity  
+* The sample acf plot (coorelogram) gives the acf for various lags of k - blue dashed lines are 95% confidence bounds for the correlation estimates  
+	* Note that k=0 will trivially have correlation of 1  
+    * acf(abs(x)) may reveal things that are not shown by acf(x) - sign changes can hide the serial dependencies  
+  
+The Ljung-Box test - numerical test of squared sample autocorrelations up to a value of k-lags:  
+  
+* When including k lags, the value of the test statistic is compared with the chi-squared distribution of the same degree of freedom  
+	* Should be carried out on either the returns or the abosolute value of the returns (which are often where the volatility are clustered)  
+    * Box.test(myData, lag=, type="Ljung")  # the type="Ljung" gets Box-Ljung while the type="Box" gets the Pierce test  
+* Generally, the closer the data get to normal (e.g., quarterly or monthly or perhaps weekly rather than daily), the significance of the Box-Ljung test will go away  
+  
+Looking at extremes in volatile return series:  
+  
+* Can be interesting just to look at days with extreme returns - for example, where the log-returns are less than -0.025  
+	* Tend to be clusters of extreme values on these dimensions around the times of large stock market changes - very different behavior from iid  
+  
+Stylised facts of return series:  
+  
+* Properties observed in equities are broadly consistent across other asset classes - commonly called the "stylized facts"  
+	* Return series tend to be heavier-tailed than normal distributions (leptokurtic)  
+    * Volatility of return series appears to vary over time  
+    * Return series tend to show very little serial correlation  
+    * Absolute values of return series tend to show protfound serial correlation  
+    * Extreme returns appear in clusters  
+    * Returns aggregated over longer time periods tend to become more normally distributed and less serially dependent  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+djx <- diff(log(DJ))['2008/2011']
+str(djx)
+
+npars <- c(mu=-8.150765e-05, sigma=1.643593e-02)
+
+# Compute the length n of djx 
+n <- length(djx)
+
+#  Generate a normal sample of size n with parameters given by npars
+ndata <- rnorm(n)*npars[2] + npars[1]
+
+# Generate a t-distributed sample of size n with paramaters given by tpars
+tdata <- rt(n, df = tpars[1])*tpars[3] + tpars[2]
+
+# Make ndata and tdata into xts objects
+ndatax <- xts(ndata, time(djx))
+tdatax <- xts(tdata, time(djx))
+
+# Merge djx, ndatax, and tdatax and plot
+alldata <- merge(djx, ndatax, tdatax)
+plot.zoo(alldata, type="h", ylim = range(alldata))
+
+
+# Set up a plot region to show 3 plots at a time
+par(mfrow = c(3, 1))
+
+# Plot the acfs of djx, ndata and tdata
+acf(djx)
+acf(ndatax)
+acf(tdatax)
+
+# Plot the acfs of the absolute values
+acf(abs(djx))
+acf(abs(ndatax))
+acf(abs(tdatax))
+
+# Plot the acfs of the squares of the values
+acf(djx**2)
+acf(ndatax**2)
+acf(tdatax**2)
+
+par(mfrow = c(1, 1))
+
+
+dj0715 <- DJ_const["2007/2015"]
+djall <- diff(log(dj0715))[2:nrow(dj0715), !(names(dj0715) %in% c("V"))]
+str(djall)
+
+# Apply the Ljung-Box test to djx
+Box.test(djx, lag = 10, type = "Ljung")
+
+# Apply the Ljung-Box test to absolute values of djx
+Box.test(abs(djx), lag = 10, type = "Ljung")
+
+# Apply the Ljung-Box test to all return series in djall
+apply(djall, 2, Box.test, lag = 10, type = "Ljung")
+
+# Apply the Ljung-Box test to absolute values of all returns in djall
+apply(abs(djall), 2, Box.test, lag = 10, type = "Ljung")
+
+
+# Create monthly log-returns from djx
+djx_m <- apply.monthly(djx, FUN=sum)
+
+# Apply Ljung-Box tests to raw and absolute values of djx_m
+Box.test(djx_m, lag = 10, type = "Ljung")
+Box.test(abs(djx_m), lag = 10, type = "Ljung")
+
+# Create monthly log-returns from djall
+djall_m <- apply.monthly(djall, FUN=colSums)
+
+# Apply Ljung-Box tests to raw and absolute values of djall_m
+apply(djall_m, 2, Box.test, lag = 10, type = "Ljung")
+apply(abs(djall_m), 2, Box.test, lag = 10, type = "Ljung")
+
+
+# When you take a long series of iid data, such as several thousand observations, and select a small subset of the most extreme observations, like less than 100, then these extremes appear at random and the spaces or gaps between the extremes follow a distribution that is very close to exponential
+# When we carry out the same exercise for a volatile financial log-return series then the extremes appear in clusters during periods of high volatility
+# This is another feature of real log-return data that we need to take account of when building models
+
+# In this exercise, you will investigate the irregular time series djx_extremes which contains the 100 most extreme negative log-returns of the Dow Jones index between 1985 and 2015
+# You will compare it with iid_extremes which contains the 100 most extreme values in an iid series of the same length as djx_extremes
+# To do this, you will use the object exp_quantiles, which contains 100 theoretical quantiles of the standard exponential distribution
+# These can be used to construct a Q-Q plot of each dataset against the exponential reference distribution
+
+djx_extremes <- diff(log(DJ))
+keyCut <- sort(as.vector(djx_extremes), decreasing=TRUE)[100]
+djx_extremes <- djx_extremes[as.vector(djx_extremes) >= keyCut]
+str(djx_extremes)
+summary(djx_extremes)
+
+exp_quantiles <- c(0.005013, 0.015114, 0.025318, 0.035627, 0.046044, 0.05657, 0.067209, 0.077962, 0.088831, 0.09982, 0.110932, 0.122168, 0.133531, 0.145026, 0.156654, 0.168419, 0.180324, 0.192372, 0.204567, 0.216913, 0.229413, 0.242072, 0.254892, 0.267879, 0.281038, 0.294371, 0.307885, 0.321584, 0.335473, 0.349557, 0.363843, 0.378336, 0.393043, 0.407968, 0.42312, 0.438505, 0.45413, 0.470004, 0.486133, 0.502527, 0.519194, 0.536143, 0.553385, 0.57093, 0.588787, 0.606969, 0.625489, 0.644357, 0.663588, 0.683197, 0.703198, 0.723606, 0.74444, 0.765718, 0.787458, 0.809681, 0.832409, 0.855666, 0.879477, 0.903868, 0.92887, 0.954512, 0.980829, 1.007858, 1.035637, 1.064211, 1.093625, 1.12393, 1.155183, 1.187444, 1.22078, 1.255266, 1.290984, 1.328025, 1.366492, 1.406497, 1.44817, 1.491655, 1.537117, 1.584745, 1.634756, 1.687399, 1.742969, 1.80181, 1.86433, 1.931022, 2.002481, 2.079442, 2.162823, 2.253795, 2.353878, 2.465104, 2.590267, 2.733368, 2.900422, 3.101093, 3.352407, 3.688879, 4.199705, 5.298317)
+iid_extremes <- xts(c(2.485179, 2.335036, 2.348495, 2.609534, 2.571431, 2.505418, 3.436557, 2.306443, 2.406384, 2.249789, 2.699147, 2.384733, 2.462003, 2.825771, 2.658806, 2.696008, 2.484846, 2.253926, 2.390248, 2.753181, 3.026417, 2.305134, 2.365227, 2.499355, 2.844757, 2.290955, 3.048307, 2.906714, 2.536778, 2.574244, 2.740777, 2.259236, 2.247154, 2.338442, 2.597085, 2.435009, 2.905871, 2.211387, 2.807309, 2.76335, 2.505434, 2.512933, 2.655662, 2.362114, 2.300621, 2.635403, 2.554976, 2.255644, 2.397592, 2.214528, 2.391973, 2.72426, 2.926669, 2.213251, 2.576326, 2.249265, 2.402427, 2.678113, 2.243226, 2.513481, 2.961663, 2.597378, 2.498836, 2.983134, 2.234179, 2.769461, 2.288106, 2.465069, 2.236144, 2.732343, 2.610239, 2.432895, 2.319882, 2.215825, 2.606343, 3.282729, 2.437939, 3.132531, 2.231877, 2.391024, 2.441499, 2.389186, 2.319438, 2.926213, 2.457484, 3.396832, 2.288507, 2.240025, 2.696893, 2.541371, 2.410939, 2.51565, 2.660812, 2.378425, 2.274061, 2.544918, 2.236294, 2.569099, 3.256515, 2.428861), order.by=as.Date(c(5569, 5626, 5702, 6047, 6052, 6216, 6405, 6532, 6570, 6641, 6734, 6873, 7061, 7223, 7239, 7328, 7474, 7484, 7621, 7644, 7972, 8048, 8103, 8202, 8617, 9049, 9175, 9244, 9456, 9482, 9527, 9618, 9631, 9735, 9776, 9794, 9944, 10071, 10114, 10347, 10378, 10424, 10450, 10834, 10990, 11052, 11103, 11235, 11410, 11421, 11473, 11515, 11557, 11571, 11620, 11845, 11913, 11919, 12116, 12118, 12430, 12454, 12628, 12653, 13266, 13278, 13430, 13458, 13614, 13635, 13747, 13780, 13907, 13958, 14202, 14322, 14355, 14698, 14806, 14866, 15100, 15104, 15156, 15247, 15350, 15496, 15966, 15967, 16001, 16016, 16128, 16140, 16226, 16261, 16279, 16484, 16637, 16651, 16770, 16797))
+                    )
+str(exp_quantiles)
+str(iid_extremes)
+
+
+# Partition plotting area into 3 pieces
+par(mfrow = c(1, 3))
+
+# Plot djx_extremes
+plot(djx_extremes, type="h")
+
+# Compute the spaces between the times of the extremes
+djx_spaces <- diff(time(djx_extremes))
+
+# Make a histogram of these spaces
+hist(as.numeric(djx_spaces))
+
+# Make a Q-Q plot of djx_spaces against exp_quantiles
+qqplot(exp_quantiles, djx_spaces)
+
+# Carry out the previous 4 steps for iid_extremes
+plot(iid_extremes, type="h")
+iid_spaces <- diff(time(iid_extremes))
+hist(as.numeric(iid_spaces))
+qqplot(exp_quantiles, iid_spaces)
+
+par(mfrow = c(1, 1))
+
+
+# When the function acf() is applied to a multivariate time series, we obtain a matrix of plots with the usual sample acf plots on the diagonal, and plots of the correlations between different series at different lags off the diagonal.
+
+data(FTSE, package='qrmdata')
+data(SMI, package='qrmdata')
+
+dj_i <- diff(log(DJ))['2005/2015']
+ftse_i <- diff(log(FTSE))['2005/2015']
+smi_i <- diff(log(SMI))['2005/2015']
+
+indexes <- merge(dj_i, ftse_i, smi_i, all = FALSE)
+str(indexes)
+
+
+# Make a time series plot of indexes with plot.zoo and a pairwise scatterplot with pairs
+plot.zoo(indexes)
+pairs(as.zoo(indexes))
+
+# Calculate the sample correlation matrix of indexes
+cor(indexes)
+
+# Plot the sample acfs and cross-correlation functions for the returns in indexes
+acf(indexes)
+
+# Plots the sample acfs and cross-correlations functions for the absolute values of indexes
+acf(abs(indexes))
+
+
+data(CHF_USD, package="qrmdata")
+fx <- diff(log(merge(GBP_USD, EUR_USD, USD_JPY, CHF_USD, all = TRUE)))['2011/2015']
+str(fx)
+fx_w <- apply.weekly(fx, FUN=colSums)
+str(fx_w)
+
+# Plot fx and fx_w
+plot.zoo(fx, type="h")
+plot.zoo(fx_w, type="h")
+
+# Make acf plots of fx and the absolute values of fx
+acf(fx)
+acf(abs(fx))
+
+# Apply the Ljung-Box test to the components of fx and their absolute values
+apply(fx, 2, Box.test, lag = 10, type = "Ljung")
+apply(abs(fx), 2, Box.test, lag = 10, type = "Ljung")
+
+# Make acf plots of fx_w and the absolute values of fx_w
+acf(fx_w)
+acf(abs(fx_w))
+
+# Apply the Ljung-Box test to the components of fx_w and their absolute values
+apply(fx_w, 2, Box.test, lag = 10, type = "Ljung")
+apply(abs(fx_w), 2, Box.test, lag = 10, type = "Ljung")
+
+
+# Make acf plots of zcb_x and the absolute values of zcb_x
+acf(zcb_x[-1, c("1.00y", "5.00y", "10.00y")])
+acf(abs(zcb_x[-1, c("1.00y", "5.00y", "10.00y")]))
+
+# Apply the Ljung-Box test to the components of zcb_x and their absolute values
+apply(zcb_x[-1, c("1.00y", "5.00y", "10.00y")], 2, FUN=Box.test, lag=10, type="Ljung")
+apply(abs(zcb_x[-1, c("1.00y", "5.00y", "10.00y")]), 2, FUN=Box.test, lag=10, type="Ljung")
+
+# Make acf plots of zcbx_m and the absolute values of zcbx_m
+acf(zcbx_m)
+acf(abs(zcbx_m))
+
+# Apply the Ljung-Box test to the components of zcbx_m and their absolute values
+apply(zcbx_m, 2, FUN=Box.test, lag=10, type="Ljung")
+apply(abs(zcbx_m), 2, FUN=Box.test, lag=10, type="Ljung")
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Estimating Portfolio value-at-risk (VaR)  
+  
+
 
 
 
