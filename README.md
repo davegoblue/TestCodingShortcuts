@@ -1682,4 +1682,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Financial Trading in R - Chapter 6 (Analyzing Results) - notes  
 * DataCamp_Insights_v003_c captures Quantitative Risk Management in R - Chapter 1 (Exploring Market Risk-Factor Data) - notes  
 * DataCamp_Insights_v003_c captures Quantitative Risk Management in R - Ch 2 (Real World Returns are Riskier than Normal) - notes  
+* DataCamp_Insights_v003_c captures Quantitative Risk Management in R - Chapter 3 (Real World Returns are Volatile and Correlated) - notes  
   
