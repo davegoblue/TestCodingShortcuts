@@ -52348,8 +52348,277 @@ apply(abs(zcbx_m), 2, FUN=Box.test, lag=10, type="Ljung")
   
 Chapter 4 - Estimating Portfolio value-at-risk (VaR)  
   
+Value-at-risk and expected shortfall:  
+  
+* Consider the distribution of losses over a fixed time period (such as two weeks) with no rebalancing  
+	* The risk measure is just a statistic for the loss distribution - common to take a quantile (99.5% or 99% or 95%) for the tails  
+    * The alpha-VaR is the alpha-quantile for the loss distribution (alpha is also known as the confidence level)  
+    * The loss distribution is estimated based on historical data  
+* Expected shortfall (ES) is becoming increasingly important in banking  
+	* Tail VaR (TVaR), conditional VaR (cVaR), or expected shortfall (ES)  
+    * alpha-ES is the expected loss given that the loss exceeds alpha-VaR  
+  
+International equity portfolio:  
+  
+* Example of UK investor with 30% FTSE, 40% S&P 500, 30% SMI (Swiss)  
+	* 5 risk factors - FTSE, S&P 500, SMI, GBP/USD, GBP/CHF  
+    * Can look at each of the individualized risk factors first, using the log-returns method  
+* Historical simulation allows for estimating data - non-parametric approach involving resampling of past data  
+	* Resample historical risk-factor returns and examine their impact on the current portfolio  
+    * Loss operator shows effect of different risk-factor returns on the portfolio - for the specific portfolio and at the specific point in time  
+    * VaR and ES can then be estimated based on the sample quantiles of the resampled data  
+  
+Option portfolio and Black-Scholes:  
+  
+* European options have a strike price K at a future time T - call is the right to buy at price K, put is the right to sell at price K  
+	* Price depends on current price S, interest rate r, time to maturity T-t, and annualized volatility sigma  
+    * Black-Scholes was designed to price options assuming normal distributions over returns  
+    * Option is said to be "in the money" if it would be exercised at its current price  
+* Estimating volatility for options pricing models is challenging - typically, an "implied volatility" is assumed  
+	* The quoted option prices suggest how the market is pricing volatility at the current point in time  
+    * The VIX index from the CBOE is one of the measures of applied volatility for options traded on the S&P 500  
+    * The implied volatility is itself a very volatile measurement  
+  
+Historical simulation for the option example:  
+  
+* When an option is valued using Black-Scholes, changes in any of S, sigma, or r will change the price of the underlying option  
+	* For this example, assume that r remains constant and that a single day has passed  
+  
+Wrap up:  
+  
+* Enhnacements include serial dependence for risk calculations (improve VaR and ES through volatility clustering) - filtered historical simulation with GARCH or EWMA  
+* Improvements are available for both calculating VaR and ES - small sample sizes are especially risky, and can be improved using parametric-tailed methods (extreme value theory)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# The standard function qnorm() calculates quantiles of a normal distribution from the probability p, the mean, and standard deviation, and thus can be used to calculate value-at-risk (VaR)
+# The function ESnorm() from the QRM package calculates the expected shortfall (ES) for a normal distribution from the probability p, location parameter mu, and scale parameter sd:
+# qnorm(p, mean = 0, sd = 1)
+# ESnorm(p, mu = 0, sd = 1)
+
+par(mfrow=c(1, 1))
+par(mfcol=c(1, 1))
+
+mu <- mean(diff(log(DJ))['2008/2009'])
+sigma <- sd(diff(log(DJ))['2008/2009'])
+
+# Make a sequence of 100 x-values going from -4*sigma to 4*sigma
+xvals <- seq(from = -4*sigma, to = 4*sigma, length.out = 100)
+
+# Compute the density of a N(mu, sigma^2) distribution at xvals
+ndens <- dnorm(xvals, mean = mu, sd = sigma)
+
+# Plot ndens against xvals
+plot(xvals, ndens, type="l")
+
+# Compute the 99% VaR and 99% ES of a N(mu, sigma^2) distribution
+VaR99 <- qnorm(0.99, mean=mu, sd=sigma)
+ES99 <- QRM::ESnorm(0.99, mu=mu, sd=sigma)
+
+# Draw vertical lines at VaR99 and ES99 in red and green
+abline(v = VaR99, col = "red")
+abline(v = ES99, col = "green")
 
 
+data(SP500, package="qrmdata")
+data(CHF_GBP, package="qrmdata")
+data(USD_GBP, package="qrmdata")
+ftse_r <- FTSE['2000/2012']
+smi_r <- SMI['2000/2012']
+sp500_r <- SP500['2000/2012']
+usdgbp_r <- USD_GBP['2000/2012']
+chfgbp_r <- CHF_GBP['2000/2012']
+riskfactors <- merge(ftse_r, sp500_r, smi_r, usdgbp_r, chfgbp_r, all=FALSE)
+str(riskfactors)
+
+
+# Plot the risk-factor data
+plot.zoo(riskfactors)
+
+# Calculate the log-returns, assign to returns, and plot
+returns <- diff(log(riskfactors))[-1, ]
+plot.zoo(returns)
+
+# Use apply() to carry out the Jarque-Bera test for all 5 series
+apply(returns, 2, FUN=moments::jarque.test)
+
+# Make a Q-Q plot against normal for the 5th return series and add a reference line
+qqnorm(returns[, 5])
+qqline(returns[, 5])
+
+# Make a picture of the sample acfs for returns and their absolute values
+acf(returns)
+acf(abs(returns))
+
+
+# For different vectors of log-returns for the 5 risk factors, the function lossop() computes the loss or gain incurred by the investor when her total wealth is 1
+# The function can also be applied to a 5-dimensional time series of log-returns to obtain a time series of historically-simulated losses and gains corresponding to each vector of log-returns in the time series.
+# The function lossop() is the so-called loss operator for the portfolio and has been specially written for this exercise
+# In general, for each new portfolio, a specific function has to be written to compute portfolio losses and gains.
+
+lossop <- function(xseries,wts=c(0.3,0.4,0.3)){
+    if (is.xts(xseries)) x <- coredata(xseries)
+    else if (is.matrix(xseries)) x <- xseries
+    else x <- matrix(xseries,nrow=1)
+    ll <- apply(x, 1, 
+                function(x, wts) {
+                    1-(wts[1]*exp(x[1]) + wts[2]*exp(x[2]+x[4]) + wts[3]*exp(x[3]+x[5]))
+                    }, 
+                wts=wts
+                )
+    if (is.xts(xseries)) ll <- xts(ll,time(xseries))
+    ll
+}
+
+
+# Calculate the loss from a log-return of -0.1 for all risk factors
+lossop(rep(-0.1, 5))
+
+# Apply lossop() to returns and plot hslosses
+hslosses <- lossop(returns)
+plot(hslosses)
+
+# Form a Q-Q plot of hslosses against normal
+qqnorm(hslosses)
+
+# Plot the sample acf of hslosses and their absolute values
+acf(hslosses)
+acf(abs(hslosses))
+
+
+# Estimate the 99th sample percentile of the distribution of hslosses
+quantile(hslosses, 0.99)
+
+# Estimate the 99% ES
+mean(hslosses[hslosses >= quantile(hslosses, 0.99)])
+
+# Estimate the mean and standard deviation of hslosses
+mu <- mean(hslosses)
+sigma <- sd(hslosses)
+
+# Compute the 99% quantile of a normal distribution
+qnorm(p=0.99, mean=mu, sd=sigma)
+
+# Compute the 99% ES of a normal distribution
+QRM::ESnorm(p=0.99, mu=mu, sd=sigma)
+
+
+# DO NOT HAVE package qrmtools
+# Set the interest rate r to be 0.01, the volatility sigma to be 0.2 and the strike K to be 100
+# r <- 0.01
+# sigma <- 0.2
+# K <- 100
+
+# Look at the arguments of the Black_Scholes function
+# args(qrmtools::Black_Scholes)
+
+# Price a European call option that matures in one year if the current stock price is 80
+# qrmtools::Black_Scholes(0, S=80, r, sigma, K, 1, "call")
+
+# Price a European call option that matures in one year if the current stock price is 120
+# qrmtools::Black_Scholes(0, S=120, r, sigma, K, 1, "call")
+
+# Price a European put option that matures in one year if the current stock price is 80
+# qrmtools::Black_Scholes(0, S=80, r, sigma, K, 1,"put")
+
+# Price a European put option that matures in one year if the current stock price is 120
+# qrmtools::Black_Scholes(0, S=120, r, sigma, K, 1,"put")
+
+
+data(VIX, package="qrmdata")
+sp500_r <- SP500['1990/2010']
+vix_r <- VIX['1990/2010']
+riskfactors <- merge(sp500_r, vix_r, all=FALSE)
+str(riskfactors)
+returns <- diff(log(riskfactors))[-1, ]
+str(returns)
+
+
+# Plot the risk factors and the log-returns
+plot.zoo(riskfactors)
+plot.zoo(returns)
+
+# Make a scatterplot of the two return series
+plot(as.matrix(returns))
+
+# Apply the Jarque-Bera test to the returns and make a Q-Q plot of the volatility log-returns
+apply(returns, 2, FUN=moments::jarque.test)
+qqnorm(returns[, "X.VIX"])
+
+# Create the sample acf of the returns and absolute returns
+acf(returns)
+acf(abs(returns))
+
+# Calculate the correlation between the log-returns
+cor(returns)
+
+
+# DO NOT HAVE package qrmtools
+# lossop <- function(xseries,r=0.01, K=100, T=1, sigma=0.2,S=100){
+#   if (is.xts(xseries))
+#     x <- coredata(xseries)
+#   else if (is.matrix(xseries))
+#     x <- xseries
+#   else
+#     x <- matrix(xseries,nrow=1)
+#   ll <- apply(x,1,function(x,r,K,T,sigma,S){
+#     deltat <- 1/250
+#     V_t0 <- Black_Scholes(0, S, r, sigma, K, T, "call")
+#     V_t1 = Black_Scholes(deltat, exp(log(S)+x[1]), r, exp(log(sigma)+x[2]), K, T, "call")
+#     - (V_t1 - V_t0)/V_t0
+#   },
+#               r=r,K=K,T=T,sigma=sigma,S=S)
+#   if (is.xts(xseries))
+#     ll <- xts(ll,time(xseries))
+#   ll
+# }
+
+
+# Calculate the first loss
+# lossop(c(-0.1, -0.1), S=80, sigma=0.2)
+
+# Calculate the second loss
+# lossop(c(-0.1, 0.1), S=100, sigma=0.2)
+
+# Create and plot hslosses
+# hslosses <- lossop(returns, S=100, sigma=0.2)
+# plot.zoo(hslosses)
+
+# Form a Q-Q plot of hslosses against normal
+# qqnorm(hslosses)
+
+# Plot the sample acf of raw data and absolute values in hslosses
+# acf(hslosses)
+# acf(abs(hslosses))
+
+
+# Estimate the 99.5% percentile of the distribution
+# quantile(hslosses, 0.995)
+
+# Estimate the 99.5% ES
+# mean(hslosses[hslosses >= quantile(hslosses, 0.995)])
+
+# Estimate the mean and standard deviation of hslosses
+# mu <- mean(hslosses)
+# sigma = sd(hslosses)
+
+# Compute the 99.5% quantile of a normal distribution
+# qnorm(p=0.995, mean=mu, sd=sigma)
+
+# Compute the 99.5% ES of a normal distribution
+# QRM::ESnorm(p=0.995, mu=mu, sd=sigma)
+
+```
+  
+  
+  
+***
+  
+###_Valuation of Insurance Products in R_  
+  
+Chapter 1 - Valuation of Cash Flows  
+  
 
 
 
