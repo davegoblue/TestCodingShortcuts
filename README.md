@@ -1684,4 +1684,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Quantitative Risk Management in R - Ch 2 (Real World Returns are Riskier than Normal) - notes  
 * DataCamp_Insights_v003_c captures Quantitative Risk Management in R - Chapter 3 (Real World Returns are Volatile and Correlated) - notes  
 * DataCamp_Insights_v003_c captures Quantitative Risk Management in R - Chapter 4 (Estimating Portfolio Value at Risk - VaR) - notes  
+* DataCamp_Insights_v003_c captures Valuation of Insurance products in R - Chapter 1 (Valuation of Cash flows) - notes  
   
