@@ -52748,6 +52748,221 @@ K
   
 Chapter 2 - Life Tables  
   
+Random future lifetime - often used to express future life/mortality for a policyholder of age X:  
+  
+* The random variable T(x) is used to express the future lifetime of X, with X + T(X) being the distribution of the possible ages at death  
+* The Human Mortality Data at www.mortality.org have life tables for a number of countries  
+	* The variable q(x) is used to define the mortality rate at age x; p(x) = 1 - q(x) is defined as the survival probability at age x  
+    * The column qx runs from age 0 to age n, so element t reflects mortality at age t-1  
+    * The life expectancy at age X, E[T(X)], is stored in the variable ex -- this is future years of life remaining  
+  
+Binomial experiments - q(x) and p(x):  
+  
+* The lx variable in life_table assumes that 100000 females were born in 1999 and looks at how many of them would still be alive at various ages  
+	* sims <- rbinom(n=length(lx), size=lx, prob=px)  
+    * The kPx variable can be derived as l(x+k) / l(x)  
+  
+Calculating probabilities:  
+  
+* Can multiply probabilities over smaller time periods to get the overall probability (assuming the underlying probabilities are independent)  
+	* prod(px[t1:t2]) or cumprod(px[t1:t2])  
+* The "deferred mortality probability" is the likelihood that someone survives for k years and then dies in the next year  
+	* # 5-year deferred mortality probability of (65)  
+    * prod(px[(65 + 1):(69 + 1)]) * qx[70 + 1] # results will be 0.02086664  
+  
+Calculating life expectancies:  
+  
+* The "curtate future lifetime" is the number of whole years lived in to the future - sum from k=1 to infinite of kPx  
+	* # one-year survival probabilities  
+    * head(px[(35 + 1):length(px)]) # 0.99883 0.99896 0.99902 0.99879 0.99887 0.99824  
+    * # k-year survival probabilities of (35)  
+    * kp35 <- cumprod(px[(35 + 1):length(px)])  
+    * head(kp35) # 0.9988300 0.9977912 0.9968134 0.9956072 0.9944822 0.9927319  
+    * # curtate expected future lifetime of (35)  
+    * sum(kp35) # 43.53192  
+* As a rule of thumb, total life expectancy is curtate life expectancy plus half a year (on average, will die middle of a year) - curtate is only the expected whole number of years (floor) lived from today  
+  
+Dynamics - mortality has been changing over time, and tables are published regularly:  
+  
+* Can have mortality rates as a matrix, with ages as the rows and years as the columns  
+	* Can use the vertical columns to calculate the cumulative mortality  
+    * Alternately, can use the diagonals, to reflect that as people get older by a year, the calendar year also advances by a year  
+    * The diagnonal approach is more accurate but also requires estimates for future mortality rates (complicated and subject to much research)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# The mortality rates have been obtained from the Human Mortality Database and are stored in the data set life_table
+
+life_table_1841_2015 <- read_csv2("./RInputFiles/life_table_females.csv")
+life_table_1999 <- read_csv2("./RInputFiles/life_table_females_1999.csv")
+str(life_table_1841_2015)
+str(life_table_1999)
+
+life_table <- life_table_1999
+
+# Inspect life_table using str(), head() and tail()
+str(life_table)
+head(life_table)
+tail(life_table)
+
+# Define age, qx and ex
+age <- life_table$age
+qx <- life_table$qx
+ex <- life_table$ex
+lx <- life_table$lx
+dx <- life_table$dx
+px <- 1 - qx
+
+# The probability that (18) dies before turning 19
+qx[age==18]
+
+# The expected future lifetime of (18)
+ex[age==18]
+
+
+par(mfrow=c(1, 1))
+par(mfcol=c(1, 1))
+
+# Plot the female mortality rates in the year 1999
+plot(age, qx, main = "Mortality rates (Belgium, females, 1999)", 
+     xlab = "Age x", ylab = expression(paste("Mortality rate ", q[x])), type = "l"
+     )
+
+# Plot the logarithm of the female mortality rates in the year 1999
+plot(age, log(qx), main = "Log mortality rates (Belgium, females, 1999)", 
+    xlab = "Age x", ylab = expression(paste("Log mortality rate ", log(q[x]))), type = "l"
+    )
+
+
+# Compute the probabilty for (0) to reach the age 100
+lx[101] / lx[1]
+
+# Compute the probabilty for (18) to reach the age 100
+lx[101] / lx[19]
+
+# Plot the survival probabilties for (18) up to age 100
+k <- 0:82
+plot(k, lx[19+k]/lx[19], pch = 20, xlab = "k", 
+     ylab = expression(paste(""[k], "p"[18])), main = "Survival probabilities for (18)"
+     )
+
+
+# Plot the number of deaths dx by age
+plot(age, dx, type = "h", pch = 20, xlab = "Age x", 
+     ylab = expression("d"[x]), main = "Number of deaths (Belgium, females, 1999)"
+     )
+
+# Simulate the number of deaths using a binomial distribution
+sims <- rbinom(n = length(lx), size = lx, prob = qx)
+  
+# Plot the simulated number of deaths on top of the previous graph
+points(age, sims, pch = 4, col = "red")
+
+
+# Calculate the probability that (18) survives 5 more years
+prod(px[(18+1):(18+5)])
+
+# Compute the survival probabilities of (18) until the age of 100
+kpx <- cumprod(px[(18+1):(100)])
+
+# Extract the probability that (18) survives until the age of 100
+kpx[length(kpx)]
+
+# Plot the probabilties for (18) to reach the age of 19, 20, ..., 100
+plot(1:length(kpx), kpx, pch = 20, xlab = "k", 
+     ylab = expression(paste(""[k], "p"[18])), main = "Survival probabilities for (18)"
+     )
+
+
+# Compute the survival probabilities of (18)
+kpx <- c(1, cumprod(px[(18+1):(length(px) - 1)]))
+
+# Compute the deferred mortality probabilities of (18)
+kqx <- kpx * qx[(18+1):length(px)]
+
+# Print the sum of kqx
+sum(kqx)
+
+# Plot the deferred mortality probabilities of (18)
+plot(0:(length(kqx)-1), kqx, pch = 20, xlab = "k", 
+     ylab = expression(paste(""['k|'], "q"[18])), main = "Deferred mortality probabilities of (18)"
+     )
+
+
+# Survival probabilities and curtate expected future lifetime of (0)
+kp0 <- cumprod(px)
+sum(kp0)
+
+# Survival probabilities and curtate expected future lifetime of (18)
+kp18 <- cumprod(px[(18+1):length(px)])
+sum(kp18)
+
+# Complete expected future lifetime of (0) and (18)
+ex[c(1, 19)]
+
+
+# Function to compute the curtate expected future lifetime for a given age and life table
+curtate_future_lifetime <- function(age, life_table) {
+    px <- 1 - life_table$qx
+    kpx <- cumprod(px[(age+1):length(px)])
+    sum(kpx)
+}
+
+# Vector of ages
+ages <- life_table$age
+
+# Curtate future lifetimes for all ages
+future_lifetimes <- sapply(ages, FUN=curtate_future_lifetime, life_table)
+
+# Future lifetime by age
+plot(ages, future_lifetimes, type = 'l', lwd = 2, col = "green", 
+     xlab = "Age x", ylab = "Future lifetime", main = "Future lifetime by age"
+     )
+
+
+# Explore life_table
+life_table <- life_table_1841_2015
+str(life_table)
+head(life_table)
+range(life_table$year)
+
+# Plot the logarithm of the female mortality rates for (18) by year
+with(subset(life_table, age == 18), 
+     plot(year, log(qx), type = "l", main = "Log mortality rates (Belgium, females, 18-year-old)", 
+          xlab = "Year t", ylab = expression(paste("Log mortality rate ", log(q[18])))
+          )
+     )
+
+# Plot the logarithm of the female mortality rates in the year 1950 by age
+with(subset(life_table, year==1950), 
+     plot(age, log(qx), type = "l", main = "Log mortality rates (Belgium, females, 1950)",
+          xlab = "Age x", ylab = expression(paste("Log mortality rate ", log(q[x])))
+          )
+     )
+
+
+# Construct and print the cohort life table for birth year 1981
+life_table_1981 <- subset(life_table, year-age == 1981)
+life_table_1981
+
+# 1981 cohort one-year survival probabilities
+px <- 1 - life_table_1981$qx
+
+# 1981 cohort survival probability that (18) survives 5 more years
+prod(px[(18+1):(18+5)])
+
+# 1881 cohort survival probability that (18) survives 5 more years
+with(subset(life_table, year - age == 1881), prod(1 - qx[(18 + 1):(22 + 1)]))
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Life Annuities  
+  
 
 
 
