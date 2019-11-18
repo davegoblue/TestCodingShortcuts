@@ -1686,3 +1686,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Quantitative Risk Management in R - Chapter 4 (Estimating Portfolio Value at Risk - VaR) - notes  
 * DataCamp_Insights_v003_c captures Valuation of Insurance products in R - Chapter 1 (Valuation of Cash flows) - notes  
   
+### Expansions week of 18-NOV-2019  
+* DataCamp_Insights_v003_c captures Valuation of Insurance products in R - Chapter 2 (Life Tables) - notes  
+  
