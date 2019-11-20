@@ -1689,4 +1689,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 18-NOV-2019  
 * DataCamp_Insights_v003_c captures Valuation of Insurance products in R - Chapter 2 (Life Tables) - notes  
 * DataCamp_Insights_v003_c captures Valuation of Insurance products in R - Chapter 3 (Life Annuities) - notes  
+* DataCamp_Insights_v003_c captures Valuation of Insurance products in R - Chapter 4 (Life Insurances) - notes  
   
