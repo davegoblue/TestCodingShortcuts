@@ -1692,4 +1692,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Valuation of Insurance products in R - Chapter 4 (Life Insurances) - notes  
 * DataCamp_Insights_v003_c captures Intermediate Portfolio Analysis in R - Chapter 1 (Introduction to Portfolio Theory) - code  
 * DataCamp_Insights_v003_c captures Intermediate Portfolio Analysis in R - Chapter 2 (Portfolio Optimization Workflow) - code  
+* DataCamp_Insights_v003_c captures Intermediate Portfolio Analysis in R - Ch 3 (Objective Functions and Moment Estimation) - code  
   
