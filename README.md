@@ -1695,3 +1695,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Intermediate Portfolio Analysis in R - Ch 3 (Objective Functions and Moment Estimation) - code  
 * DataCamp_Insights_v003_c captures Intermediate Portfolio Analysis in R - Chapter 4 (Application) - code  
   
+### Expansions week of 18-NOV-2019  
+* DataCamp_Insights_v003_c captures Bond Valuation and Analysis in R - Chapter 1 (Introduction to Bond Valuation) - code  
+  
