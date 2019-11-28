@@ -1699,4 +1699,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Bond Valuation and Analysis in R - Chapter 1 (Introduction to Bond Valuation) - code  
 * DataCamp_Insights_v003_c captures Bond Valuation and Analysis in R - Chapter 2 (Yield to Maturity) - code  
 * DataCamp_Insights_v003_c captures Bond Valuation and Analysis in R - Chapter 3 (Duration and Convexity) - code  
+* DataCamp_Insights_v003_c captures Bond Valuation and Analysis in R - Chapter 4 (Comprehensive Example) - code  
   
