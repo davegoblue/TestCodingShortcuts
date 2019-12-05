@@ -1708,4 +1708,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Equity Valuation in R - Chapter 4 (Relative Valuation) - code  
 * DataCamp_Insights_v003_c captures Equity Valuation in R - Chapter 5 (Comprehensive Valuation) - code  
 * DataCamp_Insights_v003_c captures Data Manipulation with dplyr in R - Chapter 1 (Transforming Data with dplyr) - notes  
+* DataCamp_Insights_v003_c captures Data Manipulation with dplyr in R - Chapter 2 (Aggregating Data) - notes  
   
