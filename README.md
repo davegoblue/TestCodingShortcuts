@@ -1711,4 +1711,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Data Manipulation with dplyr in R - Chapter 2 (Aggregating Data) - notes  
 * DataCamp_Insights_v003_c captures Data Manipulation with dplyr in R - Chapter 3 (Selecting and Transforming Data) - notes  
 * DataCamp_Insights_v003_c captures Data Manipulation with dplyr in R - Chapter 4 (Case Study) - notes  
+* DataCamp_Insights_v003_c captures Introduction to Function Writing in R - Chapter 1 (How to Write a Function) - notes  
   
