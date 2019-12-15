@@ -1720,4 +1720,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Credit Risk Modeling in R - Chapter 1 (Introduction and Data Pre-Processing) - code  
 * DataCamp_Insights_v003_c captures Credit Risk Modeling in R - Chapter 2 (Logistic Regression) - code  
 * DataCamp_Insights_v003_c captures Credit Risk Modeling in R - Chapter 3 (Decision Trees) - code  
+* DataCamp_Insights_v003_c captures Credit Risk Modeling in R - Chapter 4 (Evaluating Credit Risk Models) - code  
   
