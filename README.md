@@ -1722,3 +1722,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Credit Risk Modeling in R - Chapter 3 (Decision Trees) - code  
 * DataCamp_Insights_v003_c captures Credit Risk Modeling in R - Chapter 4 (Evaluating Credit Risk Models) - code  
   
+### Expansions week of 16-DEC-2019  
+* DataCamp_Insights_v003_c captures Introduction to Data Visualization in R - Chapter 1 (Introduction) - notes  
+  
