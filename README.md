@@ -1724,4 +1724,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 16-DEC-2019  
 * DataCamp_Insights_v003_c captures Introduction to Data Visualization in R - Chapter 1 (Introduction) - notes  
+* DataCamp_Insights_v003_c captures Introduction to Data Visualization in R - Chapter 2 (Aesthetics) - notes  
   
