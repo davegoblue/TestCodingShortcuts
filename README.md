@@ -1726,4 +1726,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to Data Visualization in R - Chapter 1 (Introduction) - notes  
 * DataCamp_Insights_v003_c captures Introduction to Data Visualization in R - Chapter 2 (Aesthetics) - notes  
 * DataCamp_Insights_v003_c captures Introduction to Data Visualization in R - Chapter 3 (Geometries) - notes  
+* DataCamp_Insights_v003_c captures Introduction to Data Visualization in R - Chapter 4 (Themes) - notes  
   
