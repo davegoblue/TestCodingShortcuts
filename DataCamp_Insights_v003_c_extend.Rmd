@@ -1585,3 +1585,971 @@ t(data.frame(summaryInfants$r.squared, summaryFemales$r.squared, summaryMales$r.
   
 ***
   
+***
+  
+###_Quantitative Risk Management in R_  
+  
+Chapter 1 - Exploring Market Risk-Factor Data  
+  
+Introduction - Alexander McNeil, author of book "Quantitative Risk Management" (contains theory behind the course):  
+  
+* Can also review on qrmtutorial.org (helper materials to the book)  
+* Packages qrmdata (large data sets) and qrmtools (useful functions) are available as R packages  
+* The goal of QRM is to measure and then manage the risk of a portfolio  
+	* Can manage risk by selling assets, buying assets (diversify), maintaining sufficient capital, etc.  
+* Value at risk (VaR) is an important concept in this course and in this space  
+	* Dependent on many risk factors - interest rates, index prices, exchange rates, etc.  
+  
+Risk-factor returns:  
+  
+* Changes in risk factors are risk-factor returns or returns  
+* Suppose that Zt is a time series of risk factor values  
+	* Simple returns: Xt = Zt - Z(t-1)  # used for values that are very closest to zero  
+    * Relative returns: Xt = (Zt - Z(t-1)) / Z(t-1)  # easiest to interpret  
+    * Log returns: Xt = ln(Zt) - ln(Z(t-1))  # most commonly used (desirable feature of non-negativity, very close to relative returns for small values, particularly easy to aggregate, geometrics Brownian motion)  
+* In practice, log returns tend not to be normally distributed  
+	* logR <- diff(log(mySeries))[-1]  # first value will be NA and is not helpful for plotting  
+  
+Aggregating log returns:  
+  
+* Suppose you have daily log-returns Xt - can just sum the log returns over the time period of interest  
+	* ln(Z(t+5)) - ln(Zt) = sum-of-relevant-Zt  
+    * Can use apply.weekly() or apply.monthly() from the xts package  # need the FUN=sum for each of these  
+  
+Exploring other risk factors - commodities prices and zero-coupon bonds data:  
+  
+* Suppose p(t, T) is the price at time t of a bond paying back 1 unit at time T  
+    * The yield is frequently considered to be the risk factor - comparable across different maturities, T  
+    * y(t, T) = -ln(p(t, T)) / (T - t)  
+    * The mapping T for y(t, T) defines the yield curve - some arguments about whether to use simple returns or log returns on yields  
+  
+Example code includes:  
+```{r}
+
+library(xts)
+library(zoo)
+
+# Load DJ index
+data(DJ, package='qrmdata')
+
+# Show head() and tail() of DJ index
+head(DJ)
+tail(DJ)
+
+# Plot DJ index
+plot(DJ)
+
+# Extract 2008-2009 and assign to dj0809
+dj0809 <- DJ["2008/2009"]
+
+# Plot dj0809
+plot(dj0809)
+
+
+# Load DJ constituents data
+data("DJ_const", package='qrmdata')
+
+# Apply names() and head() to DJ_const
+names(DJ_const)
+head(DJ_const)
+
+# Extract AAPL and GS in 2008-09 and assign to stocks
+stocks <- DJ_const["2008/2009", c("AAPL", "GS")]
+
+# Plot stocks with plot.zoo()
+plot.zoo(stocks)
+
+
+# Load exchange rate data
+data("GBP_USD", package='qrmdata')
+data("EUR_USD", package='qrmdata')
+
+# Plot the two exchange rates
+plot(GBP_USD)
+plot(EUR_USD)
+
+# Plot a USD_GBP exchange rate
+plot(1/GBP_USD)
+
+# Merge the two exchange rates GBP_USD and EUR_USD
+fx <- merge(GBP_USD, EUR_USD, all = TRUE)
+
+# Extract 2010-15 data from fx and assign to fx0015
+fx0015 <- fx["2010/2015"]
+
+# Plot the exchange rates in fx0015
+plot.zoo(fx0015)
+
+
+# Compute the log-returns of dj0809 and assign to dj0809_x
+dj0809_x <- diff(log(dj0809))
+
+# Plot the log-returns
+plot(dj0809_x)
+
+# Compute the log-returns of djstocks and assign to djstocks_x
+djstocks_x <- diff(log(stocks))
+
+# Plot the two share returns
+plot.zoo(djstocks_x)
+
+par(mfrow=c(1, 1))
+par(mfcol=c(1, 1))
+
+# Compute the log-returns of GBP_USD and assign to erate_x
+erate_x <- diff(log(GBP_USD))
+
+# Plot the log-returns
+plot(erate_x)
+
+
+# You already know that you can use plot.zoo() to plot multiple time series
+# For a four-dimensional time series data, the call plot.zoo(data) creates four separate plots by default, unless you include the parameter plot.type = "single" to plot all four series in one plot
+# You can also add even more parameters such as col to specify different colors and type = "h" to get vertical bars instead of joining points, which can sometimes be a better way of displaying returns.
+# plot.zoo(x, plot.type, col = 1, type = "l", ...)
+
+
+djstocks <- DJ_const["2008/2009", c("AAPL", "AXP", "BA", "CAT")]
+str(djstocks)
+
+# Plot djstocks in four separate plots
+plot.zoo(djstocks)
+
+# Plot djstocks in one plot and add legend
+plot.zoo(djstocks, plot.type="single", col=1:4)
+legend(julian(x = as.Date("2009-01-01")), y = 70, legend = names(DJ_const)[1:4], fill = 1:4)
+
+# Compute log-returns and assign to djstocks_x
+djstocks_x <- diff(log(djstocks))
+
+# Plot djstocks_x in four separate plots
+plot.zoo(djstocks_x)
+
+# Plot djstocks_x with vertical bars
+plot.zoo(djstocks_x, type="h")
+
+
+djx <- DJ["2000/2015"]
+str(djx)
+
+par(mfrow=c(1, 1))
+par(mfcol=c(1, 1))
+
+# Plot djx
+plot(djx)
+
+# Plot weekly log-returns of djx
+plot(apply.weekly(djx, FUN=sum), type="h")
+
+# Plot monthly log-returns of djx
+plot(apply.monthly(djx, FUN=sum), type="h")
+
+# Plot djreturns
+plot.zoo(djstocks_x)
+
+# Plot monthly log-returns of djreturns
+plot.zoo(apply.monthly(djstocks_x, FUN=colSums), type="h")
+
+
+data(GOLD, package='qrmdata')
+data(OIL_Brent, package='qrmdata')
+
+gold <- GOLD['1990/2015']
+oil <- OIL_Brent['1990/2015']
+str(gold)
+str(oil)
+
+par(mfrow=c(1, 1))
+par(mfcol=c(1, 1))
+
+# Plot gold and oil prices
+plot(gold)
+plot(oil)
+
+# Calculate daily log-returns
+goldx <- diff(log(gold))
+oilx <- diff(log(oil))
+
+# Calculate monthly log-returns
+goldx_m <- apply.monthly(goldx, FUN=sum)
+oilx_m <- apply.monthly(oilx, FUN=sum)
+
+# Merge goldx_m and oilx_m into coms
+coms <- merge(goldx_m, oilx_m)
+
+# Plot coms with vertical bars
+plot.zoo(coms, type="h")
+
+# Make a pairwise scatterplot of coms
+pairs(as.zoo(coms))
+
+
+data(ZCB_CA, package="qrmdata")
+zcb <- ZCB_CA['2006/2015']
+str(zcb)
+
+# Identify and create vector containing column names for 1, 5, 10 year yields
+names(zcb)
+yield_cols <- c("1.00y", "5.00y", "10.00y")
+
+# Compute log-returns as zcb_x and plot them for same maturities
+zcb_x <- diff(log(zcb))
+plot.zoo(zcb_x[, yield_cols])
+
+# Compute simple returns as zcb_x2 and plot them for same maturities
+zcb_x2 <- diff(zcb)
+plot.zoo(zcb_x2[, yield_cols])
+
+# Make a vector containing the maturities                             
+maturity <- (1:120)/4
+
+# Plot the yield curve for the first day of zcb
+plot(maturity, zcb[1, ], ylim = range(zcb), type = "l", ylab = "yield (%)", col = "red")
+
+# Add a line for the last day of zcb
+lines(maturity, zcb[nrow(zcb), ])
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Real World Returns are Riskier than Normal  
+  
+Normal distribution - if risk returns follow GBM, than log-returns would be normal:  
+  
+* The normal distribution (bell curve) depends on a well known formula containing mu and sigma - N(mu, sigma-squared)  
+	* The sum of independent normal variables is itself normally dsitributed  
+* The Central Limit Theorem (CLT) says that the dsitribution of the sum of many iid trials will itself by normally dsitributed (even if the underlying iid distribution is decidedly non-normal)  
+* The "method of moments" is used to estimate the sample mean and the sample variance  
+	* The sigma-squared-hat with a mu subscript is the unbiased estimator (divide by n-1)  
+    * The sigma-squared-hat with no subscript is the maximum likelihood estimator (divide by n)  
+  
+Testing for normality:  
+  
+* The Q-Q test is a graphical test for normality, so the reference distribution is the standard normal  
+	* Q-Q plots can use other reference distributions  
+    * qqnorm(myData)  
+    * qqline(myData)  # qqnorm should tend to fall along the line at all quantiles  
+  
+Skewness, kurtosis, Jarque-Bera test:  
+  
+* The Jarque-Bera test is based on skewness and kurtosis  
+	* The skewness (b) is the third moment, a measure of its asymmetry (b=0 for normal distribution) - moments::skewness()  
+    * The kurtosis (k) is the fourth moment, a measure of its heavy tails (k=3 for normal distribution) - moments::kurtosis()  
+* The Jarque-Bera test compares both skewness and kurtosis using a single test statistic, T  
+	* T = N/6 * (b**2 + 0.25*(k-3)**2)  # uses a chi-squared with 2 degrees of freedom  
+    * moments::jarque.test(myData)  
+* Daily returns tend to be very non-normal, but the CLT suggests that the sum of these returns may become increasingly normal  
+  
+Student t-distribution:  
+  
+* The Student t-distribution has mu, sigma, and df and tends to be better for smaller data sets  
+	* With df at infinite, the student t-distribution becomes the normal distribution (df is also called nu) ; for nu less than 4, the kurtosis is infinite  
+    * The maximum likelihood method can be found using QRM::fit.st() - the $par.ests will have the parameters  
+* Due to some vagaries in how the dt() function is implemented in R, converting for a known mu, sigma, and nu  
+	* dt((myData - mu)/sigma, df=nu) / sigma  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Calculate average and standard deviation of djx
+djx <- as.vector(diff(log(DJ['2008/2009'])))
+djx <- sort(djx[2:length(djx)])
+str(djx)
+
+mu <- mean(djx)
+sigma <- sd(djx)
+
+# Plot histogram of djx
+hist(djx, nclass=20, probability=TRUE)
+
+# Add the normal density as a red line to histogram
+lines(djx, dnorm(djx, mean=mu, sd=sigma), col = "red")
+
+# Plot non-parametric KDE of djx
+plot(density(djx))
+
+# Add the normal density as red line to KDE
+lines(djx, dnorm(djx, mean=mu, sd=sigma), col = "red")
+
+
+# Make a Q-Q plot of djx and add a red line
+qqnorm(djx)
+qqline(djx, col="red")
+
+# Calculate the length of djx as n
+n <- length(djx)
+
+# Generate n standard normal variables, make a Q-Q plot, add a red line
+x1 <- rnorm(n)
+qqnorm(x1)
+qqline(x1, col="red")
+
+# Generate n Student t variables, make a Q-Q plot, add a red line
+x2 <- rt(n, df = 4)
+qqnorm(x2)
+qqline(x2, col="red")
+
+# Generate n standard uniform variables, make a Q-Q plot, add red line
+x3 <- runif(n)
+qqnorm(x3)
+qqline(x3, col="red")
+
+
+dj0811 <- DJ_const["2008/2011"]
+djreturns <- diff(log(dj0811))[2:nrow(dj0811), !(names(dj0811) %in% c("V"))]
+str(djreturns)
+
+# Calculate average and standard deviation of djx
+djx <- as.vector(diff(log(DJ['2008/2011'])))
+djx <- sort(djx[2:length(djx)])
+str(djx)
+
+# Calculate skewness and kurtosis of djx
+moments::skewness(djx)
+moments::kurtosis(djx)
+
+# Carry out a Jarque-Bera test for djx
+moments::jarque.test(djx)
+
+# Calculate skewness and kurtosis of djreturns 
+s <- apply(djreturns, 2, FUN=moments::skewness)
+k <- apply(djreturns, 2, FUN=moments::kurtosis)
+
+# Plot k against s and add text labels to identify stocks
+plot(s, k, type="n")
+text(s, k, names(s), cex = 0.6)
+
+# Carry out Jarque-Bera tests for each constituent in djreturns
+apply(djreturns, 2, FUN=moments::jarque.test)
+
+
+dj0015 <- DJ_const["2000/2015"]
+djx_d <- diff(log(dj0015))[2:nrow(dj0015), !(names(dj0015) %in% c("V"))]
+str(djx_d)
+
+# Calculate weekly and monthly log-returns from djx_d
+djx_w <- apply.weekly(djx_d, FUN=colSums)
+djx_m <- apply.monthly(djx_d, FUN=colSums)
+
+# Calculate the p-value for each series in djx_d
+apply(djx_d, 2, function(v){moments::jarque.test(v)$p.value})
+
+# Calculate the p-value for each series in djx_w
+apply(djx_w, 2, function(v){moments::jarque.test(v)$p.value})
+
+# Calculate the p-value for each series in djx_m
+apply(djx_m, 2, function(v){moments::jarque.test(v)$p.value})
+
+
+# Calculate average and standard deviation of djx
+djx <- diff(log(DJ))['2008/2011']
+str(djx)
+
+# When you aggregate series by summing daily log-returns into longer intervals, you analyze a smaller amount of observations
+# To preserve the quantity of data, you can calculate overlapping returns with the rollapplyr() function; this also creates strong correlations between observations
+
+# There are 5 trading days in the average calendar week
+# By computing the 5-day moving sums of the log-returns of daily index data, you obtain approximate overlapping weekly returns ending on each calendar week
+# Similarly, calculating 21-day moving sums gives approximate overlapping monthly returns, and calculating 63-day moving sums gives approximate overlapping quarterly returns
+
+# Calculate a 21-day moving sum of djx
+djx21 <- rollapplyr(djx, width=21, FUN=sum)[-(1:20)]
+
+# Calculate a 63-day moving sum of djx
+djx63 <- rollapplyr(djx, width=63, FUN=sum)[-(1:62)]
+
+# Merge the three series and plot
+djx2 <- merge(djx, djx21, djx63, all=FALSE)
+plot.zoo(djx2)
+
+# Compute the skewness and kurtosis for each series in djx2
+apply(djx2, 2, FUN=moments::skewness)
+apply(djx2, 2, FUN=moments::kurtosis)
+
+# Conduct the Jarque-Bera test to each series in djx2
+apply(djx2, 2, FUN=moments::jarque.test)
+
+
+djx <- sort(as.vector(djx))
+str(djx)
+
+# Fit a Student t distribution to djx
+tfit <- QRM::fit.st(djx)
+
+# Define tpars, nu, mu, and sigma
+tpars <- tfit$par.ests
+nu <- tpars["nu"]
+mu <- tpars["mu"]
+sigma <- tpars["sigma"]
+
+# Plot a histogram of djx
+hist(djx, nclass = 20, probability = TRUE, ylim = range(0, 40))
+
+# Compute the fitted t density at the values djx
+yvals <- dt((djx - mu)/sigma, df = nu)/sigma
+
+# Superimpose a red line to show the fitted t density
+lines(djx, yvals, col = "red")
+
+
+data(JPY_USD, package="qrmdata")
+USD_JPY <- 1/JPY_USD
+fx_d <- diff(log(merge(GBP_USD, EUR_USD, USD_JPY, all = TRUE)))['2001/2015']
+str(fx_d)
+
+# Plot the daily log-return series in fx_d
+plot.zoo(fx_d)
+
+# Apply the Jarque-Bera test to each of the series in fx_d
+apply(fx_d, 2, FUN=moments::jarque.test)
+
+fx_m <- apply.monthly(fx_d, FUN=colSums)
+str(fx_m)
+
+# Plot the monthly log-return series in fx_m
+plot.zoo(fx_m, type="h")
+
+# Apply the Jarque-Bera test to each of the series in fx_m
+apply(fx_m, 2, FUN=moments::jarque.test)
+
+# Fit a Student t distribution to each of the series in fx_m
+apply(fx_m, 2, function(v){QRM::fit.st(v)$par.ests})
+
+
+zcbx_m <- apply.monthly(zcb_x['2006/2015', c("1.00y", "5.00y", "10.00y")], 2, FUN=colSums)
+str(zcbx_m)
+zcb_x2 <- 100 * diff(zcb)
+zcbx2_m <- apply.monthly(zcb_x2['2006/2015', c("1.00y", "5.00y", "10.00y")], 2, FUN=colSums)
+str(zcbx2_m)
+
+# Plot the interest-rate return series zcbx_m and zcbx2_m
+plot.zoo(zcbx_m, type="h")
+plot.zoo(zcbx2_m, type="h")
+
+# Make Q-Q plots of the 3rd component series of zcbx_m and zcbx2_m
+qqnorm(zcbx_m[, 3])
+qqnorm(zcbx2_m[, 3])
+
+# Compute the kurtosis of each series in zcbx_m and zcbx2_m
+apply(zcbx_m, 2, FUN=moments::kurtosis)
+apply(zcbx2_m, 2, FUN=moments::kurtosis)
+
+# Conduct the Jarque-Bera test on each series in zcbx_m and zcbx2_m
+apply(zcbx_m, 2, FUN=moments::jarque.test)
+apply(zcbx2_m, 2, FUN=moments::jarque.test)
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Real World Returns are Volatile and Correlated  
+  
+Characteristics of volatile return series:  
+  
+* Investigation of whether financial returns can be modeled as iid - "random walk model" (implication that past prices cannot be used to predict future behavior)  
+* Can compare real returns with iid data derived from either normal distributions or t-distributions  
+	* Clear differences between real data and modeled data - real data have "volatility clustering"  
+    * The "volatility clustering" is valuable for risk management as well as for prediction of future volatility  
+  
+Estimating serial correlations:  
+  
+* With serial dependencies, existing volatility is suggestive of continued volatility  
+	* The sample acf with lag k can help to estimate the behavior -- denoted as rho-hat(k)  
+    * The sample acf assumes that the series has the property of stationarity  
+* The sample acf plot (coorelogram) gives the acf for various lags of k - blue dashed lines are 95% confidence bounds for the correlation estimates  
+	* Note that k=0 will trivially have correlation of 1  
+    * acf(abs(x)) may reveal things that are not shown by acf(x) - sign changes can hide the serial dependencies  
+  
+The Ljung-Box test - numerical test of squared sample autocorrelations up to a value of k-lags:  
+  
+* When including k lags, the value of the test statistic is compared with the chi-squared distribution of the same degree of freedom  
+	* Should be carried out on either the returns or the abosolute value of the returns (which are often where the volatility are clustered)  
+    * Box.test(myData, lag=, type="Ljung")  # the type="Ljung" gets Box-Ljung while the type="Box" gets the Pierce test  
+* Generally, the closer the data get to normal (e.g., quarterly or monthly or perhaps weekly rather than daily), the significance of the Box-Ljung test will go away  
+  
+Looking at extremes in volatile return series:  
+  
+* Can be interesting just to look at days with extreme returns - for example, where the log-returns are less than -0.025  
+	* Tend to be clusters of extreme values on these dimensions around the times of large stock market changes - very different behavior from iid  
+  
+Stylised facts of return series:  
+  
+* Properties observed in equities are broadly consistent across other asset classes - commonly called the "stylized facts"  
+	* Return series tend to be heavier-tailed than normal distributions (leptokurtic)  
+    * Volatility of return series appears to vary over time  
+    * Return series tend to show very little serial correlation  
+    * Absolute values of return series tend to show protfound serial correlation  
+    * Extreme returns appear in clusters  
+    * Returns aggregated over longer time periods tend to become more normally distributed and less serially dependent  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+djx <- diff(log(DJ))['2008/2011']
+str(djx)
+
+npars <- c(mu=-8.150765e-05, sigma=1.643593e-02)
+
+# Compute the length n of djx 
+n <- length(djx)
+
+#  Generate a normal sample of size n with parameters given by npars
+ndata <- rnorm(n)*npars[2] + npars[1]
+
+# Generate a t-distributed sample of size n with paramaters given by tpars
+tdata <- rt(n, df = tpars[1])*tpars[3] + tpars[2]
+
+# Make ndata and tdata into xts objects
+ndatax <- xts(ndata, time(djx))
+tdatax <- xts(tdata, time(djx))
+
+# Merge djx, ndatax, and tdatax and plot
+alldata <- merge(djx, ndatax, tdatax)
+plot.zoo(alldata, type="h", ylim = range(alldata))
+
+
+# Set up a plot region to show 3 plots at a time
+par(mfrow = c(3, 1))
+
+# Plot the acfs of djx, ndata and tdata
+acf(djx)
+acf(ndatax)
+acf(tdatax)
+
+# Plot the acfs of the absolute values
+acf(abs(djx))
+acf(abs(ndatax))
+acf(abs(tdatax))
+
+# Plot the acfs of the squares of the values
+acf(djx**2)
+acf(ndatax**2)
+acf(tdatax**2)
+
+par(mfrow = c(1, 1))
+
+
+dj0715 <- DJ_const["2007/2015"]
+djall <- diff(log(dj0715))[2:nrow(dj0715), !(names(dj0715) %in% c("V"))]
+str(djall)
+
+# Apply the Ljung-Box test to djx
+Box.test(djx, lag = 10, type = "Ljung")
+
+# Apply the Ljung-Box test to absolute values of djx
+Box.test(abs(djx), lag = 10, type = "Ljung")
+
+# Apply the Ljung-Box test to all return series in djall
+apply(djall, 2, Box.test, lag = 10, type = "Ljung")
+
+# Apply the Ljung-Box test to absolute values of all returns in djall
+apply(abs(djall), 2, Box.test, lag = 10, type = "Ljung")
+
+
+# Create monthly log-returns from djx
+djx_m <- apply.monthly(djx, FUN=sum)
+
+# Apply Ljung-Box tests to raw and absolute values of djx_m
+Box.test(djx_m, lag = 10, type = "Ljung")
+Box.test(abs(djx_m), lag = 10, type = "Ljung")
+
+# Create monthly log-returns from djall
+djall_m <- apply.monthly(djall, FUN=colSums)
+
+# Apply Ljung-Box tests to raw and absolute values of djall_m
+apply(djall_m, 2, Box.test, lag = 10, type = "Ljung")
+apply(abs(djall_m), 2, Box.test, lag = 10, type = "Ljung")
+
+
+# When you take a long series of iid data, such as several thousand observations, and select a small subset of the most extreme observations, like less than 100, then these extremes appear at random and the spaces or gaps between the extremes follow a distribution that is very close to exponential
+# When we carry out the same exercise for a volatile financial log-return series then the extremes appear in clusters during periods of high volatility
+# This is another feature of real log-return data that we need to take account of when building models
+
+# In this exercise, you will investigate the irregular time series djx_extremes which contains the 100 most extreme negative log-returns of the Dow Jones index between 1985 and 2015
+# You will compare it with iid_extremes which contains the 100 most extreme values in an iid series of the same length as djx_extremes
+# To do this, you will use the object exp_quantiles, which contains 100 theoretical quantiles of the standard exponential distribution
+# These can be used to construct a Q-Q plot of each dataset against the exponential reference distribution
+
+djx_extremes <- diff(log(DJ))
+keyCut <- sort(as.vector(djx_extremes), decreasing=TRUE)[100]
+djx_extremes <- djx_extremes[as.vector(djx_extremes) >= keyCut]
+str(djx_extremes)
+summary(djx_extremes)
+
+exp_quantiles <- c(0.005013, 0.015114, 0.025318, 0.035627, 0.046044, 0.05657, 0.067209, 0.077962, 0.088831, 0.09982, 0.110932, 0.122168, 0.133531, 0.145026, 0.156654, 0.168419, 0.180324, 0.192372, 0.204567, 0.216913, 0.229413, 0.242072, 0.254892, 0.267879, 0.281038, 0.294371, 0.307885, 0.321584, 0.335473, 0.349557, 0.363843, 0.378336, 0.393043, 0.407968, 0.42312, 0.438505, 0.45413, 0.470004, 0.486133, 0.502527, 0.519194, 0.536143, 0.553385, 0.57093, 0.588787, 0.606969, 0.625489, 0.644357, 0.663588, 0.683197, 0.703198, 0.723606, 0.74444, 0.765718, 0.787458, 0.809681, 0.832409, 0.855666, 0.879477, 0.903868, 0.92887, 0.954512, 0.980829, 1.007858, 1.035637, 1.064211, 1.093625, 1.12393, 1.155183, 1.187444, 1.22078, 1.255266, 1.290984, 1.328025, 1.366492, 1.406497, 1.44817, 1.491655, 1.537117, 1.584745, 1.634756, 1.687399, 1.742969, 1.80181, 1.86433, 1.931022, 2.002481, 2.079442, 2.162823, 2.253795, 2.353878, 2.465104, 2.590267, 2.733368, 2.900422, 3.101093, 3.352407, 3.688879, 4.199705, 5.298317)
+iid_extremes <- xts(c(2.485179, 2.335036, 2.348495, 2.609534, 2.571431, 2.505418, 3.436557, 2.306443, 2.406384, 2.249789, 2.699147, 2.384733, 2.462003, 2.825771, 2.658806, 2.696008, 2.484846, 2.253926, 2.390248, 2.753181, 3.026417, 2.305134, 2.365227, 2.499355, 2.844757, 2.290955, 3.048307, 2.906714, 2.536778, 2.574244, 2.740777, 2.259236, 2.247154, 2.338442, 2.597085, 2.435009, 2.905871, 2.211387, 2.807309, 2.76335, 2.505434, 2.512933, 2.655662, 2.362114, 2.300621, 2.635403, 2.554976, 2.255644, 2.397592, 2.214528, 2.391973, 2.72426, 2.926669, 2.213251, 2.576326, 2.249265, 2.402427, 2.678113, 2.243226, 2.513481, 2.961663, 2.597378, 2.498836, 2.983134, 2.234179, 2.769461, 2.288106, 2.465069, 2.236144, 2.732343, 2.610239, 2.432895, 2.319882, 2.215825, 2.606343, 3.282729, 2.437939, 3.132531, 2.231877, 2.391024, 2.441499, 2.389186, 2.319438, 2.926213, 2.457484, 3.396832, 2.288507, 2.240025, 2.696893, 2.541371, 2.410939, 2.51565, 2.660812, 2.378425, 2.274061, 2.544918, 2.236294, 2.569099, 3.256515, 2.428861), order.by=as.Date(c(5569, 5626, 5702, 6047, 6052, 6216, 6405, 6532, 6570, 6641, 6734, 6873, 7061, 7223, 7239, 7328, 7474, 7484, 7621, 7644, 7972, 8048, 8103, 8202, 8617, 9049, 9175, 9244, 9456, 9482, 9527, 9618, 9631, 9735, 9776, 9794, 9944, 10071, 10114, 10347, 10378, 10424, 10450, 10834, 10990, 11052, 11103, 11235, 11410, 11421, 11473, 11515, 11557, 11571, 11620, 11845, 11913, 11919, 12116, 12118, 12430, 12454, 12628, 12653, 13266, 13278, 13430, 13458, 13614, 13635, 13747, 13780, 13907, 13958, 14202, 14322, 14355, 14698, 14806, 14866, 15100, 15104, 15156, 15247, 15350, 15496, 15966, 15967, 16001, 16016, 16128, 16140, 16226, 16261, 16279, 16484, 16637, 16651, 16770, 16797))
+                    )
+str(exp_quantiles)
+str(iid_extremes)
+
+
+# Partition plotting area into 3 pieces
+par(mfrow = c(1, 3))
+
+# Plot djx_extremes
+plot(djx_extremes, type="h")
+
+# Compute the spaces between the times of the extremes
+djx_spaces <- diff(time(djx_extremes))
+
+# Make a histogram of these spaces
+hist(as.numeric(djx_spaces))
+
+# Make a Q-Q plot of djx_spaces against exp_quantiles
+qqplot(exp_quantiles, djx_spaces)
+
+# Carry out the previous 4 steps for iid_extremes
+plot(iid_extremes, type="h")
+iid_spaces <- diff(time(iid_extremes))
+hist(as.numeric(iid_spaces))
+qqplot(exp_quantiles, iid_spaces)
+
+par(mfrow = c(1, 1))
+
+
+# When the function acf() is applied to a multivariate time series, we obtain a matrix of plots with the usual sample acf plots on the diagonal, and plots of the correlations between different series at different lags off the diagonal.
+
+data(FTSE, package='qrmdata')
+data(SMI, package='qrmdata')
+
+dj_i <- diff(log(DJ))['2005/2015']
+ftse_i <- diff(log(FTSE))['2005/2015']
+smi_i <- diff(log(SMI))['2005/2015']
+
+indexes <- merge(dj_i, ftse_i, smi_i, all = FALSE)
+str(indexes)
+
+
+# Make a time series plot of indexes with plot.zoo and a pairwise scatterplot with pairs
+plot.zoo(indexes)
+pairs(as.zoo(indexes))
+
+# Calculate the sample correlation matrix of indexes
+cor(indexes)
+
+# Plot the sample acfs and cross-correlation functions for the returns in indexes
+acf(indexes)
+
+# Plots the sample acfs and cross-correlations functions for the absolute values of indexes
+acf(abs(indexes))
+
+
+data(CHF_USD, package="qrmdata")
+fx <- diff(log(merge(GBP_USD, EUR_USD, USD_JPY, CHF_USD, all = TRUE)))['2011/2015']
+str(fx)
+fx_w <- apply.weekly(fx, FUN=colSums)
+str(fx_w)
+
+# Plot fx and fx_w
+plot.zoo(fx, type="h")
+plot.zoo(fx_w, type="h")
+
+# Make acf plots of fx and the absolute values of fx
+acf(fx)
+acf(abs(fx))
+
+# Apply the Ljung-Box test to the components of fx and their absolute values
+apply(fx, 2, Box.test, lag = 10, type = "Ljung")
+apply(abs(fx), 2, Box.test, lag = 10, type = "Ljung")
+
+# Make acf plots of fx_w and the absolute values of fx_w
+acf(fx_w)
+acf(abs(fx_w))
+
+# Apply the Ljung-Box test to the components of fx_w and their absolute values
+apply(fx_w, 2, Box.test, lag = 10, type = "Ljung")
+apply(abs(fx_w), 2, Box.test, lag = 10, type = "Ljung")
+
+
+# Make acf plots of zcb_x and the absolute values of zcb_x
+acf(zcb_x[-1, c("1.00y", "5.00y", "10.00y")])
+acf(abs(zcb_x[-1, c("1.00y", "5.00y", "10.00y")]))
+
+# Apply the Ljung-Box test to the components of zcb_x and their absolute values
+apply(zcb_x[-1, c("1.00y", "5.00y", "10.00y")], 2, FUN=Box.test, lag=10, type="Ljung")
+apply(abs(zcb_x[-1, c("1.00y", "5.00y", "10.00y")]), 2, FUN=Box.test, lag=10, type="Ljung")
+
+# Make acf plots of zcbx_m and the absolute values of zcbx_m
+acf(zcbx_m)
+acf(abs(zcbx_m))
+
+# Apply the Ljung-Box test to the components of zcbx_m and their absolute values
+apply(zcbx_m, 2, FUN=Box.test, lag=10, type="Ljung")
+apply(abs(zcbx_m), 2, FUN=Box.test, lag=10, type="Ljung")
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Estimating Portfolio value-at-risk (VaR)  
+  
+Value-at-risk and expected shortfall:  
+  
+* Consider the distribution of losses over a fixed time period (such as two weeks) with no rebalancing  
+	* The risk measure is just a statistic for the loss distribution - common to take a quantile (99.5% or 99% or 95%) for the tails  
+    * The alpha-VaR is the alpha-quantile for the loss distribution (alpha is also known as the confidence level)  
+    * The loss distribution is estimated based on historical data  
+* Expected shortfall (ES) is becoming increasingly important in banking  
+	* Tail VaR (TVaR), conditional VaR (cVaR), or expected shortfall (ES)  
+    * alpha-ES is the expected loss given that the loss exceeds alpha-VaR  
+  
+International equity portfolio:  
+  
+* Example of UK investor with 30% FTSE, 40% S&P 500, 30% SMI (Swiss)  
+	* 5 risk factors - FTSE, S&P 500, SMI, GBP/USD, GBP/CHF  
+    * Can look at each of the individualized risk factors first, using the log-returns method  
+* Historical simulation allows for estimating data - non-parametric approach involving resampling of past data  
+	* Resample historical risk-factor returns and examine their impact on the current portfolio  
+    * Loss operator shows effect of different risk-factor returns on the portfolio - for the specific portfolio and at the specific point in time  
+    * VaR and ES can then be estimated based on the sample quantiles of the resampled data  
+  
+Option portfolio and Black-Scholes:  
+  
+* European options have a strike price K at a future time T - call is the right to buy at price K, put is the right to sell at price K  
+	* Price depends on current price S, interest rate r, time to maturity T-t, and annualized volatility sigma  
+    * Black-Scholes was designed to price options assuming normal distributions over returns  
+    * Option is said to be "in the money" if it would be exercised at its current price  
+* Estimating volatility for options pricing models is challenging - typically, an "implied volatility" is assumed  
+	* The quoted option prices suggest how the market is pricing volatility at the current point in time  
+    * The VIX index from the CBOE is one of the measures of applied volatility for options traded on the S&P 500  
+    * The implied volatility is itself a very volatile measurement  
+  
+Historical simulation for the option example:  
+  
+* When an option is valued using Black-Scholes, changes in any of S, sigma, or r will change the price of the underlying option  
+	* For this example, assume that r remains constant and that a single day has passed  
+  
+Wrap up:  
+  
+* Enhnacements include serial dependence for risk calculations (improve VaR and ES through volatility clustering) - filtered historical simulation with GARCH or EWMA  
+* Improvements are available for both calculating VaR and ES - small sample sizes are especially risky, and can be improved using parametric-tailed methods (extreme value theory)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# The standard function qnorm() calculates quantiles of a normal distribution from the probability p, the mean, and standard deviation, and thus can be used to calculate value-at-risk (VaR)
+# The function ESnorm() from the QRM package calculates the expected shortfall (ES) for a normal distribution from the probability p, location parameter mu, and scale parameter sd:
+# qnorm(p, mean = 0, sd = 1)
+# ESnorm(p, mu = 0, sd = 1)
+
+par(mfrow=c(1, 1))
+par(mfcol=c(1, 1))
+
+mu <- mean(diff(log(DJ))['2008/2009'])
+sigma <- sd(diff(log(DJ))['2008/2009'])
+
+# Make a sequence of 100 x-values going from -4*sigma to 4*sigma
+xvals <- seq(from = -4*sigma, to = 4*sigma, length.out = 100)
+
+# Compute the density of a N(mu, sigma^2) distribution at xvals
+ndens <- dnorm(xvals, mean = mu, sd = sigma)
+
+# Plot ndens against xvals
+plot(xvals, ndens, type="l")
+
+# Compute the 99% VaR and 99% ES of a N(mu, sigma^2) distribution
+VaR99 <- qnorm(0.99, mean=mu, sd=sigma)
+ES99 <- QRM::ESnorm(0.99, mu=mu, sd=sigma)
+
+# Draw vertical lines at VaR99 and ES99 in red and green
+abline(v = VaR99, col = "red")
+abline(v = ES99, col = "green")
+
+
+data(SP500, package="qrmdata")
+data(CHF_GBP, package="qrmdata")
+data(USD_GBP, package="qrmdata")
+ftse_r <- FTSE['2000/2012']
+smi_r <- SMI['2000/2012']
+sp500_r <- SP500['2000/2012']
+usdgbp_r <- USD_GBP['2000/2012']
+chfgbp_r <- CHF_GBP['2000/2012']
+riskfactors <- merge(ftse_r, sp500_r, smi_r, usdgbp_r, chfgbp_r, all=FALSE)
+str(riskfactors)
+
+
+# Plot the risk-factor data
+plot.zoo(riskfactors)
+
+# Calculate the log-returns, assign to returns, and plot
+returns <- diff(log(riskfactors))[-1, ]
+plot.zoo(returns)
+
+# Use apply() to carry out the Jarque-Bera test for all 5 series
+apply(returns, 2, FUN=moments::jarque.test)
+
+# Make a Q-Q plot against normal for the 5th return series and add a reference line
+qqnorm(returns[, 5])
+qqline(returns[, 5])
+
+# Make a picture of the sample acfs for returns and their absolute values
+acf(returns)
+acf(abs(returns))
+
+
+# For different vectors of log-returns for the 5 risk factors, the function lossop() computes the loss or gain incurred by the investor when her total wealth is 1
+# The function can also be applied to a 5-dimensional time series of log-returns to obtain a time series of historically-simulated losses and gains corresponding to each vector of log-returns in the time series.
+# The function lossop() is the so-called loss operator for the portfolio and has been specially written for this exercise
+# In general, for each new portfolio, a specific function has to be written to compute portfolio losses and gains.
+
+lossop <- function(xseries,wts=c(0.3,0.4,0.3)){
+    if (is.xts(xseries)) x <- coredata(xseries)
+    else if (is.matrix(xseries)) x <- xseries
+    else x <- matrix(xseries,nrow=1)
+    ll <- apply(x, 1, 
+                function(x, wts) {
+                    1-(wts[1]*exp(x[1]) + wts[2]*exp(x[2]+x[4]) + wts[3]*exp(x[3]+x[5]))
+                    }, 
+                wts=wts
+                )
+    if (is.xts(xseries)) ll <- xts(ll,time(xseries))
+    ll
+}
+
+
+# Calculate the loss from a log-return of -0.1 for all risk factors
+lossop(rep(-0.1, 5))
+
+# Apply lossop() to returns and plot hslosses
+hslosses <- lossop(returns)
+plot(hslosses)
+
+# Form a Q-Q plot of hslosses against normal
+qqnorm(hslosses)
+
+# Plot the sample acf of hslosses and their absolute values
+acf(hslosses)
+acf(abs(hslosses))
+
+
+# Estimate the 99th sample percentile of the distribution of hslosses
+quantile(hslosses, 0.99)
+
+# Estimate the 99% ES
+mean(hslosses[hslosses >= quantile(hslosses, 0.99)])
+
+# Estimate the mean and standard deviation of hslosses
+mu <- mean(hslosses)
+sigma <- sd(hslosses)
+
+# Compute the 99% quantile of a normal distribution
+qnorm(p=0.99, mean=mu, sd=sigma)
+
+# Compute the 99% ES of a normal distribution
+QRM::ESnorm(p=0.99, mu=mu, sd=sigma)
+
+
+# DO NOT HAVE package qrmtools
+# Set the interest rate r to be 0.01, the volatility sigma to be 0.2 and the strike K to be 100
+# r <- 0.01
+# sigma <- 0.2
+# K <- 100
+
+# Look at the arguments of the Black_Scholes function
+# args(qrmtools::Black_Scholes)
+
+# Price a European call option that matures in one year if the current stock price is 80
+# qrmtools::Black_Scholes(0, S=80, r, sigma, K, 1, "call")
+
+# Price a European call option that matures in one year if the current stock price is 120
+# qrmtools::Black_Scholes(0, S=120, r, sigma, K, 1, "call")
+
+# Price a European put option that matures in one year if the current stock price is 80
+# qrmtools::Black_Scholes(0, S=80, r, sigma, K, 1,"put")
+
+# Price a European put option that matures in one year if the current stock price is 120
+# qrmtools::Black_Scholes(0, S=120, r, sigma, K, 1,"put")
+
+
+data(VIX, package="qrmdata")
+sp500_r <- SP500['1990/2010']
+vix_r <- VIX['1990/2010']
+riskfactors <- merge(sp500_r, vix_r, all=FALSE)
+str(riskfactors)
+returns <- diff(log(riskfactors))[-1, ]
+str(returns)
+
+
+# Plot the risk factors and the log-returns
+plot.zoo(riskfactors)
+plot.zoo(returns)
+
+# Make a scatterplot of the two return series
+plot(as.matrix(returns))
+
+# Apply the Jarque-Bera test to the returns and make a Q-Q plot of the volatility log-returns
+apply(returns, 2, FUN=moments::jarque.test)
+qqnorm(returns[, "X.VIX"])
+
+# Create the sample acf of the returns and absolute returns
+acf(returns)
+acf(abs(returns))
+
+# Calculate the correlation between the log-returns
+cor(returns)
+
+
+# DO NOT HAVE package qrmtools
+# lossop <- function(xseries,r=0.01, K=100, T=1, sigma=0.2,S=100){
+#   if (is.xts(xseries))
+#     x <- coredata(xseries)
+#   else if (is.matrix(xseries))
+#     x <- xseries
+#   else
+#     x <- matrix(xseries,nrow=1)
+#   ll <- apply(x,1,function(x,r,K,T,sigma,S){
+#     deltat <- 1/250
+#     V_t0 <- Black_Scholes(0, S, r, sigma, K, T, "call")
+#     V_t1 = Black_Scholes(deltat, exp(log(S)+x[1]), r, exp(log(sigma)+x[2]), K, T, "call")
+#     - (V_t1 - V_t0)/V_t0
+#   },
+#               r=r,K=K,T=T,sigma=sigma,S=S)
+#   if (is.xts(xseries))
+#     ll <- xts(ll,time(xseries))
+#   ll
+# }
+
+
+# Calculate the first loss
+# lossop(c(-0.1, -0.1), S=80, sigma=0.2)
+
+# Calculate the second loss
+# lossop(c(-0.1, 0.1), S=100, sigma=0.2)
+
+# Create and plot hslosses
+# hslosses <- lossop(returns, S=100, sigma=0.2)
+# plot.zoo(hslosses)
+
+# Form a Q-Q plot of hslosses against normal
+# qqnorm(hslosses)
+
+# Plot the sample acf of raw data and absolute values in hslosses
+# acf(hslosses)
+# acf(abs(hslosses))
+
+
+# Estimate the 99.5% percentile of the distribution
+# quantile(hslosses, 0.995)
+
+# Estimate the 99.5% ES
+# mean(hslosses[hslosses >= quantile(hslosses, 0.995)])
+
+# Estimate the mean and standard deviation of hslosses
+# mu <- mean(hslosses)
+# sigma = sd(hslosses)
+
+# Compute the 99.5% quantile of a normal distribution
+# qnorm(p=0.995, mean=mu, sd=sigma)
+
+# Compute the 99.5% ES of a normal distribution
+# QRM::ESnorm(p=0.995, mu=mu, sd=sigma)
+
+```
+  
