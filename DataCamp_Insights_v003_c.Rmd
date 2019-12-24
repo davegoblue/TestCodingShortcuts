@@ -54251,6 +54251,224 @@ theme_set(themeOld)
   
 Chapter 1 - Data Pre-processing and Visualization  
   
+Data Normalization:  
+  
+* Data preprocessing includes normalization, visualization, and detecting/managing outliers  
+* Data normalization (feature scaling) is an important step in the ML pipeline  
+	* Not always needed, but frequently valuable (and rarely causes harm)  
+    * Min-max scaling scales every feature to a (0, 1) scale where min is 0 and max is 1  
+    * Standardization (z-score normalization) scales features to N(0, 1) by using mu, sd  
+  
+Handling Missing Data:  
+  
+* What to do with missing values is an important topic - general options include ignore/delete (often suboptimal), impute, accept (use methods that handle naturally - uncommon)  
+* The naniar package is valuable for analyzing the amount of missing data in a frame  
+	* miss_var_summary(myDF)  
+    * any_na(myDF)  
+    * myDF <- replace_with_na_all(myDF, ~.x=="?")  # replace all '?' with NA  
+    * vis_miss(myDF, cluster=TRUE)  # visualize missing values, clustered by columns with similar missingness  
+    * gg_miss_case(myDF)  # show the missingness by row  
+    * add_label_shadow(myDF)  # create columns with _NA suffixes reporting the boolean for whether the data are missing  
+* Three types of missing data - MCAR, MAR, MNAR  
+	* MCAR - can impute, will not bias findings, random patterns of missingness in meaningless clusters  
+    * MAR - can impute, may bias findings, well-defined missingness clusters at least on some dimensions  
+    * MNAR - should not impute  
+* May want to assess the quality of a missing value imputation process  
+	* How do the variable distributions change (ideally, not much)?  
+* Can us the simputation library for imputation  
+	* imp_lm <- . %>% simputation::impute_lm(Y ~ X1 + X2)  
+  
+Detecting Anomalies in Data:  
+  
+* Outlier detection for univariate data has two common heuristics - 3-sigma, or 1.5*IQR (Q1 - 1.5*IQR or Q3 + 1.5*IQR)  
+* Outlier detection for multivariate data has four common heuristics - two are kNN and LOF (local outlier factor)  
+	* Assumptions are the outliers lie far from their neighbors  
+    * kNN is the average distance of the k-nearest neighbors while LOF is the number of neighbors inside a pre-defined radius  
+    * fnn::get.knn(myDF)  
+    * LOF ~ 1 means similar density as neighbors, LOF < 1 means higher density than neighbors (inlier), LOF > 1 means lower density than neighbors (outlier)  
+* There are several approaches for managing outliers  
+	* Retention - use algorithms that are robust to outliers  
+    * Imputation - impute to some form of less extreme data (mode imputation, kNN imputation, linear imputation, etc.)  
+    * Capping - replace with 5th percentile and/or 95th percentile  
+    * Exclusion - generally not recommended, especially in small datasets or datasets that are non-normal  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# fifa_sample <- read_csv("./RInputFiles/fifa_sample.xls")
+# glimpse(fifa_sample)
+
+apps <- read_csv("./RInputFiles/googleplaystore.xls")
+apps <- apps[-10473, ]
+glimpse(apps)
+
+cars <- read_csv("./RInputFiles/car-fuel-consumption-1.xls")
+glimpse(cars)
+
+fifa_sample <- tibble::tibble(SP=c(43, 70, 47, 22, 74, 45, 65, 71, 66, 62, 58, 55, 57, 15, 67, 66, 46, 65, 71, 80, 68, 62, 49, 70, 55, 17, 56, 48, 25, 62, 14, 55, 17, 43, 62, 63, 52, 62, 58, 81, 73, 59, 60, 66, 43, 59, 58, 79, 16, 64, 14, 12, 68, 78, 36, 52, 59, 67, 75, 80, 38, 73, 56, 80, 66, 68, 72, 41, 72, 51, 66, 37, 75, 19, 15, 34, 69, 86, 74, 57, 80, 51, 76, 63, 22, 76, 43, 22, 46, 39, 55, 81, 77, 62, 81, 19, 70, 74, 60, 59), 
+                              RA=c(190, 12, 353, 669, 2.5, 2.6, 406, 18.6, 5.1, 653, 900, 450, 3.9, 713, 1.9, 4.8, 140, 1.6, 1.3, 38.1, 1.6, 953, 891, 2.2, 357, 149, 3.4, 1.7, 7, 347, 105, 2.4, 1.9, 73, 4.8, 801, 3.8, 1.2, 9.5, 6.8, 2.5, 656, 1.5, 7, 631, 1.9, 125, 6.4, 2.6, 648, 1.3, 1.3, 6.7, 20.8, 3.6, 305, 1, 357, 7.5, 17.1, 140, 1.4, 3, 10.3, 795, 6.5, 2.6, 530, 2.7, 495, 12.8, 850, 1.2, 436, 639, 945, 619, 164, 10.2, 639, 5, 365, 1.2, 350, 63, 11.7, 8.7, 534, 2.5, 413, 225, 15.2, 1.6, 534, 14.7, 119, 6.9, 20, 1.5, 512)
+                              )
+
+
+# Glimpse at the dataset
+glimpse(fifa_sample)
+
+# Compute the scale of every feature
+(fifa_scales <- sapply(fifa_sample, range))
+
+# Plot fifa_sample data
+ggplot(fifa_sample, aes(x=SP, y=RA)) + 
+    geom_point(colour="blue", size=5) + 
+    labs(title = "Original data", x="Shot power", y="Release amount (millions EUR)") +
+    theme(plot.title = element_text(size=22), text = element_text(size=18)) +
+    scale_x_continuous(breaks = round(seq(0, max(fifa_sample$SP), by = 5),1)) 
+
+
+# Apply max-min and standardization: fifa_normalized
+fifa_normalized <- fifa_sample %>% 
+    mutate(SP_MaxMin = (SP-min(SP))/(max(SP)-min(SP)), RA_MaxMin = (RA-min(RA))/(max(RA)-min(RA)), 
+           SP_ZScore = (SP - mean(SP)) / sd(SP), RA_ZScore = (RA - mean(RA)) / sd(RA)
+           )
+
+# Compute the scale of every feature: fifa_normalized_scales
+(fifa_normalized_scales <- sapply(fifa_normalized, range))
+
+# Boxplot of original and normalized distributions
+boxplot(fifa_normalized[, c("SP", "RA")], main = 'Original')
+boxplot(fifa_normalized[, c("SP_MaxMin", "RA_MaxMin")], main = 'Max-Min')
+boxplot(fifa_normalized[, c("SP_ZScore", "RA_ZScore")], main = 'Z-Score')
+
+
+bands <- tibble::tibble(Blade_pressure=c('20', '20', '30', '30', '30', '28', '30', '28', '60', '32', '30', '40', '30', '25', '20', '?', '?', '?', '?', '?', '30', '30', '25', '30', '25', '20', '30', '25', '30', '35', '28', '30', '22', '20', '35', '?', '30', '28', '31', '34', '32', '?', '30', '30', '24', '20', '35', '25', '25', '34', '16', '20', '28', '25', '30', '35', '46', '50', '25', '30'), 
+                        Roughness=c('0.75', '0.75', '?', '0.312', '0.75', '0.438', '0.75', '0.75', '0.75', '1.0', '0.75', '0.75', '1.0', '0.625', '1.0', '1.0', '?', '?', '0.75', '0.75', '0.812', '0.812', '0.812', '1.0', '1.0', '1.0', '1.0', '1.0', '0.75', '0.75', '0.75', '0.75', '0.625', '0.625', '0.75', '0.875', '0.625', '1.0', '1.0', '0.75', '1.0', '0.875', '0.875', '0.812', '0.75', '0.75', '0.812', '0.625', '0.625', '0.5', '0.75', '0.75', '0.75', '0.875', '0.625', '?', '0.75', '0.75', '0.625', '0.875'), 
+                        Ink_pct=c('50.5', '54.9', '53.8', '55.6', '57.5', '53.8', '62.5', '62.5', '60.2', '45.5', '48.5', '52.6', '50.0', '59.5', '49.5', '62.5', '62.5', '58.8', '54.9', '56.2', '58.8', '62.5', '58.1', '62.5', '57.5', '57.5', '57.5', '58.8', '58.8', '58.8', '45.0', '43.5', '54.3', '53.2', '58.8', '63.0', '58.1', '58.8', '54.3', '62.5', '58.1', '61.7', '55.6', '55.6', '58.1', '56.2', '58.8', '57.5', '58.8', '61.0', '50.5', '50.5', '58.8', '58.8', '62.5', '55.6', '58.8', '62.5', '52.6', '54.9'), 
+                        Ink_temperature=c('17.0', '15.0', '16.0', '16.0', '17.0', '16.8', '16.5', '16.5', '12.0', '16.0', '16.0', '14.0', '15.0', '14.5', '16.0', '15.0', '14.0', '15.5', '16.4', '16.5', '16.0', '15.0', '16.3', '15.8', '14.5', '14.0', '15.0', '15.2', '15.0', '17.0', '16.0', '16.5', '14.1', '14.0', '17.0', '15.4', '15.0', '16.0', '15.0', '15.0', '16.0', '15.4', '16.0', '16.3', '15.8', '16.6', '17.0', '13.0', '14.0', '15.9', '17.0', '16.5', '15.0', '16.5', '18.0', '17.0', '12.0', '16.0', '14.6', '24.5'),
+                        Band_type=c('band', 'noband', 'noband', 'noband', 'noband', 'noband', 'noband', 'noband', 'band', 'noband', 'noband', 'band', 'band', 'band', 'noband', 'band', 'noband', 'noband', 'noband', 'noband', 'noband', 'noband', 'noband', 'band', 'band', 'band', 'noband', 'noband', 'band', 'band', 'noband', 'noband', 'noband', 'noband', 'band', 'noband', 'band', 'noband', 'noband', 'noband', 'noband', 'noband', 'noband', 'noband', 'noband', 'noband', 'noband', 'noband', 'noband', 'noband', 'band', 'band', 'noband', 'noband', 'noband', 'noband', 'noband', 'noband', 'band', 'band')
+                        )
+str(bands)
+
+
+# Check for missing values using base R and naniar functions
+any(is.na(bands))
+naniar::any_na(bands)
+
+# What? No missing values! Take a closer glimpse
+glimpse(bands)
+
+# Replace ? with NAs: bands
+bands <- naniar::replace_with_na_all(bands, ~.x == '?')
+
+# Compute missingness summaries
+naniar::miss_var_summary(bands)
+
+
+# Visualize overall missingness
+naniar::vis_miss(bands)
+
+# Visualize overall missingness, clustered
+naniar::vis_miss(bands, cluster = TRUE)
+
+# Visualize missingness in each variable
+naniar::gg_miss_var(bands)
+
+# Missingness in variables, faceted by Band_type
+naniar::gg_miss_var(bands, facet = Band_type)
+
+# Visualize missingness in cases
+naniar::gg_miss_case(bands)
+
+
+# Impute with the mean
+imp_mean <- bands %>%
+    naniar::bind_shadow(only_miss = TRUE) %>%
+    naniar::add_label_shadow() %>%
+    naniar::impute_mean_all()
+
+# Impute with lm
+imp_lm <- bands %>%
+    naniar::bind_shadow(only_miss = TRUE) %>%
+    naniar::add_label_shadow() %>%
+    simputation::impute_lm(Blade_pressure ~ Ink_temperature) %>%
+    simputation::impute_lm(Roughness ~ Ink_temperature) %>%
+    simputation::impute_lm(Ink_pct ~ Ink_temperature)
+
+
+# Peek at the first few rows of imp_models_long
+# head(imp_models_long)
+
+# Visualize post-imputation distributions
+# ggplot(imp_models_long, aes(x = imp_model, y = value)) + 
+#     geom_violin(aes(fill=imp_model)) +
+#     facet_wrap(~variable, scales='free_y')
+
+# Calculate post-imputation distribution stats
+# imp_models_long %>% 
+#     group_by(imp_model, variable) %>% 
+#     summarize(var = var(value), avg = mean(value), 
+#     median = median(value)) %>% 
+#     arrange(variable)
+
+
+# Peek at the cars dataset
+head(cars)
+
+# Boxplot of consume variable distribution
+boxplot(cars$consume)
+
+# Five-number summary: consume_quantiles
+(consume_quantiles <- quantile(cars$consume))
+
+# Calculate upper threshold: upper_th
+upper_th <- consume_quantiles["75%"] + 1.5 * (consume_quantiles["75%"] - consume_quantiles["25%"])
+
+# Print the sorted vector of distinct potential outliers
+sort(unique(cars$consume[cars$consume > upper_th]))
+
+
+# Scale data and create scatterplot: cars_scaled
+cars_scaled <- cars %>%
+    select(distance, consume) %>%
+    scale() %>%
+    as.data.frame()
+plot(distance ~ consume, data = cars_scaled, main = 'Fuel consumption vs. distance')
+
+# Compute KNN score
+cars_knn <- FNN::get.knn(data = cars_scaled, k = 7)
+cars$knn_score <- rowMeans(cars_knn$nn.dist)
+
+# Print top 5 KNN scores and data point indices: top5_knn
+(top5_knn <- order(cars$knn_score, decreasing = TRUE)[1:5])
+print(cars$knn_score[top5_knn])
+
+# Plot variables using KNN score as size of points
+plot(distance ~ consume, cex = knn_score, data = cars,  pch = 20)
+
+
+# Scale cars data: cars_scaled
+cars_scaled <- cars %>%
+    select(distance, consume, knn_score) %>%
+    scale() %>%
+    as.data.frame()
+
+# Add lof_score column to cars
+cars$lof_score <- dbscan::lof(cars_scaled, k = 7)
+
+# Print top 5 LOF scores and data point indices: top5_lof
+(top5_lof <- order(cars$lof_score, decreasing = TRUE)[1:5])
+print(cars$lof_score[top5_lof])
+
+# Plot variables using LOF score as size of points
+plot(distance ~ consume, cex = lof_score, data = cars, pch = 20)
+
+```
+  
+  
+  
+***
+  
+Chapter 2 - Supervised Learning  
+  
+
 
 
 
