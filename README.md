@@ -1735,4 +1735,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Quantitative Risk Management in R - Chapter 4 (Estimating Portfolio Value at Risk - VaR) - code  
 * DataCamp_Insights_v003_c captures Preparing for Machine Learning Questions in R - Chapter 1 (Data Pre-Processing and Visualization) - notes  
 * DataCamp_Insights_v003_c captures Preparing for Machine Learning Questions in R - Chapter 2 (Supervised Learning) - notes  
+* DataCamp_Insights_v003_c captures Preparing for Machine Learning Questions in R - Chapter 3 (Unsupervised Learning) - notes  
   
