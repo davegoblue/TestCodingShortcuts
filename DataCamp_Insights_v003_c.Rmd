@@ -55010,7 +55010,278 @@ apps_clean <- apps %>%
   
 Chapter 4 - Model Evaluation  
   
+Model Evaluation:  
+  
+* Several aspects should be considered when evaluating an ML model - classification, regression, and clustering have different techniques  
+	* Make sure that the evaluation is realistic through appropriate holdout (test-validate-train)  
+    * Cross-validation can be a useful technique for estimating OOB and OOS errors  
+* Confusion matrices and ROC/AUC are commonly used for assessing classification algorithms  
+	* May want to modify accuracy to a cost-sensitive accuracy (errors with different penalties) or work with balanced classes  
+* Regression models are often evaluated using RMSE  
+* Clustering is often evaluate based on some mix of WSS and BSS - compactness and good separation  
+  
+Handling Imbalanced Data:  
+  
+* Significantly imbalanced data can lead to algorithmic and reporting (especially accuracy) problems for classification data  
+* Two popular avenues for dealing with imbalanced data - cost-sensitive classification, or sub-sampling  
+	* In cost-sensitive classification, the goal is to minimize the cost of classification errors  
+    * In subsampling training data, can downsample majority; upsample minority; and SMOTE (synthetic minority oversampling technique)  
+* Can subsample before model evaluation, though this can lead to over-optimistic assessments of the model  
+	* Subsamping during model training (e.g., bootstraps) is computationally more expensive but also more likely to give realistic assessments of model performance  
+  
+Hyperparameter Tuning:  
+  
+* Model parameters are learned during the training process while hyperparameters are provided as inputs to the model  
+	* Tuning hyperparameters can be seen as part (often iterative) of a meta-learning process  
+* Three main hyperparameter tuning strategies include grid search, random search, and informed search  
+	* Grid search is an exhaustive search over all possible combinations of hyperparameters - very computationally expensive but also easy to parallelize  
+    * Random search involves sampling from possible combination of hyperparameters - easy to parallelize and can outperform grid search on continuous variables  
+    * Informed search methods like Bayesian optimization pick parameters based on performance - samples more aggressively around more promising values  
+* Several R packages can help with hyperparameter tuning - caret, mlr, h2o  
+  
+Random Forests or Gradient Boosted Trees:  
+  
+* Random Forests and Gradient Boosted Trees are both popular and successful models  
+	* Both are top performers for classification or regression  
+    * Both use decision trees as base learners and can handle missing values and require a number of trees to be pre-specified  
+    * Random forests use bagging on deep trees (minimize bias) and ensembling to reduce variance; grown in parallel and easier to tune  
+    * Gradient boosted trees use boosting on shallow trees (minimize variance) and ensembling to reduce bias; grown sequentially, with trees added only as needed  
+* Random forests can be run using several packages including randomForest and ranger, or inside caret  
+	* tunedModel <- randomForest::tuneRF(x=predictors, y=response, nTreeTry=500)  # tunes mtry  
+    * tunedModel <- caret::train(x=predictors, y=response, method="rf")  # tunes mtry by default, and can specify others for tuning  
+* Gradient boosted trees can be run using several packages including gbm and xgboost  
+	* opt_ntree_cv <- gbm::gbm.perf(model, method="cv")  
+    * opt_ntree_oob <- gbm::gbm.perf(model, method="OOB")  
+    * model <- caret::train(x=predictors, y=response, method="xgbLinear")  
+  
+Wrap Up:  
+  
+* Data preprocessing and visualization - scaling, missing data, imputation, anomaly detection  
+* Supervised learning - model interpretability, regularization, bias-variance trade-offs, ensembling  
+* Unsupervised learning - clustering (k-means, hierarchical, RAM), feature selection, NZV, feature extraction  
+* Model selection and evaluation - classification, regression, clustering, class imbalances, hyperparameter tuning, RF vs. GBM  
+  
+Example code includes:  
+```{r eval=FALSE}
 
+apps <- appsOld %>%
+    select(Category, Rating, Reviews, Size, Installs, `Content Rating`) %>%
+    rename(Content.Rating=`Content Rating`) %>%
+    filter(complete.cases(.), Category %in% c("EDUCATION", "ENTERTAINMENT"), 
+           Size!="Varies with device"
+           ) %>%
+    mutate(Category=factor(Category), Installs=factor(Installs), Content.Rating=factor(Content.Rating))
+
+appSize <- rep(NA, nrow(apps))
+mbSize <- grep("^[0-9][0-9\\.]*M", apps$Size)
+kbSize <- grep("^[0-9][0-9\\.]*k", apps$Size)
+appSize[mbSize] <- as.numeric(gsub('M', '', apps$Size[mbSize]))
+appSize[kbSize] <- as.numeric(gsub('k', '', apps$Size[kbSize])) / 1000
+
+apps$Size <- appSize
+glimpse(apps)
+
+
+set.seed(1912261548)
+trIndex <- sort(sample(1:nrow(apps), round(0.75*nrow(apps)), replace=FALSE))
+training <- apps[trIndex, ]
+testing <- apps[-trIndex, ]
+
+
+cv10 <- caret::trainControl(method="cv", number=10, classProbs=TRUE, 
+                            summaryFunction=caret::twoClassSummary
+                            )
+
+# Create KNN model: mdlKNN
+set.seed(123)
+mdlKNN <- train(Category ~ ., data = training, method = "knn", trControl = cv10, metric="ROC")
+
+# Print the KNN model and its confusion matrix
+print(mdlKNN)
+ModelMetrics::confusionMatrix(predict(mdlKNN, testing), testing$Category)
+
+# Predict class labels and probs: knn_preds, knn_probs
+knn_preds <- predict(mdlKNN, newdata = testing)
+knn_probs <- predict(mdlKNN, newdata = testing, type="prob")
+
+# Print accuracy and AUC values
+print(Metrics::accuracy(testing$Category, knn_preds))
+print(Metrics::auc(testing$Category == 'ENTERTAINMENT', knn_probs[, 2]))
+
+
+# Train SVM: mdlSVM
+# set.seed(123)
+# mdlSVM <- train(Overall ~ ., data = training, method = "svmRadial", trControl = cv10)
+
+# Print the SVM model
+# print(mdlSVM)
+
+# Predict overall score on testing data: svm_preds
+# svm_preds <- predict(mdlSVM, newdata = testing)
+
+# Print RMSE and MAE values
+# print(rmse(testing$Overall, svm_preds))
+# print(mae(testing$Overall, svm_preds))
+
+
+# Glimpse at the data
+glimpse(mall_scaled)
+
+# Run DIANA: results
+results <- clValid::clValid(mall_scaled, 2:10, clMethods = "diana", validation = "internal")
+
+# Print and summarize results
+print(results)
+summary(results)
+
+# Plot results
+plot(results)
+
+
+# Glimpse at the data
+# glimpse(pulsar)
+
+# Is there a class imbalance?
+# table(pulsar$target_class)
+
+# Set seed and partition data
+# set.seed(123)
+# inTrain <- createDataPartition(y = pulsar$target_class, p = .75, list = FALSE)
+# training <- pulsar[inTrain,]
+# testing <- pulsar[-inTrain,]
+
+# Is there class imbalance in the training and test sets?
+# table(training$target_class)
+# table(testing$target_class)
+
+
+trainDTree <- function(train_data, samplingMode = NULL) {
+    set.seed(123)
+    ctrl <- trainControl(method = "cv", number = 10, classProbs = TRUE,
+                         summaryFunction = twoClassSummary, sampling = samplingMode
+                         )
+    train(target_class ~ ., data = train_data, method = "rpart", metric = "ROC", trControl = ctrl)
+}
+
+# Train and print model with no subsampling: mdl_orig
+# (mdl_orig <- trainDTree(training))
+
+# Train model with downsampling: mdl_down
+# (mdl_down <- trainDTree(training, samplingMode = "down"))
+
+# Train model with upsampling: mdl_up
+# (mdl_up <- trainDTree(training, samplingMode = "up"))
+
+# Train model with SMOTE: mdl_smote
+# (mdl_smote <- trainDTree(training, samplingMode = "smote"))
+
+
+get_auc <- function(model, data) {
+    library(Metrics)
+    preds <- predict(model, data, type = "prob")[, "yes"]
+    auc(data$target_class == "yes", preds)
+}
+
+# Create model list: mdl_list
+# mdl_list <- list(orig = mdl_orig, down = mdl_down, up = mdl_up, smote = mdl_smote)
+
+# Compute AUC on training subsamples: resampling
+# resampling <- resamples(mdl_list)
+# summary(resampling, metric="ROC")
+
+# Compute AUC on test data: auc_values
+# auc_values <- sapply(mdl_list, FUN=get_auc, data = testing)
+# print(auc_values)
+
+
+set.seed(1912261602)
+carIdx <- sort(sample(1:nrow(car), round(0.75*nrow(car)), replace=FALSE))
+car_train <- car[carIdx, ]
+car_test <- car[-carIdx, ]
+
+
+# Set up train control: trc
+trc <- caret::trainControl(method = "repeatedcv", number = 3, repeats = 5)
+
+# Train model: svmr
+svmr <- caret::train(consume ~ ., data = car_train, method = "svmRadial", trControl = trc)
+
+# Print and plot SVM model
+print(svmr)
+plot(svmr)
+
+
+# Set up train control: trc
+trc <- caret::trainControl(method = "cv", number = 10)
+
+# Create custom hyperparameter grid: hp_grid
+hp_grid <- expand.grid(C = seq(from=0.2, to=1.0, by=0.2), sigma = c(0.35, 0.6, 0.75))
+
+# Train model: svmr
+svmr <- caret::train(consume ~ ., data = car_train, method = "svmRadial", trControl = trc, tuneGrid = hp_grid)
+
+# Print and plot SVM model
+print(svmr)
+plot(svmr)
+
+
+# Set random seed
+set.seed(42)
+
+# Set up train control: trc
+trc <- caret::trainControl(method = "cv", number = 10, search = "random")
+
+# Train model: svmr
+svmr <- caret::train(consume ~ ., data = car_train, method = "svmRadial", trControl = trc, tuneLength = 10)
+
+# Print and plot SVM model
+print(svmr)
+plot(svmr)
+
+
+# Train the RF model: mdlRF
+mdlRF <- randomForest::randomForest(formula = Rating ~ ., data = training, ntree = 500)
+
+# Print the RF model
+print(mdlRF)
+
+# RF variable importance
+randomForest::varImpPlot(mdlRF)
+print(mdlRF$importance)
+
+
+# Train a GBM model with 500 trees: mdlGBM
+mdlGBM <- gbm::gbm(formula = Rating ~ ., data = training, n.trees = 500)
+
+# Print GBM model
+print(mdlGBM)
+
+# Summarize GBM's variable importance
+summary(mdlGBM)
+
+
+# Predict on the testing data: gbm_preds, rf_preds
+gbm_preds <- predict(mdlGBM, n.trees = 500, newdata = testing)
+rf_preds <- predict(mdlRF, newdata = testing)
+
+# RMSE metric for both models: gbm_rmse, rf_rmse
+(gbm_rmse <- Metrics::rmse(testing$Rating, gbm_preds))
+(rf_rmse <- Metrics::rmse(testing$Rating, rf_preds))
+
+# RRSE metric for both models: gbm_rrse, rf_rrse
+(gbm_rrse <- Metrics::rrse(testing$Rating, gbm_preds))
+(rf_rrse <- Metrics::rrse(testing$Rating, rf_preds))
+
+```
+  
+  
+  
+***
+  
+###_Introduction to Natural Language Processing in R_  
+  
+Chapter 1 - True Fundamentals  
+  
 
 
 
