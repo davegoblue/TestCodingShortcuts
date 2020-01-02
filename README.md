@@ -1744,4 +1744,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Valuation of Insurance products in R - Chapter 3 (Life Annuities) - code  
 * DataCamp_Insights_v003_c captures Valuation of Insurance products in R - Chapter 4 (Life Insurances) - code  
 * DataCamp_Insights_v003_c captures Introduction to Natural Language Processing in R - Chapter 1 (True Fundamentals) - notes  
+* DataCamp_Insights_v003_c captures Introduction to Natural Language Processing in R - Chapter 2 (Representations of Text) - notes  
   
