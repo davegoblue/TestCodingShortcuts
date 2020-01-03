@@ -55602,6 +55602,289 @@ animal_farm_counts %>%
   
 Chapter 3 - Applications: Classification and Topic Modeling  
   
+Preparing Text for Modeling:  
+  
+* Two common text analysis techniques include text classification and topic modeling  
+* Classification modeling is a type of supervised learning - separation in to unique categories  
+	* Example of classifying sentences about Napoleon vs. Boxer  
+    * sentences <- animal_farm %>% unnest_tokens(output="sentence", token="sentences", input=text_column)  
+    * sentences$boxer <- grepl("boxer", sentences$sentence)  
+    * sentences$napoleon <- grepl("napoleon", sentences$sentence)  
+    * sentences$sentence <- gsub("boxer", "animal X", sentences$sentence)  
+    * sentences$sentence <- gsub("napoleon", "animal X", sentences$sentence)  
+    * animal_sentences <- sentences[(sentences$boxer + sentences$napoleon) == 1, ]  
+    * animal_sentences$Name <- as.factor(ifelse(animal_sentences$boxer, "boxer", "napoleon"))  
+    * animal_sentences <- rbind(animal_sentences[animal_sentences$Name == "boxer", ][1:75, ], animal_sentences[animal_sentences$Name == "napoleon", ][1:75, ])  
+    * animal_sentences$sentence_id <- c(1:dim(animal_sentences)[1])  
+* With data prepared, can attempt to predict which sentence refers to each of the animals  
+	* animal_tokens <- animal_sentences %>% unnest_tokens(output="word", token="words", input=sentence) %>% anti_join(stop_words) %>% mutate(word=wordStem(word))  
+    * animal_matrix <- animal_tokens %>% count(sentence_id, word) %>% tidytext::cast_dtm(document=sentence_id, term=word, value=n, weighting=tm::weightTfIdf)  
+    * removeSparseTerms(animal_matrix, sparse=0.90)  # reduces to 66% sparisty from 99%+ sparsity  
+    * Decisions on optimal amount of sparsity depend on computing power as well as number of terms needed for good classification  
+  
+Classification Modeling:  
+  
+* Can split data in many ways, including use of sample()  
+	* set.seed(1111)  
+    * sample_size <- floor(0.8 * nrow(animal_matrix))  
+    * train_ind <- sample(nrow(animal_matrix), size=sample_size)  
+    * train <- animal_matrix[train_ind, ]  
+    * test <- animal_matrix[-train_ind, ]  
+* Can use the random forest classification techniques  
+	* rfc <- randomForest::randomForest(x=as.data.frame(as.matrix(train)), y=animal_sentences$Name[train_ind], nTree=50)  
+    * y_pred <- predict(rfc, newdata=as.data.frame(as.matrix(test))  
+    * table(animal_sentences[-train_id]$Name, y_pred)  # confusion matrix  
+  
+Introduction to Topic Modeling:  
+  
+* Text is typically made up of a collection of topics  
+	* Documents are a mix of topics  
+    * Topics are a mix of words  
+* Can prepare for LDA to assist in topic modeling  
+	* animal_farm_tokens <- animal_farm %>% unnest_tokens(output="word", token="words", input=text_column) %>% anti_join(stop_words) %>% mutate(word=wordStem(word))  
+    * animal_farm_matrix <- animal_farm_tokens %>% count(chapter, word) %>% cast_dtm(document=chapter, term=word, value=n, weighting=tm::weightTf)  # LDA requires tf rather than tf-idf  
+    * animal_farm_lda <- LDA(train, k=4, method="Gibbs", control=list(seed=1111))  
+    * animal_farm_betas <- tidy(animal_farm_lda, matrix="beta")  # beta is a per-topic metric (words more related to a single topic should have a higher beta)  
+* Can then label documents as topics  
+	* animal_farm_chapters <- tidy(animal_farm_lda, matrix="gamma")  # gamma represents how much each chapter is made up of a topic  
+    * animal_farm_chapters %>% filter(document == "Chapter 1")  
+  
+LDA in Practice:  
+  
+* Need to select the number of topics as an input to LDA - can use perplexity as a metric  
+* Perplexity is a model of how well a model fits new data - lower is better  
+	* Start with the standard test/train data splitting  
+    * Can create an lda_model for many different k and store the resulting perplexity(lda_model, newdata=test)  
+    * Can plot and then look for elbows or flattening points where the perplexity is no longer decreasing  
+* Practical considerations are important also - sometimes fewer topics are easier to communicate and comprehend, even at the sacrifice of some excess perplexity  
+	* Common to have a SME review some of the top articles and words, and then to provide a theme for each topic  
+* Can run summaries of the output  
+	* gammas <- tidy(lda_model, matrix="gamma")  
+    * gammas %>% group_by(document) %>% arrange(desc(gamma)) %>% slice(1) %>% group_by(topic) %>% tally(topic, sort=TRUE)  
+    * gammas %>% group_by(document) %>% arrange(desc(gamma)) %>% slice(1) %>% group_by(topic) %>% summarize(avg=mean(gamma)) %>% arrange(desc(avg))  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Stem the tokens
+russian_tokens <- russian_tweets %>%
+    tidytext::unnest_tokens(output = "word", token = "words", input = content) %>%
+    anti_join(tidytext::stop_words) %>%
+    mutate(word = SnowballC::wordStem(word))
+
+# Create a document term matrix 
+tweet_matrix <- russian_tokens %>%
+    count(tweet_id, word) %>%
+    tidytext::cast_dtm(document = tweet_id, term = word, value = n, weighting = tm::weightTfIdf)
+
+# Print the matrix details 
+tweet_matrix
+
+
+less_sparse_matrix <- tm::removeSparseTerms(tweet_matrix, sparse = 0.5)
+
+# Print results
+tweet_matrix
+less_sparse_matrix
+
+less_sparse_matrix <- tm::removeSparseTerms(tweet_matrix, sparse = 0.9)
+
+# Print results
+tweet_matrix
+less_sparse_matrix
+
+less_sparse_matrix <- tm::removeSparseTerms(tweet_matrix, sparse = 0.99)
+
+# Print results
+tweet_matrix
+less_sparse_matrix
+
+less_sparse_matrix <- tm::removeSparseTerms(tweet_matrix, sparse =0.9999)
+
+# Print results
+tweet_matrix
+less_sparse_matrix
+
+
+set.seed(2001021530)
+
+rightTweet <- russian_tweets %>%
+    filter(account_type=="Right") %>%
+    sample_n(2000)
+
+leftTweet <- russian_tweets %>%
+    filter(account_type=="Left") %>%
+    sample_n(2000)
+
+
+idx <- sample(1:4000, 4000, replace=FALSE)
+
+leftRightData <- rbind(rightTweet, leftTweet)[idx, ]
+
+
+leftRight_tokens <- leftRightData %>%
+    tidytext::unnest_tokens(output = "word", token = "words", input = content) %>%
+    anti_join(tidytext::stop_words) %>%
+    mutate(word = SnowballC::wordStem(word))
+
+# Create a document term matrix 
+left_right_matrix_small <- leftRight_tokens %>%
+    count(tweet_id, word) %>%
+    tidytext::cast_dtm(document = tweet_id, term = word, value = n, weighting = tm::weightTfIdf) %>%
+    tm::removeSparseTerms(sparse = 0.99)
+
+left_right_labels <- c()
+for (lbl in rownames(as.matrix(left_right_matrix_small))) {
+    newPoint <- leftRightData %>%
+        filter(tweet_id==lbl) %>%
+        pull(account_type)
+    left_right_labels <- c(left_right_labels, newPoint)
+}
+left_right_labels <- as.factor(left_right_labels)
+
+
+# Create train/test split
+set.seed(1111)
+sample_size <- floor(0.75 * nrow(left_right_matrix_small))
+train_ind <- sample(nrow(left_right_matrix_small), size = sample_size)
+train <- left_right_matrix_small[train_ind, ]
+test <- left_right_matrix_small[-train_ind, ]
+
+# Create a random forest classifier
+rfc <- randomForest::randomForest(x = as.data.frame(as.matrix(train)), 
+                                  y = left_right_labels[train_ind], nTree = 50
+                                  )
+
+# Print the results
+rfc
+
+
+# Percentage correctly labeled "Left"
+# left <- (350) / (350 + 157)
+# left
+
+# Percentage correctly labeled "Right"
+# right <- (436) / (436 + 57)
+# right
+
+# Overall Accuracy:
+# accuracy <- (350 + 436) / (350 + 436 + 57 + 157)
+# accuracy
+
+
+napolSents <- animal_farm %>%
+    tidytext::unnest_tokens(output = "sentences", input = text_column, token = "sentences") %>%
+    mutate(sentence_id=row_number(), napoleon=str_detect(sentences, 'napoleon')) %>%
+    filter(napoleon)
+
+pig_tokens <- napolSents %>%
+    tidytext::unnest_tokens(output = "word", token = "words", input = sentences) %>%
+    anti_join(tidytext::stop_words) %>%
+    mutate(word = SnowballC::wordStem(word))
+
+# Create a document term matrix 
+pig_matrix <- pig_tokens %>%
+    count(sentence_id, word) %>%
+    tidytext::cast_dtm(document = sentence_id, term = word, value = n, weighting = tm::weightTf) %>%
+    tm::removeSparseTerms(sparse=0.995)
+
+# Perform Topic Modeling
+sentence_lda <-
+    topicmodels::LDA(pig_matrix, k = 10, method = 'Gibbs', control = list(seed = 1111))
+
+# Extract the beta matrix 
+sentence_betas <- generics::tidy(sentence_lda, matrix = "beta")
+
+# Topic #2
+sentence_betas %>%
+    filter(topic == 2) %>%
+    arrange(-beta)
+
+# Topic #10
+sentence_betas %>%
+    filter(topic == 3) %>%
+    arrange(-beta)
+
+
+# Extract the beta and gamma matrices
+sentence_betas <- generics::tidy(sentence_lda, matrix = "beta")
+sentence_gammas <- generics::tidy(sentence_lda, matrix = "gamma")
+
+# Explore Topic 5 Betas
+sentence_betas %>%
+    filter(topic == 5) %>%
+    arrange(-beta)
+
+# Explore Topic 5 Gammas
+sentence_gammas %>%
+    filter(topic == 5) %>%
+    arrange(-gamma)
+
+# Print the topic setence for topic 5
+napolSents$sentences[which(napolSents$sentence_id == (sentence_gammas %>% group_by(topic) %>% 
+                                                          top_n(1, gamma) %>% filter(topic==5) %>% 
+                                                          pull(document) %>% as.numeric()
+                                                      )
+                           )
+                    ]
+
+
+right_tokens <- rightTweet %>%
+    tidytext::unnest_tokens(output = "word", token = "words", input = content) %>%
+    anti_join(tidytext::stop_words) %>%
+    mutate(word = SnowballC::wordStem(word))
+
+# Create a document term matrix 
+right_matrix <- right_tokens %>%
+    count(tweet_id, word) %>%
+    tidytext::cast_dtm(document = tweet_id, term = word, value = n, weighting = tm::weightTf)
+
+
+# Setup train and test data
+sample_size <- floor(0.90 * nrow(right_matrix))
+set.seed(1111)
+train_ind <- sample(nrow(right_matrix), size = sample_size)
+train <- right_matrix[train_ind, ]
+test <- right_matrix[-train_ind, ]
+
+# Peform topic modeling 
+lda_model <- topicmodels::LDA(train, k = 5, method = "Gibbs",control = list(seed = 1111))
+
+# Train
+topicmodels::perplexity(lda_model, newdata = train) 
+
+# Test
+topicmodels::perplexity(lda_model, newdata = test) 
+
+
+# Extract the gamma matrix 
+gamma_values <- generics::tidy(sentence_lda, matrix = "gamma")
+
+# Create grouped gamma tibble
+grouped_gammas <- gamma_values %>%
+    group_by(document) %>%
+    arrange(desc(gamma)) %>%
+    slice(1) %>%
+    group_by(topic)
+    
+# Count by topic
+grouped_gammas %>% 
+    tally(topic, sort=TRUE)
+
+# Average topic weight for top topic for each sentence
+grouped_gammas %>% 
+    summarize(avg=mean(gamma)) %>%
+    arrange(desc(avg))
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Advanced Techniques  
+  
+
 
 
 
