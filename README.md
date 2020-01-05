@@ -1747,4 +1747,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to Natural Language Processing in R - Chapter 2 (Representations of Text) - notes  
 * DataCamp_Insights_v003_c captures Introduction to Natural Language Processing in R - Chapter 3 (Applications: Classification and Topic Modeling) - notes  
 * DataCamp_Insights_v003_c captures Introduction to Natural Language Processing in R - Chapter 4 (Advanced Techniques) - notes  
+* DataCamp_Insights_v003_c captures Data Manipulation with dplyr in R - Chapter 1 (Transforming Data with dplyr) - notes  
   
