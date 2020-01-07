@@ -1751,4 +1751,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 06-JAN-2020  
 * DataCamp_Insights_v003_c captures Data Manipulation with dplyr in R - Chapter 2 (Aggregating Data) - code  
+* DataCamp_Insights_v003_c captures Data Manipulation with dplyr in R - Chapter 3 (Selecting and Transforming Data) - code  
   
