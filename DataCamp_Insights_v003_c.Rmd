@@ -56237,7 +56237,170 @@ themes %>%
   
 ***
   
-Chapter 3 - Full, Semi, and Anti Joins
+Chapter 3 - Full, Semi, and Anti Joins  
+  
+The full_join verb:  
+  
+* The full_join() will keep all records from both tables, matching them where possible and leaving NA for columns of non-matching records  
+* Can use tidyr::replace_na() on multiple variables 
+    * replace_na(list(a=0, b=0))  
+  
+The semi and anti-join verbs:  
+  
+* The full_join, left_join, right_join, and inner_join are all mutating verbs, which is to say that they change the number of columns  
+* Filtering joins are different in that they keep only a subset of records, without mutating any of the columns  
+	* semi_join() keeps observations in x that can be found in y  
+    * anti_join() keeps observations in x that cannot be found in y  
+  
+Visualizing set differences:  
+  
+* Can aggregate all of the sets to colors, summing the quantities by color for each set  
+* Can then full join the color schemes together, for a single table of all the colors used  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+inventory_parts_joined <- inventories %>%
+    inner_join(inventory_parts, by = c("id" = "inventory_id")) %>%
+    arrange(desc(quantity)) %>%
+    select(-id, -version)
+str(inventory_parts_joined)
+
+
+inventory_parts_joined %>%
+    # Combine the sets table with inventory_parts_joined 
+    inner_join(sets, by=c("set_num"="set_num")) %>%
+    # Combine the themes table with your first join 
+    inner_join(themes, by=c("theme_id"="id"), suffix=c("_set", "_theme"))
+
+
+inventory_sets_themes <- inventory_parts_joined %>%
+    inner_join(sets, by = "set_num") %>%
+    inner_join(themes, by = c("theme_id" = "id"), suffix = c("_set", "_theme"))
+str(inventory_sets_themes)
+
+batman <- inventory_sets_themes %>%
+    filter(name_theme == "Batman")
+str(batman)
+
+star_wars <- inventory_sets_themes %>%
+    filter(name_theme == "Star Wars")
+str(star_wars)
+
+
+# Count the part number and color id, weight by quantity
+(batman_parts <- batman %>%
+    count(part_num, color_id, wt=quantity))
+
+(star_wars_parts <- star_wars %>%
+    count(part_num, color_id, wt=quantity))
+
+
+(parts_joined <- batman_parts %>%
+    # Combine the star_wars_parts table 
+    full_join(star_wars_parts, by=c("part_num", "color_id"), suffix=c("_batman", "_star_wars")) %>%
+    # Replace NAs with 0s in the n_batman and n_star_wars columns 
+    replace_na(list(n_batman=0, n_star_wars=0)))
+
+
+parts_joined %>%
+    # Sort the number of star wars pieces in descending order 
+    arrange(-n_star_wars) %>%
+    # Join the colors table to the parts_joined table
+    left_join(colors, by=c("color_id"="id")) %>%
+    # Join the parts table to the previous join 
+    left_join(parts, by=c("part_num"), suffix=c("_color", "_part"))
+
+
+batmobile <- inventory_parts_joined %>%
+    filter(set_num == "7784-1") %>%
+    select(-set_num)
+str(batmobile)
+
+batwing <- inventory_parts_joined %>%
+    filter(set_num == "70916-1") %>%
+    select(-set_num)
+str(batwing)
+
+
+# Filter the batwing set for parts that are also in the batmobile set
+batwing %>%
+    semi_join(batmobile, by=c("part_num"))
+
+# Filter the batwing set for parts that aren't in the batmobile set
+batwing %>%
+    anti_join(batmobile, by=c("part_num"))
+
+
+# Use inventory_parts to find colors included in at least one set
+colors %>%
+    semi_join(inventory_parts, by=c("id"="color_id"))
+
+
+# Use filter() to extract version 1 
+version_1_inventories <- inventories %>%
+    filter(version==1)
+
+# Use anti_join() to find which set is missing a version 1
+sets %>%
+    anti_join(version_1_inventories, by=c("set_num"))
+
+
+(inventory_parts_themes <- inventories %>%
+    inner_join(inventory_parts, by = c("id" = "inventory_id")) %>%
+    arrange(desc(quantity)) %>%
+    select(-id, -version) %>%
+    inner_join(sets, by = "set_num") %>%
+    inner_join(themes, by = c("theme_id" = "id"), suffix = c("_set", "_theme")))
+
+
+batman_colors <- inventory_parts_themes %>%
+    # Filter the inventory_parts_themes table for the Batman theme
+    filter(name_theme=="Batman") %>%
+    group_by(color_id) %>%
+    summarize(total = sum(quantity)) %>%
+    # Add a percent column of the total divided by the sum of the total 
+    mutate(percent=total/sum(total))
+
+# Filter and aggregate the Star Wars set data; add a percent column
+star_wars_colors <- inventory_parts_themes %>%
+    filter(name_theme=="Star Wars") %>%
+    group_by(color_id) %>%
+    summarize(total = sum(quantity)) %>%
+    mutate(percent=total/sum(total))
+
+
+(colors_joined <- batman_colors %>%
+    full_join(star_wars_colors, by = "color_id", suffix = c("_batman", "_star_wars")) %>%
+    replace_na(list(total_batman = 0, total_star_wars = 0, percent_batman=0, percent_star_wars=0)) %>%
+    inner_join(colors, by = c("color_id" = "id")) %>%
+    # Create the difference and total columns
+    mutate(difference = percent_batman - percent_star_wars, total = total_batman + total_star_wars) %>%
+    # Filter for totals greater than 200
+    filter(total >= 200))
+
+
+color_palette <- c('#05131D', '#0055BF', '#C91A09', '#F2CD37', '#FFFFFF', '#E4CD9E', '#958A73', '#C91A09', '#F5CD2F', '#582A12', '#A0A5A9', '#6C6E68', '#CC702A', '#898788', '#A0BCAC', '#D3D3D3')
+names(color_palette) <- c('Black', 'Blue', 'Red', 'Yellow', 'White', 'Tan', 'Dark Tan', 'Trans-Red', 'Trans-Yellow', 'Reddish Brown', 'Light Bluish Gray', 'Dark Bluish Gray', 'Medium Dark Flesh', 'Flat Silver', 'Sand Green', 'Light Gray')
+color_palette
+
+# Create a bar plot using colors_joined and the name and difference columns
+ggplot(colors_joined, aes(x=reorder(name, difference), y=difference, fill = name)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_manual(values = color_palette, guide = FALSE) +
+    labs(y = "Difference: Batman - Star Wars")
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Case Study: Stack Overflow  
+  
+
+
 
 
 
