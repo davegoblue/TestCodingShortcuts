@@ -1756,4 +1756,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Joining Data with dplyr in R - Chapter 1 (Joining Tables) - notes  
 * DataCamp_Insights_v003_c captures Joining Data with dplyr in R - Chapter 2 (Left and Right Joins) - notes  
 * DataCamp_Insights_v003_c captures Joining Data with dplyr in R - Chapter 3 (Full, Semi, and Anti Joins) - notes  
+* DataCamp_Insights_v003_c captures Joining Data with dplyr in R - Chapter 4 (Case Study: Stack Overflow) - notes  
   
