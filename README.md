@@ -1759,4 +1759,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Joining Data with dplyr in R - Chapter 4 (Case Study: Stack Overflow) - notes  
   
 ### Expansions week of 13-JAN-2020  
+* DataCamp_Insights_v003_c captures Introduction to TensorFlow in R - Chapter 1 (Introducing TensorFlow in R) - notes  
   
