@@ -1765,4 +1765,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to TensorFlow in R - Chapter 4 (Deep Learning in TensorFlow: Increasing Model Accuracy) - notes  
 * DataCamp_Insights_v003_c captures Introduction to Function Writing in R - Chapter 1 (How to Write a Function) - code  
 * DataCamp_Insights_v003_c captures Introduction to Function Writing in R - Chapter 2 (Arguments) - code  
+* DataCamp_Insights_v003_c captures Introduction to Function Writing in R - Chapter 3 (Return Values and Score) - code  
   
