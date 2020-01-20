@@ -1767,3 +1767,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to Function Writing in R - Chapter 2 (Arguments) - code  
 * DataCamp_Insights_v003_c captures Introduction to Function Writing in R - Chapter 3 (Return Values and Score) - code  
   
+### Expansions week of 20-JAN-2020  
+* DataCamp_Insights_v003_c captures Introduction to Function Writing in R - Chapter 4 (Case Study on Grain Yields) - code  
+  
