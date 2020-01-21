@@ -1769,4 +1769,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 20-JAN-2020  
 * DataCamp_Insights_v003_c captures Introduction to Function Writing in R - Chapter 4 (Case Study on Grain Yields) - code  
+* DataCamp_Insights_v003_c captures Market Basket Analysis in R - Chapter 1 (Introduction to Market Basket Analysis) - notes  
   
