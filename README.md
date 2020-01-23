@@ -1771,4 +1771,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to Function Writing in R - Chapter 4 (Case Study on Grain Yields) - code  
 * DataCamp_Insights_v003_c captures Market Basket Analysis in R - Chapter 1 (Introduction to Market Basket Analysis) - notes  
 * DataCamp_Insights_v003_c captures Market Basket Analysis in R - Ch 2 (Metrics and Techniques in Market Basket Analysis) - notes  
+* DataCamp_Insights_v003_c captures Market Basket Analysis in R - Chapter 3 (Visualization in Market Basket Analysis) - notes  
   
