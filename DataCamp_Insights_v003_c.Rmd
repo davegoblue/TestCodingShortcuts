@@ -57037,8 +57037,8 @@ Example code includes:
 
 Online_Retail_2011_Q1 <- readr::read_csv("./RInputFiles/Online_Retail_2011_Q1.xls")
 str(Online_Retail_2011_Q1)
-Movie_subset <- readr::read_csv("./RInputFiles/Movie_subset.xls")
-str(Movie_subset)
+movie_subset <- readr::read_csv("./RInputFiles/Movie_subset.xls")
+str(movie_subset)
 
 
 # Have a glimpse at the dataset
@@ -57451,6 +57451,213 @@ plot(rules_online, method = "paracoord", shading = "confidence")
   
 Chapter 4 - Case Study: Market Basket with Movies  
   
+Recap on Transactions:  
+  
+* Market basket analysis is based on whch items are bought together rather than the quantity of each item purchased  
+* Can use the dataset Groceries from the library arules for an example  
+* Can use the crossTable(x, sort=TRUE) function to get the joint relationships of the various items  
+	* crossTable(x, measure="chi")  
+    * crossTable(x, measure="lift", sort=TRUE)  
+* Can get the counts of various items by using x['item1', 'item2']  
+  
+Mining Association Rules:  
+  
+* Can use arules::apriori() to find key itemsets and combinations  
+	* Using target="rules" will pull out the rules, which should be paired with sort(), head(), and tail()  
+* Can use varying confidence levels and loop over them  
+* Can use %ain% to mean 'all items in' or %in% to mean 'any items in'  
+  
+Visualizing Transactions and Rules:  
+  
+* Can create plots using the method= argument  
+* Can use shiny by way of ruleExplorer(rules)  
+	* Not always recommended for large data as calculation times can be lengthy  
+  
+Making the most of Market Basket Analysis:  
+  
+* Can use market basket analysis to cluster users  
+* Example of trying to understand what purchased items are associated with a purchase of yogurt  
+  
+Wrap Up:  
+  
+* Support, confidence, and list are the main methods for classifying an association  
+* Visualization and plotting are key skills  
+* Recommendation engines can be based on market basket analysis  
+* Can extend with information about transaction timing, location, etc., for greater insights  
+* Be careful to sort and to look at only subsets of rules  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Have a glimpse at the dataset
+movie_subset %>% 
+    glimpse()
+
+# Calculate the number of distinct users and movies
+n_distinct(movie_subset$userId)
+n_distinct(movie_subset$movieId)
+
+# Distribution of the number of movies watched by users
+movie_subset %>%
+    group_by(userId) %>% 
+    summarize(nb_movies = n_distinct(movieId)) %>%
+    ggplot(aes(x=nb_movies)) +
+    geom_histogram() + 
+    ggtitle("Distribution of number of movies watched")
+
+
+# Split dataset into movies and users
+data_list <- split(movie_subset$title, movie_subset$userId)
+
+# Transform data into a transactional dataset
+movie_trx <- as(data_list, "transactions")
+
+# Plot of the item matrix
+image(movie_trx[1:100,1:100])
+
+
+# Setting the plot configuration option
+par(mfrow=c(2, 1))
+
+# Plot the relative and absolute item frequency plot
+itemFrequencyPlot(movie_trx, type = "relative", topN = 10, horiz = TRUE, main = 'Relative item frequency')
+itemFrequencyPlot(movie_trx, type = "absolute", topN = 10, horiz = TRUE, main = 'Absolute item frequency')
+
+par(mfrow=c(1, 1))
+
+
+# Extract the set of most frequent itemsets
+itemsets <- apriori(movie_trx, parameter = list(support = 0.4, target = 'frequent itemsets'))
+
+# Inspect the five most popular items
+arules::inspect(sort(itemsets, by='support', decreasing = TRUE)[1:5])
+
+# Extract the set of most frequent itemsets
+itemsets_minlen2 <- apriori(movie_trx, parameter = list(support = 0.3, minlen = 2, target = 'frequent'))
+
+# Inspect the five most popular items
+arules::inspect(sort(itemsets_minlen2, by='support', decreasing = TRUE)[1:5])
+
+
+# Set of confidence levels
+confidenceLevels <- seq(from=0.95, to=0.5, by=-0.05)
+
+# Create empty vector
+rules_sup04 <- NULL
+rules_sup03 <- NULL
+
+# Apriori algorithm with a support level of 40% and 30%
+for (i in 1:length(confidenceLevels)) {
+    rules_sup04[i] = length(apriori(movie_trx, 
+                                    parameter=list(sup=0.4, conf=confidenceLevels[i], target="rules")
+                                    )
+                            )
+    rules_sup03[i] = length(apriori(movie_trx, 
+                                    parameter=list(sup=0.3, conf=confidenceLevels[i], target="rules")
+                                    )
+                            )
+}
+
+# Number of rules found with a support level of 40%
+qplot(confidenceLevels, rules_sup04, geom=c("point", "line"), xlab="Confidence level", 
+      ylab="Number of rules found",main="Apriori with a support level of 40%"
+      ) + 
+    theme_bw()
+
+# Create Data frame containing all results
+nb_rules <- data.frame(rules_sup04, rules_sup03, confidenceLevels)
+
+# Number of rules found with a support level of 40% and 30%
+ggplot(data=nb_rules, aes(x=confidenceLevels)) +
+    # Lines and points for rules_sup04
+    geom_line(aes(y=rules_sup04, colour="Support level of 40%")) + 
+    geom_point(aes(y=rules_sup04, colour="Support level of 40%")) +
+    # Lines and points for rules_sup03
+    geom_line(aes(y=rules_sup03, colour="Support level of 30%")) +
+    geom_point(aes(y=rules_sup03, colour="Support level of 30%")) + 
+    # Polishing the graph
+    theme_bw() + ylab("") +
+    ggtitle("Number of extracted rules with apriori")
+
+
+# Extract rules with the apriori
+rules_movies <- apriori(movie_trx, parameter = list(supp = 0.3, conf = 0.9, minlen = 2, target = "rules"))
+
+# Summary of extracted rules
+summary(rules_movies)
+
+# Create redudant rules and filter from extracted rules
+rules_red <- is.redundant(rules_movies)
+rules.pruned <- rules_movies[!rules_red]
+# Inspect the non-redundant rules with highest confidence
+arules::inspect(head(sort(rules.pruned, by="confidence")))
+
+
+# Plot rules as scatterplot
+plot(rules_movies, measure = c("confidence", "lift"), shading = "support", jitter = 1, engine = "html")
+
+# Interactive matrix-based plot
+plot(rules_movies, method = "matrix", shading ="confidence", engine = "html")
+
+# Grouped matrix plot of rules
+plot(rules_movies, method = "grouped", measure = "lift", shading = "confidence")
+
+# Parallel coordinate plots with confidence as color coding
+plot(rules_movies, method = "paracoord", shading = "confidence")
+
+
+# Plot movie rules as a graph
+plot(rules_movies, method = "graph", engine = "htmlwidget")
+
+# Retrieve the top 10 rules with highest confidence
+top10_rules_movies = head(sort(rules_movies, by = "confidence"), 10)
+
+# Plot as an interactive graph the top 10 rules
+plot(top10_rules_movies, method = "graph", engine = "htmlwidget")
+
+
+# Extract rules with Pulp Fiction on the right side
+pulpfiction_rules_rhs <- apriori(movie_trx, parameter = list(supp = 0.3, conf = 0.5), 
+                                 appearance = list(default = "lhs", rhs = "Pulp Fiction")
+                                 ) 
+
+# Inspect the first rules
+arules::inspect(head(pulpfiction_rules_rhs))
+arules::inspect(head(sort(pulpfiction_rules_rhs, by="lift"), 10))
+
+
+# Extract rules with Pulp Fiction on the left side
+pulpfiction_rules_lhs <- apriori(movie_trx, parameter = list(supp = 0.3, conf = 0.5), 
+                                 appearance = list(default = "rhs", lhs = "Pulp Fiction")
+                                 )
+
+# Summary of extracted rules
+summary(pulpfiction_rules_lhs)
+
+# Inspect the first rules
+arules::inspect(head(pulpfiction_rules_lhs))
+
+
+# Extract rules with Pulp Fiction on the left side
+pulpfiction_rules_lhs <- apriori(movie_trx, parameter = list(supp = 0.3, conf = 0.5, minlen = 2), 
+                                 appearance = list(default = "rhs", lhs = "Pulp Fiction")
+                                 ) 
+
+# Inspect the first rules
+arules::inspect(head(pulpfiction_rules_lhs))
+
+```
+  
+  
+  
+***
+  
+### _Analyzing Social Media Data in R_  
+  
+Chapter 1 - Understanding Twitter Data  
+  
+
+
 
 
 
