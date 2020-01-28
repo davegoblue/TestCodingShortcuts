@@ -1778,4 +1778,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 27-JAN-2020  
 * DataCamp_Insights_v003_c captures Introduction to Data Visualization in R - Chapter 3 (Geometries) - code  
+* DataCamp_Insights_v003_c captures Introduction to Data Visualization in R - Chapter 4 (Themes) - code  
   
