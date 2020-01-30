@@ -1780,4 +1780,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to Data Visualization in R - Chapter 3 (Geometries) - code  
 * DataCamp_Insights_v003_c captures Introduction to Data Visualization in R - Chapter 4 (Themes) - code  
 * DataCamp_Insights_v003_c captures Analyzing Social Media Data in R - Chapter 1 (Understanding Twitter Data) - notes  
+* DataCamp_Insights_v003_c captures Analyzing Social Media Data in R - Chapter 2 (Analyzing Twitter Data) - notes  
   
