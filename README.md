@@ -1796,4 +1796,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 10-FEB-2020  
 * DataCamp_Insights_v003_c captures Intermediate Data Visualization with ggplot2 - Chapter 1 (Statistics) - notes  
+* DataCamp_Insights_v003_c captures Intermediate Data Visualization with ggplot2 - Chapter 2 (Coordinates) - notes  
   
