@@ -1800,4 +1800,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Intermediate Data Visualization with ggplot2 - Chapter 3 (Facets) - notes  
 * DataCamp_Insights_v003_c captures Intermediate Data Visualization with ggplot2 - Chapter 4 (Best Practices) - notes  
 * DataCamp_Insights_v003_c captures Introduction to Natural Language Processing in R - Chapter 1 (True Fundamentals) - code  
+* DataCamp_Insights_v003_c captures Introduction to Natural Language Processing in R - Chapter 2 (Representations of Text) - code  
   
