@@ -1803,3 +1803,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to Natural Language Processing in R - Chapter 2 (Representations of Text) - code  
 * DataCamp_Insights_v003_c captures Introduction to Natural Language Processing in R - Chapter 3 (Applications: Classification and Topic Modeling) - code  
   
+### Expansions week of 17-FEB-2020  
+* DataCamp_Insights_v003_c captures Introduction to Natural Language Processing in R - Chapter 4 (Advanced Techniques) - code  
+  
