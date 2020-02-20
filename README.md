@@ -1807,4 +1807,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Introduction to Natural Language Processing in R - Chapter 4 (Advanced Techniques) - code  
 * DataCamp_Insights_v003_c captures Statistics Interview Questions in R - Chapter 1 (Probability Distributions) - notes  
 * DataCamp_Insights_v003_c captures Statistics Interview Questions in R - Chapter 2 (Exploratory Data Analysis) - notes  
+* DataCamp_Insights_v003_c captures Statistics Interview Questions in R - Chapter 3 (Statistical Tests) - notes  
   
