@@ -1810,4 +1810,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Statistics Interview Questions in R - Chapter 3 (Statistical Tests) - notes  
 * DataCamp_Insights_v003_c captures Statistics Interview Questions in R - Chapter 4 (Regression Models) - notes  
 * DataCamp_Insights_v003_c captures Joining Data with dplyr in R - Chapter 1 (Joining Tables) - code  
+* DataCamp_Insights_v003_c captures Joining Data with dplyr in R - Chapter 2 (Left and Right Joins) - code  
   
