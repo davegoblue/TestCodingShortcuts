@@ -1815,4 +1815,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 24-FEB-2020  
 * DataCamp_Insights_v003_c captures Joining Data with dplyr in R - Chapter 3 (Full, Semi, and Anti Joins) - code  
 * DataCamp_Insights_v003_c captures Joining Data with dplyr in R - Chapter 4 (Case Study: Stack Overflow) - code  
+* DataCamp_Insights_v003_c captures Intermediate Regular Epressions in R - Chapter 1 (Regular Epressions: Writing Custom Patterns) - notes  
   
