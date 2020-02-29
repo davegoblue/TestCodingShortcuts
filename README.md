@@ -1818,4 +1818,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Intermediate Regular Epressions in R - Chapter 1 (Regular Epressions: Writing Custom Patterns) - notes  
 * DataCamp_Insights_v003_c captures Intermediate Regular Epressions in R - Chapter 2 (Creating Strings with Data) - notes  
 * DataCamp_Insights_v003_c captures Intermediate Regular Epressions in R - Chapter 3 (Extracting Structured Data from Text) - notes  
+* DataCamp_Insights_v003_c captures Intermediate Regular Epressions in R - Chapter 4 (Similarities Between Strings) - notes  
   
