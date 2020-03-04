@@ -1825,4 +1825,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_c captures Market Basket Analysis in R - Ch 2 (Metrics and Techniques in Market Basket Analysis) - code  
 * DataCamp_Insights_v003_c captures Market Basket Analysis in R - Chapter 3 (Visualization in Market Basket Analysis) - code  
 * DataCamp_Insights_v003_c captures Market Basket Analysis in R - Chapter 4 (Case Study: Market Basket with Movies) - code  
+* DataCamp_Insights_v003_c truncated to everything through Valuation of Insurance Products in R, and then archived  
   
