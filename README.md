@@ -1829,4 +1829,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_d created as a split ffrom v003_c; starts with Data Manipulation with dplyr in R  
 * DataCamp_Insights_v003_d captures Intermediate Data Visualization with ggplot2 - Chapter 1 (Statistics) - code  
 * DataCamp_Insights_v003_d captures Intermediate Data Visualization with ggplot2 - Chapter 2 (Coordinates) - code  
+* DataCamp_Insights_v003_d captures Intermediate Data Visualization with ggplot2 - Chapter 3 (Facets) - code  
   
