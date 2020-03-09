@@ -1831,3 +1831,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_d captures Intermediate Data Visualization with ggplot2 - Chapter 2 (Coordinates) - code  
 * DataCamp_Insights_v003_d captures Intermediate Data Visualization with ggplot2 - Chapter 3 (Facets) - code  
   
+### Expansions week of 09-MAR-2020  
+* DataCamp_Insights_v003_d captures Intermediate Data Visualization with ggplot2 - Chapter 4 (Best Practices) - code  
+  
