@@ -1833,4 +1833,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 09-MAR-2020  
 * DataCamp_Insights_v003_d captures Intermediate Data Visualization with ggplot2 - Chapter 4 (Best Practices) - code  
+* AdditionalCoding_202003_v001 created for some mapping and plotting examples  
   
