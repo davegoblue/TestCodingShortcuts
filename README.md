@@ -1834,4 +1834,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 09-MAR-2020  
 * DataCamp_Insights_v003_d captures Intermediate Data Visualization with ggplot2 - Chapter 4 (Best Practices) - code  
 * AdditionalCoding_202003_v001 created for some mapping and plotting examples  
+* AdditionalCoding_202003_v001 contains base state and county maps from usmap::plot_usmap(), CRS conversions from usmap::usmap_transform(), and data from the included usmap data sets  
   
