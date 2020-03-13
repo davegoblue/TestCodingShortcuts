@@ -1836,4 +1836,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 created for some mapping and plotting examples  
 * AdditionalCoding_202003_v001 contains base state and county maps from usmap::plot_usmap(), CRS conversions from usmap::usmap_transform(), and data from the included usmap data sets  
 * AdditionalCoding_202003_v001 contains filtering and coloring by US census region  
+* AdditionalCoding_202003_v001 contains default and custom labelling by geography  
   
