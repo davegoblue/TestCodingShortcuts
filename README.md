@@ -1847,4 +1847,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 contains plotting for weather data (humidity)  
 * AdditionalCoding_202003_v001 contains plotting for weather data (wind)  
 * AdditionalCoding_202003_v001 contains archived granular weather data (METAR)  
+* AdditionalCoding_202003_v001 contains extraction and parsing of METAR data  
   
