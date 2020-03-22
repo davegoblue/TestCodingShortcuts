@@ -821,3 +821,140 @@ metarKLNK %>%
 
 ```
 
+#### _Example #13: Extracting Key Elements from METAR_  
+A properly formatted METAR includes the following information in order, though with variable amounts of other information in between.
+
+dddd54Z ddddd[Gdd]KT dSM [M]dd/[M]dd Adddd RMK SLPddd Tdddddddd
+
+* dddd54Z is the two-digit date and four-digit Zulu time (KLNK METAR are taken at 54 minutes past the hour)  
+* ddddd[Gdd]KT is the three-digit wind direction (can be VRB), two digit wind speed in knots, and sometimes the two digit maximum gust in knots  
+* dSM is the visibility in statute miles.  This is somewhat tricky in that d can be any of 0-10 but can also be 1/4, 1/2, 3/4, 1 1/4, 1 1/2, 1 3/4, 2 1/2  
+* [M]dd/[M]dd is the temperature in celsius and dewpoint in celsius.  M means negative  
+* Adddd is the four-digit altimeter reading  
+* RMK notes that the remarks are beginning  
+* SLPddd notes the three-digit sea-level pressure  
+* Tdddddddd notes the four digit temperature in Celsius and the four digit dewpoint in celsius.  If it begins with 1 it is negative.  The fourth digit is the decimal.  It will always be a Celsius reading that best corresponds to integer degrees of Fahrenheit  
+  
+Example code includes:  
+```{r}
+
+metAll <- metarKLNK %>%
+    pull(metar)
+
+# Create a search string for METAR
+valMet <- "54Z.*?(VRB|\\d{3})(\\d{2})(G\\d{2})?KT(.*?)(\\d{1,2}SM).*?\\s(M?\\d{2})/(M?\\d{2}).*?(A\\d{4}).*?RMK.*?(SLP\\d{3}).*?(T\\d{8})"
+
+# Find the number of matching elements
+str_detect(metAll, pattern=valMet) %>% table()
+
+# The strings that do not match have errors in the raw data (typically, missing wind speed)
+metAll[!str_detect(metAll, pattern=valMet)]
+
+# A matrix of string matches can be obtained
+mtxParse <- str_match(metAll, pattern=valMet)
+head(mtxParse)
+
+# Create a data frame
+dfParse <- data.frame(mtxParse, stringsAsFactors=FALSE)
+names(dfParse) <- c("METAR", "WindDir", "WindSpeed", "WindGust", "Dummy", "Visibility", 
+                    "TempC", "DewC", "Altimeter", "SLP", "FahrC"
+                    )
+
+# Convert to numeric where appropriate
+dfParse <- dfParse %>%
+    mutate(WindSpeed = as.integer(WindSpeed), 
+           WindGust = as.numeric(WindGust), 
+           Visibility = as.numeric(str_replace(Visibility, "SM", "")),
+           TempC = as.integer(str_replace(TempC, "M", "-")), 
+           DewC = as.integer(str_replace(DewC, "M", "-")), 
+           Altimeter = as.integer(str_replace(Altimeter, "A", "")), 
+           SLP = as.integer(str_replace(SLP, "SLP", "")), 
+           TempF = 32 + 1.8 * as.integer(str_replace(str_sub(FahrC, 2, 5), pattern="^1", "-"))/10, 
+           DewF = 32 + 1.8 * as.integer(str_replace(str_sub(FahrC, 6, 9), pattern="^1", "-"))/10
+           )
+
+# Investigate the data
+set.seed(2003211416)
+str(dfParse)
+head(dfParse)
+tail(dfParse)
+dfParse %>% 
+    sample_n(20)
+
+# Check for NA values
+colSums(is.na(dfParse))
+
+# Plot of counts by key metric
+keyMetric <- c("WindDir", "WindSpeed", "WindGust", "Visibility", "TempC", 
+               "DewC", "Altimeter", "SLP", "TempF", "DewF"
+               )
+
+for (x in keyMetric) {
+    p <- dfParse %>%
+        group_by_at(vars(all_of(x))) %>%
+        summarize(n=n()) %>%
+        ggplot(aes_string(x=x, y="n")) + 
+        geom_col() + 
+        labs(title=x, y="Count")
+    print(p)
+}
+
+# There are three obvious issues
+# Visibility is not correctly picked up when there is a / such as 1/2 SM
+# Wind gusts are never picked up
+# Sea Level Pressure is missing a digit
+
+# Correct for visibility
+# Areas that have \\d \\d/\\dSM
+sm1 <- which(str_detect(metAll, pattern=" \\d/\\dSM"))
+sm2 <- which(str_detect(metAll, pattern=" \\d \\d/\\dSM"))
+
+valSM1 <- str_match(metAll, pattern="\\d/\\dSM")[sm1]
+valSM1 <- str_replace(valSM1, "SM", "")
+valSM1 <- as.integer(str_sub(valSM1, 1, 1)) / as.integer(str_sub(valSM1, 3, 3))
+
+valSM2 <- str_match(metAll, pattern=" \\d \\d/\\dSM")[sm2]
+valSM2 <- as.integer(str_sub(valSM2, 2, 2))
+
+dfParse[sm1, "Visibility"] <- valSM1
+dfParse[sm2, "Visibility"] <- dfParse[sm2, "Visibility"] + valSM2
+
+dfParse %>% 
+    count(Visibility)
+
+
+# Correct for wind gusts
+gustCheck <- which(str_detect(metAll, pattern="\\d{5}G\\d{2}KT"))
+valGust <- str_match(metAll, pattern="\\d{5}G\\d{2}KT")[gustCheck]
+valGust <- as.integer(str_sub(valGust, 7, 8))
+
+dfParse[gustCheck, "WindGust"] <- valGust
+
+dfParse %>% 
+    count(WindGust) %>% 
+    as.data.frame
+
+# Correct for SLP
+dfParse <- dfParse %>%
+    mutate(modSLP=ifelse(dfParse$SLP < 500, 1000 + dfParse$SLP/10, 900 + dfParse$SLP/10))
+
+dfParse %>%
+    group_by(SLP, modSLP) %>%
+    summarize(n=n()) %>%
+    ggplot(aes(x=SLP, y=modSLP, size=n)) + 
+    geom_point(alpha=0.3)
+
+# Check updated plots
+keyMetric <- c("WindGust", "Visibility", "modSLP")
+for (x in keyMetric) {
+    p <- dfParse %>%
+        group_by_at(vars(all_of(x))) %>%
+        summarize(n=n()) %>%
+        ggplot(aes_string(x=x, y="n")) + 
+        geom_col() + 
+        labs(title=x, y="Count")
+    print(p)
+}
+
+```
+
