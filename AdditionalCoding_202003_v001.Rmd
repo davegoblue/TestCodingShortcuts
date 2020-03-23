@@ -859,6 +859,8 @@ dfParse <- data.frame(mtxParse, stringsAsFactors=FALSE)
 names(dfParse) <- c("METAR", "WindDir", "WindSpeed", "WindGust", "Dummy", "Visibility", 
                     "TempC", "DewC", "Altimeter", "SLP", "FahrC"
                     )
+dfParse <- tibble::as_tibble(dfParse)
+str(dfParse)
 
 # Convert to numeric where appropriate
 dfParse <- dfParse %>%
@@ -955,6 +957,92 @@ for (x in keyMetric) {
         labs(title=x, y="Count")
     print(p)
 }
+
+```
+
+#### _Example #14: Relationships Between METAR Variables_  
+Many of the METAR variables are correlated/associated to one another.
+
+Example code includes:  
+```{r}
+
+# Define key numeric variables
+coreNum <- c("TempC", "TempF", "DewC", "DewF", "Altimeter", "modSLP", "WindSpeed", "Visibility")
+
+# Add the date back to the file (should edit the above instead)
+dfParse <- dfParse %>%
+    mutate(month=lubridate::month(metarKLNK$valid))
+str(dfParse)
+
+# Keep only complete cases and find correlations
+mtxCorr <- dfParse %>%
+    mutate(month=lubridate::month(metarKLNK$valid)) %>%
+    select_at(vars(all_of(coreNum))) %>%
+    filter(complete.cases(.)) %>%
+    cor()
+
+# Print the correlations and show a heatmap
+mtxCorr %>%
+    round(2)
+
+corrplot::corrplot(mtxCorr, method="color", title="Lincoln, NE Hourly Weather Correlations (2016)")
+
+# Create a function for plotting two variables against each other
+plotNumCor <- function(var1, var2, title=NULL) {
+    if (is.null(title)) 
+        { title <- paste0("Lincoln, NE (2016) Hourly Correlations of ", var1, " and ", var2) }
+    p <- dfParse %>%
+        group_by_at(vars(all_of(c(var1, var2)))) %>%
+        summarize(n=n()) %>%
+        ggplot(aes_string(x=var1, y=var2)) + 
+        geom_point(alpha=0.5, aes_string(size="n")) + 
+        geom_smooth(method="lm", aes_string(weight="n")) + 
+        labs(x=var1, y=var2, title=title)
+    print(p)
+}
+
+# The three linear or almost linear relationships
+plotNumCor("TempC", "TempF")
+plotNumCor("DewC", "DewF")
+plotNumCor("Altimeter", "modSLP")
+
+# Strongly and positively related
+plotNumCor("TempF", "DewF")
+
+# Moderately negatively correlated
+plotNumCor("TempF", "Altimeter")
+plotNumCor("TempF", "modSLP")
+plotNumCor("Altimeter", "WindSpeed")
+
+# Predict modSLP from Altimeter
+lmSLP1 <- lm(modSLP ~ Altimeter, data=dfParse)
+lmSLP2 <- lm(modSLP ~ Altimeter + TempF, data=dfParse)
+summary(lmSLP1)
+summary(lmSLP2)
+
+# Plot predictions vs. actual (model 1)
+dfParse %>%
+    filter(!is.na(modSLP)) %>%
+    mutate(pred1=predict(lmSLP1)) %>%
+    count(modSLP, pred1) %>%
+    ggplot(aes(x=modSLP, y=pred1)) + 
+    geom_point(alpha=0.25, aes(size=n)) + 
+    geom_smooth(method="lm", aes(weight=n)) + 
+    labs(title="Predicted vs. Actual Sea Level Pressure - Altitude Only as Predictor", 
+         subtitle="Lincoln, NE (2016) Hourly METAR", x="Sea Level Pressure", y="Predicted"
+         )
+
+# Plot predictions vs. actual (model 2)
+dfParse %>%
+    filter(!is.na(modSLP)) %>%
+    mutate(pred2=predict(lmSLP2)) %>%
+    count(modSLP, pred2) %>%
+    ggplot(aes(x=modSLP, y=pred2)) + 
+    geom_point(alpha=0.25, aes(size=n)) + 
+    geom_smooth(method="lm", aes(weight=n)) + 
+    labs(title="Predicted vs. Actual Sea Level Pressure - Altitude and Temperature as Predictor", 
+         subtitle="Lincoln, NE (2016) Hourly METAR", x="Sea Level Pressure", y="Predicted"
+         )
 
 ```
 
