@@ -1851,4 +1851,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 23-MAR-2020  
 * AdditionalCoding_202003_v001 contains relationships between METAR variables  
+* AdditionalCoding_202003_v001 contains extracting cloud data from METAR  
   
