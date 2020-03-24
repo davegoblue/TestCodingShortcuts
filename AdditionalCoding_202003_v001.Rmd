@@ -1046,3 +1046,129 @@ dfParse %>%
 
 ```
 
+#### _Example #15: Extracting Cloud Data from METAR_  
+[Cloud data](https://en.wikipedia.org/wiki/METAR#Cloud_reporting) is also included in the METAR, with the type of clouds being described as:
+
+* CLR - there are no clouds below 12,000 feet 
+* VVddd - there is a vertical visibility of ddd hundred feet (cannot tell where the clouds are above that)  
+* FEWddd - there are clouds with bases at ddd feet, and they obscure 25% or less of the sky  
+* SCTddd - there are clouds with bases at ddd feet, and they obscure 25%-50% of the sky  
+* BKNddd - there are clouds with bases at ddd feet, and they obscure 50%-99% of the sky  
+* OVCddd - there is a full overcast with base at ddd feet  
+  
+The ceiling is considered the lowest height that is measured as any of OVC, BKN, or VV.
+
+Example code includes:  
+```{r}
+
+# Extract the CLR records
+mtxCLR <- str_extract_all(metarKLNK$metar, pattern=" CLR ", simplify=TRUE)
+if (dim(mtxCLR)[[2]] != 1) { stop("Extracted 2+ CLR from some METAR; investigate") }
+isCLR <- ifelse(mtxCLR[, 1] == "", 0, 1)
+
+# Extract the VV records
+mtxVV <- str_extract_all(metarKLNK$metar, pattern="VV(\\d{3})", simplify=TRUE)
+if (dim(mtxVV)[[2]] != 1) { stop("Extracted 2+ VV from some METAR; investigate") }
+isVV <- ifelse(mtxVV[, 1] == "", 0, 1)
+htVV <- ifelse(mtxVV[, 1] == "", NA, as.integer(str_replace(mtxVV[, 1], "VV", ""))*100)
+
+# Extract the FEW records
+mtxFEW <- str_extract_all(metarKLNK$metar, pattern="FEW(\\d{3})", simplify=TRUE)
+numFEW <- apply(mtxFEW, 1, FUN=function(x) { sum((x!=""))} )
+
+# Extract the SCT records
+mtxSCT <- str_extract_all(metarKLNK$metar, pattern="SCT(\\d{3})", simplify=TRUE)
+numSCT <- apply(mtxSCT, 1, FUN=function(x) { sum((x!=""))} )
+
+# Extract the BKN records
+mtxBKN <- str_extract_all(metarKLNK$metar, pattern="BKN(\\d{3})", simplify=TRUE)
+numBKN <- apply(mtxBKN, 1, FUN=function(x) { sum((x!=""))} )
+
+# Extract the OVC records
+mtxOVC <- str_extract_all(metarKLNK$metar, pattern="OVC(\\d{3})", simplify=TRUE)
+numOVC <- apply(mtxOVC, 1, FUN=function(x) { sum((x!=""))} )
+
+# Summarize as a data frame
+tblClouds <- tibble::tibble(isCLR=isCLR, isVV=isVV, htVV=htVV, numFEW=numFEW, 
+                            numSCT=numSCT, numBKN=numBKN, numOVC=numOVC
+                            )
+
+# Get the counts
+# As expected, if isCLR then nothing else, and if isVV then nothing else
+tblClouds %>% 
+    count(isCLR, isVV, numFEW, numSCT, numBKN, numOVC) %>%
+    as.data.frame()
+
+# Investigate the problem data
+metarKLNK$metar[rowSums(tblClouds, na.rm=TRUE)==0]
+
+# Get the counts of most obscuration
+tblClouds %>%
+    filter(rowSums(., na.rm=TRUE) > 0) %>%
+    mutate(wType=factor(case_when(isCLR==1 ~ "CLR", isVV==1 ~ "VV", numOVC > 0 ~ "OVC", 
+                                  numBKN > 0 ~ "BKN", numSCT > 0 ~ "SCT", numFEW > 0 ~ "FEW", 
+                                  TRUE ~ "Error"
+                                  ), levels=c("VV", "OVC", "BKN", "SCT", "FEW", "CLR", "Error")
+                  )
+           ) %>%
+    ggplot(aes(x=wType, y=..count../sum(..count..))) + 
+    geom_bar() + 
+    labs(title="Highest Obscuration by Cloud - Lincoln, NE (2016)", x="Cloud Type", 
+         y="Proportion of Hourly Measurements"
+         )
+
+# Integrate the clouds data
+mtxCloud <- cbind(mtxVV, mtxOVC, mtxBKN, mtxSCT, mtxFEW, mtxCLR)
+
+# Cycle through to find levels of a given type
+ckClouds <- function(cloudType) {
+    isKey <- which(apply(mtxCloud, 2, FUN=function(x) {sum(str_detect(x, cloudType))}) > 0)
+    as.integer(str_replace(mtxCloud[, min(isKey)], cloudType, "")) * 100
+}
+lowOVC <- ckClouds("OVC")
+lowVV <- ckClouds("VV")
+lowBKN <- ckClouds("BKN")
+lowSCT <- ckClouds("SCT")
+lowFEW <- ckClouds("FEW")
+
+# Integrate the lowest cloud type by level
+lowCloud <- tibble::tibble(lowVV, lowOVC, lowBKN, lowSCT, lowFEW)
+lowCloud
+
+# Get the lowest cloud level
+minCloud <- lowCloud
+minCloud[is.na(minCloud)] <- 999999
+minCloudLevel <- apply(minCloud, 1, FUN=min)
+minCeilingLevel <- apply(minCloud[, c("lowVV", "lowOVC", "lowBKN")], 1, FUN=min)
+
+noCloudPct <- mean(minCloudLevel == 999999)
+noCeilingPct <- mean(minCeilingLevel == 999999)
+
+# Plot the minimum cloud level (where it exists)
+data.frame(minCloudLevel, minCeilingLevel) %>%
+    filter(minCloudLevel != 999999) %>%
+    ggplot(aes(x=minCloudLevel)) + 
+    geom_bar(aes(y=..count../sum(..count..))) + 
+    geom_text(aes(x=2500, y=0.04, 
+                  label=paste0(round(100*noCloudPct), "% of obs. have no clouds")
+                  )
+              ) + 
+    labs(x="Height [ft]", y="Proportion", title="Minimum Cloud Height (when some clouds exist)", 
+         subtitle="Lincoln, NE (2016)"
+         )
+
+# Plot the minimum ceiling level (where it exists)
+data.frame(minCloudLevel, minCeilingLevel) %>%
+    filter(minCeilingLevel != 999999) %>%
+    ggplot(aes(x=minCeilingLevel)) + 
+    geom_bar(aes(y=..count../sum(..count..))) + 
+    geom_text(aes(x=2500, y=0.04, 
+                  label=paste0(round(100*noCeilingPct), "% of obs. have no ceiling")
+                  )
+              ) + 
+    labs(x="Height [ft]", y="Proportion", title="Minimum Ceiling Height (when a ceiling exists)", 
+         subtitle="Lincoln, NE (2016)"
+         )
+
+```
+
