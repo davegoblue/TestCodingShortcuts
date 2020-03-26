@@ -1215,3 +1215,133 @@ dfFull %>%
 
 ```
 
+#### _Example #17: Functional Form - METAR download and initial wind processing_  
+Example 12 can be converted to functional form so that the process can be applied to other reporting stations and time periods.
+
+Example code includes:  
+```{r}
+
+# Function to make an initial read of the data, filter to METAR records, and check date-times
+readMETAR <- function(fileName="./RInputFiles/metar_klnk_2016.txt", timeZ="54Z",
+                      expMin=as.POSIXct("2015-12-31 00:54:00", tz="UTC"), expDays=365
+                      ) {
+
+    # Load METAR data
+    initRead <- readr::read_csv(fileName, na=c("", "NA", "M"))
+    str(initRead, give.attr=FALSE)
+
+    # Filter to only data that ends with times ending in 54Z
+    filterRead <- initRead %>%
+        filter(str_detect(metar, timeZ))
+    dim(filterRead)
+
+    # Check that the dates and times included are as expected
+    expDate <- expMin + lubridate::hours(0:(24*expDays - 1))
+
+    # Observations expected but not recorded
+    cat("\n*** OBSERVATIONS EXPECTED BUT NOT RECORDED ***\n")
+    print(as.POSIXct(setdiff(expDate, filterRead$valid), origin="1970-01-01", tz="UTC"))
+
+    # Observations recorded but not expected
+    cat("\n*** OBSERVATIONS RECORDED BUT NOT EXPECTED ***\n")
+    print(setdiff(filterRead$valid, expDate))
+
+    # Confirmation of uniqueness
+    cat("\n*** Are the extracted records unique? ***\n")
+    print(length(unique(filterRead$valid)) == length(filterRead$valid))
+    cat("\n")
+    
+    # Return the dataset as a tibble
+    tibble::as_tibble(filterRead)
+}
+funcMETAR <- readMETAR(expDays=368)
+funcMETAR
+
+
+# Extract wind speeds and direction
+# The general wind format is dddssGssKT where ddd is the direction (VRB meaning variable), the main ss is the speed, and the Gss is the gust speed (optional and not always displayed)
+extractWind <- function(met) {
+
+    mtxWind <- met %>%
+        pull(metar) %>%
+        str_match(pattern="(\\d{3}|VRB)(\\d{2})(G\\d{2})?KT")
+    cat("\n*** First 6 winds and parsing ***\n")
+    print(head(mtxWind))
+
+    cat("\n*** Table of WIND DIRECTION ***\n")
+    print(table(mtxWind[, 2], useNA="ifany"))
+    cat("\n*** Table of WIND SPEED ***\n")
+    print(table(mtxWind[, 3], useNA="ifany"))
+    cat("\n*** Table of WIND GUST ***\n")
+    print(table(mtxWind[, 4], useNA="ifany"))
+
+    # Verify that winds not captured are in fact missing from the METAR
+    cat("\n *** WIND DATA WAS NOT CAPTURED FROM: *** \n")
+    print(met[which(is.na(mtxWind[, 2])), "metar"])
+    cat("\n")
+
+    met %>%
+        mutate(dirW=mtxWind[, 2], 
+               spdW=as.numeric(mtxWind[, 3]), 
+               gustW=as.numeric(str_replace(mtxWind[, 4], "G", ""))
+               )
+}
+windMETAR <- extractWind(funcMETAR)
+windMETAR
+
+
+# Generate basic wind plots
+basicWindPlots <- function(met, desc="Lincoln, NE", gran="KLNK METAR (2016)") {
+
+    # Plot for the wind direction
+    wDir <- met %>%
+        ggplot(aes(x=dirW)) + 
+        geom_bar() + 
+        labs(title=paste0(desc, " Wind Direction"), subtitle=gran, 
+             y="# Hourly Observations", x="Wind Direction"
+             )
+    print(wDir)
+
+    # Plot for the minimum, average, and maximum wind speed by wind direction
+    # Wind direction 000 is reserved for 0 KT wind, while VRB is reserved for 3-6 KT variable winds
+    wSpeedByDir <- met %>%
+        filter(!is.na(dirW)) %>%
+        group_by(dirW) %>%
+        summarize(minWind=min(spdW), meanWind=mean(spdW), maxWind=max(spdW)) %>%
+        ggplot(aes(x=dirW)) + 
+        geom_point(aes(y=meanWind), color="red", size=2) + 
+        geom_errorbar(aes(ymin=minWind, ymax=maxWind)) + 
+        labs(title=paste0(desc, " Wind Speed (Max, Mean, Min) By Wind Direction"), subtitle=gran, 
+             y="Wind Speed [KT]", x="Wind Direction"
+             )
+    print(wSpeedByDir)
+
+    # Plot for the wind speed
+    pctZero <- sum(met$spdW==0, na.rm=TRUE) / length(met$spdW)
+    wSpeed <- met %>%
+        ggplot(aes(x=spdW)) + 
+        geom_bar(aes(y=..count../sum(..count..))) + 
+        labs(title=paste0(round(100*pctZero), "% of wind speeds in ", desc, " measure 0 Knots"), 
+             subtitle=gran, 
+             y="% Hourly Observations", x="Wind Speed {KT]"
+             )
+    print(wSpeed)
+
+    wPolarDirSpeed <- met %>% 
+        filter(!is.na(dirW), dirW != "VRB", dirW != "000") %>%
+        mutate(dirW=as.numeric(dirW)) %>%
+        group_by(dirW, spdW) %>%
+        summarize(n=n()) %>%
+        ggplot(aes(x=spdW, y=dirW)) + 
+        geom_point(alpha=0.1, aes(size=n)) + 
+        coord_polar(theta="y") + 
+        labs(title=paste0(desc, " Direction vs. Wind Speed"), subtitle=gran, x="Wind Speed [KT]") + 
+        scale_y_continuous(limits=c(0, 360), breaks=c(0, 90, 180, 270, 360)) + 
+        scale_x_continuous(limits=c(0, 30), breaks=c(0, 5, 10, 15, 20, 25, 30)) + 
+        geom_point(aes(x=0, y=0), color="red", size=2)
+    print(wPolarDirSpeed)
+}
+basicWindPlots(windMETAR)
+
+```
+
