@@ -1345,3 +1345,198 @@ basicWindPlots(windMETAR)
 
 ```
 
+#### _Example #18: Functional Form for Extracting Key Elements from METAR_  
+METAR parsing can also be converted to a functional form.  This will need to be modified to be more general, since the codes used for a few things like clouds can vary from station to station.
+  
+Example code includes:  
+```{r}
+
+# Code for the initial METAR parsing
+initialParseMETAR <- function(met, val, labs) {
+    
+    # Pull the METAR data
+    metAll <- met %>%
+        pull(metar)
+    
+    # Find the number of matching elements
+    cat("\n*** Tentative Summary of Element Parsing *** \n")
+    str_detect(metAll, pattern=val) %>% 
+        table() %>%
+        print()
+
+    # The strings that do not match have errors in the raw data (typically, missing wind speed)
+    cat("\n*** Data Not Matched *** \n")
+    print(metAll[!str_detect(metAll, pattern=val)])
+
+    # A matrix of string matches can be obtained
+    mtxParse <- str_match(metAll, pattern=val)
+    cat("\n*** Parsing matrix summary *** \n")
+    print(dim(mtxParse))
+    print(head(mtxParse))
+
+    # Create a data frame
+    dfParse <- data.frame(mtxParse, stringsAsFactors=FALSE) %>%
+        mutate(dtime=met$valid)
+    names(dfParse) <- c(labs, "dtime")
+    dfParse <- tibble::as_tibble(dfParse)
+    cat("\n*** Summary of the parsed data *** \n")
+    glimpse(dfParse)
+    
+    dfParse
+}
+
+
+# Create a search string for METAR
+valMet <- "54Z.*?(VRB|\\d{3})(\\d{2})(G\\d{2})?KT(.*?)(\\d{1,2}SM).*?\\s(M?\\d{2})/(M?\\d{2}).*?(A\\d{4}).*?RMK.*?(SLP\\d{3}).*?(T\\d{8})"
+
+# Create the names for the search string to parse in to
+labsMet <- c("METAR", "WindDir", "WindSpeed", "WindGust", "Dummy", "Visibility", 
+             "TempC", "DewC", "Altimeter", "SLP", "FahrC"
+             )
+
+# Run the METAR parsing on the raw data
+initMETAR <- initialParseMETAR(funcMETAR, val=valMet, labs=labsMet)
+initMETAR
+
+
+# Helper function for generating plots by key variables
+plotcountsByMetric <- function(df, mets) {
+    
+    # Plot of counts by key metric
+    for (x in mets) {
+        p <- df %>%
+            group_by_at(vars(all_of(x))) %>%
+            summarize(n=n()) %>%
+            ggplot(aes_string(x=x, y="n")) + 
+            geom_col() + 
+            labs(title=x, y="Count")
+        print(p)
+    }
+}
+
+
+# Code for the conversion of METAR to meaningful numeric
+# Should make this much more general later
+convertMETAR <- function(met, metrics, seed=2003211416) {
+    
+    # Convert to numeric where appropriate
+    dfParse <- met %>%
+        mutate(WindSpeed = as.integer(WindSpeed), 
+               WindGust = as.numeric(WindGust), 
+               Visibility = as.numeric(str_replace(Visibility, "SM", "")),
+               TempC = as.integer(str_replace(TempC, "M", "-")), 
+               DewC = as.integer(str_replace(DewC, "M", "-")), 
+               Altimeter = as.integer(str_replace(Altimeter, "A", "")), 
+               SLP = as.integer(str_replace(SLP, "SLP", "")), 
+               TempF = 32 + 1.8 * as.integer(str_replace(str_sub(FahrC, 2, 5), pattern="^1", "-"))/10, 
+               DewF = 32 + 1.8 * as.integer(str_replace(str_sub(FahrC, 6, 9), pattern="^1", "-"))/10
+               )
+
+    # Investigate the data
+    cat("\n *** Parsed data structure, head, tail, and random sample *** \n")
+    str(dfParse)
+    print(head(dfParse))
+    print(tail(dfParse))
+    set.seed(seed)
+    dfParse %>% 
+        sample_n(20) %>%
+        print()
+
+    # Check for NA values
+    cat("\n *** Number of NA values *** \n")
+    print(colSums(is.na(dfParse)))
+
+    # Plot of counts by key metric
+    plotcountsByMetric(dfParse, mets=metrics)
+    
+    # Return the parsed dataset
+    dfParse
+}
+
+keyMetric <- c("WindDir", "WindSpeed", "WindGust", "Visibility", "TempC", 
+               "DewC", "Altimeter", "SLP", "TempF", "DewF"
+               )
+convMETAR <- convertMETAR(initMETAR, metrics=keyMetric)
+
+
+# There are three obvious issues
+# Visibility is not correctly picked up when there is a / such as 1/2 SM
+# Wind gusts are never picked up
+# Sea Level Pressure is missing a digit
+
+# Address the visibility issues
+getVisibility <- function(curMet, origMet) {
+    
+    # Get the original METAR data
+    metAll <- origMet %>%
+        pull(metar)
+    
+    # Correct for visibility
+    # Areas that have \\d \\d/\\dSM
+    sm1 <- which(str_detect(metAll, pattern=" \\d/\\dSM"))
+    sm2 <- which(str_detect(metAll, pattern=" \\d \\d/\\dSM"))
+
+    valSM1 <- str_match(metAll, pattern="\\d/\\dSM")[sm1]
+    valSM1 <- str_replace(valSM1, "SM", "")
+    valSM1 <- as.integer(str_sub(valSM1, 1, 1)) / as.integer(str_sub(valSM1, 3, 3))
+
+    valSM2 <- str_match(metAll, pattern=" \\d \\d/\\dSM")[sm2]
+    valSM2 <- as.integer(str_sub(valSM2, 2, 2))
+
+    curMet[sm1, "Visibility"] <- valSM1
+    curMet[sm2, "Visibility"] <- curMet[sm2, "Visibility"] + valSM2
+
+    curMet %>% 
+        count(Visibility) %>%
+        print()
+    
+    curMet
+}
+parseMETAR <- getVisibility(convMETAR, origMet=funcMETAR)
+
+
+# Correct for wind gusts
+getWindGusts <- function(curMet, origMet) {
+
+    metAll <- origMet %>%
+        pull(metar)
+    
+    gustCheck <- which(str_detect(metAll, pattern="\\d{5}G\\d{2}KT"))
+    valGust <- str_match(metAll, pattern="\\d{5}G\\d{2}KT")[gustCheck]
+    valGust <- as.integer(str_sub(valGust, 7, 8))
+
+    curMet[gustCheck, "WindGust"] <- valGust
+
+    curMet %>% 
+        count(WindGust) %>% 
+        as.data.frame %>%
+        print()
+    
+    curMet
+}
+parseMETAR <- getWindGusts(parseMETAR, origMet=funcMETAR)
+
+
+# Correct for SLP
+fixSLP <- function(curMet) {
+
+    dfParse <- curMet %>%
+        mutate(modSLP=ifelse(curMet$SLP < 500, 1000 + curMet$SLP/10, 900 + curMet$SLP/10))
+
+    p <- dfParse %>%
+        group_by(SLP, modSLP) %>%
+        summarize(n=n()) %>%
+        ggplot(aes(x=SLP, y=modSLP, size=n)) + 
+        geom_point(alpha=0.3)
+    print(p)
+    
+    dfParse
+}
+parseMETAR <- fixSLP(parseMETAR)
+
+
+# Check updated plots
+plotcountsByMetric(parseMETAR, mets=c("WindGust", "Visibility", "modSLP"))
+
+```
+
