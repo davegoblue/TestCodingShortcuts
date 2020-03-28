@@ -1855,4 +1855,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 contains plotting by factor variables  
 * AdditionalCoding_202003_v001 contains functions for METAR read-in and initial wind data processing  
 * AdditionalCoding_202003_v001 contains functions for extracting key information from METAR  
+* AdditionalCoding_202003_v001 contains functions for analyzing relationships between METAR variables  
   
