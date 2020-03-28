@@ -1540,3 +1540,100 @@ plotcountsByMetric(parseMETAR, mets=c("WindGust", "Visibility", "modSLP"))
 
 ```
 
+#### _Example #19: Functional Form For Relationships Between METAR Variables_  
+The relationships between METAR variables can also be converted to functional form.
+
+Example code includes:  
+```{r}
+
+# Function to calculate, display, and plot variable correlations
+corMETAR <- function(met, numVars) {
+
+    # Keep only complete cases and report on data kept
+    dfUse <- met %>%
+        select_at(vars(all_of(numVars))) %>%
+        filter(complete.cases(.))
+    
+    nU <- nrow(dfUse)
+    nM <- nrow(met)
+    myPct <- round(100*nU/nM, 1)
+    cat("\n *** Correlations use ", nU, " complete cases (", myPct, "% of ", nM, " total) ***\n", sep="")
+    
+    # Create the correlation matrix
+    mtxCorr <- dfUse %>%
+        cor()
+
+    # Print the correlations
+    mtxCorr %>%
+        round(2) %>%
+        print()
+
+    # Display a heat map
+    corrplot::corrplot(mtxCorr, method="color", title="Lincoln, NE Hourly Weather Correlations (2016)")
+}
+
+# Define key numeric variables
+coreNum <- c("TempC", "TempF", "DewC", "DewF", "Altimeter", "modSLP", "WindSpeed", "Visibility")
+
+# Run the correlations function
+corMETAR(parseMETAR, numVars=coreNum)
+
+
+# Create a function for plotting two variables against each other
+plotNumCor <- function(met, var1, var2, title=NULL) {
+    if (is.null(title)) 
+        { title <- paste0("Lincoln, NE (2016) Hourly Correlations of ", var1, " and ", var2) }
+    p <- met %>%
+        group_by_at(vars(all_of(c(var1, var2)))) %>%
+        summarize(n=n()) %>%
+        ggplot(aes_string(x=var1, y=var2)) + 
+        geom_point(alpha=0.5, aes_string(size="n")) + 
+        geom_smooth(method="lm", aes_string(weight="n")) + 
+        labs(x=var1, y=var2, title=title)
+    print(p)
+}
+
+var1List <- c("TempC", "DewC", "Altimeter", "TempF", "TempF",     "TempF",  "Altimeter")
+var2List <- c("TempF", "DewF", "modSLP",    "DewF",  "Altimeter", "modSLP", "WindSpeed")
+
+for (n in 1:length(var1List)) {
+    plotNumCor(parseMETAR, var1List[n], var2List[n])
+}
+
+
+# Function for linear regressions on METAR data
+lmMETAR <- function(met, y, x, yName, subT="Lincoln, NE (2016) Hourly METAR") {
+    
+    # Convert to formula
+    myChar <- paste0(y, " ~ ", x)
+    cat("\n *** Regression call is:", myChar, "***\n")
+    
+    # Run regression
+    regr <- lm(formula(myChar), data=met)
+    
+    # Summarize regression
+    print(summary(regr))
+    
+    # Predict the new values
+    pred <- predict(regr, newdata=met)
+    
+    # Plot the predictions
+    p <- met %>%
+        select_at(vars(all_of(y))) %>%
+        mutate(pred=pred) %>%
+        group_by_at(vars(all_of(c(y, "pred")))) %>%
+        summarize(n=n()) %>%
+        ggplot(aes_string(x=y, y="pred")) + 
+        geom_point(aes(size=n), alpha=0.25) + 
+        geom_smooth(aes(weight=n), method="lm") + 
+        labs(title=paste0("Predicted vs. Actual ", yName, " - ", x, " as Predictor"), 
+             subtitle=subT, x=paste0("Actual ", yName), y=paste0("Predicted ", yName)
+             )
+    print(p)
+}
+
+lmMETAR(parseMETAR, "modSLP", "Altimeter", yName="Sea Level Pressure")
+lmMETAR(parseMETAR, "modSLP", "Altimeter + TempF", yName="Sea Level Pressure")
+
+```
+
