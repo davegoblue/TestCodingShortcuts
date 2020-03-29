@@ -1237,14 +1237,14 @@ readMETAR <- function(fileName="./RInputFiles/metar_klnk_2016.txt", timeZ="54Z",
 
     # Check that the dates and times included are as expected
     expDate <- expMin + lubridate::hours(0:(24*expDays - 1))
-
+    
     # Observations expected but not recorded
     cat("\n*** OBSERVATIONS EXPECTED BUT NOT RECORDED ***\n")
     print(as.POSIXct(setdiff(expDate, filterRead$valid), origin="1970-01-01", tz="UTC"))
 
     # Observations recorded but not expected
     cat("\n*** OBSERVATIONS RECORDED BUT NOT EXPECTED ***\n")
-    print(setdiff(filterRead$valid, expDate))
+    print(as.POSIXct(setdiff(filterRead$valid, expDate), origin="1970-01-01", tz="UTC"))
 
     # Confirmation of uniqueness
     cat("\n*** Are the extracted records unique? ***\n")
@@ -1376,8 +1376,8 @@ initialParseMETAR <- function(met, val, labs) {
 
     # Create a data frame
     dfParse <- data.frame(mtxParse, stringsAsFactors=FALSE) %>%
-        mutate(dtime=met$valid)
-    names(dfParse) <- c(labs, "dtime")
+        mutate(dtime=met$valid, origMETAR=met$metar)
+    names(dfParse) <- c(labs, "dtime", "origMETAR")
     dfParse <- tibble::as_tibble(dfParse)
     cat("\n*** Summary of the parsed data *** \n")
     glimpse(dfParse)
@@ -1634,6 +1634,157 @@ lmMETAR <- function(met, y, x, yName, subT="Lincoln, NE (2016) Hourly METAR") {
 
 lmMETAR(parseMETAR, "modSLP", "Altimeter", yName="Sea Level Pressure")
 lmMETAR(parseMETAR, "modSLP", "Altimeter + TempF", yName="Sea Level Pressure")
+
+```
+
+#### _Example #20: Functional Form for Extracting Cloud Data from METAR_  
+Cloud data can also be extracted using the functional form.
+
+Example code includes:  
+```{r}
+
+extractClouds <- function(met, metVar, subT="Lincoln, NE (2016) Hourly METAR") {
+
+    metAll <- met %>%
+        pull(metVar)
+    
+    # Extract the CLR records
+    mtxCLR <- str_extract_all(metAll, pattern=" CLR ", simplify=TRUE)
+    if (dim(mtxCLR)[[2]] != 1) { stop("Extracted 2+ CLR from some METAR; investigate") }
+    isCLR <- ifelse(mtxCLR[, 1] == "", 0, 1)
+
+    # Extract the VV records
+    mtxVV <- str_extract_all(metAll, pattern="VV(\\d{3})", simplify=TRUE)
+    if (dim(mtxVV)[[2]] != 1) { stop("Extracted 2+ VV from some METAR; investigate") }
+    isVV <- ifelse(mtxVV[, 1] == "", 0, 1)
+    htVV <- ifelse(mtxVV[, 1] == "", NA, as.integer(str_replace(mtxVV[, 1], "VV", ""))*100)
+
+    # Extract the FEW records
+    mtxFEW <- str_extract_all(metAll, pattern="FEW(\\d{3})", simplify=TRUE)
+    numFEW <- apply(mtxFEW, 1, FUN=function(x) { sum((x!=""))} )
+
+    # Extract the SCT records
+    mtxSCT <- str_extract_all(metAll, pattern="SCT(\\d{3})", simplify=TRUE)
+    numSCT <- apply(mtxSCT, 1, FUN=function(x) { sum((x!=""))} )
+
+    # Extract the BKN records
+    mtxBKN <- str_extract_all(metAll, pattern="BKN(\\d{3})", simplify=TRUE)
+    numBKN <- apply(mtxBKN, 1, FUN=function(x) { sum((x!=""))} )
+
+    # Extract the OVC records
+    mtxOVC <- str_extract_all(metAll, pattern="OVC(\\d{3})", simplify=TRUE)
+    numOVC <- apply(mtxOVC, 1, FUN=function(x) { sum((x!=""))} )
+
+    # Summarize as a data frame
+    tblClouds <- tibble::tibble(isCLR=isCLR, isVV=isVV, htVV=htVV, numFEW=numFEW, 
+                                numSCT=numSCT, numBKN=numBKN, numOVC=numOVC
+                                )
+
+    # Get the counts
+    cat("\n*** Counts by number of layers of each cloud type ***\n")
+    tblClouds %>% 
+        count(isCLR, isVV, numFEW, numSCT, numBKN, numOVC) %>%
+        as.data.frame() %>%
+        print()
+
+    # Investigate the problem data
+    cat("\n*** METAR records where no clouds were extracted ***\n")
+    metAll[rowSums(tblClouds, na.rm=TRUE)==0] %>%
+        print()
+    
+    # Plot the counts of most obscuration
+    p <- tblClouds %>%
+        filter(rowSums(., na.rm=TRUE) > 0) %>%
+        mutate(wType=factor(case_when(isCLR==1 ~ "CLR", isVV==1 ~ "VV", numOVC > 0 ~ "OVC", 
+                                      numBKN > 0 ~ "BKN", numSCT > 0 ~ "SCT", numFEW > 0 ~ "FEW", 
+                                      TRUE ~ "Error"
+                                      ), levels=c("VV", "OVC", "BKN", "SCT", "FEW", "CLR", "Error")
+                            )
+               ) %>%
+        ggplot(aes(x=wType, y=..count../sum(..count..))) + 
+        geom_bar() + 
+        labs(title="Highest Obscuration by Cloud", subtitle=subT, 
+             x="Cloud Type", y="Proportion of Hourly Measurements"
+             )
+    print(p)
+    
+    # Integrate the clouds data
+    mtxCloud <- cbind(mtxVV, mtxOVC, mtxBKN, mtxSCT, mtxFEW, mtxCLR)
+    cat("\n*** Dimensions for the cloud matrix ***\n")
+    print(dim(mtxCloud))
+    
+    list(tblClouds=tblClouds, mtxCloud=mtxCloud)
+}
+
+# Run the initial cloud extraction
+initClouds <- extractClouds(parseMETAR, metVar="origMETAR")
+str(initClouds)
+
+
+# Cycle through to find levels of a given type
+ckClouds <- function(cloudType, mtx) {
+    isKey <- which(apply(mtx, 2, FUN=function(x) {sum(str_detect(x, cloudType))}) > 0)
+    as.integer(str_replace(mtx[, min(isKey)], cloudType, "")) * 100
+}
+
+
+# Function to create the lowest cloud levels
+findLowestClouds <- function(mtxCloud, subT="Lincoln, NE (2016) Hourly METAR") {
+
+    # Find the lowest clouds by cloud type
+    lowOVC <- ckClouds("OVC", mtx=mtxCloud)
+    lowVV <- ckClouds("VV", mtx=mtxCloud)
+    lowBKN <- ckClouds("BKN", mtx=mtxCloud)
+    lowSCT <- ckClouds("SCT", mtx=mtxCloud)
+    lowFEW <- ckClouds("FEW", mtx=mtxCloud)
+
+    # Integrate the lowest cloud type by level
+    lowCloud <- tibble::tibble(lowVV, lowOVC, lowBKN, lowSCT, lowFEW)
+    cat("\n*** Lowest clouds by type tibble ***\n")
+    print(lowCloud)
+
+    # Get the lowest cloud level
+    minCloud <- lowCloud
+    minCloud[is.na(minCloud)] <- 999999
+    minCloudLevel <- apply(minCloud, 1, FUN=min)
+    minCeilingLevel <- apply(minCloud[, c("lowVV", "lowOVC", "lowBKN")], 1, FUN=min)
+
+    noCloudPct <- mean(minCloudLevel == 999999)
+    noCeilingPct <- mean(minCeilingLevel == 999999)
+
+    # Plot the minimum cloud level (where it exists)
+    p <- data.frame(minCloudLevel, minCeilingLevel) %>%
+        filter(minCloudLevel != 999999) %>%
+        ggplot(aes(x=minCloudLevel)) + 
+        geom_bar(aes(y=..count../sum(..count..))) + 
+        geom_text(aes(x=2500, y=0.04, 
+                      label=paste0(round(100*noCloudPct), "% of obs. have no clouds")
+                      )
+                  ) + 
+        labs(x="Height [ft]", y="Proportion", 
+             title="Minimum Cloud Height (when some clouds exist)", subtitle=subT
+             )
+    print(p)
+
+    # Plot the minimum ceiling level (where it exists)
+    p <- data.frame(minCloudLevel, minCeilingLevel) %>%
+        filter(minCeilingLevel != 999999) %>%
+        ggplot(aes(x=minCeilingLevel)) + 
+        geom_bar(aes(y=..count../sum(..count..))) + 
+        geom_text(aes(x=2500, y=0.04, 
+                      label=paste0(round(100*noCeilingPct), "% of obs. have no ceiling")
+                      )
+                  ) + 
+        labs(x="Height [ft]", y="Proportion", 
+             title="Minimum Ceiling Height (when a ceiling exists)", subtitle=subT
+             )
+    print(p)
+    
+    list(lowCloud=lowCloud, minCeilingLevel=minCeilingLevel, minCloudLevel=minCloudLevel)
+}
+
+processedClouds <-findLowestClouds(initClouds$mtxCloud)
+str(processedClouds)
 
 ```
 
