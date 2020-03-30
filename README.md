@@ -1858,3 +1858,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 contains functions for analyzing relationships between METAR variables  
 * AdditionalCoding_202003_v001 contains functions for extracting cloud data from METAR  
   
+### Expansions week of 30-MAR-2020  
+* AdditionalCoding_202003_v001 contains functions for plotting by factor variables  
+  
