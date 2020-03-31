@@ -1547,7 +1547,7 @@ Example code includes:
 ```{r}
 
 # Function to calculate, display, and plot variable correlations
-corMETAR <- function(met, numVars) {
+corMETAR <- function(met, numVars, subT="") {
 
     # Keep only complete cases and report on data kept
     dfUse <- met %>%
@@ -1569,7 +1569,7 @@ corMETAR <- function(met, numVars) {
         print()
 
     # Display a heat map
-    corrplot::corrplot(mtxCorr, method="color", title="Lincoln, NE Hourly Weather Correlations (2016)")
+    corrplot::corrplot(mtxCorr, method="color", title=paste0("Hourly Weather Correlations\n", subT))
 }
 
 # Define key numeric variables
@@ -1580,16 +1580,16 @@ corMETAR(parseMETAR, numVars=coreNum)
 
 
 # Create a function for plotting two variables against each other
-plotNumCor <- function(met, var1, var2, title=NULL) {
+plotNumCor <- function(met, var1, var2, title=NULL, subT="") {
     if (is.null(title)) 
-        { title <- paste0("Lincoln, NE (2016) Hourly Correlations of ", var1, " and ", var2) }
+        { title <- paste0("Hourly Correlations of ", var1, " and ", var2) }
     p <- met %>%
         group_by_at(vars(all_of(c(var1, var2)))) %>%
         summarize(n=n()) %>%
         ggplot(aes_string(x=var1, y=var2)) + 
         geom_point(alpha=0.5, aes_string(size="n")) + 
         geom_smooth(method="lm", aes_string(weight="n")) + 
-        labs(x=var1, y=var2, title=title)
+        labs(x=var1, y=var2, title=title, subtitle=subT)
     print(p)
 }
 
@@ -1862,83 +1862,106 @@ The functions can be combined in to a single routine for reading, parsing, and r
 Example code includes:  
 ```{r}
 
-# Read in the METAR data
-funcMETAR <- readMETAR(expDays=368)
-funcMETAR
+# Function to run the full process
+runAllMETAR <- function(fname, timeZ, expMin, expDays, locMET, shortMET, longMET, valMet, 
+                        labsMet=c("METAR", "WindDir", "WindSpeed", "WindGust", "Dummy", "Visibility", 
+                                  "TempC", "DewC", "Altimeter", "SLP", "FahrC"
+                                  ), 
+                        keyMetric=c("WindDir", "WindSpeed", "WindGust", "Visibility", "TempC", 
+                                    "DewC", "Altimeter", "SLP", "TempF", "DewF"
+                                    ), 
+                        coreNum=c("TempC", "TempF", "DewC", "DewF", 
+                                  "Altimeter", "modSLP", "WindSpeed", "Visibility"
+                                  ), 
+                        var1List=c("TempC", "DewC", "Altimeter", "TempF", "TempF", "TempF", "Altimeter"), 
+                        var2List=c("TempF", "DewF", "modSLP", "DewF", "Altimeter", "modSLP", "WindSpeed")
+                        ) {
+    
+    # Read in the METAR data
+    funcMETAR <- readMETAR(fileName=fname, timeZ=timeZ, expMin=expMin, expDays=expDays)
+    # funcMETAR
 
-# Extract wind data from METAR
-windMETAR <- extractWind(funcMETAR)
-windMETAR
+    # Extract wind data from METAR
+    windMETAR <- extractWind(funcMETAR)
+    # windMETAR
 
-# Run basic wind plots
-basicWindPlots(windMETAR)
-
-
-# Create a search string for METAR
-valMet <- "54Z.*?(VRB|\\d{3})(\\d{2})(G\\d{2})?KT(.*?)(\\d{1,2}SM).*?\\s(M?\\d{2})/(M?\\d{2}).*?(A\\d{4}).*?RMK.*?(SLP\\d{3}).*?(T\\d{8})"
-
-# Create the names for the search string to parse in to
-labsMet <- c("METAR", "WindDir", "WindSpeed", "WindGust", "Dummy", "Visibility", 
-             "TempC", "DewC", "Altimeter", "SLP", "FahrC"
-             )
-
-# Run the METAR parsing on the raw data
-initMETAR <- initialParseMETAR(funcMETAR, val=valMet, labs=labsMet)
-initMETAR
-
-# Parse and convert the METAR data
-keyMetric <- c("WindDir", "WindSpeed", "WindGust", "Visibility", "TempC", 
-               "DewC", "Altimeter", "SLP", "TempF", "DewF"
-               )
-convMETAR <- convertMETAR(initMETAR, metrics=keyMetric)
-convMETAR
-
-# Fix problems with visibility, wind gusts, and SLP
-parseMETAR <- getVisibility(convMETAR, origMet=funcMETAR)
-parseMETAR <- getWindGusts(parseMETAR, origMet=funcMETAR)
-parseMETAR <- fixSLP(parseMETAR)
-
-# Check updated plots
-plotcountsByMetric(parseMETAR, mets=c("WindGust", "Visibility", "modSLP"))
+    # Run basic wind plots
+    basicWindPlots(windMETAR, desc=locMET, gran=shortMET)
 
 
-# Define key numeric variables
-coreNum <- c("TempC", "TempF", "DewC", "DewF", "Altimeter", "modSLP", "WindSpeed", "Visibility")
+    # Run the METAR parsing on the raw data
+    initMETAR <- initialParseMETAR(funcMETAR, val=valMet, labs=labsMet)
+    # initMETAR
 
-# Run the correlations function
-corMETAR(parseMETAR, numVars=coreNum)
+    # Parse and convert the METAR data
+    convMETAR <- convertMETAR(initMETAR, metrics=keyMetric)
+    # convMETAR
 
-# Define a list of variables for correlation plotting
-var1List <- c("TempC", "DewC", "Altimeter", "TempF", "TempF",     "TempF",  "Altimeter")
-var2List <- c("TempF", "DewF", "modSLP",    "DewF",  "Altimeter", "modSLP", "WindSpeed")
+    # Fix problems with visibility, wind gusts, and SLP
+    parseMETAR <- getVisibility(convMETAR, origMet=funcMETAR)
+    parseMETAR <- getWindGusts(parseMETAR, origMet=funcMETAR)
+    parseMETAR <- fixSLP(parseMETAR)
 
-# Plot correlations
-for (n in 1:length(var1List)) {
-    plotNumCor(parseMETAR, var1List[n], var2List[n])
+    # Check updated plots
+    plotcountsByMetric(parseMETAR, mets=c("WindGust", "Visibility", "modSLP"))
+
+
+    # Run the correlations function
+    corMETAR(parseMETAR, numVars=coreNum, subT=longMET)
+
+    # Plot correlations
+    for (n in 1:length(var1List)) {
+        plotNumCor(parseMETAR, var1List[n], var2List[n], subT=longMET)
+    }
+
+    # Run lm models for SLP vs Altimeter and (optionally) Temperature
+    lmMETAR(parseMETAR, "modSLP", "Altimeter", yName="Sea Level Pressure", subT=longMET)
+    lmMETAR(parseMETAR, "modSLP", "Altimeter + TempF", yName="Sea Level Pressure", subT=longMET)
+
+
+    # Run the initial cloud extraction
+    initClouds <- extractClouds(parseMETAR, metVar="origMETAR", subT=longMET)
+    str(initClouds)
+
+    # Find the lowest cloud levels and lowest ceilings
+    processedClouds <-findLowestClouds(initClouds$mtxCloud, subT=longMET)
+    str(processedClouds)
+
+
+    # Bind the processed METAR and the cloud data
+    fullMETAR <- bindMETAR(dfParse=parseMETAR, 
+                           tblClouds=initClouds$tblClouds, 
+                           lowCloud=processedClouds$lowCloud
+                           )
+
+    # Create box plots for key weather elements against month and cloud type
+    makeFactorPlots(fullMETAR, desc=longMET)
+    
+    # Return all of the elements
+    list(fullMETAR=fullMETAR, funcMETAR=funcMETAR, windMETAR=windMETAR, 
+         initMETAR=initMETAR, convMETAR=convMETAR, parseMETAR=parseMETAR, 
+         initClouds=initClouds, processedClouds=processedClouds
+         )
 }
 
-# Run lm models for SLP vs Altimeter and (optionally) Temperature
-lmMETAR(parseMETAR, "modSLP", "Altimeter", yName="Sea Level Pressure")
-lmMETAR(parseMETAR, "modSLP", "Altimeter + TempF", yName="Sea Level Pressure")
 
+# Set key parameters for reading and interpreting METAR
+fname <- "./RInputFiles/metar_klnk_2016.txt"  # file name for raw METAR data
+timeZ <- "54Z"  # Zulu time that METAR is recorded at this station
+expMin <- as.POSIXct("2015-12-31 00:54:00", tz="UTC")  # Expected first time read
+expDays <- 368  # Expected total days read
+locMET <- "Lincoln, NE"  # Description of city or location
+shortMET <- "KLNK METAR (2016)"  # Station code and timing
+longMET <- "Lincoln, NE Hourly METAR (2016)"  # Description of city or location and timing
 
-# Run the initial cloud extraction
-initClouds <- extractClouds(parseMETAR, metVar="origMETAR")
-str(initClouds)
+# Extraction format for METAR - paste the expected Zulu time at the front
+valMet <- paste0(timeZ, ".*?(VRB|\\d{3})(\\d{2})(G\\d{2})?KT(.*?)(\\d{1,2}SM).*?\\s(M?\\d{2})/(M?\\d{2}).*?(A\\d{4}).*?RMK.*?(SLP\\d{3}).*?(T\\d{8})")
 
-# Find the lowest cloud levels and lowest ceilings
-processedClouds <-findLowestClouds(initClouds$mtxCloud)
-str(processedClouds)
-
-
-# Bind the processed METAR and the cloud data
-fullMETAR <- bindMETAR(dfParse=parseMETAR, 
-                       tblClouds=initClouds$tblClouds, 
-                       lowCloud=processedClouds$lowCloud
-                       )
-
-# Create box plots for key weather elements against month and cloud type
-makeFactorPlots(fullMETAR)
+# Run the process for Lincoln, NE
+klnk2016METAR <- runAllMETAR(fname=fname, timeZ=timeZ, expMin=expMin, expDays=expDays, 
+                             locMET=locMET, shortMET=shortMET, longMET=longMET, valMet=valMet
+                             )
+str(klnk2016METAR)
 
 ```
 
