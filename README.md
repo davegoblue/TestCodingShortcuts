@@ -1862,4 +1862,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 contains functions for plotting by factor variables  
 * AdditionalCoding_202003_v001 contains integrated functions for running METAR analyses  
 * AdditionalCoding_202003_v001 contains integrated functions run for a different station  
+* AdditionalCoding_202003_v001 contains functions for METAR data download  
   
