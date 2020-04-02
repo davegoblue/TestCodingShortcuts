@@ -1655,9 +1655,15 @@ extractClouds <- function(met, metVar, subT="Lincoln, NE (2016) Hourly METAR") {
 
     # Extract the VV records
     mtxVV <- str_extract_all(metAll, pattern="VV(\\d{3})", simplify=TRUE)
-    if (dim(mtxVV)[[2]] != 1) { stop("Extracted 2+ VV from some METAR; investigate") }
-    isVV <- ifelse(mtxVV[, 1] == "", 0, 1)
-    htVV <- ifelse(mtxVV[, 1] == "", NA, as.integer(str_replace(mtxVV[, 1], "VV", ""))*100)
+    if (dim(mtxVV)[[2]] > 1) { stop("Extracted 2+ VV from some METAR; investigate") }
+    if ((dim(mtxVV))[[2]] == 0) {
+        cat("\nNo Records with a cloud type of vertical visibility (VV)\n")
+        isVV <- rep(0, times=length(isCLR))
+        htVV <- rep(NA, times=length(isCLR))
+    } else {
+        isVV <- ifelse(mtxVV[, 1] == "", 0, 1)
+        htVV <- ifelse(mtxVV[, 1] == "", NA, as.integer(str_replace(mtxVV[, 1], "VV", ""))*100)
+    }
 
     # Extract the FEW records
     mtxFEW <- str_extract_all(metAll, pattern="FEW(\\d{3})", simplify=TRUE)
@@ -1997,3 +2003,103 @@ str(kord2016METAR)
 The [Iowa State Mesonet website](https://mesonet.agron.iastate.edu/request/download.phtml) provides instructions for automating the download process using Python or R, including links to a GitHub repository with instructions for [R download](https://github.com/realmiketalbot/R-scripts/blob/master/iem_scraper_example.r).  The code can be adapted for use here.
 
 Example code includes:  
+```{r}
+
+# Function to get ASOS data from Iowa State
+getASOSData <- function(faaID, startDate, endDate, suffix,
+                        dirDownload = "./RInputFiles/", getAgain=FALSE) {
+
+    # Create the file name and location for saving data
+    fileName <- paste0("metar_k", str_to_lower(faaID), "_", suffix, ".txt")
+    fileLoc <- paste0(dirDownload, fileName)
+
+    # Check whether the file already exists, stop if so and getAgain is FALSE, otherwise download the data
+    if (file.exists(fileLoc) & !getAgain) {
+        cat("\nFile already exists - ", fileLoc)
+        cat("\nStopping download routine\n")
+        return(FALSE)
+    } else {
+        # Get the year, day, and hour of the key dates
+        y1 <- lubridate::year(startDate)
+        m1 <- lubridate::month(startDate)
+        d1 <- lubridate::day(startDate)
+    
+        y2 <- lubridate::year(endDate)
+        m2 <- lubridate::month(endDate)
+        d2 <- lubridate::day(endDate)
+
+        # Mimic the string shown below
+        # https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?station=LAS&data=all&year1=2015&month1=12&day1=31&year2=2017&month2=1&day2=2&tz=Etc%2FUTC&format=onlycomma&latlon=no&missing=M&trace=T&direct=no&report_type=2
+    
+        baseURL <- "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?"  # base URL
+        useURL <- paste0(baseURL, "station=", faaID)  # add the desired station
+        useURL <- paste0(useURL, "&data=all")  # request all data fields
+        useURL <- paste0(useURL, "&year1=", y1, "&month1=", m1, "&day1=", d1)  # Specify start ymd
+        useURL <- paste0(useURL, "&year2=", y2, "&month2=", m2, "&day2=", d2)  # Specify end ymd
+        useURL <- paste0(useURL, "&tz=Etc%2FUTC&format=onlycomma&latlon=no")  # Formatting
+        useURL <- paste0(useURL, "&missing=M&trace=T&direct=no&report_type=2")  # Formatting
+    
+        # Download the file
+        download.file(useURL, destfile=fileLoc, method="curl")
+        
+        return(TRUE)
+    }
+}
+
+```
+
+And then cache the actual download step to minimize utilization of the Iowa State server (though the code is set to not download to an existing file anyway):
+```{r cache=TRUE}
+
+# Specify the FAA ID and Analysis Year
+useFAAID <- "LAS"
+analysisYear <- 2016
+
+# Specify the start and end dates based on the analysis year
+startDate <- ISOdate(analysisYear-1, 12, 31, hour=0)
+endDate <- ISOdate(analysisYear+1, 1, 2, hour=0)
+
+# Get the relevant data
+getASOSData(faaID=useFAAID, startDate=startDate, endDate=endDate, suffix=analysisYear)
+
+```
+
+And then explore the data to set the key parameters for a full run of the METAR process:
+```{r cache=TRUE}
+
+# Set key parameters for reading and interpreting METAR based on above inputs
+fname <- paste0("./RInputFiles/metar_k", str_to_lower(useFAAID), "_", analysisYear, ".txt")
+
+# Find the most common Zulu time (this will be the METAR)
+zTimes <- readr::read_csv(fname) %>%
+    pull(metar) %>%
+    str_match(pattern="\\d{2}Z") %>%
+    as.vector() %>%
+    table() %>%
+    sort(decreasing=TRUE)
+
+cat("\nThe most common Zulu time is", names(zTimes)[1], "\nFrequency is",
+    round(100*zTimes[1]/sum(zTimes), 1), "% (", zTimes[1], "of", sum(zTimes), ")"
+    )
+
+# Use the most common Zulu time and start/end dates to set key parameters
+timeZ <- names(zTimes)[1]  # Zulu time that METAR is recorded at this station
+expMin <- ISOdate(analysisYear-1, 12, 31, hour=0, min=as.integer(str_replace(timeZ, "Z", "")))
+expDays <- as.integer(endDate - startDate)  # Expected total days read
+
+# Provide a descriptive name
+locMET <- "Las Vegas, NV"  # Description of city or location
+shortMET <- "KLAS METAR (2016)"  # Station code and timing
+longMET <- "Las Vegas, NV Hourly METAR (2016)"  # Description of city or location and timing
+
+# Extraction format for METAR - paste the expected Zulu time at the front
+valMet <- paste0(timeZ, ".*?(VRB|\\d{3})(\\d{2})(G\\d{2})?KT(.*?)(\\d{1,2}SM).*?\\s(M?\\d{2})/(M?\\d{2}).*?(A\\d{4}).*?RMK.*?(SLP\\d{3}).*?(T\\d{8})")
+
+# Run the process for Lincoln, NE
+klas2016METAR <- runAllMETAR(fname=fname, timeZ=timeZ, expMin=expMin, expDays=expDays, 
+                             locMET=locMET, shortMET=shortMET, longMET=longMET, valMet=valMet
+                             )
+str(klas2016METAR)
+
+```
+
