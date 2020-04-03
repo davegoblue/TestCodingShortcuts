@@ -2103,3 +2103,131 @@ str(klas2016METAR)
 
 ```
 
+#### _Example #25: More Generic Downloading the Data by Function_  
+The download function can be more generic, with just a few key arguments passed to it.  Those arguments can then be derived in a helper function, with the generic function called from inside that.
+
+Example code includes:  
+```{r}
+
+genericGetASOSData <- function(fileLoc, 
+                               stationID,
+                               startDate, 
+                               endDate,
+                               downloadMethod="curl", 
+                               baseURL="https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?", 
+                               dataFields="all", 
+                               dataTZ="Etc%2FUTC", 
+                               dataFormat="onlycomma", 
+                               dataLatLon="no", 
+                               dataMissing="M", 
+                               dataTrace="T", 
+                               dataDirect="no", 
+                               dataType=2
+                               ) {
+    
+    # Get the year, day, and hour of the key dates
+    y1 <- lubridate::year(startDate)
+    m1 <- lubridate::month(startDate)
+    d1 <- lubridate::day(startDate)
+    
+    y2 <- lubridate::year(endDate)
+    m2 <- lubridate::month(endDate)
+    d2 <- lubridate::day(endDate)
+
+    # Mimic the string shown below
+    # https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?station=LAS&data=all&year1=2015&month1=12&day1=31&year2=2017&month2=1&day2=2&tz=Etc%2FUTC&format=onlycomma&latlon=no&missing=M&trace=T&direct=no&report_type=2
+    
+    useURL <- paste0(baseURL, "station=", stationID)  # add the desired station
+    useURL <- paste0(useURL, "&data=", dataFields)  # default is "all
+    useURL <- paste0(useURL, "&year1=", y1, "&month1=", m1, "&day1=", d1)  # Specify start ymd
+    useURL <- paste0(useURL, "&year2=", y2, "&month2=", m2, "&day2=", d2)  # Specify end ymd
+    useURL <- paste0(useURL, "&tz=", dataTZ)  # time zone (default UTC)
+    useURL <- paste0(useURL, "&format=", dataFormat)  # file format (default CSV)
+    useURL <- paste0(useURL, "&latlon=", dataLatLon)  # Whether to include lat-lon (default no)
+    useURL <- paste0(useURL, "&missing=", dataMissing)  # How to handle missing data (default is 'M')
+    useURL <- paste0(useURL, "&trace=", dataTrace)  # How to handle trace data (default is 'T')
+    useURL <- paste0(useURL, "&direct=", dataDirect)  # Whether to directly get the data (default is 'no')
+    useURL <- paste0(useURL, "&report_type=", dataType)  # Whether to get just METAR (2, default)
+    
+    # Download the file
+    cat("\nDownloading from:", useURL, "\nDownloading to:", fileLoc, "\n")
+    download.file(useURL, destfile=fileLoc, method=downloadMethod)
+        
+    return(TRUE)
+}
+
+```
+  
+Which can then be called by a function that checks whether the file already exists:
+```{r}
+
+getASOSStationTime <- function(stationID, 
+                               startDate=NULL, 
+                               endDate=NULL, 
+                               analysisYears=NULL, 
+                               fileLoc=NULL,
+                               ovrWrite=FALSE,
+                               ...) {
+    
+    # Get the relevant time period for the data
+    if (is.null(analysisYears) & (is.null(startDate) | is.null(endDate))) {
+        stop("Must provide either analysisYears or both of startDate and endDate")
+    }
+    if (!is.null(startDate) & !is.null(endDate) & !is.null(analysisYears)) {
+        stop("Should specify EITHER both of startDate and endDate OR analysisYears BUT NOT both")
+    }
+    if (is.null(startDate)) {
+        startDate <- ISOdate(min(analysisYears)-1, 12, 31, hour=0)
+        endDate <- ISOdate(max(analysisYears)+1, 1, 2, hour=0)
+    }
+    
+    # Create the file name
+    if (!is.null(analysisYears)) {
+        if (length(analysisYears) == 1) { timeDesc <- analysisYears }
+        else { timeDesc <- paste0(min(analysisYears), "-", max(analysisYears)) }
+    } else {
+        timeDesc <- paste0(lubridate::year(startDate), 
+                           str_pad(lubridate::month(startDate), 2, pad="0"),
+                           str_pad(lubridate::day(startDate), 2, pad="0"), 
+                           "-", 
+                           lubridate::year(endDate), 
+                           str_pad(lubridate::month(endDate), 2, pad="0"), 
+                           str_pad(lubridate::day(endDate), 2, pad="0")
+                           )
+    }
+    
+    if (is.null(fileLoc)) {
+        fileLoc <- paste0("./RInputFiles/", "metar_k", str_to_lower(stationID), "_", timeDesc, ".txt")
+    }
+    
+    cat("\nData for station", stationID, "from", as.character(startDate), "to", 
+        as.character(endDate), "will download to", fileLoc, "\n"
+        )
+    
+    if (file.exists(fileLoc) & !ovrWrite) {
+        stop("File already exists, aborting")
+    }
+    
+    genericGetASOSData(fileLoc=fileLoc, stationID=stationID, startDate=startDate, endDate=endDate, ...)
+    
+}
+
+```
+  
+And the files can then be run (cached to avoid multiple hits to the Iowa State server):  
+```{r cache=TRUE}
+
+# Get data for EWR for 2016
+getASOSStationTime(stationID="EWR", analysisYears=2016)
+
+# Get data for ATL for 2016-2018
+getASOSStationTime(stationID="ATL", analysisYears=2016:2018)
+
+# Get data for DFW for 2016-03-31 to 2017-03-01
+getASOSStationTime(stationID="DFW", 
+                   startDate=ISOdate(2016, 03, 31, hour=0), 
+                   endDate=ISOdate(2017, 3, 1, hour=0)
+                   )
+
+```
+
