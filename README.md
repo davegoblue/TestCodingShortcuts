@@ -1864,4 +1864,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 contains integrated functions run for a different station  
 * AdditionalCoding_202003_v001 contains functions for METAR data download  
 * AdditionalCoding_202003_v001 contains more generic functions for METAR data download  
+* AdditionalCoding_202003_v001 contains functions for comparative wind directions by location  
   
