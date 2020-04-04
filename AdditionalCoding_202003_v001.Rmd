@@ -2231,3 +2231,73 @@ getASOSStationTime(stationID="DFW",
 
 ```
 
+#### _Example #26: Comparative Wind Directions by Location_  
+The processed data files can be compared, with wind directions being one of the comparison sets.
+
+Example code includes:  
+```{r}
+
+# Extract the wind direction data from a processed METAR file
+getWindDirGroup <- function(keyList, src) {
+    
+    # Use the fullMETAR data and extract WindDir, WindSpeed, month
+    windPlotData <- get(keyList)[["fullMETAR"]] %>%
+        select(WindDir, WindSpeed, month) %>%
+        mutate(windDirGroup=factor(case_when(WindSpeed==0 ~ "No Wind", 
+                                             WindDir=="VRB" ~ "Variable", 
+                                             WindDir %in% c("030", "040", "050", "060") ~ "NE", 
+                                             WindDir %in% c("070", "080", "090", "100", "110") ~ "E", 
+                                             WindDir %in% c("120", "130", "140", "150") ~ "SE", 
+                                             WindDir %in% c("160", "170", "180", "190", "200") ~ "S", 
+                                             WindDir %in% c("210", "220", "230", "240") ~ "SW", 
+                                             WindDir %in% c("250", "260", "270", "280", "290") ~ "W", 
+                                             WindDir %in% c("300", "310", "320", "330") ~ "NW", 
+                                             WindDir %in% c("340", "350", "360", "010", "020") ~ "N", 
+                                            TRUE ~ "Error"
+                                            ) , levels=c("No Wind", "Variable", "Error", 
+                                                         "N", "NE", "E", "SE", "S", "SW", "W", "NW"
+                                                         )
+                                   )
+               )
+    
+    # Rempve the errors and calculate percentages by month for the remainder
+    processedWindData <- windPlotData %>%
+        filter(windDirGroup != "Error") %>%
+        group_by(month, windDirGroup) %>%
+        summarize(n=n()) %>%
+        ungroup() %>%
+        group_by(month) %>%
+        mutate(pct=n/sum(n)) %>%
+        ungroup() %>%
+        mutate(src=src)
+    
+    processedWindData
+
+}
+
+
+# Consolidate and plot wind data
+consolidatePlotWind <- function(files, names) {
+
+    consFun <- function(x, y) { getWindDirGroup(keyList=x, src=y) }
+    boundByRows <- map2_dfr(.x=files, .y=names, .f=consFun)
+
+    p <- boundByRows %>%
+        ggplot(aes(x=month, y=pct, color=src)) + 
+        geom_line(aes(group=src)) + 
+        facet_wrap(~windDirGroup) + 
+        labs(title="Wind Direction Frequency by Month", x="Month", y="Frequency of Wind Observations") +
+        theme(axis.text.x=element_text(angle=90))
+    print(p)
+    
+    boundByRows
+}
+
+# Run for 2016 with Lincoln, NE; Las Vegas, NV; and Chicago, IL
+cpWind <- consolidatePlotWind(files=c("klnk2016METAR", "klas2016METAR", "kord2016METAR"), 
+                              names=c("Lincoln, NE (2016)", "Las Vegas, NV (2016)", "Chicago, IL (2016)")
+                              )
+cpWind
+
+```
+
