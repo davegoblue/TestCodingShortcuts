@@ -1867,3 +1867,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 contains functions for comparative wind directions by location  
 * DataCamp_Insights_v003_d captures Data Cleaning in R - Chapter 1 (Common Data Problems) - notes  
   
+### Expansions week of 06-APR-2020  
+* DataCamp_Insights_v003_d captures Data Cleaning in R - Chapter 2 (Categorical and Text Data) - notes  
+  
