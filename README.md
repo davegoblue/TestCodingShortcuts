@@ -1871,4 +1871,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_d captures Data Cleaning in R - Chapter 2 (Categorical and Text Data) - notes  
 * DataCamp_Insights_v003_d captures Data Cleaning in R - Chapter 3 (Advanced Data Problems) - notes  
 * DataCamp_Insights_v003_d captures Data Cleaning in R - Chapter 4 (Record Linkage) - notes  
+* DataCamp_Insights_v003_d captures Handling Missing Data with Imputations in R - Chapter 1 (Problem of Missing Data) - notes  
   
