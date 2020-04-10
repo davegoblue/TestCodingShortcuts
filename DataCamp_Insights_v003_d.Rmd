@@ -9907,6 +9907,170 @@ biopics %>%
   
 Chapter 2 - Donor-Based Imputation  
   
+Mean Imputation:  
+  
+* Imputation is the process of making an educated guess about what the missing values might be  
+	* Donor-based imputation is the process of replacing missing values with other existing values  
+    * Model-based imputation is the process of using statistical techniques to estimate the value that should replace the missing values  
+* Mean imputation can work well when data tend to fluctuate around a mean  
+	* The drawback is the loss of variance and destruction of relationships among variables  
+* The margin plot can help assess the quality of the imputations  
+	* df %>% select(a, b, a_imp, b_imp) %>% VIM::marginplot(delimiter="imp")  
+* Can instead impute using medians or modes, particularly if outliers are heavily influencing the mean  
+	* Generally, these have the same drawbacks as mean imputations - variance reduction and relationship destruction  
+  
+Hot-Deck Imputation:  
+  
+* Hot-deck imputation was designed in the 1950s, when data were stored on punch cards  
+	* Replace every missing values with the last non-missing value for that category  
+    * Assumes that data are MCAR, otherwise it is biased  
+    * Can destroy relationships between variables  
+    * hotdeck(df, variable=c())  
+* Can first sort the data by any variables that are expected to be correlated, so that the variable carried forward is from similar groups  
+	* hotdeck(df, variable=c(), ord_var=c())  
+  
+K-Nearest-Neighbors Imputation:  
+  
+* Can use kNN imputation to infer a value from the average of the closest neighbors of the data point with missing values  
+	* For numeric variables, distance is considered as the Euclidean distance  
+    * For factor variables, distance is considered as the Manhattan distance  
+    * For categorical variables, the hamming distance is used (0 if match, 1 is mismatch)  
+* Example for running kNN imputation using the VIM package  
+	* VIM::kNN(nhanes, k=5, variable=c("TotChol", "Pulse"))  
+* Can weight the donors based on similarity (for numerical variables)  
+	* VIM::kNN(nhanes, k=5, variable=c("TotChol", "Pulse"), numFun=weighted.mean, weightDist=TRUE)  
+* Note that the kNN algorithm is sequential, so if the first variable has a lot of missing values, then a lot of imputations will be used in kNN for the second variable  
+	* Can be helpful to sort such that the LEAST number of missing variables come earlierst in the process (variable= has a c() that is sorted by ASCENDING missing value counts)  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Print first 10 observations
+head(tao, 10)
+
+# Get the number of missing values per column
+tao %>%
+    is.na() %>% 
+    colSums()
+
+# Calculate the number of missing values in air_temp per year
+tao %>% 
+    group_by(year) %>% 
+    summarize(num_miss = sum(is.na(air_temp)))
+
+
+tao_imp <- tao %>% 
+    # Create a binary indicator for missing values in air_temp
+    mutate(air_temp_imp = ifelse(is.na(air_temp), TRUE, FALSE)) %>% 
+    # Impute air_temp with its mean
+    mutate(air_temp = ifelse(is.na(air_temp), mean(air_temp, na.rm = TRUE), air_temp))
+
+# Print the first 10 rows of tao_imp
+head(tao_imp, 10)
+
+
+# Draw a margin plot of air_temp vs sea_surface_temp
+tao_imp %>% 
+    as.data.frame() %>%
+    select(air_temp, sea_surface_temp, air_temp_imp) %>%
+    VIM::marginplot(delimiter = "imp")
+
+
+# Impute air_temp in tao with hot-deck imputation
+tao_imp <- VIM::hotdeck(tao, variable = "air_temp")
+
+# Check the number of missing values in each variable
+tao_imp %>% 
+    is.na() %>% 
+    colSums()
+
+# Draw a margin plot of air_temp vs sea_surface_temp
+tao_imp %>% 
+    select(air_temp, sea_surface_temp, air_temp_imp) %>% 
+    VIM::marginplot(delimiter = "imp")
+
+
+# Calculate mean air_temp per year
+tao %>% 
+    group_by(year) %>% 
+    summarize(average_air_temp = mean(air_temp, na.rm = TRUE))
+
+# Hot-deck-impute air_temp in tao by year domain
+tao_imp <- VIM::hotdeck(tao, variable = "air_temp", domain_var = "year")
+
+# Draw a margin plot of air_temp vs sea_surface_temp
+tao_imp %>%
+    select(air_temp, sea_surface_temp, air_temp_imp) %>%
+    VIM::marginplot(delimiter = "imp")
+
+
+# Hot-deck-impute air_temp in tao ordering by sea_surface_temp
+tao_imp <- VIM::hotdeck(tao, variable = "air_temp", ord_var = "sea_surface_temp")
+
+# Draw a margin plot of air_temp vs sea_surface_temp
+tao_imp %>% 
+    select(air_temp, sea_surface_temp, air_temp_imp) %>% 
+    VIM::marginplot(delimiter = "imp")
+
+
+# Impute humidity using 30 neighbors
+tao_imp <- VIM::kNN(tao, k = 30, variable = "humidity")
+
+# Draw a margin plot of sea_surface_temp vs humidity
+tao_imp %>% 
+    select(sea_surface_temp, humidity, humidity_imp) %>%
+    VIM::marginplot(delimiter = "imp", main = "k = 30")
+
+# Impute humidity using 15 neighbors
+tao_imp <- VIM::kNN(tao, k = 15, variable = "humidity")
+
+# Draw a margin plot of sea_surface_temp vs humidity
+tao_imp %>% 
+    select(sea_surface_temp, humidity, humidity_imp) %>% 
+    VIM::marginplot(delimiter = "imp", main = "k = 15")
+
+# Impute humidity using 5 neighbors
+tao_imp <- VIM::kNN(tao, k = 5, variable = "humidity")
+
+# Draw a margin plot of sea_surface_temp vs humidity
+tao_imp %>% 
+    select(sea_surface_temp, humidity, humidity_imp) %>% 
+    VIM::marginplot(delimiter = "imp", main = "k = 5")
+
+
+# Impute humidity with kNN using distance-weighted mean
+tao_imp <- VIM::kNN(tao, k = 5, variable = "humidity", numFun = weighted.mean, weightDist = TRUE)
+
+tao_imp %>% 
+    select(sea_surface_temp, humidity, humidity_imp) %>% 
+    VIM::marginplot(delimiter = "imp")
+
+
+# Get tao variable names sorted by number of NAs
+vars_by_NAs <- tao %>%
+    is.na() %>%
+    colSums() %>%
+    sort(decreasing = FALSE) %>% 
+    names()
+
+# Sort tao variables and feed it to kNN imputation
+tao_imp <- tao %>% 
+    select(all_of(vars_by_NAs)) %>% 
+    VIM::kNN(k=5)
+
+tao_imp %>% 
+    select(sea_surface_temp, humidity, humidity_imp) %>% 
+    VIM::marginplot(delimiter = "imp")
+
+```
+  
+  
+  
+***
+  
+Chapter 3 - Model-Based Imputation  
+  
+
 
 
 
