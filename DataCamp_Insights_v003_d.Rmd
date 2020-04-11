@@ -10070,6 +10070,203 @@ tao_imp %>%
   
 Chapter 3 - Model-Based Imputation  
   
+Model-Based Imputation Approach:  
+  
+* Can use statistical and machine-learning models for imputations  
+* One approach is to use a step-by-step process until convergence  
+	* Impute A  
+    * Use imputed A and all others to impute C  
+    * Revert A to NA and use imputed C and all others to impute A  
+    * Continuous - linear; Binary - logistic; Categorical - multinomial logistic; Count - Poisson  
+* Example for running the simputation  
+	* nhanes_imp <- simputation::impute_lm(nhanes, Height + Weight ~ .)  
+    * Since an lm requires that all predictors exist, can use hotdeck to manage that  
+    * Need to set up a loop for the convergence process  
+  
+Replicating Data Variability:  
+  
+* One objective for the imputed data is to have similar variability as the original data  
+* Predictions generally estimate the conditional distribution of the response variable  
+	* Can use a threshold probability, or can just make random draws with the probability as calculated  
+  
+Tree-Based Imputation:  
+  
+* The package missForest is based on the randomForest package  
+* Random forests are aggregations of trees, with only a random subset of variables and observations used in each tree  
+* Generally, the missForest algorithm includes the following steps  
+	* Make an initial imputation for all missing values  
+    * Sort the variables in ascending order by number of missing values  
+    * For each variable x, fit a random forest to the observed part of x, then predict that random forest to the missing part of x  
+    * Repeat the above step until sufficient convergence has been achieved  
+* Can look at OOB error estimated from missForest - NRMSE, PFC (proportion falsely classified)  
+* There are speed-accuracy trade-offs associated with changing mtry and ntree  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+# Impute air_temp and humidity with linear regression
+formula <- air_temp + humidity ~ year + latitude + sea_surface_temp
+tao_imp <- simputation::impute_lm(tao, formula)
+
+# Check the number of missing values per column
+tao_imp %>% 
+    is.na() %>% 
+    colSums()
+
+# Print rows of tao_imp in which air_temp or humidity are still missing 
+tao_imp %>% 
+    filter(is.na(air_temp) | is.na(humidity))
+
+
+# Initialize missing values with hot-deck
+tao_imp <- VIM::hotdeck(tao)
+
+# Create boolean masks for where air_temp and humidity are missing
+missing_air_temp <- tao_imp$air_temp_imp
+missing_humidity <- tao_imp$humidity_imp
+
+for (i in 1:5) {
+    # Set air_temp to NA in places where it was originally missing and re-impute it
+    tao_imp$air_temp[missing_air_temp] <- NA
+    tao_imp <- simputation::impute_lm(tao_imp, air_temp ~ year + latitude + sea_surface_temp + humidity)
+    # Set humidity to NA in places where it was originally missing and re-impute it
+    tao_imp$humidity[missing_humidity] <- NA
+    tao_imp <- simputation::impute_lm(tao_imp, humidity ~ year + latitude + sea_surface_temp + air_temp)
+}
+
+
+mapc <- function(a, b) {
+  mean(abs(b - a) / a, na.rm = TRUE)
+}
+
+diff_air_temp <- c()
+diff_humidity <- c()
+
+for (i in 1:5) {
+    # Assign the outcome of the previous iteration (or initialization) to prev_iter
+    prev_iter <- tao_imp
+    # Impute air_temp and humidity at originally missing locations
+    tao_imp$air_temp[missing_air_temp] <- NA
+    tao_imp <- simputation::impute_lm(tao_imp, air_temp ~ year + latitude + sea_surface_temp + humidity)
+    tao_imp$humidity[missing_humidity] <- NA
+    tao_imp <- simputation::impute_lm(tao_imp, humidity ~ year + latitude + sea_surface_temp + air_temp)
+    # Calculate MAPC for air_temp and humidity and append them to previous iteration's MAPCs
+    diff_air_temp <- c(diff_air_temp, mapc(prev_iter$air_temp, tao_imp$air_temp))
+    diff_humidity <- c(diff_humidity, mapc(prev_iter$humidity, tao_imp$humidity))
+}
+
+
+impute_logreg <- function(df, formula) {
+    # Extract name of response variable
+    imp_var <- as.character(formula[2])
+    # Save locations where the response is missing
+    missing_imp_var <- is.na(df[imp_var])
+    # Fit logistic regression mode
+    logreg_model <- glm(formula, data = df, family = binomial)
+    # Predict the response and convert it to 0s and 1s
+    preds <- predict(logreg_model, type = "response")
+    preds <- ifelse(preds >= 0.5, 1, 0)
+    # Impute missing values with predictions
+    df[missing_imp_var, imp_var] <- preds[missing_imp_var]
+    return(df)
+}
+
+
+impute_logreg <- function(df, formula) {
+    # Extract name of response variable
+    imp_var <- as.character(formula[2])
+    cat("\nimp_var is:", imp_var)
+    cat("\nformula is:", as.character(formula))
+    # Save locations where the response is missing
+    missing_imp_var <- is.na(df[imp_var])
+    print(summary(df[, c("is_hot", "sea_surface_temp")]))
+    # Fit logistic regression mode
+    logreg_model <- glm(formula, data = df, family = binomial)
+    cat("\nOK through logreg_model\n")
+    # Predict the response
+    preds <- predict(logreg_model, type = "response")
+    # Sample the predictions from binomial distribution
+    preds <- rbinom(length(preds), size = 1, prob = preds)
+    # Impute missing values with predictions
+    df[missing_imp_var, imp_var] <- preds[missing_imp_var]
+    return(df)
+}
+
+
+# Initialize missing values with hot-deck
+tao <- tao %>%
+    mutate(is_hot=(air_temp<26))
+table(tao$is_hot, useNA="ifany")
+tao_imp <- VIM::hotdeck(tao)
+
+# Create boolean masks for where is_hota and humidity are missing
+missing_is_hot <- tao_imp$is_hot_imp
+missing_humidity <- tao_imp$humidity_imp
+
+for (i in 1:3) {
+    # Set is_hot to NA in places where it was originally missing and re-impute it
+    tao_imp[missing_is_hot, "is_hot"] <- NA
+    tao_imp <- impute_logreg(tao_imp, is_hot ~ sea_surface_temp)
+    # Set humidity to NA in places where it was originally missing and re-impute it
+    tao_imp[missing_humidity, "humidity"] <- NA
+    tao_imp <- simputation::impute_lm(tao_imp, humidity ~ sea_surface_temp + air_temp)
+}
+
+
+biopics <- biopics %>%
+    select(country, year, earnings, sub_num, sub_type, sub_race, non_white, sub_sex) %>%
+    mutate(country=factor(country), sub_type=factor(sub_type), 
+           sub_race=factor(sub_race), sub_sex=factor(sub_sex)
+           ) %>%
+    as.data.frame()
+str(biopics)
+
+# Impute biopics data using missForest
+imp_res <- missForest::missForest(biopics)
+
+# Extract imputed data and check for missing values
+imp_data <- imp_res$ximp
+print(sum(is.na(imp_data)))
+
+# Extract and print imputation errors
+imp_err <- imp_res$OOBerror
+print(imp_err)
+
+
+# Impute biopics data with missForest computing per-variable errors
+imp_res <- missForest::missForest(biopics, variablewise = TRUE)
+
+# Extract and print imputation errors
+per_variable_errors <- imp_res$OOBerror
+print(per_variable_errors)
+
+# Rename errors' columns to include variable names
+names(per_variable_errors) <- paste(names(biopics), names(per_variable_errors), sep = "_")
+
+# Print the renamed errors
+print(per_variable_errors)
+
+
+# Set number of trees to 5 and number of variables used for splitting to 2
+imp_res <- missForest::missForest(biopics, ntree = 5, mtry = 2)
+
+# Print the resulting imputation errors
+print(imp_res$OOBerror)
+
+# Set number of trees to 50 and number of variables used for splitting to 6
+imp_res <- missForest::missForest(biopics, ntree = 50, mtry = 6)
+
+# Print the resulting imputation errors
+print(imp_res$OOBerror)
+
+```
+  
+  
+  
+***
+  
+Chapter 4 - Uncertainty From Imputation  
+  
 
 
 
