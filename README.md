@@ -1873,4 +1873,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_d captures Data Cleaning in R - Chapter 4 (Record Linkage) - notes  
 * DataCamp_Insights_v003_d captures Handling Missing Data with Imputations in R - Chapter 1 (Problem of Missing Data) - notes  
 * DataCamp_Insights_v003_d captures Handling Missing Data with Imputations in R - Chapter 2 (Donor Based Imputation) - notes  
+* DataCamp_Insights_v003_d captures Handling Missing Data with Imputations in R - Chapter 3 (Model Based Imputation) - notes  
   
