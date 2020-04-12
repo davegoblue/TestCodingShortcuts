@@ -10216,7 +10216,7 @@ for (i in 1:3) {
 biopics <- biopics %>%
     select(country, year, earnings, sub_num, sub_type, sub_race, non_white, sub_sex) %>%
     mutate(country=factor(country), sub_type=factor(sub_type), 
-           sub_race=factor(sub_race), sub_sex=factor(sub_sex)
+           sub_race=factor(sub_race), sub_sex=factor(sub_sex, levels=c("Male", "Female"))
            ) %>%
     as.data.frame()
 str(biopics)
@@ -10266,6 +10266,179 @@ print(imp_res$OOBerror)
 ***
   
 Chapter 4 - Uncertainty From Imputation  
+  
+Multiple Imputation by Bootstrapping:  
+  
+* Imputation is typically an early step in the modelling process, but it introduces additional uncertainty  
+	* When previous studies are re-done with the uncertainty accounted for, results disappear in about half of them  
+* Bootstrapping is the process of sampling with replacement, in a size equal to the original  
+	* Model each of the bootstrap replcates, and look at the distribution of outcomes  
+    * Works for MCAR and MAR data, but is time-consuming  
+* Once the statistic has been calculated multiple times, the package 'boot' can help summarize results  
+	* library(boot)  
+    * boot_results <- boot(nhanes, statistic=calc_correlation, R=50)  
+    * print(boot_results)  
+    * plot(boot_results)  
+    * boot.ci(boot_results, conf=0.95, type="norm")  
+  
+Multiple Imputation by Chained Equations (MICE):  
+  
+* With MICE, models are fitted to multiple datasets that have each been imputed in a different manner  
+	* Results are then created for each dataset, and pooled for an aggregate  
+    * mice(), with(), and pool() are the key functions from package MICE  
+* Example for running MICE with the nhanes dataset  
+	* library(mice)  
+    * nhanes_multiimp <- mice(nhanes, m=20)  
+    * lm_multiimp <- with(nhanes_multiimp, lm(Weight ~ Height + TotChol + PhysActive))  
+    * lm_pooled <- pool(lm_multiimp)  
+    * summary(lm_pooled, conf.int=TRUE, conf.level=0.95)  
+* Can choose different methods by variable types, and pass these using defaultMethod  
+	* nhanes_multiimp <- mice(nhanes, m=20, defaultMethod=c("pmm", "logreg", "polyreg", "polr"))  
+    * The string specified the method for 1) continuous, 2) binary, 3) categorical (unordered), 4) factors (ordered)  
+* The predictorMatrix indicates whether the variable is used for predicting  
+	* nhanes_multiimp <- mice(nhanes, m=20)  
+    * nhanes_multiimp$predictorMatrix  
+    * Generally, highly correlated variables make for the best predictors  
+    * pred_mat <- quickpred(nhanes, mincor=0.25)  
+    * nhanes_multiimp <- mice(nhanes, m=20, predictorMatrix=pred_mat)  
+  
+Putting it all Together:  
+  
+* The 'africa' dataset has data on several African countries  
+	* Visualize incomplete data  
+    * Impute missing data  
+    * Run models on imputed data  
+* Can use MICE to assess the quality of the imputations  
+	* nhanes_multiimp <- mice(nhanes, m=5, defaultMethod="pmm")  
+    * stripplot(nhanes_multiimp, Weight ~ Height | .imp, pch=20, cex=2)  
+  
+Wrap Up:  
+  
+* Problem of missing data and special treatments required - MCAR, MAR, MNAR  
+* Donor-based imputation - mean (often a poor choice), hotdeck, kNN  
+* Model-based imputation - looping until convergence, replicating variance using conditional distributions, tree-based imputation with random forests  
+* Uncertainties from imputation - bootstrapping, MICE  
+* General guidelines include  
+	* For large datasets, hotdeck can be best  
+    * If domain knowledge suggests relations between variables, model-based can be best  
+    * If speed is required and relations among variables are not obvious, try kNN or tree-based  
+* Loose guidelines for estimating uncertainty from imputation  
+	* Speed and knowledge about which models to use suggest MICE  
+    * Non-parametric and not wanting to worry about specific asumptions suggest bootstrapping  
+* Can look at miceVignettes, created by the authors of the 'mice' package  
+* The packages Amelia and mi can also be valuable  
+  
+Example code includes:  
+```{r eval=FALSE}
+
+calc_gender_coef <- function(data, indices) {
+    # Get bootstrap sample
+    data_boot <- data[indices, ]
+    # Impute with kNN imputation
+    data_imp <- VIM::kNN(data_boot, k=5)
+    # Fit linear regression
+    linear_model <- lm(earnings ~ sub_sex + sub_type + year, data=data_imp)
+    # Extract and return gender coefficient
+    gender_coefficient <- coef(linear_model)["sub_sexFemale"]
+    return(gender_coefficient)
+}
+
+
+# Run bootstrapping on biopics data
+boot_results <- boot::boot(biopics, statistic = calc_gender_coef, R = 50)
+
+# Print and plot bootstrapping results
+print(boot_results)
+plot(boot_results)
+
+
+# Calculate and print confidence interval
+boot_ci <- boot::boot.ci(boot_results, conf = 0.95, type = "norm")
+print(boot_ci)
+
+
+# Load mice package
+library(mice)
+
+# Impute biopics with mice using 5 imputations
+biopics_multiimp <- mice(biopics, m = 5, seed = 3108)
+
+# Fit linear regression to each imputed data set 
+lm_multiimp <- with(biopics_multiimp, lm(earnings ~ year + sub_type))
+
+# Pool and summarize regression results
+lm_pooled <- pool(lm_multiimp)
+summary(lm_pooled, conf.int = TRUE, conf.level = 0.95)
+
+
+# Impute biopics using the methods specified in the instruction
+biopics_multiimp <- mice(biopics, m = 20, defaultMethod = c("cart", "lda", "pmm", "polr"))
+
+# Print biopics_multiimp
+print(biopics_multiimp)
+
+
+# Create predictor matrix with minimum correlation of 0.3
+pred_mat <- quickpred(biopics, mincor = 0.1)
+
+# Impute biopics with mice
+biopics_multiimp <- mice(biopics, m=10, predictorMatrix=pred_mat, seed = 3108)
+
+# Print biopics_multiimp
+print(biopics_multiimp)
+
+
+africa <- data.frame(year=rep(1972:1991, times=6), 
+                     country=rep(c("Burkina Faso", "Burundi", "Cameroon", 
+                                   "Congo", "Senegal", "Zambia"
+                                   ), each=20
+                                 ), 
+                     gdp_pc=c(377, 376, 393, 416, 435, 448, 445, 461, 457, 466, 512, 502, 474, 495, 511, 511, 522, 519, 511, 522, 431, 447, 434, 447, 451, 508, 489, 487, 480, 506, 503, 487, 483, 527, 551, 538, 559, 532, 550, 560, 815, NA, 902, 859, 888, NA, 972, 1072, 1194, 1294, 1281, 1342, 1403, 1487, 1499, 1439, 1330, 1361, 1226, 1110, 1700, 1710, 1712, 1726, 1795, 1639, 1742, 1725, 1931, 2044, 2529, 2550, 2723, 2697, 2526, 2384, 2340, 2317, 2211, 2405, 1133, 1062, 1062, 1123, 1165, 1156, 1110, 1174, 1134, 1139, 1203, 1188, 1127, 1163, 1155, 1171, 1172, 1139, 1145, 1120, 1185, 1163, 1208, 1251, 1174, 1047, 1007, 950, 971, 1024, 940, 840, 827, 808, 786, 760, 757, 756, 689, 699), 
+                     infl=c(-2.92, 7.6, 8.72, 18.76, -8.4, 29.99, 8.27, 14.99, 12.2, 7.56, 12.06, 8.34, 4.85, 6.91, -2.61, -2.68, 4.06, -0.29, -0.83, 2.5, 3.83, 6.01, 15.72, 15.71, 6.86, 6.83, 23.9, 36.54, 2.5, 12.17, 5.87, 8.15, 14.32, 3.8, 1.68, 7.11, 4.49, 11.66, 7, 9, 8.09, 10.38, 17.23, 13.55, 9.93, 14.7, 12.46, 6.58, 9.55, 10.73, 13.26, 16.63, 11.37, 8.51, 7.77, 13.14, 1.68, -1.67, 1.1, 0.06, 9.77, 3.51, 5.38, 17.38, 7.22, 14.01, 10.53, 8.11, 7.27, 16.96, 12.81, 7.72, 13.21, 5.59, 2.35, 2.18, 3.81, 4.14, -4.79, 9.16, 6.15, 11.29, 16.6, 31.65, 1.08, 11.34, 3.42, 9.65, 8.73, 5.91, 17.38, 11.62, 11.78, 13, 6.18, -4.14, -1.83, 0.45, 0.33, -1.75, 5.06, 6.46, 8.1, 10.13, 18.8, 19.77, 16.35, 9.72, 11.63, 12.98, 13.59, 19.6, 20.01, 37.25, 51.85, 43.01, 55.56, 127.89, 117.51, 92.6), 
+                     trade=c(29.69, 31.31, 35.22, 40.11, 37.76, 41.11, 37.71, 40.21, 43.09, 43.64, 42.62, 40.11, 42.72, 44.63, 41.83, 41.56, 37.92, 35.19, 38.37, 38.75, 26.81, 24.35, 25.29, 27.28, 30.38, 34.89, 31.93, 36.88, 32.1, 31.18, 37.12, 33.79, 35.06, 31.67, NA, 35.48, 38.55, NA, NA, 38.42, 46.48, NA, 48.24, 48.23, 50.01, NA, 51.78, 49.32, 54.25, 61.55, 59.59, 61.93, 63.53, 65.02, 46.01, 37.32, 31.99, 38.48, 37.71, 34.63, 80.1, 75, 112.7, 99.64, 106.93, 110.85, 104.79, 96.04, 120.14, 134.11, 123.77, 109.71, 107.25, 112.79, 93.5, 80.36, 81.05, 83.81, 97.91, 90.79, 65.2, 67.23, 91.44, 78.37, 80.62, 94.29, 75.34, 73.88, 72.26, 83.56, 80.7, 78.12, 85.34, 70.63, 58.45, 55.49, 51.87, 58.76, 58.91, 56.38, 86.04, 82.45, 91.26, 92.85, 81.72, 81.27, 70.48, 81.86, 86.8, 69.78, 64.16, 64.41, 68.3, 73.64, 86.02, 75.16, 59.47, 60.63, 72.47, 71.86), 
+                     civlib=c(0.5, 0.5, 0.3333333, 0.3333333, 0.5, 0.6666667, 0.6666667, 0.3333333, 0.3333333, 0.3333333, 0.3333333, 0.3333333, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.3333333, 0.3333333, 0.3333333, 0, 0, 0, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.5, 0.5, 0.5, 0.3333333, 0.3333333, 0.3333333, 0.3333333, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0, 0, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0, 0, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.5, 0.1666667, 0.3333333, 0.3333333, 0.5, 0.5, 0.6666667, 0.6666667, 0.6666667, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.6666667, 0.6666667, 0.6666667, 0.3333333, 0.5, 0.5, 0.3333333, 0.3333333, 0.3333333, 0.3333333, 0.3333333, 0.1666667, 0.1666667, 0.1666667, 0.1666667, 0.3333333, 0.3333333, 0.3333333, 0.3333333, 0.3333333, 0.3333333, 0.3333333, 0.6666667), 
+                     population=c(5848380, 5958700, 6075700, 6202000, 6341030, 6486870, 6639120, 6797540, 6962000, 7132320, 7308230, 7490710, 7681280, 7881000, 8089720, 8307470, 8534390, 8770560, 9016000, 9269910, 3561200, 3591040, 3629810, 3680000, 3744200, 3825120, 3919830, 4022680, 4130000, 4242970, 4361930, 4486360, 4615820, 4750000, 4888660, 5031680, 5179010, 5330730, 5487000, 5643320, 6835870, 7021850, 7222900, 7439000, 7670990, 7920570, 8181400, 8443580, 8701000, 8955800, 9209480, 9462950, 9717920, 9977000, 10249210, 10535260, 10835870, 11151840, 11484000, 11825390, 1332490, 1369240, 1407400, 1447000, 1488260, 1531030, 1575360, 1621320, 1669000, 1718390, 1769340, 1822420, 1878480, 1938000, 2000640, 2066110, 2134110, 2204240, 2276000, 2347830, 4404700, 4535250, 4669250, 4806000, 4944850, 5087300, 5233530, 5383710, 5538000, 5696390, 5858750, 6025550, 6197520, 6375000, 6556690, 6742660, 6932990, 7127740, 7327000, 7497300, 4423360, 4552410, 4691360, 4841000, 5002480, 5177360, 5361950, 5550120, 5738000, 5926790, 6117120, 6309060, 6503080, 6700000, 6901040, 7107800, 7322250, 7546740, 7784000, 8022380), 
+                     stringsAsFactors=FALSE
+                     )
+str(africa)
+
+
+# Draw a combined aggregation plot of africa
+africa %>%
+    VIM::aggr(combined = TRUE, numbers = TRUE)
+
+# Draw a spine plot of country vs trade
+africa %>% 
+    select(country, trade) %>%
+    VIM::spineMiss()
+
+
+africa <- africa %>%
+    mutate(year=factor(year))
+str(africa)
+
+
+# Impute africa with mice
+africa_multiimp <- mice(africa, m = 5, defaultMethod = "cart", seed = 3108)
+
+# Draw a stripplot of gdp_pc versus trade
+lattice::stripplot(africa_multiimp, gdp_pc ~ trade | .imp, pch = 20, cex = 2)
+
+
+# Fit linear regression to each imputed data set
+lm_multiimp <- with(africa_multiimp, lm(gdp_pc ~ country + year + trade + infl + civlib))
+
+# Pool regression results
+lm_pooled <- pool(lm_multiimp)
+
+# Summarize pooled results
+summary(lm_pooled, conf.int = TRUE, conf.level = 0.90)
+
+```
+  
+  
+  
+***
   
 
 
