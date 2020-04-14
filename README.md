@@ -1878,4 +1878,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 13-APR-2020  
 * DataCamp_Insights_v003_c captures Statistics Interview Questions in R - Chapter 1 (Probability Distributions) - code  
+* DataCamp_Insights_v003_c captures Statistics Interview Questions in R - Chapter 2 (Exploratory Data Analysis) - code  
   
