@@ -2301,3 +2301,131 @@ cpWind
 
 ```
 
+#### _Example #27: Extracting Precipitation Information from METAR_  
+METAR data include descriptions of the precipitation occuring at any given time.  Two of the most common precipitation forms are rain (RA) and SN().  These can occur together, denoted as RASN or SNRA in the METAR.
+
+Further, the precipitation type can be classified using a prefix as light (-), moderate (no prefix), or heavy (+).  So, RA would be moderate rain, -SNRA would be a light snow-rain mix, +RA would be heavy rain.
+
+Additionally, the timing of the precipitation event is captured in the remarks using B (begin) and E (end).  So, an hourly METAR of RAB20E35B50 would mean rain started at 20 past the hour, ended at 35 past the hour, and began again at 50 past the hour.  Since METAR are often taken just before the top of the hour, a four-digit time is used if it is in the 'previous' hour; for example, RAB1959E36 in the 2053Z METAR.
+
+We can use the remarks to see when it was raining in the given METAR.
+
+Example code includes:  
+```{r}
+
+# Extract the METAR and the date-time from a processed list
+procMET <- klas2016METAR$fullMETAR %>% 
+    select(origMETAR, dtime)
+
+# Check whether there are comments for either rain regins (RAB) or rain ends (RAE) and pull all the data
+procMET <- procMET %>% 
+    mutate(isRain=grepl("RA[B|E]", origMETAR), 
+           rainData=str_extract(origMETAR, pattern="(RA[B|E]\\d+[0-9BE]*)"), 
+           nBegin=pmax(0, str_count(rainData, "B"), na.rm=TRUE), 
+           nEnd=pmax(0, str_count(rainData, "E"), na.rm=TRUE), 
+           dateUTC=lubridate::date(dtime), 
+           hourUTC=lubridate::hour(dtime)
+           )
+str(procMET)
+
+# Check the counts of rain beginning and rain ending
+procMET %>%
+    count(isRain, nBegin, nEnd)
+
+# Extract all the times when rain began (can be multiple per METAR)
+rainMET <- procMET %>%
+    select(dateUTC, hourUTC, rainData, nBegin, nEnd)
+
+# Confirm the rainMET is unique by dateUTC and hourUTC
+dupAns <- rainMET %>%
+    select(dateUTC, hourUTC) %>%
+    duplicated() %>%
+    any()
+cat("\nAre there any problems with duplicated keys?", dupAns, "\n")
+
+# Extract the matrix of rain beginning data
+rainBegin <- rainMET %>% 
+    pull(rainData) %>% 
+    str_extract_all("B\\d+", simplify=TRUE) %>%
+    as.data.frame(stringsAsFactors=FALSE)
+
+# Extract the matrix of rain ending data
+rainEnd <- rainMET %>% 
+    pull(rainData) %>% 
+    str_extract_all("E\\d+", simplify=TRUE) %>%
+    as.data.frame(stringsAsFactors=FALSE)
+
+# Convert the rain begins data to the hour and minute associated to the UTC
+extractTime <- function(x, var, sym="B") {
+    if (is.na(x[var]) | x[var]=="") {
+        utcUse <- NA
+    }
+    else {
+        utcUse <- str_replace(x[var], sym, "")
+        if (str_length(utcUse)==4) {
+            utcUse <- paste0(x["dateUTC"], " ", utcUse)
+        } else if (str_length(utcUse)==2) {
+            utcUse <- paste0(x["dateUTC"], " ", x["hourChar"], utcUse)
+        } else {
+            cat("\nCannot parse data: ", x, "\n", x[var], "\n", var, sym, utcUse)
+            stop()
+        }
+    }
+}
+
+# Extract the begin times from V1
+beginTime1 <- rainBegin %>%
+    cbind(rainMET[, c("dateUTC", "hourUTC")]) %>%
+    mutate(hourChar=str_pad(str_trim(as.character(hourUTC)), width=2, pad="0")) %>%
+    apply(1, FUN=extractTime, var="V1", sym="B")
+
+# Extract the begin times from V2
+beginTime2 <- rainBegin %>%
+    cbind(rainMET[, c("dateUTC", "hourUTC")]) %>%
+    mutate(hourChar=str_pad(str_trim(as.character(hourUTC)), width=2, pad="0")) %>%
+    apply(1, FUN=extractTime, var="V2", sym="B")
+
+# Extract the end times from V1
+endTime1 <- rainEnd %>%
+    cbind(rainMET[, c("dateUTC", "hourUTC")]) %>%
+    mutate(hourChar=str_pad(str_trim(as.character(hourUTC)), width=2, pad="0")) %>%
+    apply(1, FUN=extractTime, var="V1", sym="E")
+
+# Extract the end times from V2
+endTime2 <- rainEnd %>%
+    cbind(rainMET[, c("dateUTC", "hourUTC")]) %>%
+    mutate(hourChar=str_pad(str_trim(as.character(hourUTC)), width=2, pad="0")) %>%
+    apply(1, FUN=extractTime, var="V2", sym="E")
+
+allBegins <- 
+    c(beginTime1[!is.na(beginTime1)], beginTime2[!is.na(beginTime2)]) %>%
+    lubridate::ymd_hm() %>%
+    sort()
+
+allEnds <- 
+    c(endTime1[!is.na(endTime1)], endTime2[!is.na(endTime2)]) %>%
+    lubridate::ymd_hm() %>%
+    sort()
+
+# Check the each ending is after its associated beginning
+endMinusBeg <- allEnds - allBegins
+
+# Rain is listed as ending at 2016-05-01 00:42 and 2016-04-30 17:38 both for start 2016-04-30 11:20
+endMinusBeg <- allEnds[allEnds != lubridate::ymd_hm("2016-05-01 0042")] - allBegins
+
+# Plot the rain durations in minutes
+data.frame(minutesRain=as.numeric(endMinusBeg), month=lubridate::month(allBegins)) %>%
+    ggplot(aes(x=minutesRain)) +
+    geom_histogram()
+
+# Plot the rain totals (in hours) by month
+data.frame(minutesRain=as.numeric(endMinusBeg), month=lubridate::month(allBegins)) %>%
+    group_by(month) %>%
+    summarize(minutesRain=sum(minutesRain), nRain=n()) %>%
+    ggplot(aes(x=factor(month.abb[month], levels=month.abb[1:12]), y=minutesRain/60)) +
+    geom_col() + 
+    labs(title="Las Vegas, NV Rainfall (hours) in 2016", y="Hours of Rain", x="Month") + 
+    geom_text(aes(y=2+minutesRain/60, label=round(minutesRain/60, 1)))
+
+```
+
