@@ -2429,3 +2429,250 @@ data.frame(minutesRain=as.numeric(endMinusBeg), month=lubridate::month(allBegins
 
 ```
 
+#### _Example #28: Function for Extracting Precipitation Information from METAR_  
+The precipitation extraction process can be converted to functions.  In addition to being more modular, several additional features can be included:
+
+* Allow to search for other precipitation types, specifically snow (SN) or drizzle (DZ)  
+* Correct for the isue that a time of 2016-01-04 2359Z is placed in the 206-01-05 bucket by the code above  
+* Identify areas where the intervals are not sensible or raise significant questions (negative durations, durations longer than 24 hours)  
+* Check that intervals overlap with the time periods in the METAR that show that precipitation event  
+  
+Example code includes:  
+
+* Extract the precipitation data from a processed METAR file  
+* Find the begin and end times from this file  
+* Check for intervals of questionable length and correct as needed  
+  
+```{r}
+
+# Extract the precipitation data from a processed METAR file
+extractPrecipData <- function(processedFile, pType="RA") {
+
+    # Extract the METAR and the date-time from a processed list
+    procMET <- processedFile[["fullMETAR"]] %>% 
+        select(origMETAR, dtime)
+
+    # Check whether there are comments for the desired pType either beginning or ending
+    keyPattern <- paste0("(", pType, "[B|E]\\d+[0-9BE]*)")
+    cat("\nRegex search code is:", keyPattern, "\n\n")
+    
+    procMET <- procMET %>% 
+        mutate(precipData=str_extract(origMETAR, pattern=keyPattern), 
+               isPrecip=grepl(paste0(pType, "[B|E]"), origMETAR), 
+               nBegin=pmax(0, str_count(precipData, "B"), na.rm=TRUE), 
+               nEnd=pmax(0, str_count(precipData, "E"), na.rm=TRUE), 
+               dateUTC=lubridate::date(dtime), 
+               hourUTC=lubridate::hour(dtime)
+               )
+    str(procMET)
+    cat("\n")
+
+    # Check the counts of precipitation beginning and rain ending
+    procMET %>%
+        count(isPrecip, nBegin, nEnd) %>%
+        print()
+
+    # Check that the file is unique by time
+    dupAns <- procMET %>%
+        select(dateUTC, hourUTC) %>%
+        duplicated %>%
+        any()
+
+    cat("\nAre there any problems with duplicated keys?", dupAns, "\n")
+    
+    procMET
+}
+
+testFileProc <-extractPrecipData(klas2016METAR, pType="RA")
+
+```
+  
+Next, a function for extrating beginning and ending times can be written:  
+```{r}
+
+# Helper function to extract the beginning and ending times using str_extract_all
+getBeginEndTimeMatrix <- function(file, pullVar="precipData", pState="B") {
+    file %>%
+        pull(pullVar) %>%
+        str_extract_all(paste0(pState, "\\d+"), simplify=TRUE) %>%
+        as.data.frame(stringsAsFactors=FALSE)    
+}
+
+testBegin <- getBeginEndTimeMatrix(testFileProc, pState="B")
+testEnd <- getBeginEndTimeMatrix(testFileProc, pState="E")
+
+if (ncol(testBegin) != 2 | ncol(testEnd) != 2) { 
+    stop("Hard-coded for 2 columns each of begin/end- Fix") 
+}
+
+# Helper function to convert begin and end time using date and hour
+extractTime <- function(x, var, sym="B") {
+    if (is.na(x[var]) | x[var]=="") {
+        utcReturn <- NA
+    }
+    else {
+        utcUse <- str_replace(x[var], sym, "")
+        if (str_length(utcUse)==4) {
+            utcReturn <- paste0(x["dateUTC"], " ", utcUse)
+            # If a 4-digit time starts with 23 and is in the 0Z METAR, it is part of the previous day
+            if(str_sub(utcUse, 1, 2)=="23" & as.numeric(x["hourChar"])==0) {
+                utcReturn <- paste0(as.Date(x["dateUTC"]) - 1, " ", utcUse)
+            }
+        } else if (str_length(utcUse)==2) {
+            utcReturn <- paste0(x["dateUTC"], " ", x["hourChar"], utcUse)
+        } else {
+            cat("\nCannot parse data: ", x, "\n", x[var], "\n", var, sym, utcUse)
+            stop()
+        }
+    }
+    utcReturn
+}
+
+getBeginEndTimeVector <- function(timeExtractFile, origFullFile, extractVar, extractSym) {
+    timeExtractFile %>%
+        cbind(origFullFile[, c("dateUTC", "hourUTC")]) %>%
+        mutate(hourChar=str_pad(str_trim(as.character(hourUTC)), width=2, pad="0")) %>%
+        apply(1, FUN=extractTime, var=extractVar, sym=extractSym)
+}
+
+testBT1 <- getBeginEndTimeVector(testBegin, testFileProc, extractVar="V1", extractSym="B")
+testBT2 <- getBeginEndTimeVector(testBegin, testFileProc, extractVar="V2", extractSym="B")
+testET1 <- getBeginEndTimeVector(testEnd, testFileProc, extractVar="V1", extractSym="E")
+testET2 <- getBeginEndTimeVector(testEnd, testFileProc, extractVar="V2", extractSym="E")
+
+testAllBegins <- 
+    c(testBT1[!is.na(testBT1)], testBT2[!is.na(testBT2)]) %>%
+    lubridate::ymd_hm() %>%
+    sort()
+
+testAllEnds <- 
+    c(testET1[!is.na(testET1)], testET2[!is.na(testET2)]) %>%
+    lubridate::ymd_hm() %>%
+    sort()
+
+```
+  
+Next, create the time intervals vector, with the capability to change the start state, check the intervals, exclude times as needed, and compare to raw METAR.
+  
+Example code includes:  
+```{r}
+
+# Function to create the time intervals data
+createPrecipInterval <- function(endVector, beginVector, endExclude=c(), beginExclude=c(), 
+                                 sState=FALSE, nMinPrint=1, maxProb=1000, nMaxPrint=1
+                                 ) {
+    
+    # If the starting state is one of precipitation, allow it to 'burn in' by deleting the first end time
+    if(sState) { endVector <- endVector[2:length(endVector)] }
+    
+    # Create the interval data
+    endsUse <- endVector[!(endVector %in% lubridate::ymd_hm(endExclude))]
+    beginsUse <- beginVector[!(beginVector %in% lubridate::ymd_hm(beginExclude))]
+    intervalData <- endsUse - beginsUse
+    
+    # Show a summary of the interval data
+    print(summary(as.numeric(intervalData)))
+    
+    # If there are any non-positive intervals, print the data causing the first of them
+    if (min(as.numeric(intervalData)) <= 0) {
+        cat("\nProblem Detected - Intervals are not positive.  Data to help investigate\n")
+        posns <- which(as.numeric(intervalData) <= 0)
+        posns <- max(1, posns[1]-5):min(length(beginsUse), length(endsUse), posns[nMinPrint]+5)
+        cat("\nVector of Begins\n")
+        print(lubridate::as_datetime(beginsUse[posns]))
+        cat("\nVector of Ends\n")
+        print(lubridate::as_datetime(endsUse[posns]))
+        cat("\n")
+    }
+    
+    # If there are any very long positive intervals, print the data causing the first five of them
+    if (max(as.numeric(intervalData)) >= maxProb) {
+        cat("\nPotential problem Detected - very long.  Data to help investigate\n")
+        posns <- which(as.numeric(intervalData) >= maxProb)
+        cat("\nPositions with problems are:", posns)
+        posns <- max(1, posns[1]-5):min(length(beginsUse), length(endsUse), posns[min(length(posns), nMaxPrint)]+5)
+        cat("\nVector of Begins\n")
+        print(lubridate::as_datetime(beginsUse[posns]))
+        cat("\nVector of Ends\n")
+        print(lubridate::as_datetime(endsUse[posns]))
+        cat("\n")
+    }
+    
+    # Return the interval data
+    intervalData
+}
+
+# Run a full pass for Las Vegas Rain
+testIntervals <- createPrecipInterval(testAllEnds, testAllBegins)
+testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, endExclude=c("2016-05-01 0042"))
+
+# Data for Chicago Rain
+# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, endExclude=c("2016-03-01 0414"))
+# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, 
+#                                       endExclude=c("2016-03-01 0414", "2016-03-24 2214"), 
+#                                       maxProb=1500
+#                                       )
+# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, 
+#                                       beginExclude=c("2016-07-13 2347"),
+#                                       endExclude=c("2016-03-01 0414", "2016-03-24 2214"), 
+#                                       maxProb=1500
+#                                       )
+# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, 
+#                                       beginExclude=c("2016-07-13 2347"),
+#                                       endExclude=c("2016-03-01 0414", "2016-03-24 2214", "2016-08-29 2048"), 
+#                                       maxProb=1500
+#                                       )
+
+# Data for Chicago Snow
+# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, endExclude=c("2016-02-10 0216"))
+# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, 
+#                                       endExclude=c("2016-02-10 0216", "2016-03-24 2331")
+#                                       )
+# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, 
+#                                       endExclude=c("2016-02-10 0216", "2016-03-24 2331", 
+#                                                    "2016-04-08 2300", "2016-04-09 0446"
+#                                                    )
+#                                       )
+# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, 
+#                                       endExclude=c("2016-02-10 0216", "2016-03-24 2331", 
+#                                                    "2016-04-08 2300", "2016-04-09 0446",
+#                                                    "2016-12-24 0309"
+#                                                    )
+#                                       )
+
+createPrecipIntervalPlots <- function(intervalData, beginsData, titleText, yAxisText, beginExclude=c()) {
+
+    # Exclude any data from begins as needed
+    beginsData <- beginsData[!(beginsData %in% lubridate::ymd_hm(beginExclude))]
+    
+    # Plot the precipitation durations in minutes
+    p1 <- data.frame(minutesPrecip=as.numeric(intervalData), month=lubridate::month(beginsData)) %>%
+        ggplot(aes(x=minutesPrecip/60)) +
+        geom_histogram() + 
+        labs(title=titleText, x=yAxisText)
+    print(p1)
+
+    # Plot the rain totals (in hours) by month
+    p2 <- data.frame(minutesPrecip=as.numeric(intervalData), month=lubridate::month(beginsData)) %>%
+        group_by(month) %>%
+        summarize(minutesPrecip=sum(minutesPrecip), nPrecip=n()) %>%
+        ggplot(aes(x=factor(month.abb[month], levels=month.abb[1:12]), y=minutesPrecip/60)) +
+        geom_col() + 
+        labs(title=titleText, y=yAxisText, x="") + 
+        geom_text(aes(y=2+minutesPrecip/60, label=round(minutesPrecip/60, 1)))
+    print(p2)
+    
+}
+
+# Plots for Las Vegas Rain
+createPrecipIntervalPlots(testIntervals, testAllBegins, 
+                          titleText="Las Vegas, NV Rainfall (hours) in 2016", yAxisText="Hours of Rain"
+                          )
+
+# Plots for Chicago Rain
+# createPrecipIntervalPlots(testIntervals, testAllBegins, beginExclude=c("2016-07-13 2347"),
+#                           titleText="Chicago, IL Rainfall (hours) in 2016", yAxisText="Hours of Rain"
+#                           )
+
+```
+
