@@ -1888,4 +1888,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 20-APR-2020  
 * DataCamp_Insights_v003_c captures Intermediate Regular Epressions in R - Chapter 4 (Similarities Between Strings) - code  
 * AdditionalCoding_202003_v001 contains extraction capability for rain data  
+* AdditionalCoding_202003_v001 contains functions for extraction capability for rain data  
   
