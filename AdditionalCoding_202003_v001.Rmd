@@ -2606,62 +2606,60 @@ createPrecipInterval <- function(endVector, beginVector, endExclude=c(), beginEx
 testIntervals <- createPrecipInterval(testAllEnds, testAllBegins)
 testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, endExclude=c("2016-05-01 0042"))
 
-# Data for Chicago Rain
-# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, endExclude=c("2016-03-01 0414"))
-# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, 
-#                                       endExclude=c("2016-03-01 0414", "2016-03-24 2214"), 
-#                                       maxProb=1500
-#                                       )
-# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, 
-#                                       beginExclude=c("2016-07-13 2347"),
-#                                       endExclude=c("2016-03-01 0414", "2016-03-24 2214"), 
-#                                       maxProb=1500
-#                                       )
-# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, 
-#                                       beginExclude=c("2016-07-13 2347"),
-#                                       endExclude=c("2016-03-01 0414", "2016-03-24 2214", "2016-08-29 2048"), 
-#                                       maxProb=1500
-#                                       )
 
-# Data for Chicago Snow
-# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, endExclude=c("2016-02-10 0216"))
-# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, 
-#                                       endExclude=c("2016-02-10 0216", "2016-03-24 2331")
-#                                       )
-# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, 
-#                                       endExclude=c("2016-02-10 0216", "2016-03-24 2331", 
-#                                                    "2016-04-08 2300", "2016-04-09 0446"
-#                                                    )
-#                                       )
-# testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, 
-#                                       endExclude=c("2016-02-10 0216", "2016-03-24 2331", 
-#                                                    "2016-04-08 2300", "2016-04-09 0446",
-#                                                    "2016-12-24 0309"
-#                                                    )
-#                                       )
-
-createPrecipIntervalPlots <- function(intervalData, beginsData, titleText, yAxisText, beginExclude=c()) {
+createPrecipIntervalPlots <- function(intervalData, beginsData, titleText, yAxisText, 
+                                      beginExclude=c(), returnPlotsAndData=FALSE
+                                      ) {
 
     # Exclude any data from begins as needed
     beginsData <- beginsData[!(beginsData %in% lubridate::ymd_hm(beginExclude))]
     
-    # Plot the precipitation durations in minutes
-    p1 <- data.frame(minutesPrecip=as.numeric(intervalData), month=lubridate::month(beginsData)) %>%
-        ggplot(aes(x=minutesPrecip/60)) +
+    # Create a plotting data frame
+    histFrame <- data.frame(minutesPrecip=as.numeric(intervalData), 
+                            month=lubridate::month(beginsData), 
+                            rainDate=lubridate::date(beginsData)
+                            ) %>%
+        mutate(hoursPrecip=minutesPrecip/60)
+    
+    # Plot the precipitation durations in hours
+    p1 <- histFrame %>%
+        ggplot(aes(x=hoursPrecip)) +
         geom_histogram() + 
-        labs(title=titleText, x=yAxisText)
+        labs(title=titleText, x=yAxisText, 
+             subtitle="Distribution of hours per unique precipitation event"
+             )
     print(p1)
 
-    # Plot the rain totals (in hours) by month
-    p2 <- data.frame(minutesPrecip=as.numeric(intervalData), month=lubridate::month(beginsData)) %>%
-        group_by(month) %>%
-        summarize(minutesPrecip=sum(minutesPrecip), nPrecip=n()) %>%
-        ggplot(aes(x=factor(month.abb[month], levels=month.abb[1:12]), y=minutesPrecip/60)) +
-        geom_col() + 
-        labs(title=titleText, y=yAxisText, x="") + 
-        geom_text(aes(y=2+minutesPrecip/60, label=round(minutesPrecip/60, 1)))
+    # Plot the precipitation by day in hours
+    p2 <- histFrame %>%
+        group_by(rainDate) %>%
+        summarize(hoursPrecip=sum(hoursPrecip)) %>%
+        ggplot(aes(x=hoursPrecip)) +
+        geom_histogram() + 
+        labs(title=titleText, x=yAxisText, 
+             subtitle="Distribution of hours per day of precipitation (on days when 1+ minutes occurred)"
+             )
     print(p2)
     
+    # Plot the rain totals (in hours) by month
+    # Create a data frame of all months and merge in precipitation data as an where available (0 otherwise)
+    monthFrame <- histFrame %>%
+        group_by(month) %>%
+        summarize(minutesPrecip=sum(minutesPrecip), hoursPrecip=sum(hoursPrecip), nPrecip=n()) %>%
+        right_join(data.frame(month=1:12, monthName=month.abb[1:12]), by="month") %>%
+        tidyr::replace_na(list(minutesPrecip=0, hoursPrecip=0, nPrecip=0))
+    # print(monthFrame)
+    
+    p3 <- monthFrame %>%
+        ggplot(aes(x=factor(monthName, levels=month.abb[1:12]), y=hoursPrecip)) +
+        geom_col() + 
+        labs(title=titleText, y=yAxisText, x="") + 
+        geom_text(aes(y=2 + hoursPrecip, label=round(hoursPrecip, 1)))
+    print(p3)
+    
+    if (returnPlotsAndData) {
+        list(histFrame=histFrame, monthFrame=monthFrame, p1=p1, p2=p2, p3=p3)
+    }
 }
 
 # Plots for Las Vegas Rain
@@ -2669,10 +2667,212 @@ createPrecipIntervalPlots(testIntervals, testAllBegins,
                           titleText="Las Vegas, NV Rainfall (hours) in 2016", yAxisText="Hours of Rain"
                           )
 
-# Plots for Chicago Rain
-# createPrecipIntervalPlots(testIntervals, testAllBegins, beginExclude=c("2016-07-13 2347"),
-#                           titleText="Chicago, IL Rainfall (hours) in 2016", yAxisText="Hours of Rain"
-#                           )
+```
+
+#### _Example #29: Combining Functions and Extending to Other Locales and Precipitation Types_  
+The functions can be combined, and the approach then extended to other locales and precipitation types.
+
+Example code includes:  
+```{r}
+
+# Combining all the functions in one place
+runFullPrecipExtraction <- function(df, 
+                                    pType, 
+                                    titleText, 
+                                    yAxisText,
+                                    endExclude=c(), 
+                                    beginExclude=c(), 
+                                    maxProb=1000, 
+                                    sState=FALSE, 
+                                    makePlots=TRUE, 
+                                    returnPlotsAndData=makePlots
+                                    ) {
+    
+    # Extract the precipitation data from a specified processed METAR file
+    testFileProc <-extractPrecipData(df, pType=pType)
+    
+    # Confirm that the two-column specification is met (should relax hard-coding on this)
+    testBegin <- getBeginEndTimeMatrix(testFileProc, pState="B")
+    testEnd <- getBeginEndTimeMatrix(testFileProc, pState="E")
+
+    if (ncol(testBegin) != 2 | ncol(testEnd) != 2) { 
+        stop("Hard-coded for 2 columns each of begin/end- Fix")
+    }
+    
+    # Extract the beginning and ending information
+    testBT1 <- getBeginEndTimeVector(testBegin, testFileProc, extractVar="V1", extractSym="B")
+    testBT2 <- getBeginEndTimeVector(testBegin, testFileProc, extractVar="V2", extractSym="B")
+    testET1 <- getBeginEndTimeVector(testEnd, testFileProc, extractVar="V1", extractSym="E")
+    testET2 <- getBeginEndTimeVector(testEnd, testFileProc, extractVar="V2", extractSym="E")
+
+    testAllBegins <- 
+        c(testBT1[!is.na(testBT1)], testBT2[!is.na(testBT2)]) %>%
+        lubridate::ymd_hm() %>%
+        sort()
+
+    testAllEnds <- 
+        c(testET1[!is.na(testET1)], testET2[!is.na(testET2)]) %>%
+        lubridate::ymd_hm() %>%
+        sort()
+    
+    # Create the intervals
+    testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, endExclude=endExclude, 
+                                          beginExclude=beginExclude, maxProb=maxProb, sState=sState)
+    
+    # Create the precipitation plots
+    plotOut <- NULL
+    if (makePlots) {
+        plotOut <- createPrecipIntervalPlots(testIntervals, testAllBegins, titleText=titleText, 
+                                             yAxisText=yAxisText, beginExclude=beginExclude, 
+                                             returnPlotsAndData=returnPlotsAndData
+                                             )
+    }
+    
+    # Return all of the key files, along with the parameters used
+    keyParams <- list(fileName=deparse(substitute(df)), pType=pType, 
+                      endExclude=endExclude, beginExclude=beginExclude, 
+                      maxProb=maxProb, sState=sState
+                      )
+    list(keyParams=keyParams, 
+         testFileProc=testFileProc, 
+         testAllBegins=testAllBegins, 
+         testAllEnds=testAllEnds, 
+         testIntervals=testIntervals,
+         plotOut=plotOut
+         )
+}
+
+```
+  
+The full function can then be run to replicate the Las Vegas, NV 2016 rain plots:  
+```{r}
+
+# Run for Las Vegas, NV 2016 rainfall
+klasRain2016 <- runFullPrecipExtraction(klas2016METAR, 
+                                        pType="RA", 
+                                        titleText="Las Vegas, NV Rainfall (hours) in 2016", 
+                                        yAxisText="Hours of Rain", 
+                                        endExclude=c("2016-05-01 0042"),
+                                        beginExclude=c(), 
+                                        maxProb=1000, 
+                                        sState=FALSE
+                                        )
+
+# Confirm that results are the same as when run outside the function
+identical(testIntervals, klasRain2016$testIntervals)
+identical(testFileProc, klasRain2016$testFileProc)
+identical(testAllBegins, klasRain2016$testAllBegins)
+identical(testAllEnds, klasRain2016$testAllEnds)
+
+# Show the key parameters used
+klasRain2016$keyParams
+
+```
+
+The full functions can then be explored for Chicago, IL 2016 rain plots:  
+```{r}
+
+# Run for Chicago, IL 2016 rainfall - run with no plots while debugging begin/end exclude
+kordRain2016 <- runFullPrecipExtraction(kord2016METAR, 
+                                        pType="RA", 
+                                        titleText="Chicago, IL Rainfall (hours) in 2016", 
+                                        yAxisText="Hours of Rain", 
+                                        endExclude=c(),
+                                        beginExclude=c(), 
+                                        maxProb=1440, 
+                                        sState=FALSE, 
+                                        makePlots=FALSE
+                                        )
+
+# Exclude the first problem end time - 2016-03-01 04:14:00 UTC
+kordRain2016 <- runFullPrecipExtraction(kord2016METAR, 
+                                        pType="RA", 
+                                        titleText="Chicago, IL Rainfall (hours) in 2016", 
+                                        yAxisText="Hours of Rain", 
+                                        endExclude=c("2016-03-01 0414"),
+                                        beginExclude=c(), 
+                                        maxProb=1440, 
+                                        sState=FALSE, 
+                                        makePlots=FALSE
+                                        )
+
+# Exclude the second problem end time - 2016-03-24 22:14:00 UTC
+kordRain2016 <- runFullPrecipExtraction(kord2016METAR, 
+                                        pType="RA", 
+                                        titleText="Chicago, IL Rainfall (hours) in 2016", 
+                                        yAxisText="Hours of Rain", 
+                                        endExclude=c("2016-03-01 0414", "2016-03-24 2214"),
+                                        beginExclude=c(), 
+                                        maxProb=1440, 
+                                        sState=FALSE, 
+                                        makePlots=FALSE
+                                        )
+
+# Exclude the begin time that creates a 3-day continuous rainfall - 2016-07-13 2347
+kordRain2016 <- runFullPrecipExtraction(kord2016METAR, 
+                                        pType="RA", 
+                                        titleText="Chicago, IL Rainfall (hours) in 2016", 
+                                        yAxisText="Hours of Rain", 
+                                        endExclude=c("2016-03-01 0414", "2016-03-24 2214"),
+                                        beginExclude=c("2016-07-13 2347"), 
+                                        maxProb=1440, 
+                                        sState=FALSE, 
+                                        makePlots=FALSE
+                                        )
+
+# Exclude the third problem end time - 2016-08-29 20:48:00 UTC
+# As this is the final data integrity issue, show the plots
+kordRain2016 <- runFullPrecipExtraction(kord2016METAR, 
+                                        pType="RA", 
+                                        titleText="Chicago, IL Rainfall (hours) in 2016", 
+                                        yAxisText="Hours of Rain", 
+                                        endExclude=c("2016-03-01 0414", "2016-03-24 2214", 
+                                                     "2016-08-29 2048"
+                                                     ),
+                                        beginExclude=c("2016-07-13 2347"), 
+                                        maxProb=1440, 
+                                        sState=FALSE, 
+                                        makePlots=TRUE
+                                        )
+
+# Show the key parameters used
+kordRain2016$keyParams
+
+```
+
+The full functions can then be explored for Chicago, IL 2016 snow plots:  
+```{r}
+
+# Run for Chicago, IL 2016 snowfall - run with no plots while debugging begin/end exclude
+kordSnow2016 <- runFullPrecipExtraction(kord2016METAR, 
+                                        pType="SN", 
+                                        titleText="Chicago, IL Snowfall (hours) in 2016", 
+                                        yAxisText="Hours of Snow", 
+                                        endExclude=c(),
+                                        beginExclude=c(), 
+                                        maxProb=1440, 
+                                        sState=FALSE, 
+                                        makePlots=FALSE
+                                        )
+
+# After investigation, there are five extraneous end times in the Chicago snowfall data - exclude them
+# Create the plots
+kordSnow2016 <- runFullPrecipExtraction(kord2016METAR, 
+                                        pType="SN", 
+                                        titleText="Chicago, IL Snowfall (hours) in 2016", 
+                                        yAxisText="Hours of Snow", 
+                                        endExclude=c("2016-02-10 0216", "2016-03-24 2331", 
+                                                     "2016-04-08 2300", "2016-04-09 0446",
+                                                     "2016-12-24 0309"
+                                                     ),
+                                        beginExclude=c(), 
+                                        maxProb=1440, 
+                                        sState=FALSE, 
+                                        makePlots=TRUE
+                                        )
+
+# Show the key parameters used
+kordSnow2016$keyParams
 
 ```
 
