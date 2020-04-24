@@ -1890,4 +1890,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 contains extraction capability for rain data  
 * AdditionalCoding_202003_v001 contains functions for extraction capability for rain data  
 * AdditionalCoding_202003_v001 combines functions and extends to other locales and precipitation types  
+* AdditionalCoding_202003_v001 checks precipitation intervals for consistency  
   
