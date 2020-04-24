@@ -2659,6 +2659,8 @@ createPrecipIntervalPlots <- function(intervalData, beginsData, titleText, yAxis
     
     if (returnPlotsAndData) {
         list(histFrame=histFrame, monthFrame=monthFrame, p1=p1, p2=p2, p3=p3)
+    } else {
+        NULL
     }
 }
 
@@ -2685,7 +2687,7 @@ runFullPrecipExtraction <- function(df,
                                     maxProb=1000, 
                                     sState=FALSE, 
                                     makePlots=TRUE, 
-                                    returnPlotsAndData=makePlots
+                                    returnPlotsAndData=FALSE
                                     ) {
     
     # Extract the precipitation data from a specified processed METAR file
@@ -2728,6 +2730,8 @@ runFullPrecipExtraction <- function(df,
                                              )
     }
     
+    if (!returnPlotsAndData) { plotOut <- NULL }
+    
     # Return all of the key files, along with the parameters used
     keyParams <- list(fileName=deparse(substitute(df)), pType=pType, 
                       endExclude=endExclude, beginExclude=beginExclude, 
@@ -2735,8 +2739,8 @@ runFullPrecipExtraction <- function(df,
                       )
     list(keyParams=keyParams, 
          testFileProc=testFileProc, 
-         testAllBegins=testAllBegins, 
-         testAllEnds=testAllEnds, 
+         testAllBegins=testAllBegins[!(testAllBegins %in% lubridate::ymd_hm(beginExclude))], 
+         testAllEnds=testAllEnds[!(testAllEnds %in% lubridate::ymd_hm(endExclude))], 
          testIntervals=testIntervals,
          plotOut=plotOut
          )
@@ -2875,4 +2879,67 @@ kordSnow2016 <- runFullPrecipExtraction(kord2016METAR,
 kordSnow2016$keyParams
 
 ```
+
+#### _Example #30: Checking Intervals for Consistency_  
+The intervals created above can be compared against the hourly METAR observations for consistency.  In general, RAE53 would lead to no precipitation recorded at 53Z while RAB53 would lead to precipitation recorded at 53Z.  So, the intervals created should be reduced by 1 for purposes of overlap analysis.
+
+Example code includes:  
+```{r}
+
+library(lubridate)  # lubridate has the %within% function and creates and checks intervals
+
+
+intervalConsistency <- function(lst, pType){
+
+    # Extract the beginning and interval times
+    begins <- lst[["testAllBegins"]]
+    ends <- lst[["testAllEnds"]]
+    durs <- lst[["testIntervals"]]
+
+
+    # Create intervals from the raw list file
+    precipInts <- interval(begins, begins + durs - 1)
+
+    
+    # Extract the METAR and date-time information
+    metar <- lst[["testFileProc"]][["origMETAR"]]
+    dtime <- lst[["testFileProc"]][["dtime"]]
+    
+    # Take each METAR observation and check two factors
+    # Is the precipitation type recorded in that METAR?
+    # Does that METAR fall in any of the intervals?
+    precipMETAR <- grepl(paste0(pType, ".*RMK"), metar)
+    intMETAR <- sapply(dtime, FUN=function(x) {x %within% precipInts %>% any()})
+
+
+    # Check for the consistency of the observations and print the mismatches
+    print(table(precipMETAR, intMETAR))
+
+    mism <- which(precipMETAR != intMETAR)
+    if (length(mism) == 0) {
+        cat("\nFull matches between METAR observations and intervals\n")
+    } else {
+        for (x in mism) {
+            cat("\nMismatch at time", strftime(dtime[x], format="%Y-%m-%d %H:%M"), "UTC\n")
+            print(metar[max(1, x-2):min(length(metar), x+2)])
+        }
+    }
+    
+    list(precipInts=precipInts, mismatches=mism, mismatchTimes=dtime[mism])
+}
+
+# Mismatch due to TSRA without RAB on 2016-04-30
+tmp <- intervalConsistency(klasRain2016, pType="RA")
+
+# Mismatches due to malformatted METAR with missing data on 2016-07-13
+# Mismatch due to RA vs FZRA on 2016-02-29
+# Mismatch due to -RASN without RAB on 2016-03-24
+# Mismatch due to TSRA without RAB on 2016-08-29
+tmp <- intervalConsistency(kordRain2016, pType="RA")
+
+# Mismatches due to SN without SNB on 2016-02-09, 2016-03-24, 2016-04-08, 2016-12-23
+tmp <- intervalConsistency(kordSnow2016, pType="SN")
+
+```
+  
 
