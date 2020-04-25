@@ -2698,6 +2698,7 @@ runFullPrecipExtraction <- function(df,
     testEnd <- getBeginEndTimeMatrix(testFileProc, pState="E")
 
     if (ncol(testBegin) != 2 | ncol(testEnd) != 2) { 
+        cat("\nBegin columns:", ncol(testBegin), "\t\tEndcolumns:", ncol(testEnd))
         stop("Hard-coded for 2 columns each of begin/end- Fix")
     }
     
@@ -2942,4 +2943,91 @@ tmp <- intervalConsistency(kordSnow2016, pType="SN")
 
 ```
   
+#### _Example #31: All Precipitation Types_  
+The METAR data can be explored to find all the precipitation types it contains.  Broadly, a precipitation type should meet five criteria:
+
+* Occurs prior to RMK (the remarks section has letter-only data that is not precipitation)  
+* Preceded by a space  
+* Optionally, begins with + (heavy) or - (light)  
+* Contains only capital letters (no numbers) after the optional +/-  
+* Trailed by a space  
+  
+This will extract some non-precipitation types such as CLR and AUTO, so some iteration is expected.
+
+Example code includes:  
+```{r}
+
+# Function to find precipitation types
+findPrecipTypes <- function(lst, precipRegex="(?<= )[+-]?[A-Z]+(?= )", priorTo="RMK", exclTypes=NULL) {
+
+    metar <- lst[["testFileProc"]][["origMETAR"]]
+    
+    # Keep only everything prior to priorTo
+    if (!is.null(priorTo)) {
+        rmkLoc <- str_locate(metar, priorTo)
+        rmkLoc[is.na(rmkLoc)] <- -1  # keep everything if NA
+        metar <- str_sub(metar, start=1, end=rmkLoc[, 1]-1)
+    }
+    
+    # Exclude any items from the METAR
+    if (!is.null(exclTypes)) {
+        for (excl in exclTypes) {
+            metar <- str_replace(metar, excl, "")
+        }
+    }
+    
+    # Is there a possible precipitation type in the file?
+    pExists <- grepl(precipRegex, metar, perl=TRUE)
+    
+    cat("\nPrecipitation data status by METAR record\n\n")
+    print(table(pExists))
+    cat("\n")
+    
+    # Find the precipitation matches
+    precipMatches <- str_match_all(metar, pattern=precipRegex)
+    
+    # Confirm that there are a maximum of two precipitation types per METAR
+    listLengths <- sapply(precipMatches, FUN=length)
+    if (max(listLengths) > 2) { 
+        stop("Hard-coded for at most 2 precipitation matches, please investigate")
+    } else if (max(listLengths)==0) {
+        cat("\nNo precipitation detected in this file\n")
+    }
+    
+    if (max(listLengths)==2) {
+        cat("\nMultiple Precipitation types in the same record include\n")
+        sapply(precipMatches[listLengths==2], FUN=paste, collapse=" ") %>% 
+            table() %>% 
+            sort(decreasing=TRUE) %>%
+            print()
+    }
+    
+    if (sum(listLengths==1) > 0) {
+        cat("\nSingle Precipitation types in the same record include\n")
+        sapply(precipMatches[listLengths==1], FUN=c) %>% 
+            table() %>% 
+            sort(decreasing=TRUE) %>%
+            print()
+    }    
+
+    # Extract the second column and summarize precipitation types
+    # table(precipMatches[, 2]) %>% sort(decreasing=TRUE) %>% print()
+    
+    precipMatches
+}
+
+# Original pass for Chicago, IL
+x1 <- findPrecipTypes(kordRain2016)
+
+# Exclude AUTO and CLR as they are a record state and cloud type, not precipitation
+x2 <- findPrecipTypes(kordRain2016, exclTypes=c("CLR", "AUTO"))
+
+
+# Original pass for Las Vegas, NV
+x3 <- findPrecipTypes(klasRain2016)
+
+# Exclude AUTO and CLR as they are a record state and cloud type, not precipitation
+x4 <- findPrecipTypes(klasRain2016, exclTypes=c("CLR", "AUTO"))
+
+```
 
