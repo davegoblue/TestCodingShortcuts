@@ -3030,4 +3030,137 @@ x3 <- findPrecipTypes(klasRain2016)
 x4 <- findPrecipTypes(klasRain2016, exclTypes=c("CLR", "AUTO"))
 
 ```
+  
+#### _Example #32: Extracting Precipitation Amounts_  
+The METAR also contains summary of precipitation amounts that have occurred in the past hour(s).  Broadly, the format is:
+  
+* Pdddd - the amount of liquid precipitation equivalent that has fallen in the past hour  
+* 6dddd - the amount of liquid precipitation equivalent that has fallen in the past 3/6 hours (for 0Z, 6Z, 12Z, and 18Z it is 6 hours; and for 3Z, 9Z, 15Z, and 21Z it is 3 hours)  
+* 7dddd - the amount of liquid precipitation equivalent that has fallen in the past 24 hours  
+  
+The data as such can be extracted from the METAR.
+  
+Example code includes:  
+```{r}
+
+# Helper function to extract and convert data
+extractConvertPrecipData <- function(var, regPattern) {
+    
+    mtxPrecip <- str_match(var, pattern=regPattern)
+    vecPrecip <- mtxPrecip[, 2]
+    vecPrecip[is.na(vecPrecip)] <- "0000"
+    vecPrecip <- as.integer(vecPrecip) / 100
+    
+    vecPrecip
+}
+
+# Function to extract key precipitation information
+extractLiquidPrecipAmounts <- function(lst) {
+    
+    # Pull the metar and the dtime
+    metar <- lst[["testFileProc"]][["origMETAR"]]
+    dtime <- lst[["testFileProc"]][["dtime"]]
+    
+    # Extract the Pdddd amounts (only available if liquid precipitation equivalent non-zero)
+    pAmounts1Hour <- extractConvertPrecipData(metar, regPattern="RMK.* P(\\d{4})")
+    cat("\nHourly totals for liquid precipitation equivalents:\n\n")
+    table(pAmounts1Hour) %>% print()
+    
+    # Extract the 6dddd amounts
+    pAmounts6Hour <- extractConvertPrecipData(metar, regPattern="RMK.* 6(\\d{4})")
+    cat("\n3/6-hourly totals for liquid precipitation equivalents:\n\n")
+    table(pAmounts6Hour) %>% print()
+    
+    # Extract the 7dddd amounts
+    pAmounts24Hour <- extractConvertPrecipData(metar, regPattern="RMK.* 7(\\d{4})")
+    cat("\n3/24-hourly totals for liquid precipitation equivalents:\n\n")
+    table(pAmounts24Hour) %>% print()
+    
+    # Create a tibble and add the Zulu time
+    tbl <- tibble::tibble(metar=metar, 
+                          dtime=dtime, 
+                          p1Hour=pAmounts1Hour, 
+                          p3or6Hour=pAmounts6Hour, 
+                          p24Hour=pAmounts24Hour
+                          ) %>%
+        mutate(zTime=(lubridate::hour(dtime) + ifelse(lubridate::minute(dtime)==0, 0, 1)) %% 24, 
+               p6Hour=ifelse((zTime %% 6)==0, p3or6Hour, 0), 
+               p3Hour=ifelse((zTime %% 3)==0, p3or6Hour-p6Hour, 0)
+               )
+    
+    # Summarize the key amounts by Zulu time
+    tbl %>%
+        group_by(zTime) %>%
+        summarize_if(is.numeric, sum) %>%
+        as.data.frame() %>%
+        print()
+    
+    tbl
+    
+}
+
+klasPrecip <- extractLiquidPrecipAmounts(klasRain2016)
+kordPrecip <- extractLiquidPrecipAmounts(kordRain2016)
+
+```
+  
+Precipitation summarize can then be plotted by various time intervals:
+```{r}
+
+plotPrecipHistogram <- function(df, var, xlab, title, mod=1, rem=0) {
+
+    # Create a variable for whether the modulo matches the desired remainder
+    df <- df %>%
+        mutate(isMod=(df$zTime %% mod)==rem)
+    
+    # Separate in to records for further proceesing and records to discard
+    dfUse <- df %>%
+        filter(isMod)
+    dfDiscard <- df %>%
+        filter(!isMod)
+    
+    # Summarize the discarded records
+    cat(nrow(dfDiscard), "records have been discarded due to not matching the modulo rules")
+    cat("\nThese discarded rows have", sum(dfDiscard %>% pull(var)), "inches of precipitation\n")
+    
+    numZero <- sum(dfUse[, var]==0)
+    numTotal <- nrow(dfUse)
+    pZero <- round(numZero/numTotal, 3)
+
+    p <- dfUse %>%
+        filter_at(vars(var), any_vars(. > 0)) %>%
+        ggplot(aes_string(x=var)) + 
+        geom_histogram() + 
+        labs(x=xlab, y="Frequency", title=title, 
+             subtitle=paste0("Includes only the ", 100*(1-pZero), "% of non-zero observations (", 
+                             numZero, " of ", numTotal, " observations are zero)"
+                             )
+         )
+    
+    print(p)
+
+}
+
+plotPrecipHistogram(klasPrecip, 
+                    var="p1Hour", 
+                    xlab="1-hour precipitation (inches)", 
+                    title="Las Vegas, NV (2016) Hourly METAR"
+                    )
+
+plotPrecipHistogram(klasPrecip, 
+                    var="p6Hour", 
+                    xlab="6-hour precipitation (inches)", 
+                    title="Las Vegas, NV (2016) Hourly METAR", 
+                    mod=6
+                    )
+
+plotPrecipHistogram(klasPrecip, 
+                    var="p24Hour", 
+                    xlab="24-hour precipitation (inches)", 
+                    title="Las Vegas, NV (2016) Hourly METAR", 
+                    mod=24, 
+                    rem=12
+                    )
+
+```
 
