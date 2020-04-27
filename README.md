@@ -1894,3 +1894,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 detects all precipitation types in specified METAR data  
 * AdditionalCoding_202003_v001 extracts precipitation amounts from specified METAR data  
   
+### Expansions week of 27-APR-2020  
+* AdditionalCoding_202003_v001 checks consistency of precipitation amounts from specified METAR data  
+  
