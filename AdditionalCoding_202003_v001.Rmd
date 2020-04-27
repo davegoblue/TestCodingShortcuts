@@ -2697,24 +2697,44 @@ runFullPrecipExtraction <- function(df,
     testBegin <- getBeginEndTimeMatrix(testFileProc, pState="B")
     testEnd <- getBeginEndTimeMatrix(testFileProc, pState="E")
 
-    if (ncol(testBegin) != 2 | ncol(testEnd) != 2) { 
+    if (!(ncol(testBegin) %in% c(1, 2, 3)) | !(ncol(testEnd) %in% c(1, 2, 3))) { 
         cat("\nBegin columns:", ncol(testBegin), "\t\tEndcolumns:", ncol(testEnd))
-        stop("Hard-coded for 2 columns each of begin/end- Fix")
+        stop("Hard-coded for 1-3 columns each of begin/end- Fix")
     }
     
     # Extract the beginning and ending information
     testBT1 <- getBeginEndTimeVector(testBegin, testFileProc, extractVar="V1", extractSym="B")
-    testBT2 <- getBeginEndTimeVector(testBegin, testFileProc, extractVar="V2", extractSym="B")
     testET1 <- getBeginEndTimeVector(testEnd, testFileProc, extractVar="V1", extractSym="E")
-    testET2 <- getBeginEndTimeVector(testEnd, testFileProc, extractVar="V2", extractSym="E")
+    
+    if (ncol(testBegin) >= 2) {
+        testBT2 <- getBeginEndTimeVector(testBegin, testFileProc, extractVar="V2", extractSym="B")
+    } else {
+        testBT2 <- c()
+    }
+    if (ncol(testEnd) >= 2) {
+        testET2 <- getBeginEndTimeVector(testEnd, testFileProc, extractVar="V2", extractSym="E")
+    } else {
+        testET2 <- c()
+    }
 
+    if (ncol(testBegin) >= 3) {
+        testBT3 <- getBeginEndTimeVector(testBegin, testFileProc, extractVar="V3", extractSym="B")
+    } else {
+        testBT3 <- c()
+    }
+    if (ncol(testEnd) >= 3) {
+        testET3 <- getBeginEndTimeVector(testEnd, testFileProc, extractVar="V3", extractSym="E")
+    } else {
+        testET3 <- c()
+    }
+    
     testAllBegins <- 
-        c(testBT1[!is.na(testBT1)], testBT2[!is.na(testBT2)]) %>%
+        c(testBT1[!is.na(testBT1)], testBT2[!is.na(testBT2)], testBT3[!is.na(testBT3)]) %>%
         lubridate::ymd_hm() %>%
         sort()
 
     testAllEnds <- 
-        c(testET1[!is.na(testET1)], testET2[!is.na(testET2)]) %>%
+        c(testET1[!is.na(testET1)], testET2[!is.na(testET2)], testET3[!is.na(testET3)]) %>%
         lubridate::ymd_hm() %>%
         sort()
     
@@ -2921,7 +2941,7 @@ intervalConsistency <- function(lst, pType){
         cat("\nFull matches between METAR observations and intervals\n")
     } else {
         for (x in mism) {
-            cat("\nMismatch at time", strftime(dtime[x], format="%Y-%m-%d %H:%M"), "UTC\n")
+            cat("\nMismatch at time", strftime(dtime[x], format="%Y-%m-%d %H:%M", tz="UTC"), "UTC\n")
             print(metar[max(1, x-2):min(length(metar), x+2)])
         }
     }
@@ -2966,7 +2986,7 @@ findPrecipTypes <- function(lst, precipRegex="(?<= )[+-]?[A-Z]+(?= )", priorTo="
     if (!is.null(priorTo)) {
         rmkLoc <- str_locate(metar, priorTo)
         rmkLoc[is.na(rmkLoc)] <- -1  # keep everything if NA
-        metar <- str_sub(metar, start=1, end=rmkLoc[, 1]-1)
+        metar <- str_sub(metar, start=1, end=pmax(-1, rmkLoc[, 1]-1))
     }
     
     # Exclude any items from the METAR
@@ -2988,15 +3008,16 @@ findPrecipTypes <- function(lst, precipRegex="(?<= )[+-]?[A-Z]+(?= )", priorTo="
     
     # Confirm that there are a maximum of two precipitation types per METAR
     listLengths <- sapply(precipMatches, FUN=length)
-    if (max(listLengths) > 2) { 
-        stop("Hard-coded for at most 2 precipitation matches, please investigate")
+    if (max(listLengths) > 4) {
+        cat("\nMaximum combinations observed is:", max(listLengths), "\n")
+        stop("Hard-coded for at most 4 precipitation matches, please investigate")
     } else if (max(listLengths)==0) {
         cat("\nNo precipitation detected in this file\n")
     }
     
-    if (max(listLengths)==2) {
+    if (max(listLengths) %in% c(2, 3, 4)) {
         cat("\nMultiple Precipitation types in the same record include\n")
-        sapply(precipMatches[listLengths==2], FUN=paste, collapse=" ") %>% 
+        sapply(precipMatches[listLengths %in% c(2, 3, 4)], FUN=paste, collapse=" ") %>% 
             table() %>% 
             sort(decreasing=TRUE) %>%
             print()
@@ -3164,3 +3185,127 @@ plotPrecipHistogram(klasPrecip,
 
 ```
 
+#### _Example #33: Validating Consistency of Precipitation Amounts_  
+The precipitation amounts per day summed from the 1-hour, 6-hour, and 24-hour columns should be nearly identical give or take rounding errors.
+
+Example code includes:  
+```{r}
+
+checkPrecipConsistency <- function(df, title, subT="", hour24=12, maxDelta=0.02,
+                                   sumVars=c("p24Hour", "p6Hour", "p1Hour")
+                                   ) {
+
+    # Create the data file for analysis - updated time, summarized by month and day
+    dfPrecip <- df %>% 
+        mutate(dtUse=dtime-lubridate::hours(hour24), 
+               year=lubridate::year(dtUse), 
+               month=lubridate::month(dtUse), 
+               day=lubridate::day(dtUse), 
+               n=1
+               ) %>% 
+        group_by(year, month, day) %>% 
+        summarize_if(is.numeric, sum) %>%
+        ungroup()
+    
+    head(dfPrecip) %>% 
+        select_at(vars(all_of(c("year", "month", "day", "n", sumVars)))) %>%
+        print()
+    
+    
+    # Plot the monthly totals
+    p1Data <- dfPrecip %>%
+        mutate(ym=paste0(year, "-", str_pad(month, width=2, side="left", pad="0"))) %>%
+        select_at(vars(all_of(c("ym", sumVars)))) %>%
+        group_by(ym) %>%
+        summarize_all(sum)
+    print(p1Data)
+    
+    p1 <- p1Data %>%
+        pivot_longer(-ym, names_to="timePeriod", values_to="inchesPrecip") %>%
+        ggplot(aes(x=factor(ym), y=inchesPrecip, group=timePeriod, color=timePeriod)) + 
+            geom_line(lwd=1.5) + 
+        labs(x="Month", y="Inches of Liquid Precipitation", title=title, subtitle=subT)
+    print(p1)
+    
+    # Output any days that have differences of more than maxDelta inches
+    mismPrecip <- dfPrecip %>%
+        select_at(vars(c("month", "day", all_of(sumVars)))) 
+    
+    mismMinMax <- mismPrecip %>%
+        select_at(vars(all_of(sumVars))) %>%
+        apply(1, FUN=function(x) { c(max(x), min(x), diff(range(x))) }) %>%
+        t() %>%
+        as.data.frame()
+    names(mismMinMax) <- c("maxPrecip", "minPrecip", "delta")
+    
+    mismPrecip <- bind_cols(mismPrecip, mismMinMax)
+
+    cat("\nMismatch precipitation amounts by day are:\n")
+    table(mismPrecip$delta) %>% round(2) %>% print()
+    
+    cat("\n\nMismatch days of worse than maxDelta inches include\n")
+    mismPrecip %>%
+        filter(delta > maxDelta) %>%
+        as.data.frame() %>%
+        print()
+    
+}
+
+checkPrecipConsistency(klasPrecip, title="Las Vegas, NV 2016 Precipitation by Month")
+checkPrecipConsistency(kordPrecip, title="Chicago, IL 2016 Precipitation by Month")
+
+```
+  
+While the Las Vegas, NV precipitation data are consistent on the 1-hour, 6-hour, and 24-hour measurements, there are significanr differences for Chicago, IL (particularly 1-hour outliers in Jan-Feb-Mar).
+
+For further exploration, another cold weather city (Lincoln, NE) is assessed:
+```{r}
+
+# Run for Lincoln, NE 2016 rainfall
+klnkRain2016 <- runFullPrecipExtraction(klnk2016METAR, 
+                                        pType="RA", 
+                                        titleText="Lincoln, NE Rainfall (hours) in 2016", 
+                                        yAxisText="Hours of Rain", 
+                                        endExclude=c("2016-09-16 1011", "2016-08-29 2329"),
+                                        beginExclude=c("2016-07-13 1301"), 
+                                        maxProb=1440, 
+                                        sState=FALSE, 
+                                        makePlots=TRUE
+                                        )
+
+# Run for Lincoln, NE 2016 snowfall
+klnkSnow2016 <- runFullPrecipExtraction(klnk2016METAR, 
+                                        pType="SN", 
+                                        titleText="Lincoln, NE Snowfall (hours) in 2016", 
+                                        yAxisText="Hours of Snow", 
+                                        endExclude=c(),
+                                        beginExclude=c("2016-01-19 1644"), 
+                                        maxProb=1440, 
+                                        sState=FALSE, 
+                                        makePlots=TRUE
+                                        )
+
+# Check for interval consistency in the Lincoln, NE 2016 rainfall data
+# Weird issue on 2016-07-13 1354 RAB without RAE
+# 2016-08-29 2254 TSRA without RAB
+# 2016-09-16 0654 many mismatches due to missing RAB here
+tmp <- intervalConsistency(klnkRain2016, pType="RA")
+
+# Check for interval consistency in the Lincoln, NE 2016 rainfall data
+tmp <- intervalConsistency(klnkSnow2016, pType="SN")
+
+# Original pass for Lincoln, NE
+x5 <- findPrecipTypes(klnkRain2016)
+
+# Exclude AUTO and CLR as they are a record state and cloud type, not precipitation
+x6 <- findPrecipTypes(klnkRain2016, exclTypes=c("CLR", "AUTO"))
+
+# Get the Lincoln, NE 2016 liquid precipitation
+klnkPrecip <- extractLiquidPrecipAmounts(klnkRain2016)
+
+# Check for consistency in the Lincoln, NE 2016 precipitation data
+checkPrecipConsistency(klnkPrecip, title="Lincoln, NE 2016 Precipitation by Month")
+
+```
+  
+There are mismatches on 4 days of 2016 in the Lincoln, NE data though these appear to be manual error rather than systematic error due to cold weather.  Perhaps consulting official weather records can help determine the true liquid precipitation o the days in question.
