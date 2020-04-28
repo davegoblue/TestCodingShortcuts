@@ -3309,3 +3309,90 @@ checkPrecipConsistency(klnkPrecip, title="Lincoln, NE 2016 Precipitation by Mont
 ```
   
 There are mismatches on 4 days of 2016 in the Lincoln, NE data though these appear to be manual error rather than systematic error due to cold weather.  Perhaps consulting official weather records can help determine the true liquid precipitation o the days in question.
+  
+#### _Example #34: Checking METAR Data for Gaps and Problems_  
+Perhaps some of the inconsistencies in METAR data are driven by missing observations or sensor anomalies.  Missing observations can be detected as records expected but not detected, while sensor anomalies are flagged by a trailing '$' in the METAR record.
+
+Example code includes:  
+```{r}
+
+checkGapsAnomalies <- function(lst, minDay, maxDay, loc, hour24=12) {
+    
+    # Pull the METAR data and datetime
+    metar <- lst[["testFileProc"]][["origMETAR"]]
+    dtime <- lst[["testFileProc"]][["dtime"]]
+    
+    # Create analysis data frame
+    dfUse <- tibble::tibble(metar=metar, dtime=dtime) %>%
+        mutate(dtUse=dtime-lubridate::hours(hour24), 
+               year=lubridate::year(dtUse), 
+               month=lubridate::month(dtUse), 
+               day=lubridate::day(dtUse), 
+               ym=paste0(year, "-", str_pad(month, width=2, side="left", pad="0")),
+               isAnomaly=grepl("\\$$", metar),
+               n=1
+               )
+    
+    cat("\nData file with new time and anomaly variable\n")
+    dim(dfUse) %>% print()
+    names(dfUse) %>% print()
+    
+    # Keep only days between minDay and maxDay inclusive
+    dfUse <- dfUse %>%
+        filter(lubridate::date(dtUse) >= as.Date(minDay), lubridate::date(dtUse) <= as.Date(maxDay))
+    
+    cat("\nData file filtered to include only desired times\n")
+    dim(dfUse) %>% print()
+    names(dfUse) %>% print()
+    
+    # Sum n and isAnomaly by day
+    dfIssue <- dfUse %>%
+        group_by(ym, day) %>%
+        summarize(n=sum(n), anomaly=sum(isAnomaly)) %>%
+        ungroup() %>%
+        mutate(missObs=24-n)
+    summary(dfIssue) %>% print()
+    
+    # Plot summary by month
+    dfPlot <- dfIssue %>%
+        group_by(ym) %>%
+        summarize(missObsDays=sum(missObs > 0), missObs=sum(missObs), 
+                  anomalyDays=sum(anomaly > 0), anomaly=sum(anomaly), 
+                  nDays=n()
+                  ) %>%
+        ungroup()
+    
+    # Create plot of missing observations
+    p1 <- dfPlot %>%
+        ggplot(aes(x=factor(ym), y=missObs)) + 
+        geom_line(aes(group=1), lwd=2, color="red") + 
+        geom_text(aes(y=missObs+0.5, label=ifelse(missObs>0, missObs, "")), color="red") + 
+        labs(x="", y="Missing METAR Observations in Month", 
+             title=paste0(loc, " Missing METAR Observations by Month")
+             ) + 
+        ylim(0, NA)
+    print(p1)
+    
+    # Create plot of missing observations
+    p2 <- dfPlot %>%
+        ggplot(aes(x=factor(ym), y=anomaly)) + 
+        geom_line(aes(group=1), lwd=2, color="blue") + 
+        labs(x="", y="Potentially Anomalous (trailing $) METAR Observations", 
+             title=paste0(loc, " Potentially Anomalous METAR Observations by Month")
+             ) + 
+        ylim(0, NA)
+    print(p2)
+    
+    # Return the plotting frame
+    dfPlot
+}
+
+checkGapsAnomalies(klasRain2016, minDay="2016-01-01", maxDay="2016-12-31", loc="Las Vegas, NV (2016)")
+checkGapsAnomalies(kordRain2016, minDay="2016-01-01", maxDay="2016-12-31", loc="Chicago, IL (2016)")
+checkGapsAnomalies(klnkRain2016, minDay="2016-01-01", maxDay="2016-12-31", loc="Lincoln, NE (2016)")
+
+```
+  
+The Chicago, IL and Las Vegas, NV sensors self-identify as anomalous roughly an order of magnitude more often than the Lincoln, NE sensor.  There are no obvious spikes for Chicago, IL in Q1 2016, suggesting mismatched precipitation may be due to causes other than anomalous sensors and missing data.
+  
+
