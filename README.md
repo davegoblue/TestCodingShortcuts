@@ -1898,4 +1898,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 checks consistency of precipitation amounts from specified METAR data  
 * AdditionalCoding_202003_v001 checks for gaps and reported sensor anomalies in specified METAR data  
 * AdditionalCoding_202003_v001 checks other time periods and locales  
+* AdditionalCoding_202003_v001 automtates interval checks to suggest precipitation begin and end times  
   
