@@ -3197,7 +3197,8 @@ Example code includes:
 ```{r}
 
 checkPrecipConsistency <- function(df, title, subT="", hour24=12, maxDelta=0.02,
-                                   sumVars=c("p24Hour", "p6Hour", "p1Hour")
+                                   sumVars=c("p24Hour", "p6Hour", "p1Hour"), 
+                                   yearsUse=NULL
                                    ) {
 
     # Create the data file for analysis - updated time, summarized by month and day
@@ -3225,11 +3226,18 @@ checkPrecipConsistency <- function(df, title, subT="", hour24=12, maxDelta=0.02,
         summarize_all(sum)
     print(p1Data)
     
+    # Filter to only the desired years if specified
+    if (!is.null(yearsUse)) {
+        p1Data <- p1Data %>%
+            filter(as.integer(str_sub(ym, 1, 4)) %in% yearsUse)
+    }
+    
     p1 <- p1Data %>%
         pivot_longer(-ym, names_to="timePeriod", values_to="inchesPrecip") %>%
         ggplot(aes(x=factor(ym), y=inchesPrecip, group=timePeriod, color=timePeriod)) + 
             geom_line(lwd=1.5) + 
-        labs(x="Month", y="Inches of Liquid Precipitation", title=title, subtitle=subT)
+        labs(x="Month", y="Inches of Liquid Precipitation", title=title, subtitle=subT) + 
+        ylim(0, NA)
     print(p1)
     
     # Output any days that have differences of more than maxDelta inches
@@ -3246,7 +3254,7 @@ checkPrecipConsistency <- function(df, title, subT="", hour24=12, maxDelta=0.02,
     mismPrecip <- bind_cols(mismPrecip, mismMinMax)
 
     cat("\nMismatch precipitation amounts by day are:\n")
-    table(mismPrecip$delta) %>% round(2) %>% print()
+    round(mismPrecip$delta, 2) %>% table() %>% print()
     
     cat("\n\nMismatch days of worse than maxDelta inches include\n")
     mismPrecip %>%
@@ -3256,8 +3264,8 @@ checkPrecipConsistency <- function(df, title, subT="", hour24=12, maxDelta=0.02,
     
 }
 
-checkPrecipConsistency(klasPrecip, title="Las Vegas, NV 2016 Precipitation by Month")
-checkPrecipConsistency(kordPrecip, title="Chicago, IL 2016 Precipitation by Month")
+checkPrecipConsistency(klasPrecip, title="Las Vegas, NV 2016 Precipitation by Month", yearsUse=2016)
+checkPrecipConsistency(kordPrecip, title="Chicago, IL 2016 Precipitation by Month", yearsUse=2016)
 
 ```
   
@@ -3309,7 +3317,7 @@ x6 <- findPrecipTypes(klnkRain2016, exclTypes=c("CLR", "AUTO"))
 klnkPrecip <- extractLiquidPrecipAmounts(klnkRain2016)
 
 # Check for consistency in the Lincoln, NE 2016 precipitation data
-checkPrecipConsistency(klnkPrecip, title="Lincoln, NE 2016 Precipitation by Month")
+checkPrecipConsistency(klnkPrecip, title="Lincoln, NE 2016 Precipitation by Month", yearsUse=2016)
 
 ```
   
@@ -3588,7 +3596,7 @@ x8 <- findPrecipTypes(kordRain2015, exclTypes=c("CLR"))
 kord2015Precip <- extractLiquidPrecipAmounts(kordRain2015)
 
 # Check for consistency in the Chicago, IL 2015 precipitation data
-checkPrecipConsistency(kord2015Precip, title="Chicago, IL 2015 Precipitation by Month")
+checkPrecipConsistency(kord2015Precip, title="Chicago, IL 2015 Precipitation by Month", yearsUse=2015)
 
 # Check for missing data and sensor anomalies
 checkGapsAnomalies(kordRain2015, minDay="2015-01-01", maxDay="2015-12-31", loc="Chicago, IL (2015)")
@@ -3707,3 +3715,274 @@ tmp <- intervalConsistency(kordRain2016Test, pType=regMatch)
 
 ```
 
+#### _Example #37: Function for Automating Suggestiong for Precipitation Begin and End_  
+The precipitation suggestions can be converted to a function, then applied to several of the other datasets.  
+Example code includes:  
+```{r}
+
+suggestBeginEndTimes <- function(lst, regMatch, listExtract="fullMETAR") {
+
+    # Pull the data and check for the specified precipitation pattern and lags
+    sugStates <- lst[[listExtract]] %>%
+        select(dtime, origMETAR) %>%
+        mutate(curPrecip=str_detect(origMETAR, paste0(".*", regMatch, ".*RMK")), 
+               lagPrecip=lag(curPrecip, 1)
+               )
+
+    # Use the analysis data to look for begins and ends flagged in the remarks
+    sugBE <- extractPrecipData(list(fullMETAR=sugStates), pType=regMatch)
+
+    # Inner join the data by dtime
+    sugStates <- sugStates %>%
+        inner_join(sugBE %>% select(dtime, precipData, chgPrecip=isPrecip, dateUTC, hourUTC), by="dtime")
+
+    # Get the beginning and end times data for the desired precipitation type
+    sugBegin <- getBeginEndTimeMatrix(sugStates, pState="B")
+    sugEnd <- getBeginEndTimeMatrix(sugStates, pState="E")
+
+    # Hard-code for 2-column files (relax later)
+    # Extract the begin and end times
+    if (ncol(sugBegin) > 3 | ncol(sugEnd) > 3) { stop("Hard-coded for 0-3 columns, fix") }
+    testBT1 <- NA
+    testBT2 <- NA
+    testBT3 <- NA
+    testET1 <- NA
+    testET2 <- NA
+    testET3 <- NA
+    
+    if (ncol(sugBegin) >= 1) {
+        testBT1 <- getBeginEndTimeVector(sugBegin, sugStates, extractVar="V1", extractSym="B")
+    }
+    if (ncol(sugBegin) >= 2) {
+        testBT2 <- getBeginEndTimeVector(sugBegin, sugStates, extractVar="V2", extractSym="B")
+    }
+    if (ncol(sugBegin) >= 3) {
+        testBT3 <- getBeginEndTimeVector(sugBegin, sugStates, extractVar="V3", extractSym="B")
+    }
+
+    if (ncol(sugEnd) >= 1) {
+        testET1 <- getBeginEndTimeVector(sugEnd, sugStates, extractVar="V1", extractSym="E")
+    }
+    if (ncol(sugEnd) >= 2) {
+        testET2 <- getBeginEndTimeVector(sugEnd, sugStates, extractVar="V2", extractSym="E")
+    }
+    if (ncol(sugEnd) >= 3) {
+        testET3 <- getBeginEndTimeVector(sugEnd, sugStates, extractVar="V3", extractSym="E")
+    }
+    
+    # Integrate to a single file
+    sugExceptions <- sugStates %>%
+        mutate(b1=testBT1, e1=testET1, b2=testBT2, e2=testET2, b3=testBT3, e3=testET3,
+               begins=ifelse(is.na(b1), 0, 1) + ifelse(is.na(b2), 0, 1) + ifelse(is.na(b3), 0, 1), 
+               ends=ifelse(is.na(e1), 0, 1) + ifelse(is.na(e2), 0, 1) + ifelse(is.na(e3), 0, 1),
+               etob=begins > ends, 
+               btoe=ends > begins, 
+               needBegin=curPrecip & !lagPrecip & !etob, 
+               needEnd=!curPrecip & lagPrecip & !btoe, 
+               overBegin=etob & (lagPrecip | !curPrecip), 
+               overEnd=btoe & (curPrecip | !lagPrecip)
+               )
+    colSums(is.na(sugExceptions)) %>% print()
+
+    # Flag potential issues
+    cat("\nNeed Begin time\n")
+    sugExceptions %>%
+        filter(needBegin) %>%
+        select(dtime, origMETAR) %>%
+        print()
+
+    cat("\nNeed End time\n")
+    sugExceptions %>%
+        filter(needEnd) %>%
+        select(dtime, origMETAR) %>%
+        print()
+
+    cat("\nExtraneous Begin time\n")
+    sugExceptions %>%
+        filter(overBegin) %>%
+        select(dtime, b1, b2, b3) %>%
+        print()
+
+    cat("\nExtraneous End time\n")
+    sugExceptions %>%
+        filter(overEnd) %>%
+        select(dtime, e1, e2, e3) %>%
+        print()
+
+    cat("\nWrong amount of begins or ends\n")
+    sugExceptions %>%
+        mutate(absMatch=abs(begins-ends), absLag=lag(absMatch, 1), absLead=lead(absMatch, 1)) %>%
+        filter(pmax(absMatch, absLag, absLead) > 1) %>%
+        select(dtime, e1, e2, e3, b1, b2, b3) %>%
+        print()
+    
+    sugExceptions
+    
+}
+
+
+# Look for RA that is not preceded by FZ in the 2016 Chicago, IL data
+kord2016ExceptRA <- suggestBeginEndTimes(kord2016METAR, regMatch="(?<!FZ)RA")
+
+# Attempt to use on the kord2016 rain data
+kordRain2016Test <- runFullPrecipExtraction(kord2016METAR, 
+                                            pType="(?<!FZ)RA", 
+                                            titleText="Chicago, IL Rainfall (hours) in 2016", 
+                                            yAxisText="Hours of Rain", 
+                                            endExclude=c(),
+                                            beginExclude=c(),
+                                            endAdd=c("2016-07-13 1851"), 
+                                            beginAdd=c("2016-03-24 2151", "2016-08-29 1951"),
+                                            maxProb=1440, 
+                                            sState=FALSE, 
+                                            makePlots=TRUE
+                                            )
+
+# Intervals match
+tmp <- intervalConsistency(kordRain2016Test, pType="(?<!FZ)RA")
+
+
+
+# Look for SN that is not preceded by BL in the 2016 Chicago, IL data
+kord2016ExceptSN <- suggestBeginEndTimes(kord2016METAR, regMatch="(?<!BL)SN")
+
+# Attempt to use on the kord2016 snow data
+kordSnow2016Test <- runFullPrecipExtraction(kord2016METAR, 
+                                            pType="(?<!BL)SN", 
+                                            titleText="Chicago, IL Snowfall (hours) in 2016", 
+                                            yAxisText="Hours of Snow", 
+                                            endExclude=c("2016-04-09 0446"),
+                                            beginExclude=c(),
+                                            endAdd=c(), 
+                                            beginAdd=c("2016-02-10 0051", "2016-03-24 2151", 
+                                                       "2016-04-08 2251", "2016-12-24 0151"
+                                                       ),
+                                            maxProb=1440, 
+                                            sState=FALSE, 
+                                            makePlots=TRUE
+                                            )
+
+# Intervals match
+tmp <- intervalConsistency(kordSnow2016Test, pType="(?<!BL)SN")
+
+```
+  
+This algorithm can then be used to process the Chicago, IL 2015 and 2017 data:  
+```{r}
+
+# Look for RA that is not preceded by FZ in the 2015 Chicago, IL data
+kord2015ExceptRA <- suggestBeginEndTimes(kord2015METAR, regMatch="(?<!FZ)RA")
+
+# Attempt to use on the kord2015 rain data
+kordRain2015Test <- runFullPrecipExtraction(kord2015METAR, 
+                                            pType="(?<!FZ)RA", 
+                                            titleText="Chicago, IL Rainfall (hours) in 2015", 
+                                            yAxisText="Hours of Rain", 
+                                            endExclude=c("2015-05-17 1336"),
+                                            beginExclude=c("2015-04-02 1125"),
+                                            endAdd=c("2015-06-21 0551", "2015-08-15 0451"), 
+                                            beginAdd=c("2015-05-11 1951", "2015-06-29 0151"),
+                                            maxProb=1440, 
+                                            sState=FALSE, 
+                                            makePlots=TRUE
+                                            )
+
+# Intervals match
+tmp <- intervalConsistency(kordRain2015Test, pType="(?<!FZ)RA")
+
+
+# Look for SN that is not preceded by BL in the 2015 Chicago, IL data
+kord2015ExceptSN <- suggestBeginEndTimes(kord2015METAR, regMatch="(?<!BL)SN")
+
+# Attempt to use on the kord2015 snow data
+kordSnow2015Test <- runFullPrecipExtraction(kord2015METAR, 
+                                            pType="(?<!BL)SN", 
+                                            titleText="Chicago, IL Snowfall (hours) in 2015", 
+                                            yAxisText="Hours of Snow", 
+                                            endExclude=c(),
+                                            beginExclude=c("2015-01-08 1845"),
+                                            endAdd=c(), 
+                                            beginAdd=c("2015-01-03 1151", "2015-02-25 2251"),
+                                            maxProb=1440, 
+                                            sState=FALSE, 
+                                            makePlots=TRUE
+                                            )
+
+# Intervals match
+tmp <- intervalConsistency(kordSnow2015Test, pType="(?<!BL)SN")
+
+
+
+# Look for RA that is not preceded by FZ in the 2017 Chicago, IL data
+kord2017ExceptRA <- suggestBeginEndTimes(kord2017METAR, regMatch="(?<!FZ)RA")
+
+# Attempt to use on the kord2017 rain data
+kordRain2017Test <- runFullPrecipExtraction(kord2017METAR, 
+                                            pType="(?<!FZ)RA", 
+                                            titleText="Chicago, IL Rainfall (hours) in 2017", 
+                                            yAxisText="Hours of Rain", 
+                                            endExclude=c("2017-03-01 0201"),
+                                            beginExclude=c("2017-01-25 0359", "2017-03-17 1025"),
+                                            endAdd=c(), 
+                                            beginAdd=c("2017-05-18 0451", "2017-07-20 0351", 
+                                                       "2017-10-14 0851"
+                                                       ),
+                                            maxProb=1440, 
+                                            sState=FALSE, 
+                                            makePlots=TRUE
+                                            )
+
+# Intervals match
+tmp <- intervalConsistency(kordRain2017Test, pType="(?<!FZ)RA")
+
+
+
+# Look for SN that is not preceded by BL in the 2017 Chicago, IL data
+kord2017ExceptSN <- suggestBeginEndTimes(kord2017METAR, regMatch="(?<!BL)SN")
+
+# Attempt to use on the kord2017 snow data
+kordSnow2017Test <- runFullPrecipExtraction(kord2017METAR, 
+                                            pType="(?<!BL)SN", 
+                                            titleText="Chicago, IL Snowfall (hours) in 2017", 
+                                            yAxisText="Hours of Snow", 
+                                            endExclude=c(),
+                                            beginExclude=c(),
+                                            endAdd=c(), 
+                                            beginAdd=c("2017-03-02 0251"),
+                                            maxProb=1440, 
+                                            sState=FALSE, 
+                                            makePlots=TRUE
+                                            )
+
+# Intervals match
+tmp <- intervalConsistency(kordSnow2017Test, pType="(?<!BL)SN")
+
+```
+
+And, the checks for precipitation consistency can then be run on the Chicago 2015 and 2017 data:  
+```{r}
+
+# Get the Chicago, IL 2015 liquid precipitation
+kord2015PrecipTest <- extractLiquidPrecipAmounts(kordRain2015Test)
+
+# Check for consistency in the Chicago, IL 2015 precipitation data
+checkPrecipConsistency(kord2015PrecipTest, title="Chicago, IL 2015 Precipitation by Month", yearsUse=2015)
+
+# Check for missing data and sensor anomalies
+checkGapsAnomalies(kordRain2015Test, minDay="2015-01-01", maxDay="2015-12-31", loc="Chicago, IL (2015)")
+
+
+
+# Get the Chicago, IL 2017 liquid precipitation
+kord2017PrecipTest <- extractLiquidPrecipAmounts(kordRain2017Test)
+
+# Check for consistency in the Chicago, IL 2017 precipitation data
+checkPrecipConsistency(kord2017PrecipTest, title="Chicago, IL 2017 Precipitation by Month", yearsUse=2017)
+
+# Check for missing data and sensor anomalies
+checkGapsAnomalies(kordRain2017Test, minDay="2017-01-01", maxDay="2017-12-31", loc="Chicago, IL (2017)")
+
+```
+  
+The 2017 precipitation data in Chicago show much better alignment among the 1-hour, 6-hour, and 24-hour totals summed by day or month.  There is heavy precipitation on July 12, 2017 that merits further exploration and an April 2-3, 2017 rain event that has about the same sum but differs by day.  This data is suggestive of occasional one-off problems rather than a seemingly systemic issue as in parts of 2015-2016.
+  
