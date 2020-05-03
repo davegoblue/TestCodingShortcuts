@@ -4112,3 +4112,119 @@ checkGapsAnomalies(kdtwRain2016Test, minDay="2016-01-01", maxDay="2016-12-31", l
 ```
   
 There are just a few one-off mismatches among 1-hour, 6-hour, and 24-hour precipitation sums by day/month in the 2016 data for Minneapolis, MN and Detroit, MI.  So the more systemic issues observed in the 2016 Chicago, IL data appear to be specific to Chicago 2016 rather than a general issue with cold-weather cities or reporting issues associated with 2016.
+  
+#### _Example #39: Consistency Checks for Precipitation_  
+Automating checks for precipitation may help find the areas where the 1-hour totals, 3/6-hour totals, and 24-hour totals diverge.  These are areas for further exploration that can help better assess the monthly liquid precipitation totals.
+  
+Example code includes:  
+```{r}
+
+# Check for consistency in the Chicago, IL 2015 precipitation data
+checkPrecipConsistency(kord2015PrecipTest, title="Chicago, IL 2015 Precipitation by Month", yearsUse=2015)
+
+# Check for consistency by time interval in the Chicago, IL 2015 precipitation data
+
+# Code copied from checkPrecipConsistency
+hrStart <- 12
+dfPrecipHourly <- kord2015PrecipTest %>% 
+    mutate(dtUse=dtime-lubridate::hours(hrStart), 
+           year=lubridate::year(dtUse), 
+           month=lubridate::month(dtUse), 
+           day=lubridate::day(dtUse), 
+           tod=ifelse(((zTime-hrStart) %% 24)==0, 24, (zTime-hrStart) %% 24),
+           h3Block=((tod-1) %/% 3) + 1, 
+           h6Block=((tod-1) %/% 6) + 1,
+           h24Block=((tod-1) %/% 24) + 1, 
+           n=1
+           ) %>%
+    group_by(year, month, day, h3Block) %>%
+    mutate(h3SumHourly=sum(p1Hour)) %>%
+    ungroup() %>%
+    group_by(year, month, day, h6Block) %>%
+    mutate(h6SumHourly=sum(p1Hour)) %>%
+    ungroup() %>%
+    group_by(year, month, day, h24Block) %>%
+    mutate(h24SumHourly=sum(p1Hour), h24Sum6Hourly=sum(p6Hour)) %>%
+    ungroup()
+    
+# Three-hourly sum does not equal sum of hourly sums
+threeVone <- dfPrecipHourly %>%
+    group_by(year, month, day, h3Block) %>%
+    summarize(n=sum(n), p1Hour=sum(p1Hour), p3Hour=sum(p3Hour)) %>%
+    filter((h3Block %% 2) != 0, abs(p1Hour-p3Hour) > 0.025)
+
+# Six-hourly sum does not equal sum of hourly sums
+sixVone <- dfPrecipHourly %>%
+    group_by(year, month, day, h6Block) %>%
+    summarize(n=sum(n), p1Hour=sum(p1Hour), p6Hour=sum(p6Hour)) %>%
+    filter(abs(p1Hour-p6Hour) > 0.025)
+
+# 24-hourly sum does not equal sum of hourly sums
+twentyfourVone <- dfPrecipHourly %>%
+    group_by(year, month, day, h24Block) %>%
+    summarize(n=sum(n), p1Hour=sum(p1Hour), p24Hour=sum(p24Hour)) %>%
+    filter(abs(p24Hour-p1Hour) > 0.025)
+
+# 24-hourly sum does not equal sum of six-hourly sums
+twentyfourVsix <- dfPrecipHourly %>%
+    group_by(year, month, day, h24Block) %>%
+    summarize(n=sum(n), p6Hour=sum(p6Hour), p24Hour=sum(p24Hour)) %>%
+    filter(abs(p24Hour-p6Hour) > 0.025)
+
+# For each day, flag whether there is a 6-1, 24-6, and 24-1 issue
+sixOneIssue <- sixVone %>%
+    group_by(year, month, day) %>%
+    summarize(n6_1=n(), p6_1=abs(sum(p1Hour)-sum(p6Hour)))
+
+twentyfourSixIssue <- twentyfourVsix %>%
+    group_by(year, month, day) %>%
+    summarize(n6_24=n(), p6_24=abs(sum(p24Hour)-sum(p6Hour)))
+
+twentyfourOneIssue <- twentyfourVone %>%
+    group_by(year, month, day) %>%
+    summarize(n1_24=n(), p1_24=abs(sum(p24Hour)-sum(p1Hour)))
+
+allIssues <- sixOneIssue %>%
+    full_join(twentyfourSixIssue) %>%
+    full_join(twentyfourOneIssue) %>%
+    arrange(year, month, day) %>%
+    select(year, month, day, n6_1, n6_24, n1_24, p6_1, p6_24, p1_24)
+allIssues
+
+dfPrecipHourly %>%
+    filter(year==2015, month==2, day==1) %>%
+    select(tod, p1Hour, p6Hour, p24Hour, h6SumHourly, h24SumHourly, h24Sum6Hourly) %>%
+    as.data.frame()
+
+dfPrecipHourly %>%
+    filter(year==2015, month==2, day==2) %>%
+    select(tod, p1Hour, p6Hour, p24Hour, h6SumHourly, h24SumHourly, h24Sum6Hourly) %>%
+    as.data.frame()
+
+dfPrecipHourly %>%
+    filter(year==2015, month==10, day==20) %>%
+    select(tod, p1Hour, p6Hour, p24Hour, h6SumHourly, h24SumHourly, h24Sum6Hourly) %>%
+    as.data.frame()
+
+dfPrecipHourly %>%
+    filter(year==2015, month==10, day==21) %>%
+    select(tod, p1Hour, p6Hour, p24Hour, h6SumHourly, h24SumHourly, h24Sum6Hourly) %>%
+    as.data.frame()
+
+allIssues %>%
+    filter(is.na(p6_1) | is.na(p6_24) | is.na(p1_24))
+
+allIssues %>%
+    filter(!(is.na(p6_1) | is.na(p6_24) | is.na(p1_24)))
+
+```
+  
+Looking at February 1, 2015 as an example shows the issue may not be easy to track down.  There is no obvious single entry error driving the large disconnects.  Rather, the 6-hourly observations seem somewhat tethered to the hourly observations while the 24-hour observation is very different than the sum of either the 1-hourly observations or the 6-hourly observations.
+
+Looking at February 2, 2015, there is a single anomalous record in the p1Hour column that likely accounts for the full disconnect.  Checking official precipitation records may be helpful to vet that there was no precipitation on this day.
+
+Looking at October 20, 2015, there is a possible anomaly around hour 16 (not in 24-hour total) and hour 18 (sums to 0.1 greater than hourly totals) that drive the disconnect.
+
+Looking at Octiber 21, 2015, there is a possible anomaly at hours 10 and 12 where precipitations are recorded (with 1-hour and 6-hour not aligned) despite nothing in the 24-hour total.
+
+Further investigation such as checking the official precipitation records may be needed.
