@@ -3224,13 +3224,15 @@ checkPrecipConsistency <- function(df, title, subT="", hour24=12, maxDelta=0.02,
         select_at(vars(all_of(c("ym", sumVars)))) %>%
         group_by(ym) %>%
         summarize_all(sum)
-    print(p1Data)
     
     # Filter to only the desired years if specified
     if (!is.null(yearsUse)) {
         p1Data <- p1Data %>%
             filter(as.integer(str_sub(ym, 1, 4)) %in% yearsUse)
     }
+    
+    print(p1Data)
+    print(p1Data %>% select(-ym) %>% colSums())
     
     p1 <- p1Data %>%
         pivot_longer(-ym, names_to="timePeriod", values_to="inchesPrecip") %>%
@@ -4228,3 +4230,111 @@ Looking at October 20, 2015, there is a possible anomaly around hour 16 (not in 
 Looking at Octiber 21, 2015, there is a possible anomaly at hours 10 and 12 where precipitations are recorded (with 1-hour and 6-hour not aligned) despite nothing in the 24-hour total.
 
 Further investigation such as checking the official precipitation records may be needed.
+  
+#### _Example #40: External Source for Precipitation Checking_  
+Data are maintained for Chicago precipitation totals by month at https://www.weather.gov/lot/
+
+While the table is not ideally formatted, it appears possible to pull down the data.
+
+Example code includes:  
+```{r cache=TRUE}
+
+# cached to avoid repeated hits against the weather.gov server
+
+# # Define the website and xpath for the table
+# webSite <- 'https://www.weather.gov/lot/July_Precip_Rankings_Chicago'
+# webXPath <- '//*[@id=\"pagebody\"]/div[3]/div/table[2]'
+# 
+# # Pull down the table
+# webData <- webSite %>% 
+#     xml2::read_html() %>% 
+#     rvest::html_nodes(xpath=webXPath) %>% 
+#     rvest::html_table(fill=TRUE)
+# 
+# # Data appear to be stored in a list containing a frame
+# webDF <- webData[[1]]
+# 
+# # Row 1 appears to have the data, but the first two columns are filler
+# webUse <- webDF[1, 3:ncol(webDF)]
+# webUse
+# 
+# # The order of the data are a recurrence of (Precip - Year - NA) (Precip - Year - NA) (Precip - Year)
+# # So, for each 8 columns, precipitation will be 1-4-7 and year will be 2-5-8
+# maxRead <- ncol(webUse) %/% 8
+# precipBase <- 8*(1:maxRead) - 7
+# yearBase <- 8*(1:maxRead) - 6
+# 
+# precipData <- webUse[, c(precipBase, precipBase+3, precipBase+6)]
+# yearData <- webUse[, c(yearBase, yearBase+3, yearBase+6)]
+# 
+# dfPrecip <- tibble::tibble(precipData=as.vector(as.matrix(precipData)), 
+#                            yearData=as.vector(as.matrix(yearData))
+#                            )
+# dfPrecip
+
+
+# Extend to Function for all 12 months
+getPrecipMonthlyData <- function(webSite, webXPath) {
+    
+    # Pull down the table
+    webData <- webSite %>% 
+        xml2::read_html() %>% 
+        rvest::html_nodes(xpath=webXPath) %>% 
+        rvest::html_table(fill=TRUE)
+
+    # Data appear to be stored in a list containing a frame
+    webDF <- webData[[1]]
+
+    # Row 1 appears to have the data, but the first two columns are filler
+    webUse <- webDF[1, 3:ncol(webDF)]
+
+    # The order of the data are a recurrence of (Precip - Year - NA) (Precip - Year - NA) (Precip - Year)
+    # So, for each 8 columns, precipitation will be 1-4-7 and year will be 2-5-8
+    maxRead <- ncol(webUse) %/% 8
+    precipBase <- 8*(1:maxRead) - 7
+    yearBase <- 8*(1:maxRead) - 6
+
+    precipData <- webUse[, c(precipBase, precipBase+3, precipBase+6)]
+    yearData <- webUse[, c(yearBase, yearBase+3, yearBase+6)]
+
+    dfPrecip <- tibble::tibble(precipData=as.vector(as.matrix(precipData)), 
+                               yearData=as.vector(as.matrix(yearData))
+                               )
+    dfPrecip
+
+}
+
+getPrecipMonthlyData(webSite='https://www.weather.gov/lot/January_Precip_Rankings_Chicago', 
+                     webXPath='//*[@id=\"pagebody\"]/div[3]/div/table[2]'
+                     )
+
+listPrecip <- vector("list", 12)
+for (x in 1:12) {
+    webSite <- paste0("https://www.weather.gov/lot/", month.name[x], "_Precip_Rankings_Chicago")
+    if (x %in% c(3, 5, 7)) { 
+        listPrecip[[x]] <- NA
+        cat("\nPassed on pulling data for x = ", x)
+    }
+    else {
+        listPrecip[[x]] <- getPrecipMonthlyData(webSite, 
+                                                webXPath='//*[@id=\"pagebody\"]/div[3]/div/table[2]'
+                                                )
+        cat("\nPulled data for x =", x)
+    }
+}
+
+```
+  
+Data for March, May, and July have a different formatting and could not parse with the automated routine.  The remaining data can be bound in to a single data frame:
+```{r}
+
+listPrecip[[3]] <- data.frame(precipData=NA, yearData=NA)
+listPrecip[[5]] <- data.frame(precipData=NA, yearData=NA)
+listPrecip[[7]] <- data.frame(precipData=NA, yearData=NA)
+
+officialPrecip <- bind_rows(listPrecip, .id="month")
+
+officialPrecip %>%
+    filter(yearData==2016)
+```
+  
