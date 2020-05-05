@@ -1,4 +1,4 @@
-  # TestCodingShortcuts
+# TestCodingShortcuts
 Testing some coding shortcuts that I will want to use later in R
 
 A few things that I want to learn how to implement in R based on what I have seen on the internet
@@ -1905,4 +1905,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 04-MAY-2020  
 * AdditionalCoding_202003_v001 runs comparisons against an external source  
+* AdditionalCoding_202003_v001 investigates wind by season and locale  
   
