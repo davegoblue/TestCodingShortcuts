@@ -4453,16 +4453,17 @@ plotWindData <- function(lst, subT) {
         scale_fill_discrete("Wind Direction")
     print(p5)
     
+    windData    
 }
 
 # Run for Lincoln, NE (2016)
-plotWindData(klnk2016METAR, subT="Lincoln, NE (2016)")
+klnk2016Wind <- plotWindData(klnk2016METAR, subT="Lincoln, NE (2016)")
 
 # Run for Las Vegas, NV (2016)
-plotWindData(klas2016METAR, subT="Las Vegas, NV (2016)")
+klas2016Wind <- plotWindData(klas2016METAR, subT="Las Vegas, NV (2016)")
 
 # Run for Chicago, IL (2016)
-plotWindData(kord2016METAR, subT="Chicago, IL (2016)")
+kord2016Wind <- plotWindData(kord2016METAR, subT="Chicago, IL (2016)")
 
 ```
   
@@ -4486,5 +4487,115 @@ Chicago, IL 2016 findings:
 * Winds are more likely to be strong in winter and to be light in summer  
 * Wind directions change meaningfully, with East being rare in the winter and more common in spring-summer; and with West being more common in winter  
   
+#### _Example #42: Predicting Locale Based on Wind Data_  
+Are there sufficient differences in wind by month to make predictions as to which locale the data are sampled from?  A random forest can provide a first cut at assessing that.
 
+Example code includes:  
+```{r cache=TRUE}
 
+windData <- bind_rows(klnk=klnk2016Wind, klas=klas2016Wind, kord=kord2016Wind, .id="source") %>%
+    mutate(source=factor(source))
+windData
+
+trainIdx <- sample(1:nrow(windData), round(0.7*nrow(windData), 0), replace=FALSE) %>% sort()
+
+trainData <- windData[trainIdx, ]
+testData <- windData[-trainIdx, ]
+
+# Attempt a basic random forest on just the speed bucket, wind direction, and month
+rfInit <- trainData %>%
+    select(source, spdBucket, wd, monthfct) %>%
+    randomForest::randomForest(source ~ spdBucket + wd + monthfct, data=.)
+rfInit
+
+# Attempt a basic random forest on just the speed bucket, wind direction, and month
+rfmtry2 <- trainData %>%
+    select(source, spdBucket, wd, monthfct) %>%
+    randomForest::randomForest(source ~ spdBucket + wd + monthfct, data=., mtry=2)
+rfmtry2
+
+# Predictions and confusion matrices on test data
+evalWindPredictions <- function(model, testData) {
+    
+    # Get the predicted class and probabilities
+    testClass <- predict(model, newdata=testData)
+    testProbs <- predict(model, newdata=testData, type="prob")
+    print(caret::confusionMatrix(testClass, testData$source))
+    
+    # Create a tibble containing class prediction, maximum probability, and individual predictions
+    tblProbs <- tibble::as_tibble(testProbs) %>%
+        mutate(maxProb=apply(., 1, FUN=max), 
+               sumProb=apply(., 1, FUN=sum), 
+               predClass=testClass, 
+               source=testData$source, 
+               accurate=(predClass==source)
+               )
+    
+    # Describe the maximum probability by source
+    tblProbs %>%
+        group_by(source) %>%
+        summarize(meanMax=mean(maxProb), medianMax=median(maxProb), 
+                  pct90Plus=mean(maxProb > 0.9), pct50Minus=mean(maxProb < 0.5)
+                  ) %>%
+        print()
+    
+    # Create a table of accuracy by source and prediction confidence
+    p1Data <- tblProbs %>%
+        mutate(predProb=0.5 * round(2*maxProb, 1)) %>%
+        group_by(predProb, source) %>%
+        summarize(pctCorrect=mean(accurate), nCorrect=sum(accurate), nObs=n())
+    
+    p1Data %>%
+        group_by(predProb) %>%
+        summarize(nCorrect=sum(nCorrect), nObs=sum(nObs)) %>%
+        mutate(pctCorrect=nCorrect/nObs) %>%
+        print()
+    
+    # Plot the maximum probability forecasted by row
+    p1 <- p1Data %>%
+        ggplot(aes(x=predProb)) +
+        geom_col(aes(y=nObs, fill=source)) + 
+        labs(x="Maximum probability predicted", y="# Observations", 
+             title="Count of Maximum Probability Predicted by Locale"
+             )
+    p2 <- p1Data %>%
+        ggplot(aes(x=predProb)) +
+        geom_line(aes(y=pctCorrect, group=source, color=source)) + 
+        geom_abline(aes(intercept=0, slope=1), lty=2) +
+        ylim(c(0, 1)) + 
+        labs(x="Maximum probability predicted", y="Actual Probability Correct", 
+             title="Accuracy of Maximum Probability Predicted by Locale"
+             )
+    
+    print(p1)
+    print(p2)
+    
+    tblProbs
+    
+}
+
+rfInitAccData <- evalWindPredictions(rfInit, testData=testData)
+rfmtry2AccData <- evalWindPredictions(rfmtry2, testData=testData)
+
+```
+  
+So, a basic random forest gets to 54% accuracy with the null accuracy being 34%.  However, the model is very over-confident in many of its predictions, perhaps driven by so many permutations of the factors (12 months, 12 wind directions, 3 wind speeds) with so few days.  So, rather than learning light and strong winds, the model may just be memorizing the single data point in certain grids.
+
+Can accuracy or at least over-confidence be addressed by allowing the model to use the actual numeric wind speed?
+```{r cache=TRUE}
+
+# Attempt a basic random forest on just the speed bucket, wind direction, and month
+rfmtry2Num <- trainData %>%
+    select(source, spdW, wd, monthfct) %>%
+    randomForest::randomForest(source ~ spdW + wd + monthfct, data=., mtry=2)
+rfmtry2Num
+
+rfmtry2NumAccData <- evalWindPredictions(rfmtry2Num, testData=testData)
+
+```
+  
+The model is a touch less over-confident, though overall prediction accuracy remains at 54%.
+
+So, still much work to do to make more meaningful predictions.  There is a lot of overlap among the wind data by city, so it is surprising that the model has so many high-confidence predictions that do not actually work out.
+
+Further avenues to explore include 1) a lot more data for each city, and 2) further compressing the levels for the factors so that trends are learned rather than individual data points being memorized.
