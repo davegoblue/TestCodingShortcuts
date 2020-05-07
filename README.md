@@ -1907,4 +1907,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 runs comparisons against an external source  
 * AdditionalCoding_202003_v001 investigates wind by season and locale  
 * AdditionalCoding_202003_v001 predicts locale by wind and month  
+* AdditionalCoding_202003_v001 expands on predictions for locale by wind and month  
   
