@@ -4497,6 +4497,8 @@ windData <- bind_rows(klnk=klnk2016Wind, klas=klas2016Wind, kord=kord2016Wind, .
     mutate(source=factor(source))
 windData
 
+
+set.seed(2005061331)
 trainIdx <- sample(1:nrow(windData), round(0.7*nrow(windData), 0), replace=FALSE) %>% sort()
 
 trainData <- windData[trainIdx, ]
@@ -4545,10 +4547,15 @@ evalWindPredictions <- function(model, testData) {
         group_by(predProb, source) %>%
         summarize(pctCorrect=mean(accurate), nCorrect=sum(accurate), nObs=n())
     
-    p1Data %>%
+    p1Print <- p1Data %>%
         group_by(predProb) %>%
         summarize(nCorrect=sum(nCorrect), nObs=sum(nObs)) %>%
-        mutate(pctCorrect=nCorrect/nObs) %>%
+        mutate(pctCorrect=nCorrect/nObs)
+    print(p1Print)
+    
+    p1Print %>%
+        mutate(err2=nObs*(pctCorrect-predProb)**2) %>%
+        summarize(meanError2=sum(err2)/sum(nObs)) %>%
         print()
     
     # Plot the maximum probability forecasted by row
@@ -4590,6 +4597,7 @@ rfmtry2Num <- trainData %>%
     randomForest::randomForest(source ~ spdW + wd + monthfct, data=., mtry=2)
 rfmtry2Num
 
+# Print accuracy and confidence
 rfmtry2NumAccData <- evalWindPredictions(rfmtry2Num, testData=testData)
 
 ```
@@ -4599,3 +4607,82 @@ The model is a touch less over-confident, though overall prediction accuracy rem
 So, still much work to do to make more meaningful predictions.  There is a lot of overlap among the wind data by city, so it is surprising that the model has so many high-confidence predictions that do not actually work out.
 
 Further avenues to explore include 1) a lot more data for each city, and 2) further compressing the levels for the factors so that trends are learned rather than individual data points being memorized.
+  
+#### _Example #43: Further Predicting Locale Based on Wind Data_  
+Is the model appropriately confident on the training data?
+
+Example code includes:  
+```{r}
+
+library(caret)
+library(randomForest)
+
+rfInitAccDataTrain <- evalWindPredictions(rfInit, testData=trainData)
+rfmtry2AccDataTrain <- evalWindPredictions(rfmtry2, testData=trainData)
+rfmtry2NumAccDataTrain <- evalWindPredictions(rfmtry2Num, testData=trainData)
+
+```
+  
+The accuracy is somewhat greater with the training data, and the confidence of the predictions is visually somewhat more aligned with the accuracy, though the model is over-confident even on the training data.
+
+Forcing the trees to be less complex is an option to avoid over-fitting and over-confidence.  As an example, with fewer trees and larger nodes:  
+```{r cache=TRUE}
+
+# Attempt a basic random forest on just the speed bucket, wind direction, and month
+rfSmaller <- trainData %>%
+    select(source, spdW, wd, monthfct) %>%
+    randomForest::randomForest(source ~ spdW + wd + monthfct, data=., mtry=2, nodesize=5)
+rfSmaller
+
+# Print accuracy and confidence
+rfSmallerAccData <- evalWindPredictions(rfSmaller, testData=trainData)
+rfSmallerAccData <- evalWindPredictions(rfSmaller, testData=testData)
+
+```
+
+The impact is modest.  Perhaps restricting the maximum number of nodes can improve performance:  
+```{r cache=TRUE}
+
+# Attempt a basic random forest on just the speed bucket, wind direction, and month
+rfSmaller <- trainData %>%
+    select(source, spdW, wd, monthfct) %>%
+    randomForest::randomForest(source ~ spdW + wd + monthfct, data=., mtry=2, nodesize=25, ntree=100)
+rfSmaller
+
+# Print accuracy and confidence
+rfSmallerAccData <- evalWindPredictions(rfSmaller, testData=trainData)
+rfSmallerAccData <- evalWindPredictions(rfSmaller, testData=testData)
+
+```
+
+It is encouraging that the accuracy stayed flat or even slightly improved, while the confidence in the predictions is reduced.
+
+Perhaps the caret::train() functionality can help drill-down on some better parameters.  Since there are very few variables, there are only 3 possible combinations with mtry=2.  So, even ntree=50 should provide plenty of opportunity to explore the variable and observations spaces.  Modelling is switched to ranger::ranger() with slight change in parameter names.
+
+```{r cache=TRUE}
+
+trGrid <- expand.grid(min.node.size=c(1, 5, 10, 25, 100), mtry=c(1, 2), splitrule=c("gini"))
+
+caretModel <- caret::train(source ~ spdW + wd + monthfct, 
+                           data=trainData,
+                           method="ranger",
+                           tuneGrid=trGrid,
+                           trControl=caret::trainControl(method="cv", number=5),
+                           num.trees=50
+                           )
+
+# Run the best parameters from ranger in randomForest
+caretBest <- randomForest::randomForest(source ~ spdW + wd + monthfct, 
+                                        data=trainData,
+                                        ntree=50, 
+                                        nodesize=10, 
+                                        mtry=2
+                                        )
+
+caretAccData <- evalWindPredictions(caretBest, testData=trainData)
+caretAccData <- evalWindPredictions(caretBest, testData=testData)
+
+```
+  
+There is still no significant gain in accuracy, and the overconfidence issue persists.  Ultimtately, wind speed and direction by month provides only modest predictive power for whether the data are taken from Las Vegas, Lincoln, or Chicago.  The sensitivities suggest better ability to correctly classify Las Vegas (63%), which is reasonable given that winds in Lincoln and Chicago will both tend to be wintry for chunks of the year.
+  
