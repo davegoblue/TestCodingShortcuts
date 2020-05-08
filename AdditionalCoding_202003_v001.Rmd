@@ -4351,12 +4351,20 @@ wdTypes <- c("Error", "None", "Variable",
              "WSW", "W", "WNW"
              )
 
-plotWindData <- function(lst, subT) {
+plotWindData <- function(lst, subT, extraVars=NULL, showPlots=TRUE) {
 
+    baseVars <- c("valid", "dirW", "spdW")
+    if (!(is.null(extraVars))) {
+        allVars <- c(baseVars, extraVars)
+    } else {
+        allVars <- baseVars
+    }
+    
     # Extract the wind data
     # Pull the wind speed and wind direction, and classify accordingly
-    windData <- lst[["windMETAR"]] %>%
-        select(valid, dirW, spdW) %>%
+    windData <- lst[["fullMETAR"]] %>%
+        rename(valid=dtime, dirW=WindDir, spdW=WindSpeed) %>%
+        select_at(vars(all_of(allVars))) %>%
         filter(complete.cases(.)) %>%
         mutate(spdBucket=factor(case_when(spdW==0 ~ "None", 
                                           spdW<=6 ~ "Light", 
@@ -4410,7 +4418,7 @@ plotWindData <- function(lst, subT) {
              title="Wind Speed by Wind Direction", subtitle=subT
              ) + 
         scale_fill_discrete("Wind Speed")
-    print(p1)
+    if (showPlots) print(p1)
     
     # Plot of wind speeds and directions - filled bars
     p2 <- windData %>%
@@ -4420,7 +4428,7 @@ plotWindData <- function(lst, subT) {
              title="Wind Speed by Wind Direction", subtitle=subT
              ) + 
         scale_fill_discrete("Wind Speed")
-    print(p2)
+    if (showPlots) print(p2)
 
     # Plot of wind speeds and predominant directions - filled bars
     p3 <- windData %>%
@@ -4431,7 +4439,7 @@ plotWindData <- function(lst, subT) {
              title="Wind Speed by Wind Direction", subtitle=subT
              ) + 
         scale_fill_discrete("Wind Direction")
-    print(p3)
+    if (showPlots) print(p3)
     
     # Plot of months and wind speeds - filled bars
     p4 <- windData %>%
@@ -4441,7 +4449,7 @@ plotWindData <- function(lst, subT) {
              title="Wind Speed by Month", subtitle=subT
              ) + 
         scale_fill_discrete("Wind Speed")
-    print(p4)
+    if (showPlots) print(p4)
     
     # Plot of months and wind directions - filled bars
     p5 <- windData %>%
@@ -4451,7 +4459,7 @@ plotWindData <- function(lst, subT) {
              title="Wind Direction by Month", subtitle=subT
              ) + 
         scale_fill_discrete("Wind Direction")
-    print(p5)
+    if (showPlots) print(p5)
     
     windData    
 }
@@ -4670,6 +4678,7 @@ caretModel <- caret::train(source ~ spdW + wd + monthfct,
                            trControl=caret::trainControl(method="cv", number=5),
                            num.trees=50
                            )
+caretModel
 
 # Run the best parameters from ranger in randomForest
 caretBest <- randomForest::randomForest(source ~ spdW + wd + monthfct, 
@@ -4686,3 +4695,195 @@ caretAccData <- evalWindPredictions(caretBest, testData=testData)
   
 There is still no significant gain in accuracy, and the overconfidence issue persists.  Ultimtately, wind speed and direction by month provides only modest predictive power for whether the data are taken from Las Vegas, Lincoln, or Chicago.  The sensitivities suggest better ability to correctly classify Las Vegas (63%), which is reasonable given that winds in Lincoln and Chicago will both tend to be wintry for chunks of the year.
   
+#### _Example #43: Predicting Locale Based on Additional METAR Data_  
+Winds provide some differentiation between Las Vegas, Chicago, and Lincoln.  Two additional areas to explore include:  
+  
+1.  Can the model perform better if it only needs to differentiate two locales with the most differences in wind - Las Vegas and Chicago?  
+2.  Does adding temperature and dewpoint help further differentiate the locales?  
+  
+Example code includes:  
+```{r}
+
+# Differentiating Las Vegas and Chicago
+windData <- bind_rows(klas=klas2016Wind, kord=kord2016Wind, .id="source") %>%
+    mutate(source=factor(source))
+windData
+
+
+set.seed(2005071256)
+trainIdx <- sample(1:nrow(windData), round(0.7*nrow(windData), 0), replace=FALSE) %>% sort()
+
+trainData <- windData[trainIdx, ]
+testData <- windData[-trainIdx, ]
+
+
+# Create a tuning grid and run the models
+trGrid <- expand.grid(min.node.size=c(1, 5, 10, 25, 100), mtry=c(1, 2), splitrule=c("gini"))
+
+caretModel <- caret::train(source ~ spdW + wd + monthfct, 
+                           data=trainData,
+                           method="ranger",
+                           tuneGrid=trGrid,
+                           trControl=caret::trainControl(method="cv", number=5),
+                           num.trees=50
+                           )
+caretModel
+
+
+# Run the best parameters from ranger in randomForest
+caretBest <- randomForest::randomForest(source ~ spdW + wd + monthfct, 
+                                        data=trainData,
+                                        ntree=50, 
+                                        nodesize=25, 
+                                        mtry=2
+                                        )
+caretBest
+
+
+caretAccData <- evalWindPredictions(caretBest, testData=trainData)
+caretAccData <- evalWindPredictions(caretBest, testData=testData)
+
+```
+  
+Accuracy increases to 71%, compared with a baseline accuracy of 51% based on majority class.  So, the model is taking about 40% of the baseline errors and making accuract predictions for them.
+
+The previous accuracy in predicting among 3 cities was 54%, compared with a baselne accurcay of 34% for the majority class.  So, the old models were taking about 30% of the baseline erros and making accuract predictions for them.
+  
+Is it in fact harder to differentiate Lincoln and Chicago?
+```{r}
+
+# Differentiating Lincoln and Chicago
+windData <- bind_rows(klnk=klnk2016Wind, kord=kord2016Wind, .id="source") %>%
+    mutate(source=factor(source))
+windData
+
+
+set.seed(2005071306)
+trainIdx <- sample(1:nrow(windData), round(0.7*nrow(windData), 0), replace=FALSE) %>% sort()
+
+trainData <- windData[trainIdx, ]
+testData <- windData[-trainIdx, ]
+
+
+# Create a tuning grid and run the models
+trGrid <- expand.grid(min.node.size=c(1, 5, 10, 25, 100), mtry=c(1, 2), splitrule=c("gini"))
+
+caretModel <- caret::train(source ~ spdW + wd + monthfct, 
+                           data=trainData,
+                           method="ranger",
+                           tuneGrid=trGrid,
+                           trControl=caret::trainControl(method="cv", number=5),
+                           num.trees=50
+                           )
+caretModel
+
+
+# Run the best parameters from ranger in randomForest
+caretBest <- randomForest::randomForest(source ~ spdW + wd + monthfct, 
+                                        data=trainData,
+                                        ntree=50, 
+                                        nodesize=100, 
+                                        mtry=2
+                                        )
+caretBest
+
+
+caretAccData <- evalWindPredictions(caretBest, testData=trainData)
+caretAccData <- evalWindPredictions(caretBest, testData=testData)
+
+```
+  
+Accuracy dips to 66%, so it is marginally harder to differentiate Lincoln and Chicago (both wintry cities near the east-west center of the US) than it is to differentiate from Las Vegas (a western desert city that experiences a different form of winter).
+  
+Can adding temperature and dewpoint help with the differentiation?  This factor will also tend to be much different in Las Vegas than in Lincoln or Chicago.  
+```{r}
+
+klnk2016WindTempDew <- plotWindData(klnk2016METAR, 
+                                    subT="Lincoln, NE (2016)", 
+                                    extraVars=c("TempF", "DewF"), 
+                                    showPlots=FALSE
+                                    )
+
+klas2016WindTempDew <- plotWindData(klas2016METAR, 
+                                    subT="Las Vegas, NV (2016)", 
+                                    extraVars=c("TempF", "DewF"), 
+                                    showPlots=FALSE
+                                    )
+
+kord2016WindTempDew <- plotWindData(kord2016METAR, 
+                                    subT="Chicago, IL (2016)", 
+                                    extraVars=c("TempF", "DewF"), 
+                                    showPlots=FALSE
+                                    )
+
+```
+
+```{r cache=TRUE}
+
+# Full data for Lincoln, Chicago, Las Vegas
+windTempDewData <- bind_rows(klnk=klnk2016WindTempDew,
+                             kord=kord2016WindTempDew, 
+                             klas=klas2016WindTempDew, 
+                             .id="source"
+                             ) %>%
+    mutate(source=factor(source))
+windTempDewData
+
+
+set.seed(2005071329)
+trainIdx <- sample(1:nrow(windTempDewData), round(0.7*nrow(windTempDewData), 0), replace=FALSE) %>% sort()
+
+trainData <- windTempDewData[trainIdx, ]
+testData <- windTempDewData[-trainIdx, ]
+
+
+# Create a tuning grid and run the models
+trGrid <- expand.grid(min.node.size=c(1, 5, 10, 25), mtry=c(1, 2, 3, 4, 5), splitrule=c("gini"))
+
+caretModel <- caret::train(source ~ spdW + wd + monthfct + TempF + DewF, 
+                           data=trainData,
+                           method="ranger",
+                           tuneGrid=trGrid,
+                           trControl=caret::trainControl(method="cv", number=5),
+                           num.trees=50
+                           )
+caretModel
+
+
+# Run the best parameters from ranger in randomForest
+caretBest <- randomForest::randomForest(source ~ spdW + wd + monthfct + TempF + DewF, 
+                                        data=trainData,
+                                        ntree=50, 
+                                        nodesize=1, 
+                                        mtry=5
+                                        )
+caretBest
+
+
+caretAccData <- evalWindPredictions(caretBest, testData=trainData)
+caretAccData <- evalWindPredictions(caretBest, testData=testData)
+
+```
+  
+The model performs well even with parameters that would tend to lead to high variance - using all the variables in mtry and allowing a minimum node size of 1.  Despite this, confidence in classifying the test data is roughly in line with actual predictive power.
+  
+The overall prediction accuracy in the training data is 100% due to parameters that drive high variance and lack of any CV.  The ranger::ranger() call was used to establish the parameters, so this is not, in and of itself, overly concerning.
+
+The overall prediction accuracy in the test data is 82%, consistent with the randomForest::randomForest() estimate of 18% OOB error.  The model is spectacular with Las Vegas, achieving 93% sensitivity and 97% specificity.  The model also does well differentiating Lincoln and Chicago, achieving sensitivities in the 75%-80% range and specificities just under 90%.  
+```{r}
+
+caretBest %>%
+    varImp() %>%
+    rownames_to_column() %>%
+    mutate(var=factor(rowname)) %>%
+    ggplot(aes(x=fct_reorder(rowname, -Overall), y=Overall)) + 
+    geom_col() + 
+    labs(title="Temperature and Dew Point Best Separate Las Vegas, Lincoln, and Chicago", 
+         subtitle="Variable Importance in Random Forest", 
+         x="", 
+         y="VarImp"
+         )
+
+```
+  
+So, temperature and dewpoint by month are significant helps in differentiating among the three cities.
