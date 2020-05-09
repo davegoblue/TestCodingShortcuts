@@ -4525,12 +4525,21 @@ rfmtry2 <- trainData %>%
 rfmtry2
 
 # Predictions and confusion matrices on test data
-evalWindPredictions <- function(model, testData) {
+evalWindPredictions <- function(model, 
+                                testData, 
+                                printAll=TRUE,
+                                printCM=printAll, 
+                                printConfSummary=printAll, 
+                                printConfTable=printAll, 
+                                showPlots=TRUE
+                                ) {
     
     # Get the predicted class and probabilities
     testClass <- predict(model, newdata=testData)
     testProbs <- predict(model, newdata=testData, type="prob")
-    print(caret::confusionMatrix(testClass, testData$source))
+    if (printCM) {
+        print(caret::confusionMatrix(testClass, testData$source))
+    }
     
     # Create a tibble containing class prediction, maximum probability, and individual predictions
     tblProbs <- tibble::as_tibble(testProbs) %>%
@@ -4542,12 +4551,14 @@ evalWindPredictions <- function(model, testData) {
                )
     
     # Describe the maximum probability by source
-    tblProbs %>%
-        group_by(source) %>%
-        summarize(meanMax=mean(maxProb), medianMax=median(maxProb), 
-                  pct90Plus=mean(maxProb > 0.9), pct50Minus=mean(maxProb < 0.5)
-                  ) %>%
+    if (printConfSummary) {
+        tblProbs %>%
+            group_by(source) %>%
+            summarize(meanMax=mean(maxProb), medianMax=median(maxProb), 
+                      pct90Plus=mean(maxProb > 0.9), pct50Minus=mean(maxProb < 0.5)
+                      ) %>%
         print()
+    }
     
     # Create a table of accuracy by source and prediction confidence
     p1Data <- tblProbs %>%
@@ -4559,8 +4570,11 @@ evalWindPredictions <- function(model, testData) {
         group_by(predProb) %>%
         summarize(nCorrect=sum(nCorrect), nObs=sum(nObs)) %>%
         mutate(pctCorrect=nCorrect/nObs)
-    print(p1Print)
+    if (printConfTable) {
+        print(p1Print)
+    }
     
+    cat("\nMean Error-Squared Between Confidence of Prediction and Accuracy of Precition\n")
     p1Print %>%
         mutate(err2=nObs*(pctCorrect-predProb)**2) %>%
         summarize(meanError2=sum(err2)/sum(nObs)) %>%
@@ -4582,8 +4596,10 @@ evalWindPredictions <- function(model, testData) {
              title="Accuracy of Maximum Probability Predicted by Locale"
              )
     
-    print(p1)
-    print(p2)
+    if (showPlots) {
+        print(p1)
+        print(p2)
+    }
     
     tblProbs
     
@@ -4887,3 +4903,202 @@ caretBest %>%
 ```
   
 So, temperature and dewpoint by month are significant helps in differentiating among the three cities.
+  
+#### _Example #44: Function for Locale Predictions_  
+The locale predictions can be converted to functional form.  Functions include:  
+  
+* integrateLocaleData - bind rows for existing locale data  
+* createTrainTestData - split a full dataset in to training and testing data  
+* predictLocale - test user-specified options for mtry and min.node.size, pick the best, and report accuracy when applied to the training and testing data  
+
+Example code includes:  
+```{r}
+
+# Function to bind rows of any number of processed METAR files
+integrateLocaleData <- function(...) {
+
+    localeData <- bind_rows(..., .id="source") %>%
+        mutate(source=factor(source))
+    
+    localeData
+    
+}
+
+
+# Function to split an integrated file in to test and train
+createTrainTestData <- function(df, trainSize=0.7, seed=NULL) {
+    
+    if (!is.null(seed)) { 
+        set.seed(seed)
+    }
+    
+    trainIdx <- sample(1:nrow(df), round(trainSize*nrow(df), 0), replace=FALSE) %>% 
+        sort()
+    
+    trainData <- df[trainIdx, ]
+    testData <- df[-trainIdx, ]
+    
+    list(trainData=trainData, testData=testData, trainSize=trainSize, seed=seed)
+}
+
+predictLocale <- function(predFormula,
+                          listTestTrain, 
+                          mns=c(1, 5, 10, 25, 100), 
+                          mtry=NULL,
+                          ntree=50, 
+                          seed=NULL
+                          ) {
+
+    # Test all the possible variables in mtry if passed as NULL
+    if (is.null(mtry)) {
+        mtry <- 1:length(labels(terms(predFormula)))
+    }
+    
+    # Create a tuning grid and run the models
+    trGrid <- expand.grid(min.node.size=mns, mtry=mtry, splitrule=c("gini"))
+
+    # If the seed has been provided, apply it before running the first model
+    if (!is.null(seed)) {
+        set.seed(seed)
+    }
+    
+    # Run the training process using the training data
+    caretModel <- caret::train(predFormula, 
+                               data=listTestTrain$trainData,
+                               method="ranger",
+                               tuneGrid=trGrid,
+                               trControl=caret::trainControl(method="cv", number=5),
+                               num.trees=ntree
+                               )
+    print(caretModel)
+    
+    # Extract the best parameters
+    cat("\nThe best parameters will be used:\n")
+    print(caretModel$bestTune)
+    
+    # Run the best parameters from ranger in randomForest
+    caretBest <- randomForest::randomForest(predFormula, 
+                                            data=listTestTrain$trainData,
+                                            ntree=ntree, 
+                                            nodesize=caretModel$bestTune$min.node.size, 
+                                            mtry=caretModel$bestTune$mtry
+                                            )
+    print(caretBest)
+
+    # Evaluate prediction power on training data and testing data
+    trainAccData <- evalWindPredictions(caretBest, testData=listTestTrain$trainData, 
+                                        printConfSummary=FALSE, printConfTable=FALSE
+                                        )
+    testAccData <- evalWindPredictions(caretBest, testData=listTestTrain$testData, 
+                                       printConfSummary=FALSE, printConfTable=FALSE
+                                       )
+    
+    trainAcc <- round(mean(trainAccData$accurate), 4)
+    testAcc <- round(mean(testAccData$accurate), 4)
+    
+    # Print the overall accuracy of the predictions
+    cat("\nTraining Accuracy:", trainAcc)
+    cat("\nTesting Accuracy:", testAcc, "\n")
+    
+    list(formula=predFormula, 
+         seed=seed,
+         tuningModel=caretModel, 
+         finalModel=caretBest, 
+         trainAccData=trainAccData, 
+         testAccData=testAccData,
+         trainAcc=trainAcc,
+         testAcc=testAcc
+         )
+    
+}
+
+```
+  
+The relevant dataset components can be created (no need to cache):  
+```{r}
+
+# Create the component datasets
+klas2016 <- plotWindData(klas2016METAR, subT="", extraVars=c("TempF", "DewF"), showPlots=FALSE)
+klnk2016 <- plotWindData(klnk2016METAR, subT="", extraVars=c("TempF", "DewF"), showPlots=FALSE)
+kord2016 <- plotWindData(kord2016METAR, subT="", extraVars=c("TempF", "DewF"), showPlots=FALSE)
+kdtw2016 <- plotWindData(kdtw2016METAR, subT="", extraVars=c("TempF", "DewF"), showPlots=FALSE)
+kmsp2016 <- plotWindData(kmsp2016METAR, subT="", extraVars=c("TempF", "DewF"), showPlots=FALSE)
+kord2015 <- plotWindData(kord2015METAR, subT="", extraVars=c("TempF", "DewF"), showPlots=FALSE)
+kord2017 <- plotWindData(kord2017METAR, subT="", extraVars=c("TempF", "DewF"), showPlots=FALSE)
+
+```
+  
+Subsets of the components are then integrated to full datasets, with training and testing data created (no need to cache):  
+``` {r}
+
+# Create the full 2016 dataset for Lincoln, Chicago, Las Vegas
+fullDF001 <- integrateLocaleData(klnk=klnk2016,
+                                 kord=kord2016, 
+                                 klas=klas2016
+                                 )
+
+# Create the train data and the test data for the full 2016 dataset for Lincoln, Chicago, Las Vegas
+listTestTrain001 <- createTrainTestData(fullDF001, trainSize=0.7, seed=2005071329)
+
+
+# Create the full 2016 dataset for Chicago, Detroit, Minneapolis
+fullDF002 <- integrateLocaleData(kord=kord2016,
+                                 kdtw=kdtw2016, 
+                                 kmsp=kmsp2016
+                                 )
+
+# Create the train data and the test data for the full 2016 dataset for Chicago, Detroit, Minneapolis
+listTestTrain002 <- createTrainTestData(fullDF002, trainSize=0.7, seed=2005081434)
+
+
+# Create the full dataset for Chicago 2015, 2016, 2017
+fullDF003 <- integrateLocaleData(kord2015=kord2015,
+                                 kord2016=kord2016, 
+                                 kord2017=kord2017
+                                 )
+
+# Create the train data and the test data for the full 2016 dataset for Chicago, Detroit, Minneapolis
+listTestTrain003 <- createTrainTestData(fullDF003, trainSize=0.7, seed=2005081436)
+
+```
+
+The modeling is re-run using the function for Chicago, Las Vegas, Lincoln, with accuracies on the training and testing data reported (cached):  
+```{r cache=TRUE}
+
+# Run the locale predictions
+pL001 <- predictLocale(source ~ spdW + wd + monthfct + TempF + DewF, 
+                       listTestTrain=listTestTrain001, 
+                       seed=2005071329
+                       )
+
+```
+  
+As before, accuracy on the testing dataset is 82%, with very strong model performance in predicting Las Vegas and good but less accurate differentiation of Lincoln and Chicago.
+
+Is the model largely pulling out that Las Vegas has a different winter?  Running on Minneapolis, Chicago, and Detroit is interesting since they are all wintry cities with somewhat different dynamics.  Minneapolis has the coldest and longest winters.  Cached code includes:  
+```{r cache=TRUE}
+
+# Run the locale predictions
+pL002 <- predictLocale(source ~ spdW + wd + monthfct + TempF + DewF, 
+                       listTestTrain=listTestTrain002, 
+                       seed=2005081444
+                       )
+
+```
+  
+Accuracy on the testing dataset dips to 63%, with the model being roughly as good in predicting each of the cities (sensitivity for Minneapolis is 5% higher than the others, specificity is largely the same for all).  This is consistent with the 38% OOB error estimate in the final random forest model.  Prediction confidence on the training data is well aligned with actual prediction accuracy.
+
+It is also interesting to consider whether the model has any accuracy in distinguishing among the years for the same city.  Chicago has a variable climate over the medium-term, so the model is run on the full-year 2015, 2016, and 2017 data for Chicago.  Cached code includes:  
+```{r cache=TRUE}
+
+# Run the locale predictions
+pL003 <- predictLocale(source ~ spdW + wd + monthfct + TempF + DewF, 
+                       listTestTrain=listTestTrain003, 
+                       seed=2005081447
+                       )
+
+```
+
+Interestingly, the model is 69% accurate in classifying Chicago 2015-2016-2017, which is 5% higher than the model accuracy in classifying Chicago, Detroit, Minneapolis all in the same year (2016).  Further extensions to look at cities with much less medium-term climate variation (perhaps coastal cities like San Diego or desert cities like Las Vegas) could be interesting as well.
+
+Of note, the model does NOT have access to the day or the hour of observations, only to the month.  So, the model is not currently using things like February 12, 2016 was very warm in city A for predictions.  It only has access to Month, Wind Direction, Wind Speed, Temperature, and Dew Point.
