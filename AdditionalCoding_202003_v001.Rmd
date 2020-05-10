@@ -5102,3 +5102,255 @@ pL003 <- predictLocale(source ~ spdW + wd + monthfct + TempF + DewF,
 Interestingly, the model is 69% accurate in classifying Chicago 2015-2016-2017, which is 5% higher than the model accuracy in classifying Chicago, Detroit, Minneapolis all in the same year (2016).  Further extensions to look at cities with much less medium-term climate variation (perhaps coastal cities like San Diego or desert cities like Las Vegas) could be interesting as well.
 
 Of note, the model does NOT have access to the day or the hour of observations, only to the month.  So, the model is not currently using things like February 12, 2016 was very warm in city A for predictions.  It only has access to Month, Wind Direction, Wind Speed, Temperature, and Dew Point.
+  
+#### _Example #45: Relationship Between Prediction Accuracy and Variables_  
+The variable importance suggest the temperature and dewpoint are the most important for differentiating among Chicago, Las Vegas, and Lincoln.  Is this true for Chicago, Detroit, Minneapolis and also for Chicago 2015, 2016, 2017?
+
+Example code includes:  
+```{r}
+
+pL001$finalModel %>%
+    varImp() %>%
+    rownames_to_column() %>%
+    mutate(var=factor(rowname)) %>%
+    ggplot(aes(x=fct_reorder(rowname, -Overall), y=Overall)) + 
+    geom_col() + 
+    labs(title="Temperature and Dew Point Best Separate Las Vegas, Lincoln, and Chicago", 
+         subtitle="Variable Importance in Random Forest", 
+         x="", 
+         y="VarImp"
+         )
+
+
+pL002$finalModel %>%
+    varImp() %>%
+    rownames_to_column() %>%
+    mutate(var=factor(rowname)) %>%
+    ggplot(aes(x=fct_reorder(rowname, -Overall), y=Overall)) + 
+    geom_col() + 
+    labs(title="Temperature and Dew Point Best Separate Chicago, Detroit, and Minneapolis", 
+         subtitle="Variable Importance in Random Forest", 
+         x="", 
+         y="VarImp"
+         )
+
+
+pL003$finalModel %>%
+    varImp() %>%
+    rownames_to_column() %>%
+    mutate(var=factor(rowname)) %>%
+    ggplot(aes(x=fct_reorder(rowname, -Overall), y=Overall)) + 
+    geom_col() + 
+    labs(title="All 5 Variables Help Differentiate Chicago 2015-2016-2017", 
+         subtitle="Variable Importance in Random Forest", 
+         x="", 
+         y="VarImp"
+         )
+
+```
+  
+So, temperature and dewpoint appear to be key variables in each of the three models, with the Chicago 2015-2016-2017 modeling being somewhat more evenly influenced by all 5 factors.
+
+The prediction accuracies for Chicago, Las Vegas, Lincoln can then be assessed across each of the underlying variables:  
+```{r}
+
+assessAccuracy1D <- function(accList, 
+                             ttList, 
+                             numVars, 
+                             fctVars,
+                             mapVarNames
+                             ) {
+
+    # Integrate the test set predictions and the raw data file
+    fullTestData <- bind_cols(accList[["testAccData"]] %>% rename(accSource=source),
+                              ttList[["testData"]]
+                              )
+
+    # Grab the test set prediction accuracy
+    testAcc <- accList[["testAcc"]]
+
+    # Confirm that sources are the same across the files
+    fullTestData %>%
+        count(accSource, source) %>%
+        print()
+
+    # Create point plots with smooths for accuracy by numeric variables
+    for (numVar in numVars) {
+        pl <- fullTestData %>%
+            mutate(accurate=as.integer(accurate)) %>%
+            group_by_at(vars(all_of(c(numVar, "accurate")))) %>%
+            summarize(n=n()) %>%
+            mutate(nAcc=n*accurate) %>%
+            group_by_at(vars(all_of(numVar))) %>%
+            summarize(n=sum(n), nAcc=sum(nAcc)) %>%
+            mutate(pctAcc=nAcc/n) %>%
+            ggplot(aes_string(y="pctAcc", x=numVar)) + 
+            geom_point(aes(size=n)) +
+            geom_smooth() +
+            ylim(c(0, 1)) + 
+            geom_hline(yintercept=testAcc, lty=2) +
+            labs(y="% Accuracy", x=mapVarNames[numVar], 
+                 subtitle=paste0("Overall Accuracy on Test Data: ", round(100*testAcc, 1), "%"),
+                 title=paste0("Accuracy of Classifications on Test Data By ", mapVarNames[numVar])
+                 )
+        print(pl)
+    }
+    
+    
+    # Create bar plots for accuracy by factor variables
+    for (fctVar in fctVars) {
+        pl <- fullTestData %>%
+            ggplot(aes_string(fill="accurate", x=fctVar)) + 
+            geom_bar(position="fill") +
+            geom_hline(yintercept=testAcc, lty=2) +
+            labs(y="% Accuracy", x=mapVarNames[fctVar], 
+                 subtitle=paste0("Overall Accuracy on Test Data: ", round(100*testAcc, 1), "%"),
+                 title=paste0("Accuracy of Classifications on Test Data By ", mapVarNames[fctVar])
+                 )
+        print(pl)
+    }
+    
+}
+
+
+# Create a mapping for the variable names to better plotting names
+mapVarNames <- c(DewF="Dew Point (F)", 
+                 TempF="Temperature (F)", 
+                 spdW="Wind Speed (kts)",
+                 wd="Prevailing Wind Direction", 
+                 monthfct="Month"
+                 )
+
+# Assess Accuracy by Dimension for Chicago, Las Vegas, Lincoln
+assessAccuracy1D(pL001, 
+                 listTestTrain001, 
+                 numVars=c("spdW", "TempF", "DewF"), 
+                 fctVars=c("wd", "monthfct"),
+                 mapVarNames=mapVarNames
+                 )
+
+```
+  
+Prediction accuracy is high for all values of the key modeled variables.  There is some variation:  
+  
+* Model accuracy is slightly higher for wind speeds above 15 knots, though these are rare  
+* Model accuracy is higher for extreme temperatures (under 20F and above 90F) than for modest temperatures  
+* Model accuracy is higher for dew points under 20F and lower for dew points above 40F  
+* Model accuracy is very similar by month and wind direction  
+  
+It is interesting then to look at a 2D plot of temperatures and dew points:  
+```{r}
+
+listTestTrain001[["testData"]] %>%
+    count(TempF, DewF, source) %>%
+    ggplot(aes(x=TempF, y=DewF, size=n, color=source)) + 
+    geom_point(alpha=0.3)
+
+```
+  
+Las Vegas is very clearly differentiated from Chicago and Lincoln when looking at both dew point and temperature.  In fact, how well would a 3-cluster k-means do in separating the data?
+  
+```{r}
+
+# Pull key data from the test-train file
+keyData <- listTestTrain001[["testData"]] %>%
+    select(TempF, DewF, source)
+
+# Scale the numeric data for k-means
+keyMatrix <- keyData %>%
+    select(-source) %>%
+    scale()
+
+# Run k-means with 3 centers
+kmModel <- kmeans(keyMatrix, centers=3)
+
+# Augment the key data with the cluster results
+keyData <- keyData %>%
+    mutate(cluster=factor(kmModel$cluster))
+
+# Summarize the clusters
+keyData %>%
+    group_by(cluster) %>%
+    summarize(meanDewF=mean(DewF), meanTempF=mean(TempF), n=n(), 
+              pctLAS=mean(source=="klas"), pctORD=mean(source=="kord"), pctLNK=mean(source=="klnk")
+              )
+
+# Plot the clusters
+keyData %>%
+    count(cluster, TempF, DewF) %>%
+    ggplot(aes(x=TempF, y=DewF, size=n, color=cluster)) + 
+    geom_point()
+
+```
+  
+Much of the model's success is from the observation that high temperature with low dew point occurs ~25% of the time and is almost always Las Vegas.  Chicago and Lincoln tend to have temperatures and dew points that travel together, and a very simple k-means struggles to pull apart which is which.
+  
+Suppose that a different number of clusters were attempted - where is the elbow point?  
+```{r}
+
+kVals <- 1:20
+bSS <- numeric(length(kVals))
+wSS <- numeric(length(kVals))
+silh <- numeric(length(kVals))
+mtxDist <- dist(keyMatrix)
+
+for (x in seq_along(kVals)) {
+
+    kmModel <- kmeans(keyMatrix, centers=kVals[x])
+    bSS[x] <- kmModel$betweenss
+    wSS[x] <- kmModel$tot.withinss
+    if (kVals[x]==1) { 
+        silh[x] <- 0
+    } else {
+        sData <- cluster::silhouette(kmModel$cluster, mtxDist)
+        silh[x] <- apply(sData, 2, FUN=mean)[3]
+    }
+    
+}
+
+data.frame(centers=kVals, withinSS=wSS) %>%
+    ggplot(aes(x=centers, y=withinSS)) + 
+    geom_point() + 
+    geom_line() + 
+    labs(x="# Clusters", y="Total Within Sum-Squares") + 
+    ylim(c(0, NA))
+
+data.frame(centers=kVals, sWidth=silh) %>%
+    ggplot(aes(x=centers, y=sWidth)) + 
+    geom_point() + 
+    geom_line() + 
+    labs(x="# Clusters", y="Silhouette Width (mean)") + 
+    ylim(c(0, NA))
+
+```
+  
+While there is no sharp elbow, there is some meaningful improvement out to 5 clusters.  The best silhouette width is at 2 or 3.  For curiosity, the model is run again for 5 clusters:  
+```{r}
+
+# Run k-means with 5 centers
+kmModel <- kmeans(keyMatrix, centers=5)
+
+# Augment the key data with the cluster results
+keyData <- keyData %>%
+    mutate(cluster=factor(kmModel$cluster))
+
+# Summarize the clusters
+keyData %>%
+    group_by(cluster) %>%
+    summarize(meanDewF=mean(DewF), meanTempF=mean(TempF), n=n(), 
+              pctLAS=mean(source=="klas"), pctORD=mean(source=="kord"), pctLNK=mean(source=="klnk")
+              )
+
+# Plot the clusters
+keyData %>%
+    count(cluster, TempF, DewF) %>%
+    ggplot(aes(x=TempF, y=DewF, size=n, color=cluster)) + 
+    geom_point()
+
+```
+  
+Expanding to 5 clusters does little to help break apart Lincoln and Chicago.  There are just more buckets of temperature-dewpoint (high-high, low-low, higher and lower forms of medium-medium).  And, Las Vegas has a cluster of very high temperature with low dew point (representing ~17% of the data) almost all to itself.
+
+This suggests that while temperature and dew point are important, the random forest (which is about 75% accurate in separating Chicago and Lincoln) either takes advantage of the month and wind data also, or using sophisticated tree splits to tease out more granular relationships between temperature and dew point.
+  
+
