@@ -1912,3 +1912,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 includes a function for predictions by locale  
 * AdditionalCoding_202003_v001 explores relationships between prediction accuracy and variables  
   
+### Expansions week of 11-MAY-2020  
+* AdditionalCoding_202003_v001 predicts between two similar locales using wind, temperature, dewpoint, and month  
+  
