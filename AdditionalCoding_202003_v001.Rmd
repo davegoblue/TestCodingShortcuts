@@ -5261,6 +5261,8 @@ keyMatrix <- keyData %>%
     select(-source) %>%
     scale()
 
+set.seed(2005091500)
+
 # Run k-means with 3 centers
 kmModel <- kmeans(keyMatrix, centers=3)
 
@@ -5324,7 +5326,7 @@ data.frame(centers=kVals, sWidth=silh) %>%
 
 ```
   
-While there is no sharp elbow, there is some meaningful improvement out to 5 clusters.  The best silhouette width is at 2 or 3.  For curiosity, the model is run again for 5 clusters:  
+While there is no sharp elbow, there is some meaningful improvement out to 5 clusters.  The best silhouette width is at 2 or 3 (sensibly, as there are 3 cities and the splitting is largely Las Vegas vs. not Las Vegas).  For curiosity, the model is run again for 5 clusters:  
 ```{r}
 
 # Run k-means with 5 centers
@@ -5353,4 +5355,202 @@ Expanding to 5 clusters does little to help break apart Lincoln and Chicago.  Th
 
 This suggests that while temperature and dew point are important, the random forest (which is about 75% accurate in separating Chicago and Lincoln) either takes advantage of the month and wind data also, or using sophisticated tree splits to tease out more granular relationships between temperature and dew point.
   
+#### _Example #46: Splitting Two Similar Cities_  
+There are many similarities between Chicago and Lincoln on the variables of interest for this analysis.  A dataset for just these two cities is created and explored.
+  
+Example code includes:  
+```{r}
 
+# Create the full 2016 dataset for Lincoln and Chicago
+fullDF004 <- integrateLocaleData(klnk=klnk2016,
+                                 kord=kord2016
+                                 )
+
+# Create the train data and the test data for the full 2016 dataset for Lincoln and Chicago
+listTestTrain004 <- createTrainTestData(fullDF004, trainSize=0.7, seed=2005101431)
+
+# Plot the temperature, dewpoint, and wind speed by city and month
+fullDF001 %>%
+    ggplot(aes(x=monthfct, y=TempF)) + 
+    geom_boxplot(fill="lightblue") + 
+    facet_wrap(~source) + 
+    labs(title="Temperature (F) Boxplots by Month")
+
+fullDF001 %>%
+    ggplot(aes(x=monthfct, y=DewF)) + 
+    geom_boxplot(fill="lightblue") + 
+    facet_wrap(~source) + 
+    labs(title="Dew Point (F) Boxplots by Month")
+
+fullDF001 %>%
+    ggplot(aes(x=monthfct, y=spdW)) + 
+    geom_boxplot(fill="lightblue") + 
+    facet_wrap(~source) + 
+    labs(title="Wind Speed (knots) Boxplots by Month")
+
+```
+  
+Las Vegas stands out significantly as having hotter temperatures and more stable dew points (leading to the cluster of high temperature, low dew point).  Lincoln and Chicago have fairly similar profiles of wintry cities - temperatures and dew points both soar in the summer and plummet in the winter.
+  
+Next, suppose that the model can use all of the information to split apart Chicago and Lincoln:  
+```{r cache=TRUE}
+
+# Run the locale predictions
+pL004 <- predictLocale(source ~ spdW + wd + monthfct + TempF + DewF, 
+                       listTestTrain=listTestTrain004, 
+                       seed=2005101441
+                       )
+
+pL004$finalModel %>%
+    varImp() %>%
+    rownames_to_column() %>%
+    mutate(var=factor(rowname)) %>%
+    ggplot(aes(x=fct_reorder(rowname, -Overall), y=Overall)) + 
+    geom_col() + 
+    labs(title="All 5 Variables Help Differentiate Chicago and Lincoln (2016)", 
+         subtitle="Variable Importance in Random Forest", 
+         x="", 
+         y="VarImp"
+         )
+
+# Assess Accuracy by Dimension for Chicago and Lincoln (2016)
+assessAccuracy1D(pL004, 
+                 listTestTrain004, 
+                 numVars=c("spdW", "TempF", "DewF"), 
+                 fctVars=c("wd", "monthfct"),
+                 mapVarNames=mapVarNames
+                 )
+
+```
+  
+The model is over 75% accurate in classifying Chicago and Lincoln.  The most important variables continue to be Temperature and Dew Point, though it is notable that prediction accuracy is worse with calm or variable winds and best with strong winds (not many data points here).
+
+Suppose the model were restricted to just the two most important variables - temperature and dew point.  
+```{r cache=TRUE}
+
+# Run the locale predictions
+pL004td <- predictLocale(source ~ TempF + DewF, 
+                       listTestTrain=listTestTrain004, 
+                       seed=2005101441
+                       )
+
+# Assess Accuracy by Dimension for Chicago and Lincoln (2016)
+assessAccuracy1D(pL004td, 
+                 listTestTrain004, 
+                 numVars=c("spdW", "TempF", "DewF"), 
+                 fctVars=c("wd", "monthfct"),
+                 mapVarNames=mapVarNames
+                 )
+
+```
+  
+Accuracy falls to just under 60%, and the model becomes overly confident in its predictions.  The model also very slightly prefers mtry=1 and a large node size, so it self-selects parameters less likely to lead to overconfidence.  
+  
+Now suppose that the model can bring in the additional variable of wind speed:  
+```{r cache=TRUE}
+
+# Run the locale predictions
+pL004tds <- predictLocale(source ~ TempF + DewF + spdW, 
+                          listTestTrain=listTestTrain004, 
+                          seed=2005101441
+                          )
+
+# Assess Accuracy by Dimension for Chicago and Lincoln (2016)
+assessAccuracy1D(pL004tds, 
+                 listTestTrain004, 
+                 numVars=c("spdW", "TempF", "DewF"), 
+                 fctVars=c("wd", "monthfct"),
+                 mapVarNames=mapVarNames
+                 )
+
+```
+  
+Accuracy increases only very slightly to just over 60%.  There are not enough windy days for the predictive power there to drive much overall improvement.
+
+Suppose instead that the model is augmented with wind direction:  
+```{r cache=TRUE}
+
+# Run the locale predictions
+pL004tdw <- predictLocale(source ~ TempF + DewF + wd, 
+                          listTestTrain=listTestTrain004, 
+                          seed=2005101441
+                          )
+
+# Assess Accuracy by Dimension for Chicago and Lincoln (2016)
+assessAccuracy1D(pL004tdw, 
+                 listTestTrain004, 
+                 numVars=c("spdW", "TempF", "DewF"), 
+                 fctVars=c("wd", "monthfct"),
+                 mapVarNames=mapVarNames
+                 )
+
+```
+  
+Wind direction is much more helpful than wind speed, with accuracy increasing to 68%.  Is this more valuable than knowing the month (much of the wind speed difference is Chicago having predominantly W winds rather than the N/S winds of Lincoln in the winter)?  
+```{r cache=TRUE}
+
+# Run the locale predictions
+pL004tdm <- predictLocale(source ~ TempF + DewF + monthfct, 
+                          listTestTrain=listTestTrain004, 
+                          seed=2005101441
+                          )
+
+# Assess Accuracy by Dimension for Chicago and Lincoln (2016)
+assessAccuracy1D(pL004tdm, 
+                 listTestTrain004, 
+                 numVars=c("spdW", "TempF", "DewF"), 
+                 fctVars=c("wd", "monthfct"),
+                 mapVarNames=mapVarNames
+                 )
+
+```
+
+Knowing the month and the wind direction are roughly equally as helpful, with each driving accuracy to 68%.  Assuming that the model already has access to temperature, dew point, and wind direction (accuracy 68%), how helpful is it to add wind speed?  
+```{r cache=TRUE}
+
+# Run the locale predictions
+pL004tdws <- predictLocale(source ~ TempF + DewF + spdW + wd, 
+                          listTestTrain=listTestTrain004, 
+                          seed=2005101441
+                          )
+
+# Assess Accuracy by Dimension for Chicago and Lincoln (2016)
+assessAccuracy1D(pL004tdws, 
+                 listTestTrain004, 
+                 numVars=c("spdW", "TempF", "DewF"), 
+                 fctVars=c("wd", "monthfct"),
+                 mapVarNames=mapVarNames
+                 )
+
+```
+  
+Adding wind speed has only a minor impact, increasing accuracy to 70%.  If instead month is added:  
+```{r cache=TRUE}
+
+# Run the locale predictions
+pL004tdwm <- predictLocale(source ~ TempF + DewF + spdW + monthfct, 
+                          listTestTrain=listTestTrain004, 
+                          seed=2005101441
+                          )
+
+# Assess Accuracy by Dimension for Chicago and Lincoln (2016)
+assessAccuracy1D(pL004tdwm, 
+                 listTestTrain004, 
+                 numVars=c("spdW", "TempF", "DewF"), 
+                 fctVars=c("wd", "monthfct"),
+                 mapVarNames=mapVarNames
+                 )
+
+```
+
+Adding month has the same minor impact.  So, in summary:
+
+* Wind and Dew Point - 60% accuracy  
+* Wind and Dew Point and Wind Speed - 60% accuracy  
+* Wind and Dew Point and Wind Direction - 68% accuracy  
+* Wind and Dew Point and Month - 68% accuracy  
+* Wind and Dew Point and Wind Direction and Wind Speed - 70% accuracy  
+* Wind and Dew Point and Wind Direction and Month - 70% accuracy  
+* Wind and Dew Point and Wind Direction and Wind Speed and Month - 78% accuracy  
+  
+This shows the power of the random forest in teasing out small gains from incremental patterns observed in the interactions of the variables.  With just wind speed and dew point, the model behaves similarly to something that is correct 20% of the time and guessing a coin flip 80% of the time.  With all 5 variables included, the model behaves similarly to something that is correct 60% of the time and guessing a coin flip 40% of the time.  So, the power has in a sense tripled even though there is not a ton of one-dimensional differentiation on the variables.
