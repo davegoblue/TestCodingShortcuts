@@ -1914,4 +1914,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 11-MAY-2020  
 * AdditionalCoding_202003_v001 predicts between two similar locales using wind, temperature, dewpoint, and month  
+* AdditionalCoding_202003_v001 extends predictions to years not included in modeling  
   
