@@ -5851,7 +5851,7 @@ This model generalizes very nicely.  While it is 100% accurate on data that it h
 
 So, the random model in this case is learning the general, recurring differences between weather in Chicago and Las Vegas.
   
-#### _Example #48: Predictions Across Years Using Multi-Year Data_  
+#### _Example #48: Predictions Across Locales Including Cities with Similar Climates_  
 The model appears to be learning a bit about generally differentiating two wintry cities (Chicago and Lincoln) and a lot about generally differentiating two cities from very different climates (Chicago and Las Vegas).
 
 Suppose that the modeling is extended to look at eight cities from five relatively distinct climates:  
@@ -6116,4 +6116,282 @@ The confusion matrix and plots show errors of the type that might be expected:
 * Chicago, Detroit, Lincoln, and Minneapolis are all mis-classified 10%-15% as each of the other cities  
   
 This is suggestive that there are only four weather types in the data - Las Vegas, San Diego, Houston/New Orleans, and Chicago/Detroit/Lincoln/Minneapolis.  
+  
+#### _Example #49: Additional Diagnostics of Accuracy_  
+Suppose that the classifications are graded as:  
+  
+* Correct  
+* Incorrect, but similar  
+* Incorrect  
+  
+What is the model performance by locale in this case?  
+```{r}
+
+localeCategory <- c(kord2016="Wintry", 
+                    kdtw2016="Wintry", 
+                    klnk2016="Wintry", 
+                    kmsp2016="Wintry", 
+                    klas2016="Desert", 
+                    kiah2016="Hot-Humid", 
+                    kmsy2016="Hot-Humid", 
+                    ksan2016="Marine"
+                    )
+
+
+# Plot the predictions for test data by locale
+allData16 %>%
+    filter(testTrain=="test") %>%
+    group_by(origSource, pred) %>%
+    summarize(n=n()) %>%
+    mutate(origCat=localeCategory[origSource], predCat=localeCategory[pred], 
+           nTotal=sum(n), pctTotal=n/nTotal, 
+           class=ifelse(origSource==pred, "Correct", ifelse(origCat==predCat, "Similar", "Different")), 
+           pctCorrect=sum(ifelse(class=="Correct", pctTotal, 0)), 
+           pctSimilar=sum(ifelse(class=="Similar", pctTotal, 0)),
+           pctDifferent=sum(ifelse(class=="Different", pctTotal, 0))
+           ) %>%
+    ggplot(aes(x=fct_reorder(cityNames[origSource], -pctCorrect), y=pctTotal, 
+               fill=factor(class, levels=c("Different", "Similar", "Correct"))
+               )
+           ) +
+    geom_col(position="stack") + 
+    labs(title="Predictions by Source City", x="City", y="% Predicted", 
+         subtitle=paste0("Overall Test Set Accuracy: ", round(100*(overallAccuracy), 1), "%")
+         ) + 
+    ylim(c(0, 1)) + 
+    geom_hline(yintercept=c(overallAccuracy), lty=2) + 
+    scale_fill_manual("", values=c("red", "orange", "seagreen")) + 
+    geom_text(aes(y=pctCorrect/2, label=paste0(round(100*pctCorrect, 0), "%")), color="white") +
+    geom_text(aes(y=1-pctDifferent/2, label=paste0(round(100*pctDifferent, 0), "%")), color="white") + 
+    geom_text(aes(y=pctCorrect + pctSimilar/2, 
+                  label=ifelse(pctSimilar==0, "", paste0(round(100*pctSimilar, 0), "%")))
+              )
+
+```
+  
+Full misclassifications to a locale with a different climate occur ~10% of the time, with the most frequently misclassified city being San Diego and the least misclassified cities being Minneapolis and Chicago.
+  
+Are there any patterns to when cities are misclassified?
+```{r}
+
+# Plot the predictions for test data by month
+allData16 %>%
+    filter(testTrain=="test") %>%
+    group_by(origSource, pred, month) %>%
+    summarize(n=n()) %>%
+    mutate(origCat=localeCategory[origSource], 
+           predCat=localeCategory[pred], 
+           class=ifelse(origSource==pred, "Correct", ifelse(origCat==predCat, "Similar", "Different"))
+           ) %>%
+    group_by(month, class) %>%
+    summarize(n=sum(n)) %>%
+    mutate(pctTotal=n/sum(n)) %>%
+    ggplot(aes(x=factor(month.abb[month], levels=month.abb[1:12]), y=pctTotal, 
+               fill=factor(class, levels=c("Different", "Similar", "Correct"))
+               )
+           ) +
+    geom_col(position="stack") + 
+    labs(title="Predictions by Month", x="Month", y="% Predicted", 
+         subtitle=paste0("Overall Test Set Accuracy: ", round(100*(overallAccuracy), 1), "%")
+         ) + 
+    ylim(c(0, 1)) + 
+    geom_hline(yintercept=c(overallAccuracy), lty=2) + 
+    scale_fill_manual("", values=c("red", "orange", "seagreen"))
+
+```
+  
+The predictions do not get meaningfully better or worse by month.  
+
+```{r}
+
+# Plot the predictions for test data by wind direction
+allData16 %>%
+    filter(testTrain=="test") %>%
+    group_by(origSource, pred, wd) %>%
+    summarize(n=n()) %>%
+    mutate(origCat=localeCategory[origSource], 
+           predCat=localeCategory[pred], 
+           class=ifelse(origSource==pred, "Correct", ifelse(origCat==predCat, "Similar", "Different"))
+           ) %>%
+    group_by(wd, class) %>%
+    summarize(n=sum(n)) %>%
+    mutate(pctTotal=n/sum(n), 
+           pctDifferent=sum(ifelse(class=="Different", pctTotal, 0)), 
+           pctCorrect=sum(ifelse(class=="Correct", pctTotal, 0))) %>%
+    ggplot(aes(x=wd, y=pctTotal, 
+               fill=factor(class, levels=c("Different", "Similar", "Correct"))
+               )
+           ) +
+    geom_col(position="stack") + 
+    labs(title="Predictions by Wind Direction", x="", y="% Predicted", 
+         subtitle=paste0("Overall Test Set Accuracy: ", round(100*(overallAccuracy), 1), "%")
+         ) + 
+    ylim(c(0, 1)) + 
+    geom_hline(yintercept=c(overallAccuracy), lty=2) + 
+    scale_fill_manual("", values=c("red", "orange", "seagreen")) + 
+    geom_text(aes(y=1-pctDifferent/2, label=paste0(round(100*pctDifferent, 0), "%")), color="white") + 
+    geom_text(aes(y=pctCorrect/2, label=paste0(round(100*pctCorrect, 0), "%")), color="white")
+
+```
+  
+Prediction classifications improve when there is a direction to the wind (winds are other than calm or variable)
+  
+```{r}
+
+# Plot the predictions for test data by wind speed bucket
+allData16 %>%
+    filter(testTrain=="test") %>%
+    group_by(origSource, pred, spdBucket) %>%
+    summarize(n=n()) %>%
+    mutate(origCat=localeCategory[origSource], 
+           predCat=localeCategory[pred], 
+           class=ifelse(origSource==pred, "Correct", ifelse(origCat==predCat, "Similar", "Different"))
+           ) %>%
+    group_by(spdBucket, class) %>%
+    summarize(n=sum(n)) %>%
+    mutate(pctTotal=n/sum(n), 
+           pctDifferent=sum(ifelse(class=="Different", pctTotal, 0)), 
+           pctCorrect=sum(ifelse(class=="Correct", pctTotal, 0))) %>%
+    ggplot(aes(x=spdBucket, y=pctTotal, 
+               fill=factor(class, levels=c("Different", "Similar", "Correct"))
+               )
+           ) +
+    geom_col(position="stack") + 
+    labs(title="Predictions by Wind Speed", x="", y="% Predicted", 
+         subtitle=paste0("Overall Test Set Accuracy: ", round(100*(overallAccuracy), 1), "%")
+         ) + 
+    ylim(c(0, 1)) + 
+    geom_hline(yintercept=c(overallAccuracy), lty=2) + 
+    scale_fill_manual("", values=c("red", "orange", "seagreen")) + 
+    geom_text(aes(y=1-pctDifferent/2, label=paste0(round(100*pctDifferent, 0), "%")), color="white") + 
+    geom_text(aes(y=pctCorrect/2, label=paste0(round(100*pctCorrect, 0), "%")), color="white")
+
+```
+  
+This shows clearly that strong winds help the model make correct classifications and avoid classifications to completely different climates.  
+  
+```{r}
+
+# Plot the predictions for test data by temperature
+allData16 %>%
+    filter(testTrain=="test") %>%
+    group_by(origSource, pred, TempF) %>%
+    summarize(n=n()) %>%
+    mutate(origCat=localeCategory[origSource], 
+           predCat=localeCategory[pred], 
+           class=ifelse(origSource==pred, "Correct", ifelse(origCat==predCat, "Similar", "Different")), 
+           TempF=10*round(0.1*TempF, 0)
+           ) %>%
+    group_by(TempF, class) %>%
+    summarize(n=sum(n)) %>%
+    mutate(pctTotal=n/sum(n), 
+           pctDifferent=sum(ifelse(class=="Different", pctTotal, 0)), 
+           pctCorrect=sum(ifelse(class=="Correct", pctTotal, 0))) %>%
+    ggplot(aes(x=TempF, y=pctTotal, 
+               fill=factor(class, levels=c("Different", "Similar", "Correct"))
+               )
+           ) +
+    geom_col(position="stack") + 
+    labs(title="Predictions by Temperature", x="Temperature (F)", y="% Predicted", 
+         subtitle=paste0("Overall Test Set Accuracy: ", round(100*(overallAccuracy), 1), "%")
+         ) + 
+    ylim(c(0, 1)) + 
+    geom_hline(yintercept=c(overallAccuracy), lty=2) + 
+    scale_fill_manual("", values=c("red", "orange", "seagreen")) + 
+    geom_text(aes(y=1-pctDifferent/2, 
+                  label=ifelse(pctDifferent==0, "", paste0(round(100*pctDifferent, 0), "%"))
+                  ), 
+              color="white"
+              ) + 
+    geom_text(aes(y=pctCorrect/2, label=paste0(round(100*pctCorrect, 0), "%")), color="white")
+
+```
+  
+Prediction accuracy is highest at extreme temperatured, and prediction full mis-classification is greatest when there are moderate temperatures (50-90 F).
+
+```{r}
+
+# Plot the predictions for test data by dew point
+allData16 %>%
+    filter(testTrain=="test") %>%
+    group_by(origSource, pred, DewF) %>%
+    summarize(n=n()) %>%
+    mutate(origCat=localeCategory[origSource], 
+           predCat=localeCategory[pred], 
+           class=ifelse(origSource==pred, "Correct", ifelse(origCat==predCat, "Similar", "Different")), 
+           DewF=10*round(0.1*DewF, 0)
+           ) %>%
+    group_by(DewF, class) %>%
+    summarize(n=sum(n)) %>%
+    mutate(pctTotal=n/sum(n), 
+           pctDifferent=sum(ifelse(class=="Different", pctTotal, 0)), 
+           pctCorrect=sum(ifelse(class=="Correct", pctTotal, 0))) %>%
+    ggplot(aes(x=DewF, y=pctTotal, 
+               fill=factor(class, levels=c("Different", "Similar", "Correct"))
+               )
+           ) +
+    geom_col(position="stack") + 
+    labs(title="Predictions by Dew Point", x="Dew Point (F)", y="% Predicted", 
+         subtitle=paste0("Overall Test Set Accuracy: ", round(100*(overallAccuracy), 1), "%")
+         ) + 
+    ylim(c(0, 1)) + 
+    geom_hline(yintercept=c(overallAccuracy), lty=2) + 
+    scale_fill_manual("", values=c("red", "orange", "seagreen")) + 
+    geom_text(aes(y=1-pctDifferent/2, 
+                  label=ifelse(pctDifferent==0, "", paste0(round(100*pctDifferent, 0), "%"))
+                  ), 
+              color="white"
+              ) + 
+    geom_text(aes(y=pctCorrect/2, label=paste0(round(100*pctCorrect, 0), "%")), color="white")
+
+```
+  
+Full prediction misclassifications tend to occur most frequently for moderate-to-high dew points (30-70).  So, the model tends to perform better when there is at least some form of extreme condition - strong wind, high or low temperature, high or low dew point.  And, the model tends to perform worse when conditions are pleasant - calm or variable winds, moderate temperature, moderate dew point.
+
+Suppose we create a test dataset of various temperatures and dew point for the month of June, assuming that the winds are calm.  What city would the model predict?  
+```{r}
+
+sampleTDData <- tibble::tibble(monthfct=factor(month.abb[6], levels=month.abb[1:12]), 
+                               spdW=0, 
+                               wd=factor("Variable", levels=levels(allData16$wd)),
+                               TempF=rep(seq(40, 120, by=2), each=41),
+                               DewF=rep(seq(0, 80, by=2), times=41)
+                               )
+
+sampleVotes <- predict(pL006$finalModel, newdata=sampleTDData, type="prob")
+sampleClass <- predict(pL006$finalModel, newdata=sampleTDData)
+
+sampleTDData <- sampleTDData %>%
+    mutate(x=sampleClass, 
+           pred=localeCategory[as.character(sampleClass)], 
+           maxProb=apply(sampleVotes, 1, FUN=max)
+           )
+
+tdCounts <- allData16 %>%
+    filter(month==6, spdW==0) %>%
+    mutate(TempF=2*round(TempF/2, 0), DewF=2*round(DewF/2, 0)) %>%
+    count(TempF, DewF)
+
+sampleTDData %>%
+    left_join(tdCounts, by=c("TempF", "DewF")) %>%
+    mutate(n=ifelse(is.na(n), 0, n)) %>%
+    filter(TempF >= DewF, n > 0) %>%
+    ggplot(aes(x=TempF, y=DewF)) + 
+    geom_point(aes(alpha=maxProb, color=pred, size=n)) + 
+    geom_abline(intercept=0, slope=1, lty=2) + 
+    labs(x="Temperature (F)", y="Dew Point (F)", title="Predictions by Temperature and Dew Point", 
+         subtitle="Simulated Data for June, No Wind"
+         ) + 
+    scale_color_discrete("Prediction") + 
+    scale_alpha_continuous("% Votes") + 
+    scale_size_continuous("Prevalence\nin 2016")
+
+```
+  
+At a glance, the decision boundaries seem reasonable:  
+  
+* The marine segment has a very tight range for both temperature and dew point.  If another climate type has this profile, it will likely be misclassified as "marine" in the absense of compelling wind data  
+* The wintry cities generally have lower dew points than the hot-humid cities and higher dew points than the desert cities  
+* Hot-humid and desert appear to be apt descriptions of the June temperatures and dew points for these clusters  
+* Model confidence appears higher in the more differentiated portions of the boundary  
   
