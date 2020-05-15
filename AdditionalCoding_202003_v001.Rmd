@@ -6395,3 +6395,310 @@ At a glance, the decision boundaries seem reasonable:
 * Hot-humid and desert appear to be apt descriptions of the June temperatures and dew points for these clusters  
 * Model confidence appears higher in the more differentiated portions of the boundary  
   
+#### _Example #50: Data by Month by Locale_  
+There is a seasonal nature to the weather in many locales, and these seasonal changes cause some variation in the data that may be useful for predicting.
+
+To begin, a look at temperatures and dew points by month:  
+```{r}
+
+# Look at the 'Marine' locales by month
+allData16 %>% 
+    mutate(localeType=localeCategory[origSource], 
+           TempF=round(0.2*TempF, 0)*5, 
+           DewF=round(0.2*DewF, 0)*5
+           ) %>% 
+    count(month, localeType, TempF, DewF) %>% 
+    arrange(month, TempF, DewF, -n) %>% 
+    group_by(month, TempF, DewF) %>% 
+    mutate(mainType=first(localeType), pctType=n/sum(n), nTotal=sum(n)) %>% 
+    filter(localeType=="Marine") %>% 
+    ggplot(aes(x=TempF, y=DewF)) + 
+    geom_point(aes(color=mainType, alpha=pctType, size=nTotal)) + 
+    facet_wrap(~ month) + 
+    scale_alpha_continuous("% Marine at\nTemp and Dew") + 
+    scale_color_discrete("Main Weather Type") + 
+    scale_size_continuous("# Marine Obs") + 
+    labs(title="Marine Temperature and Dew Point Observations by Month", 
+         subtitle="Primary Locale Type Observed at Each Dew Point and Temperature", 
+         x="Temperature (F)", 
+         y="Dew Point (F)"
+         )
+
+```
+  
+The marine temperatures and dew points are reasonable distinct from the other groups in iDecember through May, though in June to September there are more wintry observations at these temperatures and dew points.
+  
+This is converted to functional form so that it can be run multiple times:  
+```{r}
+
+plotLocaleMonthFrequency <- function(df, var1, var2, locType) {
+
+    # Create the analysis dataset
+    dfPlot <- df %>%
+        group_by_at(vars(all_of(c("month", "localeType", var1, var2)))) %>%
+        summarize(n=n(), negN=-n()) %>%
+        arrange_at(vars(all_of(c("month", var1, var2, "negN")))) %>% 
+        group_by_at(vars(all_of(c("month", var1, var2)))) %>% 
+        mutate(mainType=first(localeType), pctType=n/sum(n), nTotal=sum(n), maxPct=max(pctType)) %>% 
+        filter(localeType==locType)
+    
+    # Plot using the analysis dataset
+    p1 <- dfPlot %>%
+        ggplot(aes_string(x=var1, y=var2)) + 
+        geom_point(aes(color=mainType, alpha=pctType, size=nTotal)) + 
+        facet_wrap(~ month) + 
+        scale_alpha_continuous(paste0("% ", locType, " at\n", var1, " and ", var2)) + 
+        scale_color_discrete("Main Locale Type") + 
+        scale_size_continuous("# Marine Obs") + 
+        labs(title=paste0(locType, 
+                          " ", 
+                          titleNames[var1], 
+                          " and ", 
+                          titleNames[var2], 
+                          " Observations by Month"
+                          ), 
+             subtitle=paste0("Primary Locale Type Observed at Each ", 
+                             titleNames[var1], 
+                             " and ", 
+                             titleNames[var2]
+                             ), 
+             x=axisNames[var1], 
+             y=axisNames[var2]
+             )
+    print(p1)
+    
+    # Return the dfPlot data
+    dfPlot
+    
+}
+
+
+# Create a mapping of variables to names
+titleNames <- c(TempF="Temperature", 
+                DewF="Dew Point"
+                )
+axisNames <- c(TempF="Temperature (F)", 
+               DewF="Dew Point (F)"
+               )
+
+# Create an analysis database
+modData16 <- allData16 %>% 
+    mutate(localeType=localeCategory[origSource], 
+           TempF=round(0.2*TempF, 0)*5, 
+           DewF=round(0.2*DewF, 0)*5
+           )
+
+
+# Create plot for 'Marine'
+plotLocaleMonthFrequency(modData16, 
+                         var1="TempF", 
+                         var2="DewF", 
+                         locType="Marine"
+                         )
+
+# Create plot for 'Desert'
+plotLocaleMonthFrequency(modData16, 
+                         var1="TempF", 
+                         var2="DewF", 
+                         locType="Desert"
+                         )
+
+# Create plot for 'Hot-Humid'
+plotLocaleMonthFrequency(modData16, 
+                         var1="TempF", 
+                         var2="DewF", 
+                         locType="Hot-Humid"
+                         )
+
+# Create plot for 'Wintry'
+plotLocaleMonthFrequency(modData16, 
+                         var1="TempF", 
+                         var2="DewF", 
+                         locType="Wintry"
+                         )
+
+```
+  
+There are some nice trends where each of the four locale types is the predominant locale in many of its combinations of temperature and dew point
+  
+An extension is carried out to look at data prevalence by locale and month:  
+```{r}
+
+# Create dummy data for calm winds
+sampleTDData <- expand.grid(DewF=seq(-40, 100, by=2), 
+                            TempF=seq(-40, 120, by=2), 
+                            monthfct=factor(month.abb[1:12], levels=month.abb[1:12]), 
+                            spdW=0, 
+                            wd=factor("Variable", levels=levels(allData16$wd))
+                            ) %>%
+    tibble::as_tibble()
+
+sampleVotes <- predict(pL006$finalModel, newdata=sampleTDData, type="prob")
+sampleClass <- predict(pL006$finalModel, newdata=sampleTDData)
+
+sampleTDData <- sampleTDData %>%
+    mutate(x=sampleClass, 
+           pred=localeCategory[as.character(sampleClass)], 
+           maxProb=apply(sampleVotes, 1, FUN=max)
+           )
+
+tdCounts <- allData16 %>%
+    filter(spdW==0) %>%
+    mutate(TempF=2*round(TempF/2, 0), DewF=2*round(DewF/2, 0)) %>%
+    count(monthfct, TempF, DewF)
+
+sampleTDData %>%
+    left_join(tdCounts, by=c("monthfct", "TempF", "DewF")) %>%
+    mutate(n=ifelse(is.na(n), 0, n)) %>%
+    filter(TempF >= DewF, n > 0) %>%
+    ggplot(aes(x=TempF, y=DewF)) + 
+    geom_point(aes(alpha=maxProb, color=pred, size=n)) + 
+    geom_abline(intercept=0, slope=1, lty=2) + 
+    labs(x="Temperature (F)", y="Dew Point (F)", title="Predictions by Temperature and Dew Point", 
+         subtitle="Simulated Data, No Wind"
+         ) + 
+    scale_color_discrete("Prediction") + 
+    scale_alpha_continuous("% Votes") + 
+    scale_size_continuous("Prevalence\nin 2016") + 
+    facet_wrap(~ monthfct)
+
+```
+  
+The wintry cities separate nicely during the cold months while the Hot-Humid and Desert cities separate nicely during the warm months.  The Marine segment is compact, but frequently overlapping with at least one other weather type.
+
+Are there any misclassifications that are more likely in a given month than on annual average?  
+```{r}
+
+plotLocaleAccuracyByMonth <- function(locType="All") {
+
+    # Create the database
+    plotData <- allData16 %>%
+        filter(testTrain=="test") %>%
+        group_by(origSource, pred, monthfct) %>%
+        summarize(n=n()) %>%
+        mutate(origCat=localeCategory[origSource], 
+               predCat=localeCategory[pred], 
+               class=ifelse(origSource==pred, "Correct", ifelse(origCat==predCat, "Similar", "Different"))
+               ) %>%
+        group_by(monthfct, origCat, class) %>%
+        summarize(n=sum(n)) %>%
+        mutate(pctTotal=n/sum(n), 
+               pctDifferent=sum(ifelse(class=="Different", pctTotal, 0)), 
+               pctCorrect=sum(ifelse(class=="Correct", pctTotal, 0)))
+    
+    if (locType!="All") {
+        plotData <- plotData %>%
+            filter(origCat==locType)
+    }
+    
+    # Plot the predictions for test data by month
+    p1 <- plotData %>%
+        ggplot(aes(x=monthfct, y=pctTotal, 
+                   fill=factor(class, levels=c("Different", "Similar", "Correct"))
+                   )
+               ) +
+        geom_col(position="stack") + 
+        ylim(c(0, 1)) + 
+        scale_fill_manual("", values=c("red", "orange", "seagreen")) + 
+        geom_text(aes(y=1-pctDifferent/2, 
+                      label=ifelse(pctDifferent==0, "", paste0(round(100*pctDifferent, 0), "%"))
+                      ), 
+                  color="white"
+                  ) + 
+        geom_text(aes(y=pctCorrect/2, label=paste0(round(100*pctCorrect, 0), "%")), color="white")
+    if (locType=="All") {
+        p1 <- p1 + 
+            facet_wrap(~ origCat) + 
+            labs(title=paste0("Prediction Accuracy by Month for Locales"), x="", y="% Predicted") 
+    } else {
+        p1 <- p1 + 
+            labs(title=paste0("Prediction Accuracy by Month for ", locType), x="", y="% Predicted")
+    }
+    print(p1)
+    
+    # Return the plotting dataset
+    plotData
+    
+}
+
+
+# Create plot for all types
+plotLocaleAccuracyByMonth(locType="All")
+```
+  
+While the previous diagnostic showed that predictions were on average as good in any given month, there is a notable pattern by type of locale:
+
+* Desert cities are best classified by the model in the summer and fall, with lower prediction accuracy observed in January to May  
+* Hot-Humid cities are best classified by the model in the summer, with prediction accuracy falling off during cooler times of the year  
+* Marine cities are best classified in the late winter and spring, with prediction accuracy falling off during fall and early winter  
+* Wintry cities are best classified in the winer, with prediction accuracy falling off during summer  
+  
+What locale types are predicted when prediction errors are made?  
+```{r}
+
+plotLocaleVsPredictionByMonth <- function(locType="All") {
+
+    # Create the database
+    plotData <- allData16 %>%
+        filter(testTrain=="test") %>%
+        group_by(origSource, pred, monthfct) %>%
+        summarize(n=n()) %>%
+        mutate(origCat=localeCategory[origSource], 
+               predCat=localeCategory[pred], 
+               class=ifelse(origCat==predCat, "Correct Type", predCat)
+               ) %>%
+        group_by(monthfct, origCat, class) %>%
+        summarize(n=sum(n)) %>%
+        mutate(pctTotal=n/sum(n), 
+               pctCorrect=sum(ifelse(class=="Correct Type", pctTotal, 0))
+               )
+    
+    if (locType!="All") {
+        plotData <- plotData %>%
+            filter(origCat==locType)
+    }
+    
+    # Plot the predictions for test data by month
+    p1 <- plotData %>%
+        ggplot(aes(x=monthfct, y=pctTotal, 
+                   fill=factor(class, levels=c("Wintry", "Marine", "Hot-Humid", "Desert", "Correct Type"))
+                   )
+               ) +
+        geom_col(position="stack") + 
+        ylim(c(0, 1)) + 
+        geom_text(aes(y=pctCorrect/2, label=paste0(round(100*pctCorrect, 0), "%")), color="white")
+    
+    if (locType=="All") {
+        p1 <- p1 + 
+            scale_fill_manual("", values=c("darkblue", "lightblue", "orange", "red", "seagreen")) + 
+            facet_wrap(~ origCat) + 
+            labs(title=paste0("Prediction Accuracy by Month for Locales"), x="", y="% Predicted") 
+    } else {
+        p1 <- p1 + 
+            scale_fill_manual("", values=c("darkblue", "lightblue", "orange", "seagreen")) + 
+            labs(title=paste0("Prediction Accuracy by Month for ", locType), x="", y="% Predicted")
+    }
+    print(p1)
+    
+    # Return the plotting dataset
+    plotData
+    
+}
+
+plotLocaleVsPredictionByMonth(locType="Wintry")
+plotLocaleVsPredictionByMonth(locType="Marine")
+plotLocaleVsPredictionByMonth(locType="Hot-Humid")
+plotLocaleVsPredictionByMonth(locType="Desert")
+plotLocaleVsPredictionByMonth(locType="All")
+
+```
+  
+There are interesting patterns in the misclasssifications by month:  
+  
+* Desert cities are most often misclassified as Hot-Humid in January-February and as Wintry in March-May  
+* Hot-Humid cities are most frequently mis-classified as Marine during the cooler months  
+* Marine cities are most frequently mis-classified as Wintry during the summer months and as Hot-Humid during the winter months  
+* Wintry cities are most frequently mis-classified as Marine during the summer months  
+  
+Perhaps there are some time of day effects as well.  The findings above could suggest, for example, that evenings in the desert and daytimes in Wintry cities are somewhat similar in March-May  
+  
