@@ -1918,4 +1918,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 predicts using multiple locales, some from similar climates  
 * AdditionalCoding_202003_v001 includes additional diagnostics of accuracy  
 * AdditionalCoding_202003_v001 includes diagnostics by month and locale  
+* AdditionalCoding_202003_v001 includes accuracy by metric and locale  
   
