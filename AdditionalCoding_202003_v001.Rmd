@@ -6702,3 +6702,111 @@ There are interesting patterns in the misclasssifications by month:
   
 Perhaps there are some time of day effects as well.  The findings above could suggest, for example, that evenings in the desert and daytimes in Wintry cities are somewhat similar in March-May  
   
+#### _Example #51: Data by Month by Locale_  
+Are there any common features as to when the model makes poor predictions for San Diego?  
+```{r}
+
+# Create the database for San Diego 'test' classifications
+mismData <- allData16 %>%
+    filter(testTrain=="test", source=="ksan2016") %>%
+    mutate(mism=ifelse(pred==source, "Correct", "Incorrect"), 
+           hour=lubridate::hour(valid)
+           )
+mismData
+
+# Assess the classifications by month
+mismData %>%
+    group_by(monthfct, mism) %>%
+    summarize(n=n()) %>%
+    mutate(nTot=sum(n), nWrong=sum(ifelse(mism=="Incorrect", n, 0)), pctWrong=nWrong/nTot) %>%
+    ggplot(aes(x=monthfct, y=n, fill=factor(mism, levels=c("Incorrect", "Correct")))) + 
+    geom_col(position="stack") + 
+    labs(x="", 
+         y="# Test Observations", 
+         title="San Diego 2016 Test Dataset", 
+         subtitle="Accuracy by Month"
+         ) + 
+    scale_fill_discrete("") + 
+    geom_text(aes(y=nTot-0.5*nWrong, 
+                  label=paste0(nWrong, "\n(", round(100*pctWrong, 0), "%)")
+                  ), 
+              color="black"
+              )
+
+```
+  
+And this is then converted to a function so it can be run for multiple variables:  
+```{r}
+
+# Function to calculate mismatches by city by a key variable
+mismatchByCityVariable <- function(loc, keyVar, locName, varName, roundTo=NULL) {
+
+    # Create the database for specified city 'test' classifications
+    mismData <- allData16 %>%
+        filter(testTrain=="test", source %in% loc) %>%
+        mutate(mism=ifelse(pred==source, "Correct", "Incorrect"), 
+               hour=lubridate::hour(valid)
+               )
+    
+    if (!is.null(roundTo)) {
+        mismData <- mismData %>%
+            mutate_at(vars(all_of(keyVar)), ~roundTo * round(./roundTo, 0))
+    }
+
+    # Assess the classifications by key variable
+    p1 <- mismData %>%
+        group_by_at(vars(all_of(c(keyVar, "mism")))) %>%
+        summarize(n=n()) %>%
+        mutate(nTot=sum(n), 
+               nWrong=sum(ifelse(mism=="Incorrect", n, 0)), 
+               pctWrong=nWrong/nTot, 
+               mismFactor=factor(mism, levels=c("Incorrect", "Correct"))
+               ) %>%
+        ggplot(aes_string(x=keyVar, y="n", fill="mismFactor")) + 
+        geom_col(position="stack") + 
+        labs(x="", 
+             y="# Test Observations", 
+             title=paste0(locName, " Test Dataset"), 
+             subtitle=paste0("Accuracy by ", varName)
+             ) + 
+        scale_fill_discrete("") + 
+        geom_text(aes(y=nTot-0.5*nWrong, 
+                      label=paste0(nWrong, "\n(", round(100*pctWrong, 0), "%)")
+                      ), 
+                  color="black"
+                  )
+    print(p1)
+    
+    mismData
+
+}
+
+# Run for San Diego 2016 by monthfct, wd, predomDir, spdBucket
+mismatchByCityVariable(loc="ksan2016", keyVar="monthfct", locName="San Diego 2016", varName="Month")
+mismatchByCityVariable(loc="ksan2016", keyVar="wd", locName="San Diego 2016", varName="Wind Direction")
+mismatchByCityVariable(loc="ksan2016", keyVar="predomDir", 
+                       locName="San Diego 2016", varName="Wind Direction"
+                       )
+mismatchByCityVariable(loc="ksan2016", keyVar="spdBucket", locName="San Diego 2016", varName="Wind Speed")
+
+# Run for San Diego 2016 by hour, TempF, DewF
+mismatchByCityVariable(loc="ksan2016", keyVar="hour", locName="San Diego 2016", 
+                       varName="Hour (Zulu Time)", roundTo=4
+                       )
+mismatchByCityVariable(loc="ksan2016", keyVar="TempF", locName="San Diego 2016", 
+                       varName="Temperature (F)", roundTo=5
+                       )
+mismatchByCityVariable(loc="ksan2016", keyVar="DewF", locName="San Diego 2016", 
+                       varName="Dew Point (F)", roundTo=5
+                       )
+
+```
+  
+Accuracy by month for San Diego 2016 has been discussed previously.  There are some interesting findings on the other dimensions:  
+  
+* The two most common wind types in San Diego are WNW (6% error rate) and None (28% error rate), suggesting that the model may be teasing apart San Diego and other cities that sometimes experience a temperate climate by using existence of a WNW wind  
+* Further evidence for this hypothesis is that accuracy gets better when winds are Moderate (12% error) or strong (9% error), though Light winds are the most common  
+* The test set is somewhat over-represented with 6-10Z and 14-18Z and under-represented with 10-14Z, based on random sampling  
+* Prediction accuracy is higher for 18Z-24Z (12% and 10% error), representing roughly 10 am - 4 pm San Diego time  
+* Prediction accuracy falls during the rare times when San Diego has a temperature other than 55-75 F or a dew point other than 40-60 F  
+  
