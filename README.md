@@ -1920,5 +1920,8 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v001 includes diagnostics by month and locale  
 * AdditionalCoding_202003_v001 includes accuracy by metric and locale  
 * AdditionalCoding_202003_v002 created  
-* AdditionalCoding_202003_v001 includes extensions to accuracy by metric and locale  
+* AdditionalCoding_202003_v002 includes extensions to accuracy by metric and locale  
+  
+### Expansions week of 18-MAY-2020  
+* AdditionalCoding_202003_v002 explores archetype weather conditions  
   
