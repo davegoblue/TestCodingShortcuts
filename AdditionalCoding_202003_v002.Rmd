@@ -7227,7 +7227,8 @@ subData %>%
            accMarine=factor((isMarine==predMarine), levels=c(FALSE, TRUE))
            ) %>%
     group_by(nArche, isMarine, accMarine) %>%
-    summarize(n=sum(n), nCorrect=sum(nCorrect)) %>%
+    summarize(n=sum(n)) %>%
+    mutate(nCorrect=ifelse(accMarine==TRUE, n, 0)) %>%
     filter(!isMarine) %>%
     mutate(nTotal=sum(n), pctCorrect=sum(nCorrect)/nTotal) %>%
     ggplot(aes(x=nArche, y=n, fill=accMarine)) + 
@@ -7246,5 +7247,420 @@ Data are broadly as would be expected:
   
 * The likelihood of raw data being Marine significantly increases with the number of marine archetypes reflected in the data (4% for 0 of 3 up to 86% for 3 of 3)  
 * When the data are Marine, accuracy in predicting Marine increases as the number of marine acrhetypes increases (98% for 3 of 3, 84% for 2 of 3, 74% for 1 of 3, 59% for 0 of 3)  
-* When the data are non-Marine, accuracy in predicting non-Marine decreases as the number of marine archetypes increases (94% form 0 of 3, 88% for 1 of 3, 74% for 2 of 3, 57% for 3 of 3)  
-* 
+* When the data are non-Marine, accuracy in predicting non-Marine decreases as the number of marine archetypes increases (99% for 0 of 3, 96% for 1 of 3, 83% for 2 of 3, 59% for 3 of 3)  
+  
+#### _Example #54: Functional Form for Archetype Weather Conditions_  
+The process to explore archetype weather conditions can be converted to functional form.
+  
+Example code includes:  
+```{r}
+
+# Build a list of all possible wind directions
+allWindDir <- allData16 %>%
+    pull(wd) %>%
+    as.character() %>%
+    unique() %>%
+    sort()
+
+# Build weather archetypes given a dataset and parameters for temperature, dew point, wind speed, and wind direction
+buildArchetypes <- function(df, 
+                            tmpLo=-Inf, 
+                            tmpHi=+Inf, 
+                            dewLo=-Inf, 
+                            dewHi=+Inf, 
+                            spdLo=-Inf,
+                            spdHi=+Inf,
+                            windDir=allWindDir,
+                            printTable=FALSE
+                            ) {
+    
+    archeTypes <- df %>%
+        mutate(isTemp=(TempF >= tmpLo) & (TempF <= tmpHi), 
+               isDew=(DewF >= dewLo) & (DewF <= dewHi), 
+               isSpeed=(spdW >= spdLo) & (spdW <= spdHi), 
+               isDir=(wd %in% windDir), 
+               isWind=(isSpeed & isDir)
+               )
+    
+    if (printTable) {
+        archeTypes %>%
+            count(isTemp, isDew, isWind, isSpeed, isDir) %>%
+            print()
+    }
+    
+    archeTypes
+    
+}
+
+# Filter for just the test data and add the locale type, locale prediction, locale accuracy, and city name
+testData16 <- allData16 %>%
+    filter(testTrain=="test") %>%
+    mutate(source=as.character(source), 
+           localeType=localeCategory[source], 
+           localePred=localeCategory[pred], 
+           localeAcc=(localeType==localePred), 
+           city=cityNames[source]
+           )
+
+# Test for Marine
+testMarine <- buildArchetypes(testData16, 
+                              tmpLo=55, tmpHi=75, 
+                              dewLo=40, dewHi=60, 
+                              windDir="WNW", 
+                              printTable=TRUE
+                              )
+
+# Confirm that results are the same as the previous process
+identical(select(archeData, source, valid, tempMarine, dewMarine, windMarine), 
+          select(testMarine, source, valid, tempMarine=isTemp, dewMarine=isDew, windMarine=isWind)
+          )
+
+```
+  
+The function can then be applied to the other three weather types:  
+```{r}
+
+# Test for Hot-Humid
+testHotHumid <- buildArchetypes(testData16, 
+                                tmpLo=70,
+                                dewLo=60,
+                                windDir=c("N", "NNE", "ENE", "E", "ESE"), 
+                                printTable=FALSE
+                                )
+
+# Confirm that results are the same as the previous process
+identical(select(archeData, source, valid, tempHotHumid, dewHotHumid, windHotHumid), 
+          select(testHotHumid, source, valid, tempHotHumid=isTemp, dewHotHumid=isDew, windHotHumid=isWind)
+          )
+
+
+# Test for Wintry
+testWintry <- buildArchetypes(testData16, 
+                              tmpHi=50, 
+                              dewHi=40, 
+                              windDir=allWindDir[!(allWindDir %in% c("None", "Variable"))], 
+                              printTable=FALSE
+                              )
+
+# Confirm that results are the same as the previous process
+identical(select(archeData, source, valid, tempWintry, dewWintry, windWintry), 
+          select(testWintry, source, valid, tempWintry=isTemp, dewWintry=isDew, windWintry=isWind)
+          )
+
+
+# Test for Desert
+testDesert <- buildArchetypes(testData16, 
+                              tmpLo=80,
+                              dewHi=25,
+                              windDir=c("SSW"), 
+                              printTable=FALSE
+                              )
+
+# Confirm that results are the same as the previous process
+identical(select(archeData, source, valid, tempDesert, dewDesert, windDesert), 
+          select(testDesert, source, valid, tempDesert=isTemp, dewDesert=isDew, windDesert=isWind)
+          )
+
+```
+  
+The data can then be integrated to a single analysis database:  
+```{r}
+
+# Combine all the data in to a single dataset
+testArcheData <- testData16 %>%
+    bind_cols(select(testMarine, tempMarine=isTemp, dewMarine=isDew, windMarine=isWind)) %>%
+    bind_cols(select(testHotHumid, tempHotHumid=isTemp, dewHotHumid=isDew, windHotHumid=isWind)) %>%
+    bind_cols(select(testWintry, tempWintry=isTemp, dewWintry=isDew, windWintry=isWind)) %>%
+    bind_cols(select(testDesert, tempDesert=isTemp, dewDesert=isDew, windDesert=isWind))
+
+# Check that the variables are all the same, with the exception of the classification
+names(testArcheData)[!(names(testArcheData) %in% names(archeData))]
+names(archeData)[!(names(archeData) %in% names(testArcheData))]
+
+# Check the everything is identical, if columns are ordered as per testArcheData
+identical(testArcheData, 
+          select(archeData, names(testArcheData))
+          )
+
+```
+  
+Classifications can then be created using matrix multiplication of the logical values in the data:  
+```{r}
+
+# Function to convert to specified types using matrices
+specifyArcheType <- function(df, mtx, useVars) {
+    
+    testMtx <- df %>%
+        select_at(vars(all_of(useVars))) %>%
+        mutate_all(~as.integer(.)) %>%
+        as.matrix() %*% 
+        mtx
+
+    # Adjust each key column for whether the criteria is met
+    for (x in 1:ncol(mtx)) {
+        testMtx[, x] <- ifelse(testMtx[, x]==sum(mtx[, x]), 1, 0)
+    }
+
+    # Give the appropriate name, using 'None' if no criteria matches
+    tempNames=colnames(testMtx)[apply(testMtx, 1, FUN=which.max)]
+    tempNames[rowSums(testMtx)==0] <- "None"
+    
+    # Return the result
+    tempNames
+
+}
+
+```
+  
+The function can then be applied to temperature, dew point, and wind:  
+```{r}
+
+# Temperatures should be converted as:
+# Marine and Hot-Humid
+# Marine
+# Hot-Humid and Desert
+# Hot-Humid
+# Wintry
+mtxTemps <- matrix(data=c(1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1), 
+                   nrow=4, 
+                   ncol=5, 
+                   byrow=FALSE, 
+                   dimnames=list(c("Marine", "Hot-Humid", "Desert", "Wintry"), 
+                                 c("Marine, Hot-Humid", "Marine", "Hot-Humid, Desert", "Hot-Humid", "Wintry")
+                                 )
+                   )
+mtxTemps
+
+# Get the temperature type
+tempType <- specifyArcheType(testArcheData, 
+                             mtxTemps, 
+                             useVars=paste0("temp", c("Marine", "HotHumid", "Desert", "Wintry"))
+                             )
+
+
+# Dew points should be converted as:
+# Marine
+# Hot-Humid
+# Desert and Wintry
+# Wintry
+mtxDew <- matrix(data=c(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1), 
+                 nrow=4, 
+                 ncol=4, 
+                 byrow=FALSE, 
+                 dimnames=list(c("Marine", "Hot-Humid", "Desert", "Wintry"), 
+                               c("Marine", "Hot-Humid", "Desert, Wintry", "Wintry")
+                               )
+                 )
+mtxDew
+
+# Get the dew point type
+dewType <- specifyArcheType(testArcheData, 
+                            mtxDew, 
+                            useVars=paste0("dew", c("Marine", "HotHumid", "Desert", "Wintry"))
+                            )
+
+
+
+# Winds should be converted as:
+# Marine and Wintry
+# Hot-Humid and Wintry
+# Desert and Wintry
+# Wintry
+mtxWind <- matrix(data=c(1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1), 
+                  nrow=4, 
+                  ncol=4, 
+                  byrow=FALSE, 
+                  dimnames=list(c("Marine", "Hot-Humid", "Desert", "Wintry"), 
+                                c("Marine, Wintry", "Hot-Humid, Wintry", "Desert, Wintry", "Wintry")
+                                )
+                  )
+mtxWind
+
+# Get the wind type
+windType <- specifyArcheType(testArcheData, 
+                             mtxWind, 
+                             useVars=paste0("wind", c("Marine", "HotHumid", "Desert", "Wintry"))
+                             )
+
+
+# Check that variables are all equal
+all.equal(tempType, archeData$tempType)
+all.equal(dewType, archeData$dewType)
+all.equal(windType, archeData$windType)
+
+
+# Build the overall analysis database and confirm that it matches
+testArcheData <- testArcheData %>%
+    mutate(tempType=tempType, dewType=dewType, windType=windType)
+
+identical(sort(names(testArcheData)), sort(names(archeData)))
+identical(testArcheData, select(archeData, names(testArcheData)))
+
+```
+  
+Next, data can be filtered so that there is only one city for each locale type:  
+```{r}
+
+# Limit to San Diego, Las Vegas, New Orleans, Chicago
+testArcheDataOne <- testArcheData %>%
+    filter(source %in% c("ksan2016", "klas2016", "kmsy2016", "kord2016"))
+
+```
+
+And, functions can be written to create graphs for combinations of weather archetype and locale:  
+```{r}
+
+mapVarNames <- c(tempType="Temperature Archetype", 
+                 dewType="Dew Point Archetype", 
+                 windType="Wind Archetype",
+                 localeType="Locale Type"
+                 )
+
+plotArchetypeLocale1D <- function(df, xVar, fillVar, mapper=mapVarNames) {
+
+    p1 <- df %>%
+        ggplot(aes_string(x=xVar, fill=fillVar)) + 
+        geom_bar(position="fill") + 
+        labs(title=paste0(mapper[xVar], " by ", mapper[fillVar]), 
+             x=mapper[xVar], 
+             y="% Observations"
+             ) + 
+        scale_fill_discrete(mapper[fillVar])
+    print(p1)
+    
+}
+
+
+# Run for temperature
+plotArchetypeLocale1D(testArcheDataOne, xVar="tempType", fillVar="localeType")
+plotArchetypeLocale1D(testArcheDataOne, xVar="localeType", fillVar="tempType")
+
+# Run for dew point
+plotArchetypeLocale1D(testArcheDataOne, xVar="dewType", fillVar="localeType")
+plotArchetypeLocale1D(testArcheDataOne, xVar="localeType", fillVar="dewType")
+
+# Run for wind
+plotArchetypeLocale1D(testArcheDataOne, xVar="windType", fillVar="localeType")
+plotArchetypeLocale1D(testArcheDataOne, xVar="localeType", fillVar="windType")
+
+```
+  
+A function can then be written to plot by locale type:  
+```{r}
+
+plotArchetypeLocale2D <- function(df, locType) {
+
+    # Create the dataset for the desired locale type
+    subData <- df %>%
+        mutate(okTemp=str_detect(tempType, locType), 
+               okDew=str_detect(dewType, locType), 
+               okWind=str_detect(windType, locType)
+               ) %>%
+        group_by(okTemp, okDew, okWind, localeType, localePred, localeAcc) %>%
+        summarize(n=n()) %>%
+        mutate(nCorrect=ifelse(localeAcc, n, 0)) %>%
+        group_by(okTemp, okDew, okWind, localeType, localePred) %>%
+        summarize(n=sum(n), nCorrect=sum(nCorrect)) %>%
+        ungroup() %>%        
+        mutate(nArche=(okTemp + okDew + okWind), 
+               isKey=(localeType==locType), 
+               predKey=(localePred==locType),
+               accKey=factor((isKey==predKey), levels=c(FALSE, TRUE))
+               )
+
+    # Quick glance at data
+    subData %>%
+        filter((localeType==locType) | (localePred==locType)) %>%
+        arrange(-n) %>%
+        print()
+    
+    
+    # Summarize by number of archetypes met
+    p1 <- subData %>%
+        group_by(nArche, isKey) %>%
+        summarize(n=sum(n), nCorrect=sum(nCorrect)) %>%
+        mutate(nKey=ifelse(isKey, n, 0), nKey=sum(nKey), nTotal=sum(n), pctKey=nKey/nTotal) %>%
+        ggplot(aes(x=nArche, y=n, fill=isKey)) + 
+        geom_col(position="stack") + 
+        labs(title=paste0(locType, " vs. Non-", locType, " By # of ", locType, " Weather Archetypes"), 
+             subtitle="Data includes All Observations",
+             y="# Observations", 
+             x=paste0("# ", locType, " Archetypes")
+             ) + 
+        scale_fill_discrete(paste0(locType, " Observation?")) + 
+        geom_text(aes(y=0.5*pctKey*nTotal, label=paste0(round(100*pctKey, 0), "%")))
+    print(p1)
+
+    
+    # Summarize by number of archetypes met
+    p2 <- subData %>%
+        group_by(nArche, isKey, accKey) %>%
+        summarize(n=sum(n), nCorrect=sum(nCorrect)) %>%
+        filter(isKey) %>%
+        mutate(nTotal=sum(n), pctCorrect=sum(nCorrect)/nTotal) %>%
+        ggplot(aes(x=nArche, y=n, fill=accKey)) + 
+        geom_col(position="stack") + 
+        labs(title=paste0("Accuracy by # ", locType, " Weather Archetypes"), 
+             subtitle=paste0("Data includes only ", locType, " Observations"),
+             y="# Observations", 
+             x=paste0("# ", locType, " Archetypes")
+             ) + 
+        scale_fill_discrete(paste0(locType, " vs.\nNon-", locType, "\nAccuracy")) + 
+        geom_text(aes(y=0.5*pctCorrect*nTotal, label=paste0(round(100*pctCorrect, 0), "%")))
+    print(p2)
+    
+    
+    # Summarize by number of archetypes met
+    p3 <- subData %>%
+        group_by(nArche, isKey, accKey) %>%
+        summarize(n=sum(n)) %>%
+        mutate(nCorrect=ifelse(accKey==TRUE, n, 0)) %>%
+        filter(!isKey) %>%
+        mutate(nTotal=sum(n), pctCorrect=sum(nCorrect)/nTotal) %>%
+        ggplot(aes(x=nArche, y=n, fill=accKey)) +
+        geom_col(position="stack") +
+        labs(title=paste0("Accuracy by # ", locType, " Weather Archetypes"),
+             subtitle=paste0("Data includes only Non-", locType, " Observations"),
+             y="# Observations",
+             x=paste0("# ", locType, " Archetypes")
+             ) +
+        scale_fill_discrete(paste0(locType, " vs.\nNon-", locType, "\nAccuracy")) +
+        geom_text(aes(y=0.5*pctCorrect*nTotal, label=paste0(round(100*pctCorrect, 0), "%")))
+    print(p3)
+
+    subData
+    
+}
+
+```
+  
+The function can then be run for each of the locales:  
+```{r}
+
+subMarine <- plotArchetypeLocale2D(testArcheDataOne, locType="Marine")
+subDesert <- plotArchetypeLocale2D(testArcheDataOne, locType="Desert")
+subHotHumid <- plotArchetypeLocale2D(testArcheDataOne, locType="Hot-Humid")
+subWintry <- plotArchetypeLocale2D(testArcheDataOne, locType="Wintry")
+
+```
+  
+The desert archetypes look promising:  
+
+* Desert makes up 75% of the 2 of 3 Desert archetype data and 100% of the 3 of 3 Desert archetype data  
+* When locale type is Desert, accuracy is 100% for 3 of 3 archetypes, 99% for 2 of 3, and 94% for 1 of 3  
+* There are very few erroneous predictions of Desert made regardless of weather archetype  
+
+The hot-humid archetypes look promising:  
+
+* Hot-Humid makes up 50% of the 2 of 3 Hot-Humid archetype data and 82% of the 3 of 3 Hot-Humid archetype data  
+* When locale type is Hot-Humid, accuracy is 99% for 3 of 3 archetypes, 94% for 2 of 3, and 85% for 1 of 3  
+* There are very few erroneous predictions of Hot-Humid made regardless of weather archetype  
+  
+The wintry archetypes need some work:  
+
+* Wintry makes up only 13% of the 2 of 3 Wintry archetype data  
+* When locale type is Wintry, accuracy is 99% for 3 of 3 archetypes, 95% for 2 of 3, and 85% for 1 of 3  
+* There are few erroneous predictions of Hot-Humid made regardless of weather archetype  
+  
+The winter archetype should be further modified such that the seeming prevalence issues with 1 of 3 and 2 of 3 archetypes can be improved.
+  
