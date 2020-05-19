@@ -1924,4 +1924,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 18-MAY-2020  
 * AdditionalCoding_202003_v002 explores archetype weather conditions  
+* AdditionalCoding_202003_v002 includes functional form for exploring archetype weather conditions  
   
