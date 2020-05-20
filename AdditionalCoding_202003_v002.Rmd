@@ -7664,3 +7664,189 @@ The wintry archetypes need some work:
   
 The winter archetype should be further modified such that the seeming prevalence issues with 1 of 3 and 2 of 3 archetypes can be improved.
   
+#### _Example #54: Further Exploration of the Wintry Archetype Archetype_  
+The Wintry archetype created above is not as distinct to Wintry locales as are the archetypes for Marine, Desert, and Hot-Humid.  This may be due to Wintry locales having four distinct seasons, and looking classically "wintry" only in the winter.
+
+Further exploration includes:  
+```{r}
+
+# Exploration of the four main locale types
+allData16 %>% 
+    filter(testTrain=="test", source %in% c("ksan2016", "klas2016", "kord2016", "kmsy2016")) %>% 
+    mutate(locPred=localeCategory[pred], 
+           source=as.character(source),
+           locSource=paste0("Actual City: ", cityNames[source], " (", localeCategory[source], ")")
+           ) %>% 
+    ggplot(aes(x=monthfct, fill=locPred)) + 
+    geom_bar(position="fill") + 
+    facet_wrap(~ locSource) + 
+    labs(title="Quality of Predictions by Locale", y="Proportion of Predictions") + 
+    scale_fill_discrete("Predicted\nType")
+
+```
+  
+Considering only the Wintry locales and predictions, the following stand out:  
+  
+* Chicago (Wintry) is almost always correctly predicted from December - April  
+* Chicago is most often mis-predicted as Hot-Humid in May, Marine in June, and a mix of Marine/Hot-Humid in July-November.  This suggests that summer in a Wintry city is not as distinct as winter in a Wintry city  
+* Las Vegas (Desert) is most often mis-predicted as Wintry in April-May while San Diego (Marine) is most often predicted as Wintry in June-September  
+* So, with the exception of the very cold season, there is some meaningful difficulty in splitting apart the Wintry cities from everything else  
+  
+Do each of the Wintry cities have a similar dynamic?  
+```{r}
+
+# Key parameters
+expSources <- c("kdtw2016", "klnk2016", "kmsp2016", "kord2016")
+expMonths <- 1:12
+expPred <- unique(localeCategory)
+
+# Exploration of the four Wintry locales
+allData16 %>% 
+    filter(testTrain=="test", source %in% expSources) %>% 
+    mutate(locPred=localeCategory[pred], 
+           source=as.character(source),
+           locSource=paste0("Actual City: ", cityNames[source], " (", localeCategory[source], ")")
+           ) %>% 
+    ggplot(aes(x=monthfct, fill=locPred)) + 
+    geom_bar(position="fill") + 
+    facet_wrap(~ locSource) + 
+    labs(title="Quality of Predictions by Locale", y="Proportion of Predictions") + 
+    scale_fill_discrete("Predicted\nType")
+
+
+# Create a grid of expected observations
+expGrid <- expand.grid(source=expSources, 
+                       locPred=expPred, 
+                       month=expMonths, 
+                       stringsAsFactors=FALSE
+                       ) %>%
+    tibble::as_tibble() %>%
+    arrange(month, source, locPred) %>%
+    select(month, source, locPred)
+
+# Exploration of proportions by City and Month
+typeByMonth <- allData16 %>% 
+    filter(testTrain=="test", source %in% expSources) %>% 
+    mutate(locPred=localeCategory[pred], 
+           source=as.character(source)
+           ) %>%
+    group_by(month, source, locPred) %>%
+    summarize(n=n()) %>%
+    right_join(expGrid, by=c("month", "source", "locPred")) %>%
+    replace_na(list(n=0)) %>%
+    mutate(nTotal=sum(n), 
+           locSource=paste0("Actual City: ", cityNames[source], " (", localeCategory[source], ")")
+           ) %>%
+    ungroup() %>%
+    select(month, source, locSource, locPred, n, nTotal)
+
+
+chiSquaredWintry <- function(baseData, expData, sources, nHurdle=5) {
+
+    # Observed Totals by month
+    for (locObserved in sources) {
+        observedByMonth <- baseData %>% 
+            filter(source==locObserved) %>%
+            right_join(expData, by=c("month", "locPred")) %>%
+            replace_na(list(n=0)) %>%
+            group_by(month) %>%
+            mutate(avgN=avgN*nTotal/sum(avgN)) %>%
+            ungroup() %>%
+        # Run only where the expectation or observed exceeds nHurdle (allow sporadic one-off)
+        filter(avgN >= nHurdle | n >= nHurdle)
+        
+        cat("\nComparison of OBSERVED: ", locObserved, "to EXPECTED: Wintry Average")
+        chisq.test(x=observedByMonth$n, p=observedByMonth$avgN/sum(observedByMonth$avgN)) %>%
+            print()
+    }
+    
+}
+
+# Expected classifications of Wintry cities by month
+expectedByMonth <- typeByMonth %>% 
+    group_by(month, locPred) %>% 
+    summarize(avgN=mean(n), medN=median(n))
+
+chiSquaredWintry(baseData=typeByMonth, 
+                 expData=expectedByMonth, 
+                 sources=sort(unique(typeByMonth$source))
+                 )
+
+# Expected classifications of Wintry cities by month (ex-Lincoln)
+expectedByMonth <- typeByMonth %>% 
+    filter(source != "klnk2016") %>%
+    group_by(month, locPred) %>% 
+    summarize(avgN=mean(n), medN=median(n))
+
+chiSquaredWintry(baseData=typeByMonth, 
+                 expData=expectedByMonth, 
+                 sources=sort(unique(typeByMonth$source))
+                 )
+
+```
+  
+Lincoln stands apart visually as more frequently being similar to Hot-Humid.  The X-squared statistic is also roughly 3x what is observed for any of the other cities when compared against the Wintry average.
+
+Detroit is the only city with a p-value over 0.05 when its distribution of classifications is compared to the average Wintry distribution of classifications.  As previously seen, Wintry cities are in some ways different from each other, which may complicate creation of a Wintry archetype.
+
+If Lincoln is eliminated from the expected data, then the p-values for the other cities all exceed 0.05 when the chi-squared test is run on classification types vs. average classification types by month.
+
+So, there is at least directional evidence suggesting Lincoln either be excluded or be replaced with a more classically inland example of a Wintry city (such as Madison, WI).
+
+How does the weather (temperature, dew point, wind directio) evolve by month for each locale type?  
+```{r}
+
+# Create a mapping of variables to names
+titleNames <- c(TempF="Temperature", 
+                DewF="Dew Point", 
+                wd="Wind Direction"
+                )
+axisNames <- c(TempF="Temperature (F)", 
+               DewF="Dew Point (F)",
+               wd="Wind Direction (degrees)"
+               )
+
+plotVarByLocale <- function(df, varName, alpha=0.3, lwd=0.25) {
+
+    p1 <- df %>%
+        filter(testTrain=="test") %>%
+        ggplot(aes_string(x=varName, fill="localeType", color="localeType")) + 
+        geom_density(alpha=alpha, lwd=lwd) + 
+        labs(title=paste0("Distribution of ", titleNames[varName], " by Locale Type"), 
+             x=axisNames[varName], 
+             y=""
+             ) + 
+        scale_fill_discrete("Locale") +
+        scale_color_discrete("Locale")
+    print(p1)
+    
+    p2 <- p1 + 
+        facet_wrap(~ monthfct) 
+    print(p2)
+    
+}
+
+plotVarByLocale(archeDataOne, varName="TempF")
+plotVarByLocale(archeDataOne, varName="DewF")
+plotVarByLocale(mutate(archeDataOne, wd=as.integer(as.character(dirW))), varName="wd")
+
+```
+  
+The challenges in deriving an archetype for Wintry stand out:  
+  
+* Wintry is well-differentiated from everything else for low temperatures, though these occur only in the cold months  
+* Wintry has dew points that at various times resemble Desert, Marine, and Hot-Humid.  In contrast, each of the other types has a fairly spiky dew point that is prevalent.  This is especially obvious when looking at the data by month  
+* Wintry has winds that at various times resemble Desert or Marine (and occasionally Hot-Humid), though with some meaningful spikes of west winds in December and January  
+  
+So, the inability to pull out a Wintry archetype may be driven by two factors:  
+  
+* The wintry cities have some differences even from each other (and as observed previously with Chicago 2015-2016-2017, from themselves in different years)  
+* At various times outside the code season, Wintry cities frequently have dew points, temperatures, and wind directions that meaningully overlap with at least one of Desert, Hot-Humid, or Marine  
+  
+The success of the model in correctly classifying Wintry observations rests on the following:  
+  
+* In the cold season, Wintry locales are well isolated by their temperatures and wind directions  
+* In the warmer seasons, wintry locales are often picked out by the mix of temperature, dew point, and wind direction which is fairly distinct; but, error rates rise, since there is meaningful overlap between Wintry archetypes during the warmer seasons and other archetypes  
+  
+This would contribute to the previously observed challenge in defining very simple business rules for a Wintry archetype.  In contrast, the other weather types are more spiky and thus better suited to a simple description of their general classification scheme.
+  
