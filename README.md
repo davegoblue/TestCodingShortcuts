@@ -1926,4 +1926,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * AdditionalCoding_202003_v002 explores archetype weather conditions  
 * AdditionalCoding_202003_v002 includes functional form for exploring archetype weather conditions  
 * AdditionalCoding_202003_v002 further explores the Wintry archetype  
+* WeatherDownloads_202005_v001 created to isolate METAR downloads and initial processing  
+* WeatherDownloads_202005_v001 contains code for METAR downloads and determination of hourly read times  
   
