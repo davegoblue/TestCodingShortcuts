@@ -1,0 +1,308 @@
+---
+title: "Weather Data Downloads"
+author: "davegoblue"
+date: "5/20/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+The file 'AdditionalCoding_202003_v002.Rmd' contains code for dowloading, processing, integrating, and analyzing historical weather data as contained in METAR archives.
+
+[METAR](https://en.wikipedia.org/wiki/METAR) are hourly weather data collected at airports, including  visibility, wind, temperature, dew point, precipitation, clouds, barometric pressure, and other features that may impact safe aviation.
+
+Iowa State University has a great database of archived METAR data, stored in a manner that makes for easy, automated downloads in CSV format.
+
+The objective of this file is to isolate the portions of code that download data from the Iowa State archives and run initial processing to verify data integrity and produce/save tibbles for further exploration.
+  
+#### _Example #1: Functions for Downloading METAR Data_  
+There are two key functions for downloading METAR data:  
+  
+* genericGetASOSData() downloads METAR data from a specified station with a specified start and end date to a specified file location.  Defaults are set as per Iowa State's html code when requesting a CSV.    
+  
+* getASOSStationTime() automates parameter management for calling genericGetASOSData(), with specific focus on converting a user's desired station and time to a sensible filename, and converting target year to a sensible start and end time (METAR are in Zulu/UTC time zone, so it is helpful to start early and end late to have full data even if later converting to a local time zone)  
+  
+The code for function genericGetASOSData:  
+```{r}
+
+genericGetASOSData <- function(fileLoc, 
+                               stationID,
+                               startDate, 
+                               endDate,
+                               downloadMethod="curl", 
+                               baseURL="https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?", 
+                               dataFields="all", 
+                               dataTZ="Etc%2FUTC", 
+                               dataFormat="onlycomma", 
+                               dataLatLon="no", 
+                               dataMissing="M", 
+                               dataTrace="T", 
+                               dataDirect="no", 
+                               dataType=2
+                               ) {
+    
+    # Get the year, day, and hour of the key dates
+    y1 <- lubridate::year(startDate)
+    m1 <- lubridate::month(startDate)
+    d1 <- lubridate::day(startDate)
+    
+    y2 <- lubridate::year(endDate)
+    m2 <- lubridate::month(endDate)
+    d2 <- lubridate::day(endDate)
+
+    # Mimic the string shown below
+    # https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?station=LAS&data=all&year1=2015&month1=12&day1=31&year2=2017&month2=1&day2=2&tz=Etc%2FUTC&format=onlycomma&latlon=no&missing=M&trace=T&direct=no&report_type=2
+    
+    useURL <- paste0(baseURL, "station=", stationID)  # add the desired station
+    useURL <- paste0(useURL, "&data=", dataFields)  # default is "all
+    useURL <- paste0(useURL, "&year1=", y1, "&month1=", m1, "&day1=", d1)  # Specify start ymd
+    useURL <- paste0(useURL, "&year2=", y2, "&month2=", m2, "&day2=", d2)  # Specify end ymd
+    useURL <- paste0(useURL, "&tz=", dataTZ)  # time zone (default UTC)
+    useURL <- paste0(useURL, "&format=", dataFormat)  # file format (default CSV)
+    useURL <- paste0(useURL, "&latlon=", dataLatLon)  # Whether to include lat-lon (default no)
+    useURL <- paste0(useURL, "&missing=", dataMissing)  # How to handle missing data (default is 'M')
+    useURL <- paste0(useURL, "&trace=", dataTrace)  # How to handle trace data (default is 'T')
+    useURL <- paste0(useURL, "&direct=", dataDirect)  # Whether to directly get the data (default is 'no')
+    useURL <- paste0(useURL, "&report_type=", dataType)  # Whether to get just METAR (2, default)
+    
+    # Download the file
+    cat("\nDownloading from:", useURL, "\nDownloading to:", fileLoc, "\n")
+    download.file(useURL, destfile=fileLoc, method=downloadMethod)
+        
+    return(TRUE)
+}
+
+```
+  
+The code for getASOSStationTime:  
+```{r}
+
+getASOSStationTime <- function(stationID, 
+                               startDate=NULL, 
+                               endDate=NULL, 
+                               analysisYears=NULL, 
+                               fileLoc=NULL,
+                               ovrWrite=FALSE,
+                               ...) {
+    
+    # Get the relevant time period for the data
+    if (is.null(analysisYears) & (is.null(startDate) | is.null(endDate))) {
+        stop("Must provide either analysisYears or both of startDate and endDate")
+    }
+    if (!is.null(startDate) & !is.null(endDate) & !is.null(analysisYears)) {
+        stop("Should specify EITHER both of startDate and endDate OR analysisYears BUT NOT both")
+    }
+    if (is.null(startDate)) {
+        startDate <- ISOdate(min(analysisYears)-1, 12, 31, hour=0)
+        endDate <- ISOdate(max(analysisYears)+1, 1, 2, hour=0)
+    }
+    
+    # Create the file name
+    if (!is.null(analysisYears)) {
+        if (length(analysisYears) == 1) { timeDesc <- analysisYears }
+        else { timeDesc <- paste0(min(analysisYears), "-", max(analysisYears)) }
+    } else {
+        timeDesc <- paste0(lubridate::year(startDate), 
+                           stringr::str_pad(lubridate::month(startDate), 2, pad="0"),
+                           stringr::str_pad(lubridate::day(startDate), 2, pad="0"), 
+                           "-", 
+                           lubridate::year(endDate), 
+                           stringr::str_pad(lubridate::month(endDate), 2, pad="0"), 
+                           stringr::str_pad(lubridate::day(endDate), 2, pad="0")
+                           )
+    }
+    
+    if (is.null(fileLoc)) {
+        fileLoc <- paste0("./RInputFiles/", 
+                          "metar_k", 
+                          stringr::str_to_lower(stationID), 
+                          "_", 
+                          timeDesc, 
+                          ".txt"
+                          )
+    }
+    
+    cat("\nData for station", stationID, "from", as.character(startDate), "to", 
+        as.character(endDate), "will download to", fileLoc, "\n"
+        )
+    
+    if (file.exists(fileLoc) & !ovrWrite) {
+        stop("File already exists, aborting")
+    }
+    
+    genericGetASOSData(fileLoc=fileLoc, stationID=stationID, startDate=startDate, endDate=endDate, ...)
+    
+}
+
+```
+  
+Example downloads are created (cached to avoid multiple hits to Iowa State's server), with focus on additional 2016 data for Wintry cities to build on the later analyses in 'AdditionalCoding_202003_v002.Rmd':  
+```{r cache=TRUE}
+# Download 2016 weather data for Milwaukee, WI
+getASOSStationTime(stationID="MKE", analysisYears=2016, ovrWrite=TRUE)
+```
+
+```{r cache=TRUE}
+# Download 2016 weather data for Madison, WI
+getASOSStationTime(stationID="MSN", analysisYears=2016, ovrWrite=TRUE)
+```
+
+```{r cache=TRUE}
+# Download 2016 weather data for Green Bay, WI
+getASOSStationTime(stationID="GRB", analysisYears=2016, ovrWrite=TRUE)
+```
+
+```{r cache=TRUE}
+# Download 2016 weather data for Escanaba, MI
+getASOSStationTime(stationID="ESC", analysisYears=2016, ovrWrite=TRUE)
+```
+
+```{r cache=TRUE}
+# Download 2016 weather data for Traverse City, MI
+getASOSStationTime(stationID="TVC", analysisYears=2016, ovrWrite=TRUE)
+```
+
+```{r cache=TRUE}
+# Download 2016 weather data for Grand Rapids, MI
+getASOSStationTime(stationID="GRR", analysisYears=2016, ovrWrite=TRUE)
+```
+
+```{r cache=TRUE}
+# Download 2016 weather data for Indianapolis, IN
+getASOSStationTime(stationID="IND", analysisYears=2016, ovrWrite=TRUE)
+```
+  
+Confirmation can be obtained that the files downloaded as expected:  
+```{r}
+
+for (airport in c("kmke", "kmsn", "kgrb", "kesc", "ktvc", "kgrr", "kind")) {
+    
+    fileCheck <- paste0("./RInputFiles/metar_", airport, "_2016.txt")
+    print(file.info(fileCheck)[c("size", "isdir", "mode", "mtime")])
+    
+}
+
+```
+  
+The files are all in the 2-3 MB range, which is appropriate for a year of METAR data.
+  
+#### _Example #2: Finding the Hourly Reporting Time for METAR Data_  
+The METAR are downloaded in raw CSV format, and require some data wrangling to extract a clean file in a common format.
+
+One component of wrangling a METAR file is to specify the columns and expected data types.  The Iowa State data are contained in the below format, which is not necessarily standard to how other archives may store the information (Iowa State has run processing on the METAR file):  
+```{r}
+
+metType <- readr::cols(station=readr::col_character(), 
+                       valid=readr::col_datetime(), 
+                       tmpf=readr::col_double(),
+                       dwpf=readr::col_double(),
+                       relh=readr::col_double(),
+                       drct=readr::col_double(),
+                       sknt=readr::col_double(),
+                       p01i=readr::col_character(),  # needs to handle 'T' for trace
+                       alti=readr::col_double(),
+                       mslp=readr::col_double(),
+                       vsby=readr::col_double(),
+                       gust=readr::col_double(),
+                       skyc1=readr::col_character(),
+                       skyc2=readr::col_character(), 
+                       skyc3=readr::col_character(), 
+                       skyc4=readr::col_character(),
+                       skyl1=readr::col_double(),
+                       skyl2=readr::col_double(),
+                       skyl3=readr::col_double(),
+                       skyl4=readr::col_double(),
+                       wxcodes=readr::col_character(),
+                       ice_accretion_1hr=readr::col_character(), # needs to handle 'T' for trace
+                       ice_accretion_3hr=readr::col_character(), # needs to handle 'T' for trace
+                       ice_accretion_6hr=readr::col_character(), # needs to handle 'T' for trace
+                       peak_wind_gust=readr::col_double(),
+                       peak_wind_drct=readr::col_double(),
+                       peak_wind_time=readr::col_datetime(),
+                       feel=readr::col_double(),
+                       metar=readr::col_character()
+                       )
+
+```
+
+Another component of wrangling a METAR file is to extract the hourly observations.  Since the primary use of a METAR is aviation safety, non-hourly updates are common when changes in clouds, winds, precipiation, and the like need to be communicated.  For analysis, though, it is more useful to have just the hourly summaries which contain the most salient information about the last hour in an easily digestable format.
+
+Each airport reports hourly at the same number of minutes past the hour (each airport may have a different hourly reporting time, but the hourly reporting time for a given airport is constant all year).  In the US, this is commonly some time between 50-55 minutes past the hour.
+
+The function findHourlyReportingTime() reads a METAR file and analyzes the most commonly occuring time:  
+```{r}
+
+findHourlyReportingTimes <- function(metFile=NULL, 
+                                     metStation=NULL, 
+                                     metTime=NULL, 
+                                     metPath="./RInputFiles/metar_k", 
+                                     metSep="_", 
+                                     metExt=".txt",
+                                     stationToLower=TRUE, 
+                                     returnAll=FALSE,
+                                     naValues=c("", "NA", "M"), 
+                                     colTypes=metType
+                                     ) {
+    
+    # Find the file name if it has not been passed
+    if (is.null(metFile)) {
+        if (is.null(metStation) | is.null(metPath) | is.null(metSep) | is.null(metTime) | is.null(metExt)) {
+            stop("If metFile is not passed, all other parameters must be passed so filename can be created")
+        }
+        if (stationToLower) { metStation <- stringr::str_to_lower(metStation) }
+        metFile <- paste0(metPath, metStation, metSep, metTime, metExt)
+    }
+    
+    # Find the most common Zulu time (this will be the METAR)
+    zTimes <- readr::read_csv(metFile, na=naValues, col_types=colTypes) %>%
+        pull(metar) %>%
+        stringr::str_match(pattern="\\d{2}Z") %>%
+        as.vector() %>%
+        table() %>%
+        sort(decreasing=TRUE)
+
+    # Print the most common 10 times    
+    cat("\nMost common 10 times for file:", metFile, "\n")
+    print(zTimes[1:10])
+
+    # Print the estimated Zulu time
+    cat("\nThe most common Zulu time for", metFile, "is", names(zTimes)[1], "\nFrequency is",
+        round(100*zTimes[1]/sum(zTimes), 1), "% (", zTimes[1], "of", sum(zTimes), ")\n"
+        )
+
+    # Return the fill vector if requested (likely only if a problem is detected), otherwise return the time
+    if (returnAll) {
+        return(zTimes)
+    } else {
+        return(names(zTimes)[1])
+    }
+    
+}
+
+# The tidvverse library is needed for the remainder of the process
+library(tidyverse)
+
+# The most common hours are assessed
+findHourlyReportingTimes(metStation="MKE", metTime=2016)
+findHourlyReportingTimes(metStation="MSN", metTime=2016)
+findHourlyReportingTimes(metStation="GRB", metTime=2016)
+findHourlyReportingTimes(metStation="ESC", metTime=2016)
+findHourlyReportingTimes(metStation="TVC", metTime=2016)
+findHourlyReportingTimes(metStation="GRR", metTime=2016)
+findHourlyReportingTimes(metStation="IND", metTime=2016)
+
+```
+  
+With the exception of Escanaba, MI (ESC), the most common times seeem reasonable - greater than 75% of the observations are at a specific, recurring time past the hour in the early-mid 50s:  
+  
+* 52Z - Milwaukee (83%)  
+* 53Z - Madison (79%), Green Bay (78%), Traverse City (79%), Grand Rapids (79%)  
+* 54Z - Indianapolis (83%)  
+  
+Escanaba appears to have multiple reporting times, which may be driven by Escanaba being a much smaller airport that sees little if any scheduled air service.  As there are sufficient Wintry cities already for further analysis, and as Green Bay is less than 100 miles to the south, Escanaba will be excluded from any follow-on analysis.
+  
+The remaining 6 cities all have roughly 8,800 observations at the most common time.  There are 8,784 hours in a 366-day leap-year (2016), 1-2 extra days were pulled on either side of the year, an observation is expected every hour, and these are real-world systems where occasional missing archive data is not unexpected.  So, to a first order, data quantities of about 8,800 observations appear accurate.
+  
