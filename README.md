@@ -1929,4 +1929,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherDownloads_202005_v001 created to isolate METAR downloads and initial processing  
 * WeatherDownloads_202005_v001 contains code for METAR downloads and determination of hourly read times  
 * WeatherDownloads_202005_v001 contains code for processing a downloaded METAR file  
+* WeatherDownloads_202005_v001 contains updated METAR cloud processing code  
   
