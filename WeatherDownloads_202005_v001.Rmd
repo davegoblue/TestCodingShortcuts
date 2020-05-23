@@ -891,3 +891,186 @@ fullGRB <- bindMETAR(fixGRB,
   
 A fully processed file for Green Bay, WI (2016) is now available for further analysis.
   
+#### _Example #4: Cloud Processing Update_  
+The cloud extraction code above is verbose and mingles analysis with data wrangling.  An improved approach is to focus on extracting and validating cloud data as a single function.  Investigation of things like ceiling height and minimum cloud height can be left for the analysis stage.
+  
+Broadly speaking, there are seven types of clouds that can be reported in a METAR:  
+  
+* SKC - skies are clear as determined by an automated sensor and confirmed by a human observer  
+* CLR - skies are clear as determined by an automated sensor (the sensor has a maximum height, and there may be clouds, including full overcast, above the maximum sensor height)  
+* VVddd - vertical visbility is obscured to ddd hundred feet, thus cloud levels are indeterminate  
+* OVCddd - there is an overcast at ddd hundred feet  
+* BKNddd - there is a broken (5/8 to 7/8) layer of clouds at ddd hundred feet  
+* SCTddd - there is a scattered (3/8 to 4/8) layer of clouds at ddd hundred feet  
+* FEWddd - there are a few (1/8 to 2/8) clouds at ddd hundred feet  
+  
+Cloud layers are always graded according to the total obscuration up to and including that level.  As such, it is impossible for FEW to be recorded at any level higher than the first recording of SCT/BKN/OVC/VV.
+  
+The cloud processing function is enahnced to perform the following:  
+  
+* Determine whether SKC or CLR has been reported  
+* Extract up to 6 observations of (VV|OVC|BKN|SCT|FEW)\\d{3}, and split their data in to cloud type and cloud height  
+* Confirm that every record has exactly 1 of SKC, CLR, or 1+ cloud type recorded (flag exceptions)  
+* Confirm that cloud types are strictly non-descending across FEW<SCT<BKN<OVC<VV  
+* Confirm that cloud heights are strictly ascending by observation  
+* Create wtype as the highest level of obscuration recorded in the cloud data  
+  
+Example code includes:  
+```{r}
+
+# Helper function to verify non-descending cloud types, ascending cloud heights, return highest cloud type
+validateClouds <- function(tbl, 
+                           cloudStates,
+                           nCols=6, 
+                           var1="cloud", 
+                           var2="cType", 
+                           var3="cLevel"
+                           ) {
+    
+    # STEP 1: Validate non-descending cloud types
+    ascStates <- c(cloudStates, "")  # "" can be considered the highest cloud state; nothing should follow it
+    cTypes <- tbl %>%
+        select_at(vars(all_of(paste0(var2, 1:nCols)))) %>%
+        mutate_all(~match(., ascStates))
+
+    for (intCtr in 1:(nCols-1)) {
+        descClouds <- as.vector(cTypes[, intCtr+1] - cTypes[, intCtr])
+        mism <- sum(descClouds < 0)
+        if (mism != 0) {
+            cat("\nIssue with descending cloud types - ", mism, "records in column", intCtr+1, "\n")
+            stop()
+        }
+    }
+    
+    # STEP 2: Validate ascending cloud types (NA is always fine, but cannot be followed by a number)
+    cHeights <- tbl %>%
+        select_at(vars(all_of(paste0(var3, 1:nCols))))
+    
+    htChecker <- function(y) {
+        if (all(is.na(y))) {
+            # This is OK, if there are no clouds then they are all NA
+        } else if (all(is.na(y[2:length(y)]))) {
+            # This is OK, single cloud value is by definition ascending
+        } else {
+            # Confirm that NA are non-descending and that values are non-descending
+            if (any(is.na(y) != cummax(is.na(y)))) {
+                cat("\nIssue with NA preceding value -", y)
+            } else {
+                nonNA <- y[!is.na(y)]
+                if (min(diff(nonNA)) <= 0) {
+                    cat("\nIssue with clouds at same or lower height:", y, "\n")
+                }
+            }
+        }
+    }
+    
+    apply(cHeights, 1, FUN=htChecker)
+    
+    # STEP 3: Extract the most obscured cloud type
+    obscureTypes <- cTypes %>%
+        mutate_all(~ifelse(. > length(cloudStates), 0, .)) %>%
+        apply(1, FUN=max)
+    
+    ifelse(obscureTypes==0, "", cloudStates[obscureTypes])
+    
+}
+
+
+# Function to extract and wrangle cloud data contained in a METAR
+extractAndWrangleClouds <- function(met, 
+                                    metVar, 
+                                    soloStates=c("SKC", "CLR"), 
+                                    numStates=c("FEW", "SCT", "BKN", "OVC", "VV")
+                                    ) {
+    
+    # Extract the metar record
+    metAll <- met %>%
+        pull(metVar)
+    
+    # Search for soloStates and bind them by column to the existing data
+    for (soloState in soloStates) {
+        ss <- str_extract_all(metAll, pattern=paste0(" ", soloState, " "), simplify=TRUE)
+        if (dim(ss)[2] == 0) {
+            resVec <- rep(0L, dim(ss)[1])
+        } else {
+            resVec <- apply(ss, 1, FUN=function(x) { sum(x!="") })
+        }
+        origNames <- names(met)
+        met <- bind_cols(met, data.frame(resVec))
+        names(met) <- c(origNames, paste0("n", soloState))
+    }
+    
+    # Search and extract for numStates
+    numPasted <- paste0("(", paste0(numStates, collapse="|"), ")")
+    numRecords <- str_extract_all(metAll, pattern=paste0(numPasted, "\\d{3}"), simplify=TRUE)
+
+    # Allow for up to 6 cloud types (hard coded)
+    if (dim(numRecords)[2] > 6) {
+        cat("Too many cloud records relative to hard-coded maximum of 6: Dimensions -", dim(numRecords))
+        stop("Investigate and fix")
+    }
+    
+    # Create columns for cType1-cType6 and cLevel1-cLevel6
+    for (intCtr in 1:6) {
+        if (intCtr > dim(numRecords)[2]) {
+            x <- rep("", dim(numRecords)[1])
+        } else {
+            x <- numRecords[, intCtr]
+        }
+        
+        # Hard-coding that the heights are always three digits (as per the extraction)
+        cType <- str_sub(x, 1, str_length(x)-3)
+        cLevel <- str_sub(x, str_length(x)-2, -1)
+        cLevel <- ifelse(cLevel=="", NA_integer_, 100*as.integer(cLevel))
+        
+        origNames <- names(met)
+        met <- bind_cols(met, tibble::tibble(x, cType, cLevel))
+        names(met) <- c(origNames, paste0(c("cloud", "cType", "cLevel"), intCtr))
+    }
+    
+    # Validate clouds are sensible
+    met$wType <- validateClouds(met, cloudStates=numStates)
+    
+    # Return the database
+    met
+    
+}
+
+```
+  
+And the routine can then be run to create fullGRB2:  
+```{r}
+
+fullGRB2 <- extractAndWrangleClouds(fixGRB, metVar="origMETAR")
+
+# Variables in fullGRB but not in fullGRB2
+setdiff(names(fullGRB), names(fullGRB2))
+
+# Variables in fullGRB2 but not in fullGRB
+setdiff(names(fullGRB2), names(fullGRB))
+
+# Variables in both fullGRB2 but not in fullGRB
+namesBoth <- intersect(names(fullGRB2), names(fullGRB))
+namesBoth
+
+cat("\n")
+# Comparisons for equality for variables in both
+for (colName in namesBoth) {
+    cat("100% Match for Variable:", colName, all.equal(fullGRB[, colName], fullGRB2[, colName]), "\n")
+}
+
+```
+  
+The routine seems to be working well and is extracting a greater portion of cloud data which may be useful for later analysis:  
+  
+* Every cloud record  
+* Every cloud type  
+* Every cloud height  
+  
+Further, checks have been automated to be sure that cloud types are non-descending and cloud heights are strictly ascending (with the exception that NA can follow anything but can only precede NA).
+  
+There is a need to update the wType variable to be a factor and to reflect that SKC/CLR are an acceptable state.  Further checks should be run to ensure that there is exactly 1 of SKC, CLR, or wType!="".
+
+Month is also a valuable variable for analysis, though it is contained in 'dtime' already.
+
+Further checks should be run to confirm that 'dtime' is aligned to origMETAR.
