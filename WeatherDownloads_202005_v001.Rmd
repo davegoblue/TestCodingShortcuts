@@ -918,6 +918,36 @@ The cloud processing function is enahnced to perform the following:
 Example code includes:  
 ```{r}
 
+# Helper function to check if data are always ascending
+# Subject to the rules that NA may follow anything but may only precede NA
+ascVectorChecker <- function(y, strictly=TRUE) {
+
+    # Checks a vector for being ascending (strictly so if strictly=TRUE)
+    # Allows for NA provided that they never precede a numeric value
+    
+    if (all(is.na(y))) {
+        # This is OK, if there are no numeric values then they are all NA
+    } else if (all(is.na(y[2:length(y)]))) {
+        # This is OK, single value is by definition ascending
+    } else {
+        # Confirm that NA are non-descending and that values are non-descending
+        if (any(is.na(y) != cummax(is.na(y)))) {
+            cat("\nIssue with NA preceding value -", y)
+        } else {
+            nonNA <- y[!is.na(y)]
+            if (strictly) {
+                if (min(diff(nonNA)) <= 0) {
+                    cat("\nIssue with following values same or lower then preceding:", y, "\n")
+                }
+            } else {
+                if (min(diff(nonNA)) < 0) {
+                    cat("\nIssue with following values lower then preceding:", y, "\n")
+                }
+            }
+        }
+    }
+}
+    
 # Helper function to verify non-descending cloud types, ascending cloud heights, return highest cloud type
 validateClouds <- function(tbl, 
                            cloudStates,
@@ -932,7 +962,7 @@ validateClouds <- function(tbl,
     cTypes <- tbl %>%
         select_at(vars(all_of(paste0(var2, 1:nCols)))) %>%
         mutate_all(~match(., ascStates))
-
+    
     for (intCtr in 1:(nCols-1)) {
         descClouds <- as.vector(cTypes[, intCtr+1] - cTypes[, intCtr])
         mism <- sum(descClouds < 0)
@@ -942,36 +972,21 @@ validateClouds <- function(tbl,
         }
     }
     
+    
     # STEP 2: Validate ascending cloud types (NA is always fine, but cannot be followed by a number)
     cHeights <- tbl %>%
         select_at(vars(all_of(paste0(var3, 1:nCols))))
     
-    htChecker <- function(y) {
-        if (all(is.na(y))) {
-            # This is OK, if there are no clouds then they are all NA
-        } else if (all(is.na(y[2:length(y)]))) {
-            # This is OK, single cloud value is by definition ascending
-        } else {
-            # Confirm that NA are non-descending and that values are non-descending
-            if (any(is.na(y) != cummax(is.na(y)))) {
-                cat("\nIssue with NA preceding value -", y)
-            } else {
-                nonNA <- y[!is.na(y)]
-                if (min(diff(nonNA)) <= 0) {
-                    cat("\nIssue with clouds at same or lower height:", y, "\n")
-                }
-            }
-        }
-    }
+    apply(cHeights, 1, FUN=ascVectorChecker)
     
-    apply(cHeights, 1, FUN=htChecker)
     
     # STEP 3: Extract the most obscured cloud type
     obscureTypes <- cTypes %>%
         mutate_all(~ifelse(. > length(cloudStates), 0, .)) %>%
         apply(1, FUN=max)
     
-    ifelse(obscureTypes==0, "", cloudStates[obscureTypes])
+    obscureTypes <- ifelse(obscureTypes==0, length(cloudStates)+1, obscureTypes)
+    ascStates[obscureTypes]
     
 }
 
@@ -979,9 +994,18 @@ validateClouds <- function(tbl,
 # Function to extract and wrangle cloud data contained in a METAR
 extractAndWrangleClouds <- function(met, 
                                     metVar, 
+                                    maxClouds=6,
+                                    timeVar="dtime",
                                     soloStates=c("SKC", "CLR"), 
-                                    numStates=c("FEW", "SCT", "BKN", "OVC", "VV")
+                                    numStates=c("FEW", "SCT", "BKN", "OVC", "VV"), 
+                                    printDetails=FALSE
                                     ) {
+    
+    # Check that maxClouds <= 9
+    if ((maxClouds != round(maxClouds, 0)) | (maxClouds < 1) | (maxClouds > 9)) {
+        cat("\nThe maxClouds parameter must be an integer from 1-9, invalid entry of:", maxClouds)
+        stop("Investigate and fix")
+    }
     
     # Extract the metar record
     metAll <- met %>%
@@ -1004,14 +1028,16 @@ extractAndWrangleClouds <- function(met,
     numPasted <- paste0("(", paste0(numStates, collapse="|"), ")")
     numRecords <- str_extract_all(metAll, pattern=paste0(numPasted, "\\d{3}"), simplify=TRUE)
 
-    # Allow for up to 6 cloud types (hard coded)
-    if (dim(numRecords)[2] > 6) {
-        cat("Too many cloud records relative to hard-coded maximum of 6: Dimensions -", dim(numRecords))
+    # Allow for up to maxClouds cloud types
+    if (dim(numRecords)[2] > maxClouds) {
+        cat("Too many clouds relative to passed paremeter maximum of", maxClouds, ": Dimensions -",
+            dim(numRecords)
+            )
         stop("Investigate and fix")
     }
     
-    # Create columns for cType1-cType6 and cLevel1-cLevel6
-    for (intCtr in 1:6) {
+    # Create columns for cType1-cType(maxClouds) and cLevel1-cLevel(maxClouds)
+    for (intCtr in 1:maxClouds) {
         if (intCtr > dim(numRecords)[2]) {
             x <- rep("", dim(numRecords)[1])
         } else {
@@ -1028,8 +1054,59 @@ extractAndWrangleClouds <- function(met,
         names(met) <- c(origNames, paste0(c("cloud", "cType", "cLevel"), intCtr))
     }
     
-    # Validate clouds are sensible
-    met$wType <- validateClouds(met, cloudStates=numStates)
+    # Validate clouds are sensible and return the most obscured state
+    wType <- validateClouds(met, cloudStates=numStates, nCols=maxClouds)
+    
+    # Create a table of soloStates and wType
+    tmp <- met %>%
+        select_at(vars(all_of(paste0("n", soloStates)))) %>%
+        mutate(obsc=wType)
+    
+    # Confirm that values in tmp are as expected
+    # Should be either 0 or 1 total of soloStates counts
+    # If 1 soloStates counts, should be wType=""
+    # If 0 soloStates counts, should be wType!=""
+    tmpSolos <- tmp %>%
+        select_at(vars(all_of(paste0("n", soloStates)))) %>%
+        apply(1, FUN=sum)
+    
+    tmpObsc <- ifelse(wType!="", 1, 0)
+    tmpProbs <- (tmpSolos + tmpObsc != 1)
+    
+    if (sum(tmpProbs)==0) {
+        cat("\nwType as created from clouds data is consistent")
+    } else {
+        cat("\nIssues with clouds data at records:\n")
+        met %>%
+            select_at(vars(all_of(c(timeVar, metVar)))) %>%
+            filter(tmpProbs) %>%
+            print()
+    }
+    
+    # Print the summaries by key type
+    if (printDetails) {
+        tmp %>%
+            group_by_all() %>%
+            summarize(n=n()) %>%
+            print()
+    }
+
+    # Create the final wType variable, attach to the met data, and convert to a factor
+    # Take the wType variable and overwrite in the soloStates if they exist
+    for (soloVar in rev(soloStates)) {
+        soloVec <- tmp %>%
+            pull(paste0("n", soloVar))
+        wType <- ifelse(soloVec > 0, soloVar, wType)
+    }
+    wType <- ifelse(wType=="", "Error", wType)
+    
+    met <- met %>%
+        mutate(wType=factor(wType, levels=c(rev(numStates), rev(soloStates), "Error")))
+    
+    # Show count by wType
+    met %>%
+        count(wType) %>%
+        print()
     
     # Return the database
     met
@@ -1049,14 +1126,23 @@ setdiff(names(fullGRB), names(fullGRB2))
 # Variables in fullGRB2 but not in fullGRB
 setdiff(names(fullGRB2), names(fullGRB))
 
-# Variables in both fullGRB2 but not in fullGRB
+# Variables in both fullGRB2 and fullGRB
 namesBoth <- intersect(names(fullGRB2), names(fullGRB))
 namesBoth
+
+# Convert fullGRB to have same levels as fullGRB2
+testGRB <- fullGRB %>%
+    mutate(wType=factor(wType, levels=levels(fullGRB2$wType)))
 
 cat("\n")
 # Comparisons for equality for variables in both
 for (colName in namesBoth) {
-    cat("100% Match for Variable:", colName, all.equal(fullGRB[, colName], fullGRB2[, colName]), "\n")
+    ae <- all.equal(testGRB[, colName], fullGRB2[, colName])
+    if (isTRUE(ae)) {
+        cat("100% Match for Variable:", colName, "\n")
+    } else {
+        cat("Mismatch for variable:", colName, "-", ae, "\n")
+    }
 }
 
 ```
@@ -1069,8 +1155,99 @@ The routine seems to be working well and is extracting a greater portion of clou
   
 Further, checks have been automated to be sure that cloud types are non-descending and cloud heights are strictly ascending (with the exception that NA can follow anything but can only precede NA).
   
-There is a need to update the wType variable to be a factor and to reflect that SKC/CLR are an acceptable state.  Further checks should be run to ensure that there is exactly 1 of SKC, CLR, or wType!="".
+The wType variable is created as a factor and reflects that SKC/CLR are acceptable states.  Further the functions check to ensure that there is exactly 1 of SKC, CLR, or wType!="".
 
-Month is also a valuable variable for analysis, though it is contained in 'dtime' already.
+Month is also a valuable variable for analysis, though it is contained in 'dtime' already.  Further checks should be run to confirm that 'dtime' is aligned to origMETAR.
+  
+#### _Example #5: Checking Time Properties_  
+At various times, the 'dtime' variable is used to classify information that is pulled from 'origMETAR'.  It will be useful to confirm that the variables are well aligned as follows:  
+  
+* The origMETAR will have ddddddZ where the first dd are the two-digit day, the second dd are the two-digit hour, the third dd are the two-digit minutes, and the Z reflects UTC/Zulu time  
+* The corresponding data from dtime should match, and year, month, and day can also be extracted during this process  
+  
+Example code includes:  
+```{r}
 
-Further checks should be run to confirm that 'dtime' is aligned to origMETAR.
+# Function to check alignment of Zulu time in a METAR with an associated date-time variable
+checkTimeProperties <- function(met, 
+                                metVar, 
+                                timeVar
+                                ) {
+    
+    # Extract the Zulu days and times from metVar
+    zTime <- met %>%
+        pull(metVar) %>%
+        str_extract(pattern="\\d{6}Z")
+    
+    # Extract the day, hour, and minute from timeVar
+    dTime <- met %>%
+        pull(timeVar)
+    
+    # Create the expected Zulu string from dTime
+    expTime <- paste0(str_pad(lubridate::day(dTime), width=2, pad="0"), 
+                      str_pad(lubridate::hour(dTime), width=2, pad="0"), 
+                      str_pad(lubridate::minute(dTime), width=2, pad="0"), 
+                      "Z"
+                      )
+    
+    # Check for consistency
+    mism <- (zTime != expTime)
+    if (sum(mism) == 0) {
+        cat("\nAll Zulu times in the METAR are consistent with the datetime variable\n")
+    } else {
+        cat("\nThere are", 
+            sum(mism), 
+            "inconsistencies between Zulu times in the METAR and the datetime variable\n",
+            "First 10 examples include:\n"
+            )
+        data.frame(zTime, dTime, expTime, mism) %>%
+            filter(mism) %>%
+            head(10)
+    }
+    
+    # Create key variables and return them
+    met <- met %>%
+        mutate(year=lubridate::year(dTime), 
+               monthint=lubridate::month(dTime), 
+               month=factor(monthint, levels=1:12, labels=month.abb[1:12]),
+               day=lubridate::day(dTime)
+               )
+    
+    met
+        
+}
+
+fullGRB3 <- checkTimeProperties(fullGRB2, metVar="origMETAR", timeVar="dtime")
+
+# Variables in fullGRB but not in fullGRB3
+setdiff(names(fullGRB), names(fullGRB3))
+
+# Variables in fullGRB3 but not in fullGRB
+setdiff(names(fullGRB3), names(fullGRB))
+
+# Variables in both fullGRB3 and fullGRB
+namesBoth <- intersect(names(fullGRB3), names(fullGRB))
+namesBoth
+
+# Convert fullGRB to have same levels as fullGRB3
+testGRB <- fullGRB %>%
+    mutate(wType=factor(wType, levels=levels(fullGRB3$wType)))
+
+cat("\n")
+# Comparisons for equality for variables in both
+for (colName in namesBoth) {
+    ae <- all.equal(testGRB[, colName], fullGRB3[, colName])
+    if (isTRUE(ae)) {
+        cat("100% Match for Variable:", colName, "\n")
+    } else {
+        cat("Mismatch for variable:", colName, "-", ae, "\n")
+    }
+}
+
+```
+  
+The times are aligned, allowing for confident use of the 'dtime' variable in analysis.  Further, the year, month (as both integer and factor), and day have been extracted for easy availability in future analysis.
+  
+Next steps are to integrate the full download and processing, and to save a final file to the local drive so that processing need only be run once.
+  
+

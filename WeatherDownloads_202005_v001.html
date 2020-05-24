@@ -1540,7 +1540,37 @@ bindMETAR &lt;- function(dfParse, tblClouds, lowCloud) {
 <li>Create wtype as the highest level of obscuration recorded in the cloud data</li>
 </ul>
 <p>Example code includes:</p>
-<pre class="r"><code># Helper function to verify non-descending cloud types, ascending cloud heights, return highest cloud type
+<pre class="r"><code># Helper function to check if data are always ascending
+# Subject to the rules that NA may follow anything but may only precede NA
+ascVectorChecker &lt;- function(y, strictly=TRUE) {
+
+    # Checks a vector for being ascending (strictly so if strictly=TRUE)
+    # Allows for NA provided that they never precede a numeric value
+    
+    if (all(is.na(y))) {
+        # This is OK, if there are no numeric values then they are all NA
+    } else if (all(is.na(y[2:length(y)]))) {
+        # This is OK, single value is by definition ascending
+    } else {
+        # Confirm that NA are non-descending and that values are non-descending
+        if (any(is.na(y) != cummax(is.na(y)))) {
+            cat(&quot;\nIssue with NA preceding value -&quot;, y)
+        } else {
+            nonNA &lt;- y[!is.na(y)]
+            if (strictly) {
+                if (min(diff(nonNA)) &lt;= 0) {
+                    cat(&quot;\nIssue with following values same or lower then preceding:&quot;, y, &quot;\n&quot;)
+                }
+            } else {
+                if (min(diff(nonNA)) &lt; 0) {
+                    cat(&quot;\nIssue with following values lower then preceding:&quot;, y, &quot;\n&quot;)
+                }
+            }
+        }
+    }
+}
+    
+# Helper function to verify non-descending cloud types, ascending cloud heights, return highest cloud type
 validateClouds &lt;- function(tbl, 
                            cloudStates,
                            nCols=6, 
@@ -1554,7 +1584,7 @@ validateClouds &lt;- function(tbl,
     cTypes &lt;- tbl %&gt;%
         select_at(vars(all_of(paste0(var2, 1:nCols)))) %&gt;%
         mutate_all(~match(., ascStates))
-
+    
     for (intCtr in 1:(nCols-1)) {
         descClouds &lt;- as.vector(cTypes[, intCtr+1] - cTypes[, intCtr])
         mism &lt;- sum(descClouds &lt; 0)
@@ -1564,36 +1594,21 @@ validateClouds &lt;- function(tbl,
         }
     }
     
+    
     # STEP 2: Validate ascending cloud types (NA is always fine, but cannot be followed by a number)
     cHeights &lt;- tbl %&gt;%
         select_at(vars(all_of(paste0(var3, 1:nCols))))
     
-    htChecker &lt;- function(y) {
-        if (all(is.na(y))) {
-            # This is OK, if there are no clouds then they are all NA
-        } else if (all(is.na(y[2:length(y)]))) {
-            # This is OK, single cloud value is by definition ascending
-        } else {
-            # Confirm that NA are non-descending and that values are non-descending
-            if (any(is.na(y) != cummax(is.na(y)))) {
-                cat(&quot;\nIssue with NA preceding value -&quot;, y)
-            } else {
-                nonNA &lt;- y[!is.na(y)]
-                if (min(diff(nonNA)) &lt;= 0) {
-                    cat(&quot;\nIssue with clouds at same or lower height:&quot;, y, &quot;\n&quot;)
-                }
-            }
-        }
-    }
+    apply(cHeights, 1, FUN=ascVectorChecker)
     
-    apply(cHeights, 1, FUN=htChecker)
     
     # STEP 3: Extract the most obscured cloud type
     obscureTypes &lt;- cTypes %&gt;%
         mutate_all(~ifelse(. &gt; length(cloudStates), 0, .)) %&gt;%
         apply(1, FUN=max)
     
-    ifelse(obscureTypes==0, &quot;&quot;, cloudStates[obscureTypes])
+    obscureTypes &lt;- ifelse(obscureTypes==0, length(cloudStates)+1, obscureTypes)
+    ascStates[obscureTypes]
     
 }
 
@@ -1601,9 +1616,18 @@ validateClouds &lt;- function(tbl,
 # Function to extract and wrangle cloud data contained in a METAR
 extractAndWrangleClouds &lt;- function(met, 
                                     metVar, 
+                                    maxClouds=6,
+                                    timeVar=&quot;dtime&quot;,
                                     soloStates=c(&quot;SKC&quot;, &quot;CLR&quot;), 
-                                    numStates=c(&quot;FEW&quot;, &quot;SCT&quot;, &quot;BKN&quot;, &quot;OVC&quot;, &quot;VV&quot;)
+                                    numStates=c(&quot;FEW&quot;, &quot;SCT&quot;, &quot;BKN&quot;, &quot;OVC&quot;, &quot;VV&quot;), 
+                                    printDetails=FALSE
                                     ) {
+    
+    # Check that maxClouds &lt;= 9
+    if ((maxClouds != round(maxClouds, 0)) | (maxClouds &lt; 1) | (maxClouds &gt; 9)) {
+        cat(&quot;\nThe maxClouds parameter must be an integer from 1-9, invalid entry of:&quot;, maxClouds)
+        stop(&quot;Investigate and fix&quot;)
+    }
     
     # Extract the metar record
     metAll &lt;- met %&gt;%
@@ -1626,14 +1650,16 @@ extractAndWrangleClouds &lt;- function(met,
     numPasted &lt;- paste0(&quot;(&quot;, paste0(numStates, collapse=&quot;|&quot;), &quot;)&quot;)
     numRecords &lt;- str_extract_all(metAll, pattern=paste0(numPasted, &quot;\\d{3}&quot;), simplify=TRUE)
 
-    # Allow for up to 6 cloud types (hard coded)
-    if (dim(numRecords)[2] &gt; 6) {
-        cat(&quot;Too many cloud records relative to hard-coded maximum of 6: Dimensions -&quot;, dim(numRecords))
+    # Allow for up to maxClouds cloud types
+    if (dim(numRecords)[2] &gt; maxClouds) {
+        cat(&quot;Too many clouds relative to passed paremeter maximum of&quot;, maxClouds, &quot;: Dimensions -&quot;,
+            dim(numRecords)
+            )
         stop(&quot;Investigate and fix&quot;)
     }
     
-    # Create columns for cType1-cType6 and cLevel1-cLevel6
-    for (intCtr in 1:6) {
+    # Create columns for cType1-cType(maxClouds) and cLevel1-cLevel(maxClouds)
+    for (intCtr in 1:maxClouds) {
         if (intCtr &gt; dim(numRecords)[2]) {
             x &lt;- rep(&quot;&quot;, dim(numRecords)[1])
         } else {
@@ -1650,17 +1676,85 @@ extractAndWrangleClouds &lt;- function(met,
         names(met) &lt;- c(origNames, paste0(c(&quot;cloud&quot;, &quot;cType&quot;, &quot;cLevel&quot;), intCtr))
     }
     
-    # Validate clouds are sensible
-    met$wType &lt;- validateClouds(met, cloudStates=numStates)
+    # Validate clouds are sensible and return the most obscured state
+    wType &lt;- validateClouds(met, cloudStates=numStates, nCols=maxClouds)
+    
+    # Create a table of soloStates and wType
+    tmp &lt;- met %&gt;%
+        select_at(vars(all_of(paste0(&quot;n&quot;, soloStates)))) %&gt;%
+        mutate(obsc=wType)
+    
+    # Confirm that values in tmp are as expected
+    # Should be either 0 or 1 total of soloStates counts
+    # If 1 soloStates counts, should be wType=&quot;&quot;
+    # If 0 soloStates counts, should be wType!=&quot;&quot;
+    tmpSolos &lt;- tmp %&gt;%
+        select_at(vars(all_of(paste0(&quot;n&quot;, soloStates)))) %&gt;%
+        apply(1, FUN=sum)
+    
+    tmpObsc &lt;- ifelse(wType!=&quot;&quot;, 1, 0)
+    tmpProbs &lt;- (tmpSolos + tmpObsc != 1)
+    
+    if (sum(tmpProbs)==0) {
+        cat(&quot;\nwType as created from clouds data is consistent&quot;)
+    } else {
+        cat(&quot;\nIssues with clouds data at records:\n&quot;)
+        met %&gt;%
+            select_at(vars(all_of(c(timeVar, metVar)))) %&gt;%
+            filter(tmpProbs) %&gt;%
+            print()
+    }
+    
+    # Print the summaries by key type
+    if (printDetails) {
+        tmp %&gt;%
+            group_by_all() %&gt;%
+            summarize(n=n()) %&gt;%
+            print()
+    }
+
+    # Create the final wType variable, attach to the met data, and convert to a factor
+    # Take the wType variable and overwrite in the soloStates if they exist
+    for (soloVar in rev(soloStates)) {
+        soloVec &lt;- tmp %&gt;%
+            pull(paste0(&quot;n&quot;, soloVar))
+        wType &lt;- ifelse(soloVec &gt; 0, soloVar, wType)
+    }
+    wType &lt;- ifelse(wType==&quot;&quot;, &quot;Error&quot;, wType)
+    
+    met &lt;- met %&gt;%
+        mutate(wType=factor(wType, levels=c(rev(numStates), rev(soloStates), &quot;Error&quot;)))
+    
+    # Show count by wType
+    met %&gt;%
+        count(wType) %&gt;%
+        print()
     
     # Return the database
     met
     
 }</code></pre>
 <p>And the routine can then be run to create fullGRB2:</p>
-<pre class="r"><code>fullGRB2 &lt;- extractAndWrangleClouds(fixGRB, metVar=&quot;origMETAR&quot;)
-
-# Variables in fullGRB but not in fullGRB2
+<pre class="r"><code>fullGRB2 &lt;- extractAndWrangleClouds(fixGRB, metVar=&quot;origMETAR&quot;)</code></pre>
+<pre><code>## 
+## Issues with clouds data at records:
+## # A tibble: 3 x 2
+##   dtime               origMETAR                                                 
+##   &lt;dttm&gt;              &lt;chr&gt;                                                     
+## 1 2016-09-14 17:53:00 KGRB 141753Z VRB03KT A3031 RMK AO2 SLPNO 10194 20133 5200~
+## 2 2016-12-19 12:53:00 KGRB 191253Z 22007KT 10SM M22/M26 A3050 RMK AO2 SLP352 T1~
+## 3 2016-12-21 12:53:00 KGRB 211253Z 20005KT 10SM M04/M07 A3006 RMK AO2 SLP189 T1~
+## # A tibble: 7 x 2
+##   wType     n
+##   &lt;fct&gt; &lt;int&gt;
+## 1 VV       73
+## 2 OVC    3191
+## 3 BKN     668
+## 4 SCT     373
+## 5 FEW     483
+## 6 CLR    4012
+## 7 Error     3</code></pre>
+<pre class="r"><code># Variables in fullGRB but not in fullGRB2
 setdiff(names(fullGRB), names(fullGRB2))</code></pre>
 <pre><code>##  [1] &quot;isCLR&quot;  &quot;isVV&quot;   &quot;htVV&quot;   &quot;numFEW&quot; &quot;numSCT&quot; &quot;numBKN&quot; &quot;numOVC&quot; &quot;lowVV&quot; 
 ##  [9] &quot;lowOVC&quot; &quot;lowBKN&quot; &quot;lowSCT&quot; &quot;lowFEW&quot; &quot;month&quot;</code></pre>
@@ -1669,35 +1763,44 @@ setdiff(names(fullGRB2), names(fullGRB))</code></pre>
 <pre><code>##  [1] &quot;nSKC&quot;    &quot;nCLR&quot;    &quot;cloud1&quot;  &quot;cType1&quot;  &quot;cLevel1&quot; &quot;cloud2&quot;  &quot;cType2&quot; 
 ##  [8] &quot;cLevel2&quot; &quot;cloud3&quot;  &quot;cType3&quot;  &quot;cLevel3&quot; &quot;cloud4&quot;  &quot;cType4&quot;  &quot;cLevel4&quot;
 ## [15] &quot;cloud5&quot;  &quot;cType5&quot;  &quot;cLevel5&quot; &quot;cloud6&quot;  &quot;cType6&quot;  &quot;cLevel6&quot;</code></pre>
-<pre class="r"><code># Variables in both fullGRB2 but not in fullGRB
+<pre class="r"><code># Variables in both fullGRB2 and fullGRB
 namesBoth &lt;- intersect(names(fullGRB2), names(fullGRB))
 namesBoth</code></pre>
 <pre><code>##  [1] &quot;METAR&quot;      &quot;WindDir&quot;    &quot;WindSpeed&quot;  &quot;WindGust&quot;   &quot;Dummy&quot;     
 ##  [6] &quot;Visibility&quot; &quot;TempC&quot;      &quot;DewC&quot;       &quot;Altimeter&quot;  &quot;SLP&quot;       
 ## [11] &quot;FahrC&quot;      &quot;dtime&quot;      &quot;origMETAR&quot;  &quot;TempF&quot;      &quot;DewF&quot;      
 ## [16] &quot;modSLP&quot;     &quot;wType&quot;</code></pre>
-<pre class="r"><code>cat(&quot;\n&quot;)</code></pre>
+<pre class="r"><code># Convert fullGRB to have same levels as fullGRB2
+testGRB &lt;- fullGRB %&gt;%
+    mutate(wType=factor(wType, levels=levels(fullGRB2$wType)))
+
+cat(&quot;\n&quot;)</code></pre>
 <pre class="r"><code># Comparisons for equality for variables in both
 for (colName in namesBoth) {
-    cat(&quot;100% Match for Variable:&quot;, colName, all.equal(fullGRB[, colName], fullGRB2[, colName]), &quot;\n&quot;)
+    ae &lt;- all.equal(testGRB[, colName], fullGRB2[, colName])
+    if (isTRUE(ae)) {
+        cat(&quot;100% Match for Variable:&quot;, colName, &quot;\n&quot;)
+    } else {
+        cat(&quot;Mismatch for variable:&quot;, colName, &quot;-&quot;, ae, &quot;\n&quot;)
+    }
 }</code></pre>
-<pre><code>## 100% Match for Variable: METAR TRUE 
-## 100% Match for Variable: WindDir TRUE 
-## 100% Match for Variable: WindSpeed TRUE 
-## 100% Match for Variable: WindGust TRUE 
-## 100% Match for Variable: Dummy TRUE 
-## 100% Match for Variable: Visibility TRUE 
-## 100% Match for Variable: TempC TRUE 
-## 100% Match for Variable: DewC TRUE 
-## 100% Match for Variable: Altimeter TRUE 
-## 100% Match for Variable: SLP TRUE 
-## 100% Match for Variable: FahrC TRUE 
-## 100% Match for Variable: dtime TRUE 
-## 100% Match for Variable: origMETAR TRUE 
-## 100% Match for Variable: TempF TRUE 
-## 100% Match for Variable: DewF TRUE 
-## 100% Match for Variable: modSLP TRUE 
-## 100% Match for Variable: wType Incompatible type for column `wType`: x factor, y character</code></pre>
+<pre><code>## 100% Match for Variable: METAR 
+## 100% Match for Variable: WindDir 
+## 100% Match for Variable: WindSpeed 
+## 100% Match for Variable: WindGust 
+## 100% Match for Variable: Dummy 
+## 100% Match for Variable: Visibility 
+## 100% Match for Variable: TempC 
+## 100% Match for Variable: DewC 
+## 100% Match for Variable: Altimeter 
+## 100% Match for Variable: SLP 
+## 100% Match for Variable: FahrC 
+## 100% Match for Variable: dtime 
+## 100% Match for Variable: origMETAR 
+## 100% Match for Variable: TempF 
+## 100% Match for Variable: DewF 
+## 100% Match for Variable: modSLP 
+## 100% Match for Variable: wType</code></pre>
 <p>The routine seems to be working well and is extracting a greater portion of cloud data which may be useful for later analysis:</p>
 <ul>
 <li>Every cloud record<br />
@@ -1707,9 +1810,121 @@ for (colName in namesBoth) {
 <li>Every cloud height</li>
 </ul>
 <p>Further, checks have been automated to be sure that cloud types are non-descending and cloud heights are strictly ascending (with the exception that NA can follow anything but can only precede NA).</p>
-<p>There is a need to update the wType variable to be a factor and to reflect that SKC/CLR are an acceptable state. Further checks should be run to ensure that there is exactly 1 of SKC, CLR, or wType!=&quot;&quot;.</p>
-<p>Month is also a valuable variable for analysis, though it is contained in ‘dtime’ already.</p>
-<p>Further checks should be run to confirm that ‘dtime’ is aligned to origMETAR.</p>
+<p>The wType variable is created as a factor and reflects that SKC/CLR are acceptable states. Further the functions check to ensure that there is exactly 1 of SKC, CLR, or wType!=&quot;&quot;.</p>
+<p>Month is also a valuable variable for analysis, though it is contained in ‘dtime’ already. Further checks should be run to confirm that ‘dtime’ is aligned to origMETAR.</p>
+</div>
+<div id="example-5-checking-time-properties" class="section level4">
+<h4><em>Example #5: Checking Time Properties</em></h4>
+<p>At various times, the ‘dtime’ variable is used to classify information that is pulled from ‘origMETAR’. It will be useful to confirm that the variables are well aligned as follows:</p>
+<ul>
+<li>The origMETAR will have ddddddZ where the first dd are the two-digit day, the second dd are the two-digit hour, the third dd are the two-digit minutes, and the Z reflects UTC/Zulu time<br />
+</li>
+<li>The corresponding data from dtime should match, and year, month, and day can also be extracted during this process</li>
+</ul>
+<p>Example code includes:</p>
+<pre class="r"><code># Function to check alignment of Zulu time in a METAR with an associated date-time variable
+checkTimeProperties &lt;- function(met, 
+                                metVar, 
+                                timeVar
+                                ) {
+    
+    # Extract the Zulu days and times from metVar
+    zTime &lt;- met %&gt;%
+        pull(metVar) %&gt;%
+        str_extract(pattern=&quot;\\d{6}Z&quot;)
+    
+    # Extract the day, hour, and minute from timeVar
+    dTime &lt;- met %&gt;%
+        pull(timeVar)
+    
+    # Create the expected Zulu string from dTime
+    expTime &lt;- paste0(str_pad(lubridate::day(dTime), width=2, pad=&quot;0&quot;), 
+                      str_pad(lubridate::hour(dTime), width=2, pad=&quot;0&quot;), 
+                      str_pad(lubridate::minute(dTime), width=2, pad=&quot;0&quot;), 
+                      &quot;Z&quot;
+                      )
+    
+    # Check for consistency
+    mism &lt;- (zTime != expTime)
+    if (sum(mism) == 0) {
+        cat(&quot;\nAll Zulu times in the METAR are consistent with the datetime variable\n&quot;)
+    } else {
+        cat(&quot;\nThere are&quot;, 
+            sum(mism), 
+            &quot;inconsistencies between Zulu times in the METAR and the datetime variable\n&quot;,
+            &quot;First 10 examples include:\n&quot;
+            )
+        data.frame(zTime, dTime, expTime, mism) %&gt;%
+            filter(mism) %&gt;%
+            head(10)
+    }
+    
+    # Create key variables and return them
+    met &lt;- met %&gt;%
+        mutate(year=lubridate::year(dTime), 
+               monthint=lubridate::month(dTime), 
+               month=factor(monthint, levels=1:12, labels=month.abb[1:12]),
+               day=lubridate::day(dTime)
+               )
+    
+    met
+        
+}
+
+fullGRB3 &lt;- checkTimeProperties(fullGRB2, metVar=&quot;origMETAR&quot;, timeVar=&quot;dtime&quot;)</code></pre>
+<pre><code>## 
+## All Zulu times in the METAR are consistent with the datetime variable</code></pre>
+<pre class="r"><code># Variables in fullGRB but not in fullGRB3
+setdiff(names(fullGRB), names(fullGRB3))</code></pre>
+<pre><code>##  [1] &quot;isCLR&quot;  &quot;isVV&quot;   &quot;htVV&quot;   &quot;numFEW&quot; &quot;numSCT&quot; &quot;numBKN&quot; &quot;numOVC&quot; &quot;lowVV&quot; 
+##  [9] &quot;lowOVC&quot; &quot;lowBKN&quot; &quot;lowSCT&quot; &quot;lowFEW&quot;</code></pre>
+<pre class="r"><code># Variables in fullGRB3 but not in fullGRB
+setdiff(names(fullGRB3), names(fullGRB))</code></pre>
+<pre><code>##  [1] &quot;nSKC&quot;     &quot;nCLR&quot;     &quot;cloud1&quot;   &quot;cType1&quot;   &quot;cLevel1&quot;  &quot;cloud2&quot;  
+##  [7] &quot;cType2&quot;   &quot;cLevel2&quot;  &quot;cloud3&quot;   &quot;cType3&quot;   &quot;cLevel3&quot;  &quot;cloud4&quot;  
+## [13] &quot;cType4&quot;   &quot;cLevel4&quot;  &quot;cloud5&quot;   &quot;cType5&quot;   &quot;cLevel5&quot;  &quot;cloud6&quot;  
+## [19] &quot;cType6&quot;   &quot;cLevel6&quot;  &quot;year&quot;     &quot;monthint&quot; &quot;day&quot;</code></pre>
+<pre class="r"><code># Variables in both fullGRB3 and fullGRB
+namesBoth &lt;- intersect(names(fullGRB3), names(fullGRB))
+namesBoth</code></pre>
+<pre><code>##  [1] &quot;METAR&quot;      &quot;WindDir&quot;    &quot;WindSpeed&quot;  &quot;WindGust&quot;   &quot;Dummy&quot;     
+##  [6] &quot;Visibility&quot; &quot;TempC&quot;      &quot;DewC&quot;       &quot;Altimeter&quot;  &quot;SLP&quot;       
+## [11] &quot;FahrC&quot;      &quot;dtime&quot;      &quot;origMETAR&quot;  &quot;TempF&quot;      &quot;DewF&quot;      
+## [16] &quot;modSLP&quot;     &quot;wType&quot;      &quot;month&quot;</code></pre>
+<pre class="r"><code># Convert fullGRB to have same levels as fullGRB3
+testGRB &lt;- fullGRB %&gt;%
+    mutate(wType=factor(wType, levels=levels(fullGRB3$wType)))
+
+cat(&quot;\n&quot;)</code></pre>
+<pre class="r"><code># Comparisons for equality for variables in both
+for (colName in namesBoth) {
+    ae &lt;- all.equal(testGRB[, colName], fullGRB3[, colName])
+    if (isTRUE(ae)) {
+        cat(&quot;100% Match for Variable:&quot;, colName, &quot;\n&quot;)
+    } else {
+        cat(&quot;Mismatch for variable:&quot;, colName, &quot;-&quot;, ae, &quot;\n&quot;)
+    }
+}</code></pre>
+<pre><code>## 100% Match for Variable: METAR 
+## 100% Match for Variable: WindDir 
+## 100% Match for Variable: WindSpeed 
+## 100% Match for Variable: WindGust 
+## 100% Match for Variable: Dummy 
+## 100% Match for Variable: Visibility 
+## 100% Match for Variable: TempC 
+## 100% Match for Variable: DewC 
+## 100% Match for Variable: Altimeter 
+## 100% Match for Variable: SLP 
+## 100% Match for Variable: FahrC 
+## 100% Match for Variable: dtime 
+## 100% Match for Variable: origMETAR 
+## 100% Match for Variable: TempF 
+## 100% Match for Variable: DewF 
+## 100% Match for Variable: modSLP 
+## 100% Match for Variable: wType 
+## 100% Match for Variable: month</code></pre>
+<p>The times are aligned, allowing for confident use of the ‘dtime’ variable in analysis. Further, the year, month (as both integer and factor), and day have been extracted for easy availability in future analysis.</p>
+<p>Next steps are to integrate the full download and processing, and to save a final file to the local drive so that processing need only be run once.</p>
 </div>
 </div>
 
