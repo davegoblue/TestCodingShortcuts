@@ -244,7 +244,8 @@ findHourlyReportingTimes <- function(metFile=NULL,
                                      stationToLower=TRUE, 
                                      returnAll=FALSE,
                                      naValues=c("", "NA", "M"), 
-                                     colTypes=metType
+                                     colTypes=metType, 
+                                     threshError=0
                                      ) {
     
     # Find the file name if it has not been passed
@@ -273,6 +274,13 @@ findHourlyReportingTimes <- function(metFile=NULL,
         round(100*zTimes[1]/sum(zTimes), 1), "% (", zTimes[1], "of", sum(zTimes), ")\n"
         )
 
+    # STOP if the file has less than threshError observations at its main point
+    if (zTimes[1] / sum(zTimes) < threshError) {
+        cat("\nThe following routines depend on a single, hourly METAR\n")
+        cat("This file may not have that feature; investigate and fix\n")
+        stop(paste0("Most frequent time occurs less than threshError: ", threshError))
+    }
+    
     # Return the fill vector if requested (likely only if a problem is detected), otherwise return the time
     if (returnAll) {
         return(zTimes)
@@ -951,10 +959,12 @@ ascVectorChecker <- function(y, strictly=TRUE) {
 # Helper function to verify non-descending cloud types, ascending cloud heights, return highest cloud type
 validateClouds <- function(tbl, 
                            cloudStates,
+                           metVar="origMETAR",
                            nCols=6, 
                            var1="cloud", 
                            var2="cType", 
-                           var3="cLevel"
+                           var3="cLevel",
+                           diagnoseVsError=5
                            ) {
     
     # STEP 1: Validate non-descending cloud types
@@ -968,7 +978,12 @@ validateClouds <- function(tbl,
         mism <- sum(descClouds < 0)
         if (mism != 0) {
             cat("\nIssue with descending cloud types - ", mism, "records in column", intCtr+1, "\n")
-            stop()
+            if (mism > diagnoseVsError) {
+                stop("Too many issues, investigate and fix")
+            } else {
+                cat("Problematic METAR:\n")
+                print(tbl[which(descClouds < 0), metVar])
+            }
         }
     }
     
@@ -1010,6 +1025,9 @@ extractAndWrangleClouds <- function(met,
     # Extract the metar record
     metAll <- met %>%
         pull(metVar)
+    
+    # Limit the METAR record to only clouds described prior to RMK
+    metAll <- str_replace(metAll, pattern="RMK.*", replacement="")
     
     # Search for soloStates and bind them by column to the existing data
     for (soloState in soloStates) {
@@ -1055,7 +1073,7 @@ extractAndWrangleClouds <- function(met,
     }
     
     # Validate clouds are sensible and return the most obscured state
-    wType <- validateClouds(met, cloudStates=numStates, nCols=maxClouds)
+    wType <- validateClouds(met, cloudStates=numStates, metVar=metVar, nCols=maxClouds)
     
     # Create a table of soloStates and wType
     tmp <- met %>%
@@ -1250,4 +1268,171 @@ The times are aligned, allowing for confident use of the 'dtime' variable in ana
   
 Next steps are to integrate the full download and processing, and to save a final file to the local drive so that processing need only be run once.
   
+#### _Example #6: Integrate Processing Steps_  
+The processing steps can be integrated, and the results can be saved as a file for use later.
+  
+Key steps include:  
+  
+* findHourlyReportingTimes() - get the hourly reporting time for use in the target METAR string  
+* readMETAR() - extract only hourly observations, check for expected times and record uniqueness  
+* initialParseMETAR() - parse the raw METAR data based on an expected regex pattern  
+* convertMETAR() - converts characters from the parsed METAR file to meaningful numbers for analysis  
+* fixMETAR() - corrects for issues with extracting and converting visibility, wind gusts, and SLP  
+* extractAndWrangleClouds() - extract cloud data from the METAR; determine cloud types, minimum heights, and minimum ceilings; and bind the cloud results to the METAR frame  
+* checkTimePropoerties() - confirm that times are aligned between 'dtime' and 'origMETAR' and add year, month (as integer and as factored mmm abbreviation), and day  
+  
+Example code includes:  
+```{r}
 
+integrateProcessingMETAR <- function(locRawMETAR, 
+                                     startDay, 
+                                     endDay, 
+                                     genMET,
+                                     labsMET,
+                                     saveLoc=NULL,
+                                     ovrWrite=FALSE,
+                                     ovrWriteError=FALSE,
+                                     colTypes=NULL, 
+                                     threshError=0.75
+                                     ) {
+    
+    # Convert startDay and endDay to date
+    startDay=as.Date(startDay)
+    endDay=as.Date(endDay)
+    
+    # Find the hourly reporting times, and validate that they have 'enough' data at the peak hour
+    keyZulu <- findHourlyReportingTimes(metFile=locRawMETAR, threshError=threshError)
+    
+    # Use the Zulu time to create the expected minimum time and number of days
+    zuluNumber <- as.numeric(str_sub(keyZulu, 1, -2))
+    dtString <- paste0(as.character(startDay), 
+                       " 00:", 
+                       str_pad(as.character(zuluNumber), width=2, pad="0"), 
+                       ":00"
+                       )
+    
+    # Read in the raw METAR file
+    readFile <- readMETAR(locRawMETAR, 
+                          timeZ=keyZulu, 
+                          expMin=as.POSIXct(dtString, tz="UTC"), 
+                          expDays=1 + as.integer(endDay - startDay), 
+                          colTypes=colTypes
+                          )
+    
+    # Create the valMet string by pasting the key Zulu time to the front of it
+    valMet <- paste0(keyZulu, genMET)
+    
+    # Make the initial pass at parsing the raw METAR file
+    initFile <- initialParseMETAR(readFile, val=valMet, labs=labsMET, glimpseFinal=TRUE)
+
+    # Convert the initially parsed METAR file
+    # This process is quite hard-coded to a specific format (which is fine for now)
+    convFile <- convertMETAR(initFile)
+    
+    # Fix the converted METAR file - visibility, wind gusts, SLP
+    # This process is quite hard-coded to a specific format (which is fine for now)
+    fixFile <- fixMETAR(convFile)
+
+    # Extract and wrangle the clouds from the METAR
+    # This process is quite hard-coded to a specific format (which is fine for now)
+    fullFile <- extractAndWrangleClouds(fixFile, metVar="origMETAR")
+
+    # Check the time properties and add year, month (as integer and factor), day as variables
+    finalFile <- checkTimeProperties(fullFile, metVar="origMETAR", timeVar="dtime")
+    
+    # If saveLoc is provided, save the file using RDS to the provided location; return it otherwise
+    if (!is.null(saveLoc)) {
+        if (file.exists(saveLoc)) {
+            if (ovrWrite) {
+                cat("\nOver-writing existing file:", saveLoc, "\n\n")
+                saveRDS(finalFile, file=saveLoc)
+            } else {
+                cat("\nFile already exists and NOT over-written:", saveLoc, "\n\n")
+                if (ovrWriteError) {
+                    stop("Aborting due to ovrWriteError=TRUE\n\n")
+                }
+            }
+        } else {
+            cat("\nCreating file:", saveLoc, "\n\n")
+            saveRDS(finalFile, file=saveLoc)
+        }
+    } else {
+        return(finalFile)
+    }
+    
+}
+
+```
+  
+The process can then be run on the Green Bay data to verify consistency of results:  
+```{r cache=TRUE}
+
+# The generally expected METAR parsing string
+genMET <- ".*?(VRB|\\d{3})(\\d{2})(G\\d{2})?KT(.*?)(\\d{1,2}SM).*?\\s(M?\\d{2})/(M?\\d{2}).*?(A\\d{4}).*?RMK.*?(SLP\\d{3}).*?(T\\d{8})"
+
+# The generally expected METAR parsing column labels
+labsMet <- c("METAR", "WindDir", "WindSpeed", "WindGust", "Dummy", "Visibility", 
+             "TempC", "DewC", "Altimeter", "SLP", "FahrC"
+             )
+
+# Test the process on the Green Bay data
+testGRB <- integrateProcessingMETAR("./RInputFiles/metar_kgrb_2016.txt", 
+                         startDay="2015-12-31", 
+                         endDay="2017-01-01", 
+                         colTypes=metType, 
+                         genMET=genMET, 
+                         labsMET=labsMet
+                         )
+
+# Test for equality across the files
+identical(testGRB, fullGRB3)
+
+# Test the process on the Green Bay data, including saving as RDS (allow for over-writing)
+integrateProcessingMETAR("./RInputFiles/metar_kgrb_2016.txt", 
+                         startDay="2015-12-31", 
+                         endDay="2017-01-01", 
+                         colTypes=metType, 
+                         genMET=genMET, 
+                         labsMET=labsMet, 
+                         saveLoc="./RInputFiles/ProcessedMETAR/_TESTONLY_metar_kgrb_2016,rds", 
+                         ovrWrite=TRUE
+                         )
+
+# Test for equality across the files when read in
+identical(readRDS("./RInputFiles/ProcessedMETAR/_TESTONLY_metar_kgrb_2016,rds"), fullGRB3)
+
+```
+  
+The processed Green Bay data matches what was produced by running all functions sequentially.  
+  
+The process can then be run for all of the processed METAR files:  
+```{r cache=TRUE}
+
+# Run for each of the 6 airports and save the processed file
+for (airport in c("kmke", "kmsn", "kgrb", "ktvc", "kgrr", "kind")) {
+    
+    year <- 2016
+    coreString <- paste0("metar_", airport, "_", as.character(year))
+    
+    cat("\nProcessing Airport:", airport)
+    integrateProcessingMETAR(paste0("./RInputFiles/", coreString, ".txt"), 
+                             startDay=paste0(as.character(year-1), "-12-31"), 
+                             endDay=paste0(as.character(year+1), "-01-01"), 
+                             colTypes=metType, 
+                             genMET=genMET, 
+                             labsMET=labsMet, 
+                             saveLoc=paste0("./RInputFiles/ProcessedMETAR/", coreString, ".rds"), 
+                             ovrWrite=TRUE
+                             )
+    cat("\nFinished Processing Airport:", airport, "\n")
+
+}
+
+```
+  
+An issue was identified where sometimes clouds are described in the remarks.  The METAR string has been modified to only pick up clouds that come prior to RMK.
+  
+There is a single issue with non-ascending cloud heights in Madison, WI.  Perhaps this can be managed as a one-off or perhaps there is a need to update htChecker().  
+  
+There are 100+ mis-formatted METAR for several of the cities.  These appear to be data capture errors, and it is probably OK to exlude these from further analysis.  The output in these situations is perhaps overly verbose (printing all is more sensible for ~10 errors rather than ~100 errors).
+  
