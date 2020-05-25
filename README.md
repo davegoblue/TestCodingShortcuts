@@ -1932,3 +1932,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherDownloads_202005_v001 contains updated METAR cloud processing code  
 * WeatherDownloads_202005_v001 checks for consistency of recorded times  
   
+### Expansions week of 25-MAY-2020  
+* WeatherDownloads_202005_v001 integrates processing steps  
+  
