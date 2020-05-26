@@ -1934,4 +1934,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 25-MAY-2020  
 * WeatherDownloads_202005_v001 integrates processing steps  
+* WeatherDownloads_202005_v001 updates core functions and integration  
   
