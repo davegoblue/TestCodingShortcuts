@@ -342,39 +342,65 @@ readMETAR <- function(fileName,
                       colTypes=NULL,
                       printSTR=FALSE,
                       errUnexpected=TRUE,
-                      errNonUnique=TRUE
+                      errNonUnique=TRUE, 
+                      logFile=""
                       ) {
 
     # Read METAR data
     initRead <- readr::read_csv(fileName, na=c("", "NA", "M"), col_types=colTypes)
     
     # Provide descriptions of the METAR read (str only if flag is set)
-    if (printSTR) { str(initRead, give.attr=FALSE) }
-    dim(initRead)
+    if (printSTR) { 
+        print(str(initRead, give.attr=FALSE))
+        print(dim(initRead))
+    }
+
 
     # Filter to only data that ends with times ending in timeZ
     filterRead <- initRead %>%
         filter(str_detect(metar, timeZ))
-    dim(filterRead)
+    if (printSTR) { print(dim(filterRead)) }
 
     # Check that the dates and times included are as expected
     expDate <- expMin + lubridate::hours(0:(24*expDays - 1))
     
     # Observations expected but not recorded
-    cat("\n*** OBSERVATIONS EXPECTED BUT NOT RECORDED ***\n")
-    print(as.POSIXct(setdiff(expDate, filterRead$valid), origin="1970-01-01", tz="UTC"))
+    expNotRecorded <- as.POSIXct(setdiff(expDate, filterRead$valid), origin="1970-01-01", tz="UTC")
+    
+    # Print summary to the main log file
+    cat("\n*** OBSERVATIONS EXPECTED BUT NOT RECORDED:", length(expNotRecorded), "***\n")
+    
+    # Cat details to the provided logFile (if logFile="", these go the main log file)
+    cat("\n*** OBSERVATIONS EXPECTED BUT NOT RECORDED: ***\n", 
+        paste0("\n", paste0(format(expNotRecorded, "%Y-%m-%d %H:%M:%S", usetz=TRUE), collapse="\n")),
+        file=logFile, 
+        append=TRUE
+        )
 
+    
     # Observations recorded but not expected
     unexpected <- as.POSIXct(setdiff(filterRead$valid, expDate), origin="1970-01-01", tz="UTC")
-    cat("\n*** OBSERVATIONS RECORDED BUT NOT EXPECTED ***\n")
-    print(unexpected)
+    
+    # Summary to the main log filr
+    cat("\n\n*** OBSERVATIONS RECORDED BUT NOT EXPECTED:", length(unexpected), "***\n")
+    
+    # Cat details to the provided logFile (if logFile="", these go to the main log file)
+    if (length(unexpected) > 0) {
+        cat("\n*** OBSERVATIONS RECORDED BUT NOT EXPECTED: ***\n", 
+            paste0(format(unexpected, "%Y-%m-%d %H:%M:%S", usetz=TRUE), collapse="\n"), 
+            file=logFile, 
+            append=TRUE
+            )
+    }
     if (errUnexpected) {
         stopifnot(length(unexpected)==0)
     }
 
     # Confirmation of uniqueness
     allUnique <- length(unique(filterRead$valid)) == length(filterRead$valid)
-    cat("\n*** Are the extracted records unique? ***\n", allUnique, "\n")
+    
+    # Send these to the main log file
+    cat("\n*** Are the extracted records unique? ***\n", allUnique, "\n\n")
     if (errNonUnique) {
         stopifnot(allUnique)
     }
@@ -402,22 +428,37 @@ The initialParseMETAR() function is designed to parse a METAR file based on an e
 ```{r}
 
 # Code for the initial METAR parsing
-initialParseMETAR <- function(met, val, labs, showParseSummary=FALSE, glimpseFinal=FALSE) {
+initialParseMETAR <- function(met, 
+                              val, 
+                              labs, 
+                              showParseSummary=FALSE, 
+                              glimpseFinal=FALSE, 
+                              logFile=""
+                              ) {
     
     # Pull the METAR data
     metAll <- met %>%
         pull(metar)
     
     # Find the number of matching elements
+    matchSummary <- str_detect(metAll, pattern=val) %>% 
+        table()
+    
+    # Print this to the main log file
     cat("\n*** Tentative Summary of Element Parsing *** \n")
-    str_detect(metAll, pattern=val) %>% 
-        table() %>%
-        print()
+    print(matchSummary)
 
     # The strings that do not match have errors in the raw data (typically, missing wind speed)
-    cat("\n*** Data Not Matched *** \n")
-    print(metAll[!str_detect(metAll, pattern=val)])
+    mismatchData <- metAll[!str_detect(metAll, pattern=val)]
 
+    # Print the to the logFile (if logFile="", then these print to the main log file)
+    cat("\n*** Data Not Matched:", length(mismatchData),"*** \n",
+        paste0("\n", paste0(mismatchData, collapse="\n"), "\n"), 
+        file=logFile, 
+        append=TRUE
+        )
+    
+    
     # A matrix of string matches can be obtained
     mtxParse <- str_match(metAll, pattern=val)
     if (showParseSummary) {
@@ -547,7 +588,7 @@ The function fixMETAR() runs the functions getVisibility(), getWindGusts(), and 
 ```{r}
 
 # Address the visibility issues
-getVisibility <- function(curMet, origMet, var="metar") {
+getVisibility <- function(curMet, origMet, var="metar", useNAforIncomplete=FALSE) {
     
     # Get the original METAR data
     metAll <- origMet %>%
@@ -568,6 +609,11 @@ getVisibility <- function(curMet, origMet, var="metar") {
     curMet[sm1, "Visibility"] <- valSM1
     curMet[sm2, "Visibility"] <- curMet[sm2, "Visibility"] + valSM2
 
+    # Reset to NA if the original METAR is NA and useNAForIncomplete=TRUE
+    if (useNAforIncomplete) {
+        curMet[is.na(curMet$METAR), "Visibility"] <- NA
+    }
+    
     visCounts <- curMet %>% 
         count(Visibility)
     visVector <- visCounts$n
@@ -580,7 +626,7 @@ getVisibility <- function(curMet, origMet, var="metar") {
 }
 
 # Correct for wind gusts
-getWindGusts <- function(curMet, origMet, var="metar") {
+getWindGusts <- function(curMet, origMet, var="metar", useNAforIncomplete=FALSE) {
 
     metAll <- origMet %>%
         pull(var)
@@ -591,10 +637,16 @@ getWindGusts <- function(curMet, origMet, var="metar") {
 
     curMet[gustCheck, "WindGust"] <- valGust
 
+    # Reset to NA if the original METAR is NA and useNAForIncomplete=TRUE
+    if (useNAforIncomplete) {
+        curMet[is.na(curMet$METAR), "WindGust"] <- NA
+    }
+    
     gustCounts <- curMet %>% 
         count(WindGust)
     gustVector <- gustCounts$n
     names(gustVector) <- gustCounts$WindGust
+    
     cat("\nCounts of wind gusts extracted:\n")
     print(gustVector)
     cat("\n")
@@ -603,7 +655,7 @@ getWindGusts <- function(curMet, origMet, var="metar") {
 }
 
 # Correct for SLP
-fixSLP <- function(curMet) {
+fixSLP <- function(curMet, showSLPGraph=TRUE) {
 
     dfParse <- curMet %>%
         mutate(modSLP=ifelse(curMet$SLP < 500, 1000 + curMet$SLP/10, 900 + curMet$SLP/10))
@@ -617,7 +669,7 @@ fixSLP <- function(curMet) {
              x="SLP: Original Data", 
              y="modSLP: Converted for Analysis Data"
              )
-    print(p)
+    if (showSLPGraph) {print(p)}
     
     dfParse
 }
@@ -627,19 +679,21 @@ fixMETAR <- function(met,
                      var="origMETAR",
                      modifyVisibility=TRUE, 
                      modifyWindGusts=TRUE, 
-                     modifySLP=TRUE
+                     modifySLP=TRUE, 
+                     useNAforIncomplete=FALSE,
+                     showSLPGraph=TRUE
                      ) {
     
     if (modifyVisibility) {
-        met <- getVisibility(met, origMet, var=var)
+        met <- getVisibility(met, origMet, var=var, useNAforIncomplete=useNAforIncomplete)
     }
     
     if (modifyWindGusts) {
-        met <- getWindGusts(met, origMet, var=var)
+        met <- getWindGusts(met, origMet, var=var, useNAforIncomplete=useNAforIncomplete)
     }
     
     if (modifySLP) {
-        met <- fixSLP(met)
+        met <- fixSLP(met, showSLPGraph=showSLPGraph)
     }
     
     met
@@ -1013,7 +1067,9 @@ extractAndWrangleClouds <- function(met,
                                     timeVar="dtime",
                                     soloStates=c("SKC", "CLR"), 
                                     numStates=c("FEW", "SCT", "BKN", "OVC", "VV"), 
-                                    printDetails=FALSE
+                                    printDetails=FALSE, 
+                                    logFile="", 
+                                    useNAforIncomplete=FALSE
                                     ) {
     
     # Check that maxClouds <= 9
@@ -1025,6 +1081,11 @@ extractAndWrangleClouds <- function(met,
     # Extract the metar record
     metAll <- met %>%
         pull(metVar)
+    
+    # If METAR is NA and if useNAForIncomplete=TRUE, make metAll=""
+    if (useNAforIncomplete) {
+        metAll[is.na(met$METAR)] <- ""
+    }
     
     # Limit the METAR record to only clouds described prior to RMK
     metAll <- str_replace(metAll, pattern="RMK.*", replacement="")
@@ -1089,16 +1150,21 @@ extractAndWrangleClouds <- function(met,
         apply(1, FUN=sum)
     
     tmpObsc <- ifelse(wType!="", 1, 0)
-    tmpProbs <- (tmpSolos + tmpObsc != 1)
+    tmpProbs <- (tmpSolos + tmpObsc != 1) & (!useNAforIncomplete | !is.na(met$METAR))
     
     if (sum(tmpProbs)==0) {
-        cat("\nwType as created from clouds data is consistent")
+        # Write this to the main log file
+        cat("\nwType as created from clouds data is consistent\n")
     } else {
-        cat("\nIssues with clouds data at records:\n")
+        # Write this to the main log file
+        xText <- ifelse(logFile=="", ":", "(see logfile):")
+        cat("\nThere are", sum(tmpProbs), "issues with clouds data", xText, "\n\n")
+        cat("\nIssues with clouds data:\n", file=logFile, append=TRUE)
         met %>%
             select_at(vars(all_of(c(timeVar, metVar)))) %>%
             filter(tmpProbs) %>%
-            print()
+            write.table(file=logFile, append=TRUE, row.names=FALSE, col.names=FALSE)
+        cat("\n", file=logFile, append=TRUE)
     }
     
     # Print the summaries by key type
@@ -1436,3 +1502,210 @@ There is a single issue with non-ascending cloud heights in Madison, WI.  Perhap
   
 There are 100+ mis-formatted METAR for several of the cities.  These appear to be data capture errors, and it is probably OK to exlude these from further analysis.  The output in these situations is perhaps overly verbose (printing all is more sensible for ~10 errors rather than ~100 errors).
   
+#### _Example #7: Updated Core Functions and Integration_  
+Several updates can help with the core functions and the data integration process:  
+  
+* Allow for output to be cat(..., file=) to minimize the size of the .html file while maintaining the ability to see diagnostic data  
+* Allow for the SLP graph to be suppressed  
+* The core functions should return NA for anything that is an incomplete METAR (e.g., do not pull out the visibility or the wind gust if there is a fragment for that in an otherwise incomplete METAR)  
+
+  
+The updated integration function is as follows:  
+```{r}
+
+integrateProcessingMETAR <- function(locRawMETAR, 
+                                     startDay, 
+                                     endDay, 
+                                     genMET,
+                                     labsMET,
+                                     saveLoc=NULL,
+                                     ovrWrite=FALSE,
+                                     ovrWriteError=FALSE,
+                                     colTypes=NULL, 
+                                     threshError=0.75, 
+                                     logFile="", 
+                                     ovrWriteLog=TRUE,
+                                     useNAforIncomplete=FALSE, 
+                                     showSLPGraph=TRUE
+                                     ) {
+    
+    # If the log file is to be written to, create a few details:
+    if (logFile != "") {
+        if (ovrWriteLog) { cat("", file=logFile, append=FALSE) }
+        cat("\nProcessing for", locRawMETAR, "from", startDay, "to", endDay, "\n", 
+            file=logFile, 
+            append=TRUE
+            )
+    }
+    
+    # Convert startDay and endDay to date
+    startDay=as.Date(startDay)
+    endDay=as.Date(endDay)
+    
+    # Find the hourly reporting times, and validate that they have 'enough' data at the peak hour
+    keyZulu <- findHourlyReportingTimes(metFile=locRawMETAR, threshError=threshError)
+    
+    # Use the Zulu time to create the expected minimum time and number of days
+    zuluNumber <- as.numeric(str_sub(keyZulu, 1, -2))
+    dtString <- paste0(as.character(startDay), 
+                       " 00:", 
+                       str_pad(as.character(zuluNumber), width=2, pad="0"), 
+                       ":00"
+                       )
+    
+    # Read in the raw METAR file
+    readFile <- readMETAR(locRawMETAR, 
+                          timeZ=keyZulu, 
+                          expMin=as.POSIXct(dtString, tz="UTC"), 
+                          expDays=1 + as.integer(endDay - startDay), 
+                          colTypes=colTypes, 
+                          logFile=logFile
+                          )
+    
+    # Create the valMet string by pasting the key Zulu time to the front of it
+    valMet <- paste0(keyZulu, genMET)
+    
+    # Make the initial pass at parsing the raw METAR file
+    initFile <- initialParseMETAR(readFile, 
+                                  val=valMet, 
+                                  labs=labsMET, 
+                                  glimpseFinal=FALSE, 
+                                  logFile=logFile
+                                  )
+
+    # Convert the initially parsed METAR file
+    # This process is quite hard-coded to a specific format (which is fine for now)
+    convFile <- convertMETAR(initFile)
+    
+    # Fix the converted METAR file - visibility, wind gusts, SLP
+    # This process is quite hard-coded to a specific format (which is fine for now)
+    fixFile <- fixMETAR(convFile, 
+                        useNAforIncomplete=useNAforIncomplete, 
+                        showSLPGraph=showSLPGraph
+                        )
+
+    # Extract and wrangle the clouds from the METAR
+    # This process is quite hard-coded to a specific format (which is fine for now)
+    fullFile <- extractAndWrangleClouds(fixFile, 
+                                        metVar="origMETAR", 
+                                        logFile=logFile,
+                                        useNAforIncomplete=useNAforIncomplete
+                                        )
+
+    # Check the time properties and add year, month (as integer and factor), day as variables
+    finalFile <- checkTimeProperties(fullFile, metVar="origMETAR", timeVar="dtime")
+    
+    # If saveLoc is provided, save the file using RDS to the provided location; return it otherwise
+    if (!is.null(saveLoc)) {
+        if (file.exists(saveLoc)) {
+            if (ovrWrite) {
+                cat("\nOver-writing existing file:", saveLoc, "\n\n")
+                saveRDS(finalFile, file=saveLoc)
+            } else {
+                cat("\nFile already exists and NOT over-written:", saveLoc, "\n\n")
+                if (ovrWriteError) {
+                    stop("Aborting due to ovrWriteError=TRUE\n\n")
+                }
+            }
+        } else {
+            cat("\nCreating file:", saveLoc, "\n\n")
+            saveRDS(finalFile, file=saveLoc)
+        }
+    } else {
+        return(finalFile)
+    }
+    
+}
+
+```
+  
+The base process is run for Green Bay to ensure that data outputs remain unchanges:  
+```{r}
+
+# Run for Green Bay only yo confirm results are as expected
+for (airport in c("kgrb")) {
+    
+    year <- 2016
+    coreString <- paste0("metar_", airport, "_", as.character(year))
+    
+    cat("\nProcessing Airport:", airport)
+    rerunGRB <- integrateProcessingMETAR(paste0("./RInputFiles/", coreString, ".txt"), 
+                                         startDay=paste0(as.character(year-1), "-12-31"), 
+                                         endDay=paste0(as.character(year+1), "-01-01"), 
+                                         colTypes=metType, 
+                                         genMET=genMET, 
+                                         labsMET=labsMet
+                                         )
+    cat("\nFinished Processing Airport:", airport, "\n")
+
+}
+
+# Test for equality across the files
+identical(rerunGRB, fullGRB3)
+
+```
+  
+The process is then run for Green Bay only using the updated parameters (cat to a log file, do not show SLP graph, use NA for all values associated to a mal-formatted METAR):  
+```{r}
+
+# Run for Green Bay only yo confirm results are as expected
+for (airport in c("kgrb")) {
+    
+    year <- 2016
+    coreString <- paste0("metar_", airport, "_", as.character(year))
+    
+    cat("\nProcessing Airport:", airport)
+    newerGRB <- integrateProcessingMETAR(paste0("./RInputFiles/", coreString, ".txt"), 
+                                         startDay=paste0(as.character(year-1), "-12-31"), 
+                                         endDay=paste0(as.character(year+1), "-01-01"), 
+                                         colTypes=metType, 
+                                         genMET=genMET, 
+                                         labsMET=labsMet, 
+                                         logFile=paste0("./RInputFiles/ProcessedMETAR/", coreString, ".log"),
+                                         useNAforIncomplete=TRUE,
+                                         showSLPGraph=FALSE
+                                         )
+    cat("\nFinished Processing Airport:", airport, "\n")
+
+}
+
+# Check that file dimensions and variable names are the same
+print(all.equal(dim(newerGRB), dim(rerunGRB)))
+print(all.equal(names(newerGRB), names(rerunGRB)))
+
+# Check that the only differences for NA are in clouds, Wind Gust, and Visibility
+print(colSums(is.na(newerGRB) != is.na(rerunGRB)) %>% sort(decreasing=TRUE))
+
+# Check that the only differences for NA are in wType and clouds
+print(colSums(!is.na(newerGRB) & !is.na(rerunGRB) & newerGRB != rerunGRB) %>% sort(decreasing=TRUE))
+
+```
+  
+And the process can then be run for the Chicago 2015-2016-2017 data:  
+```{r cache=TRUE}
+
+# Run for each of the 6 airports and save the processed file
+for (year in 2015:2017) {
+    
+    airport <- "kord"
+    coreString <- paste0("metar_", airport, "_", as.character(year))
+    
+    cat("\nProcessing Airport:", airport, "Year:", year)
+    integrateProcessingMETAR(paste0("./RInputFiles/", coreString, ".txt"), 
+                             startDay=paste0(as.character(year-1), "-12-31"), 
+                             endDay=paste0(as.character(year+1), "-01-01"), 
+                             colTypes=metType, 
+                             genMET=genMET, 
+                             labsMET=labsMet, 
+                             saveLoc=paste0("./RInputFiles/ProcessedMETAR/", coreString, ".rds"), 
+                             ovrWrite=TRUE, 
+                             logFile=paste0("./RInputFiles/ProcessedMETAR/", coreString, ".log"),
+                             useNAforIncomplete=TRUE,
+                             showSLPGraph=FALSE
+                             )
+    cat("\nFinished Processing Airport:", airport, "Year:", year, "\n")
+
+}
+
+```
+
