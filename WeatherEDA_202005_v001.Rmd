@@ -1,0 +1,539 @@
+---
+title: "Weather Exploratory Data Analysis"
+author: "davegoblue"
+date: "5/27/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+The file 'WeatherDownloads_202005_v002.Rmd' contains code for dowloading and processing historical weather data as contained in METAR archives hosted by Iowa State University.
+
+Data have been dowloaded and processed for several stations (airports) and years, with .rds files saved in "./RInputFiles/ProcessedMETAR".
+
+This module will perform exploratory data analysis on the processed weather files.
+  
+#### _Data Availability_  
+Each processed data file contains one year of hourly weather data for one station.  Files are saved as './RInputFiles/ProcessedMETAR/metar_kxxx_yyyy.rds' where xxx is the three-digit airport code and yyyy is the four-digit year.
+
+Each file contains the following variables:  
+  
+* METAR (chr) - the extracted portion of the METAR based on a regex string  
+* WindDir (chr) - the previaling wind direction in degrees, stored as a character since 'VRB' means variable  
+* WindSpeed (int) - the prevailing wind speed in knots  
+* WindGust (dbl) - the wind gust speed in knots (NA if there is no recorded wind gust at that hour)  
+* Dummy (chr) - artifact, always a blank space  
+* Visibility (dbl) - surface visibility in statute miles  
+* TempC (int) - temperature in degrees Celsius  
+* DewC (int) - dew point in degrees Celsius  
+* Altimeter (int) - altimeter in hundredths of inches of mercury (e.g., 29.87 inHg is stored as 2987)  
+* SLP (int) - the raw sea-level-pressure reading from the METAR  
+* FahrC (chr) - the raw temperature string pulled from the METAR (Tttttdddd) where tttt is the Fahrenheit temperature recorded in Celsius and dddd is the Fahrenheit dew point recorded in Celsius  
+* dtime (dttm) - the date-time associated with the observation  
+* origMETAR (chr) - the full METAR associated with the observation  
+* TempF (dbl) - the Fahrenheit temperature associated with converting FahrC to Fahrenheit  
+* DewF (dbl) - the Fahrenheit dew point associated with converting FahrC to Fahrenheit  
+* modSLP (dbl) - Sea-Level Pressure (SLP), adjusted to reflect that SLP is recorded as 0-1000 but reflects data that are 950-1050  
+* nSKC (int) - number of times 'SKC' (human-confirmed cloud-free) is recorded in the observation (should be 0 or 1)  
+* nCLR (int) - number of times 'CLR' (austomated-sensor cloud-free) is recorded in the observation (should be 0 or 1, and should never have both nSKC>0 and nCLR>0)  
+* cloudn (chr) - the nth cloud layer recorded in the METAR (layers begin with FEW, SCT, BKN, OVC or VV)  
+* cTypen (chr) - the cloud type of the nth cloud layer (FEW, BKN, SCT, OVC, or VV)  
+* cLeveln (dbl) - the cloud height in feet of the nth cloud layer  
+* wType (fct) - highest level of obscuration recorded in the METAR (VV > OVC > BKN > SCT > FEW > CLR/SKC)  
+* year (dbl) - year of the observation  
+* monthint (dbl) - month of the observation as a number (e.g., 6=June)  
+* month (fct) - month of the observation as three-character abbreviation, saved as a factor (e.g., Jun=June)  
+* day (int) - day of the month of the observation  
+  
+#### _Base Functions Available_  
+There are several functions available for analysis:  
+  
+* plotCountsByMetric() - bar plots for counts by variable  
+* plotNumCor() - plot two numeric variables against each other  
+* plotFactorNumeric() - boxplot a numeric variable against a factor variable  
+
+* corMETAR() - correlations between METAR variables  
+* lmMETAR() - linear regression modeling for METAR variables  
+
+* basicWindPlots() - plot wind speed and direction  
+* getWindDirGroup() - convert wind direction to a grouping (e.g., N for 320-360-40)  
+* consolidatePlotWind() - show frequency plots of wind direction, city, and month  
+  
+The tidyverse library is loaded and the 2016 Detroit data is read in to show examples of the functions:  
+```{r}
+
+library(tidyverse)
+
+kdtw_2016 <- readRDS("./RInputFiles/ProcessedMETAR/metar_kdtw_2016.rds")
+
+```
+  
+A variable mapping is created to allow for better readable variable names:  
+```{r}
+
+varMapper <- c(WindDir="Wind Direction (degrees)", 
+               WindSpeed="Wind Speed (kts)", 
+               Visibility="Visibility (SM)", 
+               TempC="Temperature (C)", 
+               DewC="Dew Point (C)", 
+               Altimeter="Altimeter - Hundredths of Inches of Mercury", 
+               modSLP="Sea-Level Pressure (hPa)", 
+               TempF="Temperature (F)",
+               DewF="Dew Point (F)", 
+               cType1="First Cloud Layer Type", 
+               month="Month", 
+               wType="Greatest Sky Obscuration"
+               )
+
+```
+
+  
+The function plotCountsByMetric() produces bar plots for counts by variable:  
+```{r}
+
+# Helper function for generating plots by key variables
+plotcountsByMetric <- function(df, mets, title="", rotateOn=20, mapper=varMapper) {
+    
+    # Plot of counts by key metric
+    for (x in mets) {
+        dat <- df %>%
+            group_by_at(vars(all_of(x))) %>%
+            summarize(n=n())
+        p <- dat %>%
+            ggplot(aes_string(x=x, y="n")) + 
+            geom_col() + 
+            labs(title=title,
+                 subtitle=paste0("Counts By: ", mapper[x]), 
+                 x=paste0(x, " - ", mapper[x]),
+                 y="Count"
+                 )
+        if (nrow(dat) >= rotateOn) {
+            p <- p + theme(axis.text.x=element_text(angle=90))
+        }
+        print(p)
+    }
+}
+
+# Example for Detroit 2016 - using WindDir, cType1, month, wType
+plotcountsByMetric(kdtw_2016, 
+                   mets=c("WindDir", "cType1", "month", "wType"), 
+                   title="Detroit, MI (2016)"
+                   )
+
+```
+  
+The function plotNumCor() plots two numeric variables against one another:  
+```{r}
+
+# Create a function for plotting two variables against each other
+plotNumCor <- function(met, 
+                       var1, 
+                       var2, 
+                       title=NULL, 
+                       subT="", 
+                       dropNA=TRUE, 
+                       diagnose=FALSE,
+                       mapper=varMapper
+                       ) {
+    
+    # Create the title if not passed
+    if (is.null(title)) { 
+        title <- paste0("Hourly Observations of ", mapper[var1], " and ", mapper[var2]) 
+    }
+    
+    # Pull the counts by var1-var2
+    dat <- met %>%
+        group_by_at(vars(all_of(c(var1, var2)))) %>%
+        summarize(n=n()) 
+    
+    # If NA requested to be excluded, remove anything with NA
+    if (dropNA) {
+        nOrig <- nrow(dat)
+        sumOrig <- sum(dat$n)
+        dat <- dat %>%
+            filter_all(all_vars(!is.na(.)))
+        if (diagnose) { 
+            cat("\nDropping", nOrig-nrow(dat), "rows", "with", sumOrig-sum(dat$n), "observations due to NA\n")
+        }
+    }
+    
+    p <- dat %>%
+        ggplot(aes_string(x=var1, y=var2)) + 
+        geom_point(alpha=0.5, aes_string(size="n")) + 
+        geom_smooth(method="lm", aes_string(weight="n")) + 
+        labs(x=paste0(mapper[var1], " - ", var1), 
+             y=paste0(mapper[var2], " - ", var2), 
+             title=title, 
+             subtitle=subT
+             )
+    
+    print(p)
+}
+
+# Example for Detroit 2016 - using TempC and TempF
+plotNumCor(kdtw_2016, var1="TempC", var2="TempF", subT="Detroit, MI (2016)", diagnose=TRUE)
+
+# Example for Detroit 2016 - using TempC and DewC
+plotNumCor(kdtw_2016, var1="TempC", var2="DewC", subT="Detroit, MI (2016)", diagnose=TRUE)
+
+# Example for Detroit 2016 - using Altimeter and modSLP
+plotNumCor(kdtw_2016, var1="Altimeter", var2="modSLP", subT="Detroit, MI (2016)", diagnose=TRUE)
+
+```
+  
+The function plotFactorNumeric() creates box plots for a numeric variable against a factor variable:  
+```{r}
+
+# Updated function for plotting numeric by factor
+plotFactorNumeric <- function(met, 
+                              fctVar, 
+                              numVar, 
+                              title=NULL, 
+                              subT, 
+                              diagnose=TRUE,
+                              showXLabel=TRUE,
+                              mapper=varMapper
+                              ) {
+    
+    # Create the title if not passed
+    if (is.null(title)) { 
+        title <- paste0("Hourly Observations of ", mapper[numVar], " by ", mapper[fctVar])
+    }
+    
+    nOrig <- nrow(met)
+    dat <- met %>%
+        filter(!is.na(get(fctVar)), !is.na(get(numVar)))
+    if (diagnose) { cat("\nRemoving", nOrig-nrow(dat), "records due to NA\n") }
+    
+    p <- dat %>%
+        ggplot(aes_string(x=fctVar, y=numVar)) + 
+        geom_boxplot(fill="lightblue") + 
+        labs(title=title, 
+             subtitle=subT, 
+             x=ifelse(showXLabel, paste0(mapper[fctVar], " - ", fctVar), ""), 
+             y=paste0(mapper[numVar], " - ", numVar)
+             )
+    
+    print(p)
+    
+}
+
+# Example for Detroit 2016 - using TempF and month
+plotFactorNumeric(kdtw_2016, 
+                  fctVar="month", 
+                  numVar="TempF", 
+                  subT="Detroit, MI (2016)", 
+                  showXLabel=FALSE,
+                  diagnose=TRUE
+                  )
+
+# Example for Detroit 2016 - using WindSpeed and wType
+plotFactorNumeric(kdtw_2016, 
+                  fctVar="wType", 
+                  numVar="WindSpeed", 
+                  subT="Detroit, MI (2016)", 
+                  showXLabel=TRUE,
+                  diagnose=TRUE
+                  )
+
+# Example for Detroit 2016 - using Visibility and wType
+plotFactorNumeric(kdtw_2016, 
+                  fctVar="wType", 
+                  numVar="Visibility", 
+                  subT="Detroit, MI (2016)", 
+                  showXLabel=TRUE,
+                  diagnose=TRUE
+                  )
+
+```
+  
+The visibility graph highlights an issue with visibilities when wType is VV:  
+```{r}
+
+kdtw_2016 %>%
+    filter(wType=="VV") %>%
+    count(Visibility)
+
+kdtw_2016 %>%
+    filter(wType=="VV", Visibility==16) %>%
+    pull(origMETAR) %>%
+    head(5)
+
+```
+  
+The functions from the preceding section will need to be updated to extract 1/ddSM as well as 1/dSM, since the routine as-is only looks for d?d/dSM and thus misses the 1/16 SM records.
+  
+The function corMETAR() calculates correlations among numeric variables in the METAR data:  
+```{r}
+
+# Function to calculate, display, and plot variable correlations
+corMETAR <- function(met, numVars, subT="") {
+
+    # Keep only complete cases and report on data kept
+    dfUse <- met %>%
+        select_at(vars(all_of(numVars))) %>%
+        filter(complete.cases(.))
+    
+    nU <- nrow(dfUse)
+    nM <- nrow(met)
+    myPct <- round(100*nU/nM, 1)
+    cat("\n *** Correlations use ", nU, " complete cases (", myPct, "% of ", nM, " total) ***\n", sep="")
+    
+    # Create the correlation matrix
+    mtxCorr <- dfUse %>%
+        cor()
+
+    # Print the correlations
+    mtxCorr %>%
+        round(2) %>%
+        print()
+
+    # Display a heat map
+    corrplot::corrplot(mtxCorr, 
+                       method="color", 
+                       title=paste0("Hourly Weather Correlations\n", subT), 
+                       mar=c(0, 0, 2, 0)
+                       )
+}
+
+# Example for Detroit, MI 2016
+coreNum <- c("TempC", "TempF", "DewC", "DewF", 
+             "Altimeter", "modSLP", "WindSpeed", "Visibility"
+             )
+corMETAR(kdtw_2016, numVars=coreNum, subT="Detroit, MI (2016) METAR")
+
+```
+  
+The function lmMETAR() runs simple linear regression models on the METAR data:  
+```{r}
+
+# Function for linear regressions on METAR data
+lmMETAR <- function(met, 
+                    y, 
+                    x, 
+                    yName, 
+                    subT=""
+                    ) {
+    
+    # Convert to formula
+    myChar <- paste0(y, " ~ ", x)
+    cat("\n *** Regression call is:", myChar, "***\n")
+    
+    # Run regression
+    regr <- lm(formula(myChar), data=met)
+    
+    # Summarize regression
+    print(summary(regr))
+    
+    # Predict the new values
+    pred <- predict(regr, newdata=met)
+    
+    # Plot the predictions
+    p <- met %>%
+        select_at(vars(all_of(y))) %>%
+        mutate(pred=pred) %>%
+        group_by_at(vars(all_of(c(y, "pred")))) %>%
+        summarize(n=n()) %>%
+        ggplot(aes_string(x=y, y="pred")) + 
+        geom_point(aes(size=n), alpha=0.25) + 
+        geom_smooth(aes(weight=n), method="lm") + 
+        labs(title=paste0("Predicted vs. Actual ", yName, " - ", x, " as Predictor"), 
+             subtitle=subT, 
+             x=paste0("Actual ", yName), 
+             y=paste0("Predicted ", yName)
+             )
+    print(p)
+    
+}
+
+# Examples for Detroit, MI 2016
+lmMETAR(kdtw_2016, "modSLP", "Altimeter", yName="Sea Level Pressure", subT="Detroit, MI (2016)")
+lmMETAR(kdtw_2016, "modSLP", "Altimeter + TempF", yName="Sea Level Pressure", subT="Detroit, MI (2016)")
+lmMETAR(kdtw_2016, "TempC", "DewC", yName="Temperature (C)", subT="Detroit, MI (2016)")
+
+```
+  
+The basicWindPlots() function creates plots for wind speed and direction:  
+```{r}
+
+# Generate basic wind plots
+basicWindPlots <- function(met, 
+                           dirVar="WindDir", 
+                           spdVar="WindSpeed",
+                           desc="", 
+                           gran="", 
+                           mapper=varMapper
+                           ) {
+
+    # Plot for the wind direction
+    wDir <- met %>%
+        ggplot(aes_string(x=dirVar)) + 
+        geom_bar() + 
+        labs(title=paste0(desc, " Wind Direction"), subtitle=gran, 
+             y="# Hourly Observations", x=mapper[dirVar]
+             ) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(wDir)
+
+    # Plot for the minimum, average, and maximum wind speed by wind direction
+    # Wind direction 000 is reserved for 0 KT wind, while VRB is reserved for 3-6 KT variable winds
+    wSpeedByDir <- met %>%
+        filter(!is.na(get(dirVar))) %>%
+        group_by_at(vars(all_of(dirVar))) %>%
+        summarize(minWind=min(get(spdVar)), meanWind=mean(get(spdVar)), maxWind=max(get(spdVar))) %>%
+        ggplot(aes_string(x=dirVar)) +
+        geom_point(aes(y=meanWind), color="red", size=2) +
+        geom_errorbar(aes(ymin=minWind, ymax=maxWind)) +
+        labs(title=paste0(desc, " Wind Speed (Max, Mean, Min) By Wind Direction"), 
+             subtitle=gran,
+             y=mapper[spdVar], 
+             x=mapper[dirVar]
+             ) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(wSpeedByDir)
+
+    # Plot for the wind speed
+    pctZero <- sum(pull(met, spdVar)==0, na.rm=TRUE) / nrow(met)
+    wSpeed <- met %>%
+        filter_at(vars(all_of(spdVar)), all_vars(!is.na(.))) %>%
+        ggplot(aes_string(x=spdVar)) +
+        geom_bar(aes(y=..count../sum(..count..))) +
+        labs(title=paste0(round(100*pctZero), "% of wind speeds in ", desc, " measure 0 Knots"),
+             subtitle=gran,
+             y="% Hourly Observations", 
+             x=mapper[spdVar]
+             )
+    print(wSpeed)
+    
+    # Polar plot for wind speed and wind direction
+    wData <- met %>%
+        filter_at(vars(all_of(dirVar)), all_vars(!is.na(.) & !(. %in% c("000", "VRB")))) %>%
+        filter_at(vars(all_of(spdVar)), all_vars(!is.na(.))) %>%
+        mutate_at(vars(all_of(dirVar)), as.numeric) %>%
+        group_by_at(vars(all_of(c(dirVar, spdVar)))) %>%
+        summarize(n=n())
+    print(summary(wData))
+        
+    wPolarDirSpeed <- wData %>%
+        ggplot(aes_string(x=spdVar, y=dirVar)) +
+        geom_point(alpha=0.1, aes(size=n)) +
+        coord_polar(theta="y") +
+        labs(title=paste0(desc, " Direction vs. Wind Speed"), 
+             subtitle=gran, 
+             x=mapper[spdVar], 
+             y=mapper[dirVar]
+             ) +
+        scale_y_continuous(limits=c(0, 360), breaks=c(0, 90, 180, 270, 360)) +
+        scale_x_continuous(limits=c(0, 40), breaks=c(0, 5, 10, 15, 20, 25, 30, 35, 40)) +
+        geom_point(aes(x=0, y=0), color="red", size=2)
+    print(wPolarDirSpeed)
+
+}
+
+# Example for Detroit, MI 2016
+basicWindPlots(kdtw_2016, desc="Detroit, MI (2016)", gran="KDTW METAR")
+
+```
+  
+The getWindDirGroup() function maps wind direction to a category such as NNE.  Because the METAR data are recorded in units of 10 degrees, either 4 groupings (90 degrees each) or 12 groupings (30 degrees each) are preferred, so that each category has the same underlying number of buckets:  
+```{r}
+
+# Extract the wind direction data from a processed METAR file
+getWindDirGroup <- function(met, src) {
+    
+    # Use the fullMETAR data and extract WindDir, WindSpeed, month
+    windPlotData <- met %>%
+        select(WindDir, WindSpeed, month) %>%
+        mutate(windDirGroup=factor(case_when(WindSpeed==0 ~ "No Wind", 
+                                             WindDir=="VRB" ~ "Variable", 
+                                             WindDir %in% c("350", "360", "010") ~ "N", 
+                                             WindDir %in% c("020", "030", "040") ~ "NNE", 
+                                             WindDir %in% c("050", "060", "070") ~ "ENE", 
+                                             WindDir %in% c("080", "090", "100") ~ "E", 
+                                             WindDir %in% c("110", "120", "130") ~ "ESE",
+                                             WindDir %in% c("140", "150", "160") ~ "SSE", 
+                                             WindDir %in% c("170", "180", "190") ~ "S", 
+                                             WindDir %in% c("200", "210", "220") ~ "SSW",
+                                             WindDir %in% c("230", "240", "250") ~ "WSW", 
+                                             WindDir %in% c("260", "270", "280") ~ "W", 
+                                             WindDir %in% c("290", "300", "310") ~ "WNW", 
+                                             WindDir %in% c("320", "330", "340") ~ "NNW", 
+                                             TRUE ~ "Error"
+                                             ), 
+                                   levels=c("No Wind", "Variable", "Error", 
+                                            "N", "NNE", "ENE", 
+                                            "E", "ESE", "SSE", 
+                                            "S", "SSW", "WSW", 
+                                            "W", "WNW", "NNW"
+                                            )
+                                   )
+               )
+    
+    # Rempve the errors and calculate percentages by month for the remainder
+    processedWindData <- windPlotData %>%
+        filter(windDirGroup != "Error") %>%
+        group_by(month, windDirGroup) %>%
+        summarize(n=n()) %>%
+        ungroup() %>%
+        group_by(month) %>%
+        mutate(pct=n/sum(n)) %>%
+        ungroup() %>%
+        mutate(src=src)
+    
+    processedWindData
+
+}
+
+```
+  
+The function conslidatePlotWind() then calls getWindDirGroup() for any number of files:  
+```{r}
+
+# Consolidate and plot wind data
+consolidatePlotWind <- function(files, names) {
+
+    consFun <- function(x, y) { getWindDirGroup(met=x, src=y) }
+    boundByRows <- map2_dfr(.x=files, .y=names, .f=consFun)
+
+    # Show frequency by month for each city, faceted by wind direction
+    p1 <- boundByRows %>%
+        ggplot(aes(x=month, y=pct, color=src)) + 
+        geom_line(aes(group=src)) + 
+        facet_wrap(~windDirGroup) + 
+        labs(title="Wind Frequency by Month", 
+             x="Month", 
+             y="Frequency of Wind Observations"
+             ) +
+        theme(axis.text.x=element_text(angle=90))
+    print(p1)
+    
+    # Show frequency by wind direction for each city, faceted by month
+    p2 <- boundByRows %>%
+        ggplot(aes(x=windDirGroup, y=pct, color=src)) + 
+        geom_line(aes(group=src)) + 
+        facet_wrap(~month) + 
+        labs(title="Wind Frequency by Wind Direction", 
+             x="Wind Direction", 
+             y="Frequency of Wind Observations"
+             ) +
+        theme(axis.text.x=element_text(angle=90))
+    print(p2)
+    
+    boundByRows
+    
+}
+
+# Load the Las Vegas data and New Orleans data for comparison
+kmsy_2016 <- readRDS("./RInputFiles/ProcessedMETAR/metar_kmsy_2016.rds")
+klas_2016 <- readRDS("./RInputFiles/ProcessedMETAR/metar_klas_2016.rds")
+
+# Run wind by month comparisons for Detroit, Las Vegas, New Orleans
+consolidatePlotWind(files=list(kdtw_2016, klas_2016, kmsy_2016), 
+                    names=c("Detroit, MI (2016)", "Las Vegas, NV (2016)", "New Orleans, LA (2016)")
+                    )
+
+```
+  
