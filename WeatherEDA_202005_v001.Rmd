@@ -29,7 +29,7 @@ Each file contains the following variables:
 * Visibility (dbl) - surface visibility in statute miles  
 * TempC (int) - temperature in degrees Celsius  
 * DewC (int) - dew point in degrees Celsius  
-* Altimeter (int) - altimeter in hundredths of inches of mercury (e.g., 29.87 inHg is stored as 2987)  
+* Altimeter (int) - altimeter in inches of mercury  
 * SLP (int) - the raw sea-level-pressure reading from the METAR  
 * FahrC (chr) - the raw temperature string pulled from the METAR (Tttttdddd) where tttt is the Fahrenheit temperature recorded in Celsius and dddd is the Fahrenheit dew point recorded in Celsius  
 * dtime (dttm) - the date-time associated with the observation  
@@ -79,13 +79,15 @@ varMapper <- c(WindDir="Wind Direction (degrees)",
                Visibility="Visibility (SM)", 
                TempC="Temperature (C)", 
                DewC="Dew Point (C)", 
-               Altimeter="Altimeter - Hundredths of Inches of Mercury", 
+               Altimeter="Altimeter (inches Hg)", 
                modSLP="Sea-Level Pressure (hPa)", 
                TempF="Temperature (F)",
                DewF="Dew Point (F)", 
                cType1="First Cloud Layer Type", 
+               cLevel1="First Cloud Layer Height (ft)",
                month="Month", 
-               wType="Greatest Sky Obscuration"
+               wType="Greatest Sky Obscuration", 
+               day="Day of Month"
                )
 
 ```
@@ -95,13 +97,36 @@ The function plotCountsByMetric() produces bar plots for counts by variable:
 ```{r}
 
 # Helper function for generating plots by key variables
-plotcountsByMetric <- function(df, mets, title="", rotateOn=20, mapper=varMapper) {
+plotcountsByMetric <- function(df, 
+                               mets, 
+                               title="", 
+                               rotateOn=20, 
+                               dropNA=TRUE, 
+                               diagnose=FALSE,
+                               mapper=varMapper
+                               ) {
     
     # Plot of counts by key metric
     for (x in mets) {
         dat <- df %>%
             group_by_at(vars(all_of(x))) %>%
             summarize(n=n())
+        
+        if (dropNA) {
+            nOrig <- nrow(dat)
+            sumOrig <- sum(dat$n)
+            dat <- dat %>%
+                filter_all(all_vars(!is.na(.)))
+            if (diagnose & (nOrig > nrow(dat))) { 
+                cat("\nDropping", 
+                    nOrig-nrow(dat), 
+                    "rows with", 
+                    sumOrig-sum(dat$n), 
+                    "observations due to NA\n"
+                    )
+            }
+        }
+        
         p <- dat %>%
             ggplot(aes_string(x=x, y="n")) + 
             geom_col() + 
@@ -250,21 +275,7 @@ plotFactorNumeric(kdtw_2016,
 
 ```
   
-The visibility graph highlights an issue with visibilities when wType is VV:  
-```{r}
-
-kdtw_2016 %>%
-    filter(wType=="VV") %>%
-    count(Visibility)
-
-kdtw_2016 %>%
-    filter(wType=="VV", Visibility==16) %>%
-    pull(origMETAR) %>%
-    head(5)
-
-```
-  
-The functions from the preceding section will need to be updated to extract 1/ddSM as well as 1/dSM, since the routine as-is only looks for d?d/dSM and thus misses the 1/16 SM records.
+An issue previous observed where visibility 1/16SM was interpreted as 16 statutory miles has been corrected in the 'WeatherDownloads_202005_v002' file.
   
 The function corMETAR() calculates correlations among numeric variables in the METAR data:  
 ```{r}
@@ -335,6 +346,7 @@ lmMETAR <- function(met,
     p <- met %>%
         select_at(vars(all_of(y))) %>%
         mutate(pred=pred) %>%
+        filter_all(all_vars(!is.na(.))) %>%
         group_by_at(vars(all_of(c(y, "pred")))) %>%
         summarize(n=n()) %>%
         ggplot(aes_string(x=y, y="pred")) + 
@@ -415,7 +427,6 @@ basicWindPlots <- function(met,
         mutate_at(vars(all_of(dirVar)), as.numeric) %>%
         group_by_at(vars(all_of(c(dirVar, spdVar)))) %>%
         summarize(n=n())
-    print(summary(wData))
         
     wPolarDirSpeed <- wData %>%
         ggplot(aes_string(x=spdVar, y=dirVar)) +
@@ -537,3 +548,120 @@ consolidatePlotWind(files=list(kdtw_2016, klas_2016, kmsy_2016),
 
 ```
   
+#### _Combining Functions_  
+The functions can be combined so that a full process can be run for a given file:  
+```{r}
+
+# File name to city name mapper
+cityNameMapper <- c(kdtw_2016="Detroit, MI (2016)", 
+                    kmsy_2016="New Orleans, LA (2016)", 
+                    klas_2016="Las Vegas, NV (2016)"
+                    )
+
+
+# The following function runs the functions that work on a single data source
+combinedEDA <- function(filename, 
+                        desc=NULL,
+                        mets=c("WindDir", "WindSpeed", "TempC", "DewC", "Altimeter", 
+                               "modSLP", "cType1", "cLevel1", "month", "day"
+                               ),
+                        corPairs=list(c("TempC", "TempF"), 
+                                      c("TempC", "DewC"), 
+                                      c("Altimeter", "modSLP"), 
+                                      c("Altimeter", "WindSpeed")
+                                      ),
+                        fctPairs=list(c("month", "TempF"), 
+                                      c("month", "DewF"), 
+                                      c("month", "WindSpeed"), 
+                                      c("month", "Altimeter"), 
+                                      c("wType", "Visibility"), 
+                                      c("wType", "WindSpeed"), 
+                                      c("WindDir", "WindSpeed"), 
+                                      c("WindDir", "TempF")
+                                      ),
+                        heatVars=c("TempC", "TempF", 
+                                   "DewC", "DewF", 
+                                   "Altimeter", "modSLP", 
+                                   "WindSpeed", "Visibility", 
+                                   "monthint", "day"
+                                   ),
+                        lmVars=list(c("modSLP", "Altimeter"), 
+                                    c("modSLP", "Altimeter + TempF"), 
+                                    c("TempF", "DewF"), 
+                                    c("WindSpeed", "Altimeter + TempF + DewF + month")
+                                    ),
+                        mapper=varMapper,
+                        path="./RInputFiles/ProcessedMETAR/"
+                        ) {
+    
+    # Find the description if it is NULL (default)
+    if (is.null(desc)) {
+        for (potMatch in names(cityNameMapper)) {
+            if (str_detect(string=filename, pattern=potMatch)) {
+                desc <- cityNameMapper[potMatch]
+                break
+            }
+        }
+        if (is.null(desc)) {
+            desc <- paste0("UNMAPPED_", filename)
+            cat("\nUnable to find a description, will use ", desc, "\n", sep="")
+        } else {
+            cat("\nWill use ", desc, " as the description for ", filename, "\n", sep="")
+        }
+    }
+    
+    # Read in the file
+    tbl <- readRDS(paste0(path, filename))
+    
+    # Plot counts by metric
+    plotcountsByMetric(tbl, mets=mets, title=desc, diagnose=TRUE)
+    
+    # Plot relationships between two variables
+    for (ys in corPairs) {
+        plotNumCor(tbl, var1=ys[1], var2=ys[2], subT=desc, diagnose=TRUE)
+    }
+    
+    # plot numeric vs. factor
+    for (ys in fctPairs) {
+        plotFactorNumeric(tbl, fctVar=ys[1], numVar=ys[2], subT=desc, showXLabel=FALSE, diagnose=TRUE)
+    }
+    
+    # Heatmap for variable correlations
+    corMETAR(tbl, numVars=heatVars, subT=paste0(desc, " METAR"))
+
+    # Run linear rergression
+    for (ys in lmVars) {
+        lmMETAR(tbl, y=ys[1], x=ys[2], yName=mapper[ys[1]], subT=desc)
+    }
+    
+    # Run the basic wind plots
+    basicWindPlots(tbl, desc=desc, gran="")
+    
+    # Return the tibble
+    tbl
+    
+}
+
+```
+  
+The process can then be run for each of Detroit (2016), Las Vegas (2016), and New Orleans (2016):  
+```{r}
+
+# Retrieve the Detroit, MI (2016) data
+kdtw_2016 <- combinedEDA("metar_kdtw_2016.rds")
+
+```
+
+```{r}
+
+# Retrieve the Las Vegas, NV (2016) data
+klas_2016 <- combinedEDA("metar_klas_2016.rds")
+
+```
+
+```{r}
+
+# Retrieve the New Orleans, LA (2016) data
+kmsy_2016 <- combinedEDA("metar_kmsy_2016.rds")
+
+```
