@@ -1938,4 +1938,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherDownloads_202005_v002 contains final versions of the download and initial processing functions  
 * WeatherEDA_202005_v001 contains functions for running exploratory data analysis on downloaded weather files  
 * WeatherDownloads_202005_v002 contains final versions of the download and initial processing functions (updated to correct for 1/16 SM Visibility and convert Altimeter to inches of mercury)  
+* WeatherEDA_202005_v001 combines functions for running exploratory data analysis on downloaded weather files  
   
