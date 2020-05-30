@@ -554,13 +554,59 @@ The functions can be combined so that a full process can be run for a given file
 
 # File name to city name mapper
 cityNameMapper <- c(kdtw_2016="Detroit, MI (2016)", 
+                    kewr_2016="Newark, NJ (2016)",
+                    kgrb_2016="Green Bay, WI (2016)",
+                    kgrr_2016="Grand Rapids, MI (2016)",
+                    kiah_2016="Houston, TX (2016)",
+                    kind_2016="Indianapolis, IN (2016)",
+                    klas_2015="Las Vegas, NV (2015)",
+                    klas_2016="Las Vegas, NV (2016)", 
+                    klas_2017="Las Vegas, NV (2017)", 
+                    klnk_2016="Lincoln, NE (2016)",
+                    kmke_2016="Milwaukee, WI (2016)",
+                    kmsn_2016="Madison, WI (2016)",
+                    kmsp_2016="Minneapolis, MN (2016)",
+                    kmsy_2015="New Orleans, LA (2015)",
                     kmsy_2016="New Orleans, LA (2016)", 
-                    klas_2016="Las Vegas, NV (2016)"
+                    kmsy_2017="New Orleans, LA (2017)", 
+                    kord_2015="Chicago, IL (2015)",
+                    kord_2016="Chicago, IL (2016)", 
+                    kord_2017="Chicago, IL (2017)", 
+                    ksan_2015="San Diego, CA (2015)",
+                    ksan_2016="San Diego, CA (2016)",
+                    ksan_2017="San Diego, CA (2017)",
+                    ktvc_2016="Traverse City, MI (2016)"
                     )
 
+# This is a helper function to create a locale description
+getLocaleDescription <- function(x, mapper=cityNameMapper) {
+    
+    # Initialize the description as NULL
+    desc <- NULL
+    
+    for (potMatch in names(mapper)) {
+        if (str_detect(string=x, pattern=potMatch)) {
+            desc <- mapper[potMatch]
+            break
+        }
+    }
+    
+    # If the mapping failed, use UNMAPPED_x as the description
+    if (is.null(desc)) {
+        desc <- paste0("UNMAPPED_", x)
+        cat("\nUnable to find a description, will use ", desc, "\n\n", sep="")
+    } else {
+        cat("\nWill use ", desc, " as the description for ", x, "\n\n", sep="")
+    }
+    
+    # Return the descriptive name
+    desc
+    
+}
 
 # The following function runs the functions that work on a single data source
-combinedEDA <- function(filename, 
+combinedEDA <- function(filename=NULL, 
+                        tbl=NULL,
                         desc=NULL,
                         mets=c("WindDir", "WindSpeed", "TempC", "DewC", "Altimeter", 
                                "modSLP", "cType1", "cLevel1", "month", "day"
@@ -590,28 +636,38 @@ combinedEDA <- function(filename,
                                     c("TempF", "DewF"), 
                                     c("WindSpeed", "Altimeter + TempF + DewF + month")
                                     ),
-                        mapper=varMapper,
+                        mapVariables=varMapper,
+                        mapFileNames=cityNameMapper,
                         path="./RInputFiles/ProcessedMETAR/"
                         ) {
     
-    # Find the description if it is NULL (default)
-    if (is.null(desc)) {
-        for (potMatch in names(cityNameMapper)) {
-            if (str_detect(string=filename, pattern=potMatch)) {
-                desc <- cityNameMapper[potMatch]
-                break
-            }
-        }
-        if (is.null(desc)) {
-            desc <- paste0("UNMAPPED_", filename)
-            cat("\nUnable to find a description, will use ", desc, "\n", sep="")
-        } else {
-            cat("\nWill use ", desc, " as the description for ", filename, "\n", sep="")
-        }
+    # Require that either filename OR tbl be passed
+    if (is.null(filename) & is.null(tbl)) {
+        cat("\nMust provide either a filename or an already-loaded tibble\n")
+        stop("\nfilename=NULL and tbl=NULL may not both be passed to combinedEDA()\n")
     }
     
-    # Read in the file
-    tbl <- readRDS(paste0(path, filename))
+    # Require that either 1) filename and mapFileNames, OR 2) desc be passed
+    if ((is.null(filename) | is.null(mapFileNames)) & is.null(desc)) {
+        cat("\nMust provide either a filename with mapFileNames or a file description\n")
+        stop("\nWhen desc=NULL must have non-null entries for both filename= and mapFileNames=\n")
+    }
+    
+    # Find the description if it is NULL (default)
+    if (is.null(desc)) {
+        desc <- getLocaleDescription(filename, mapper=mapFileNames)
+    }
+    
+    # Warn if both filename and tbl are passed, since tbl will be used
+    if (!is.null(filename) & !is.null(tbl)) {
+        cat("\nA tibble has been passed and will be used as the dataset for this function\n")
+        warning("\nArgument filename=", filename, " is NOT loaded since a tibble was passed\n")
+    }
+    
+    # Read in the file unless tbl has already been passed to the routine
+    if (is.null(tbl)) {
+        tbl <- readRDS(paste0(path, filename))
+    }
     
     # Plot counts by metric
     plotcountsByMetric(tbl, mets=mets, title=desc, diagnose=TRUE)
@@ -631,7 +687,7 @@ combinedEDA <- function(filename,
 
     # Run linear rergression
     for (ys in lmVars) {
-        lmMETAR(tbl, y=ys[1], x=ys[2], yName=mapper[ys[1]], subT=desc)
+        lmMETAR(tbl, y=ys[1], x=ys[2], yName=varMapper[ys[1]], subT=desc)
     }
     
     # Run the basic wind plots
@@ -645,23 +701,189 @@ combinedEDA <- function(filename,
 ```
   
 The process can then be run for each of Detroit (2016), Las Vegas (2016), and New Orleans (2016):  
-```{r}
+```{r cache=TRUE}
 
 # Retrieve the Detroit, MI (2016) data
 kdtw_2016 <- combinedEDA("metar_kdtw_2016.rds")
 
 ```
 
-```{r}
+```{r cache=TRUE}
 
 # Retrieve the Las Vegas, NV (2016) data
 klas_2016 <- combinedEDA("metar_klas_2016.rds")
 
 ```
 
-```{r}
+```{r cache=TRUE}
 
 # Retrieve the New Orleans, LA (2016) data
 kmsy_2016 <- combinedEDA("metar_kmsy_2016.rds")
 
 ```
+  
+#### _Directing Output to a Separate File_  
+There is a lot of good information in the EDA, but it can be overwhelming to have everything in one place.  Perhaps a wrapper function can be built allowing for outputs to be piped to a given file:  
+```{r}
+
+wrapCombinedEDA <- function(readFile, 
+                            readPath="./RInputFiles/ProcessedMETAR/", 
+                            mapFileNames=cityNameMapper,
+                            desc=NULL,
+                            writeLogFile=NULL,
+                            writeLogPDF=NULL,
+                            writeLogPath=NULL,
+                            appendWriteFile=FALSE,
+                            ...
+                            ) {
+    
+    # Read in the requested file
+    tbl <- readRDS(paste0(readPath, readFile))
+
+    # Find the description if it has not been passed
+    if (is.null(desc)) {
+        desc <- getLocaleDescription(readFile, mapper=mapFileNames)
+    }
+    
+    # Helper function that only runs the combinedEDA() routine
+    coreFunc <- function() { combinedEDA(tbl=tbl, desc=desc, mapFileNames=mapFileNames, ...) }
+    
+    # If writeLogPDF is not NULL, direct the graphs to a suitable PDF
+    if (!is.null(writeLogPDF)) {
+        
+        # Prepend the provided log path if it has not been made available
+        if (!is.null(writeLogPath)) {
+            writeLogPDF <- paste0(writeLogPath, writeLogPDF)
+        }
+        
+        # Provide the location of the EDA pdf file
+        cat("\nEDA PDF file is available at:", writeLogPDF, "\n")
+
+        # Redirect the writing to writeLogPDF
+        pdf(writeLogPDF)
+    }
+    
+    # Run EDA on the tbl using capture.output to redirect to a log file if specified
+    if (!is.null(writeLogFile)) {
+        
+        # Prepend the provided log path if it has not been made available
+        if (!is.null(writeLogPath)) {
+            writeLogFile <- paste0(writeLogPath, writeLogFile)
+        }
+        
+        # Provide the location of the EDA log file
+        cat("\nEDA log file is available at:", writeLogFile, "\n")
+        
+        # Run EDA such that the output goes to the log file
+        capture.output(coreFunc(), 
+                       file=writeLogFile, 
+                       append=appendWriteFile
+                       )
+        
+    } else {
+        # Run EDA such that output stays in stdout
+        coreFunc()
+    }
+    
+    # If writeLogPDF is not NULL, redirect to stdout
+    if (!is.null(writeLogPDF)) {
+        dev.off()
+    }
+    
+    # Return the tbl
+    tbl
+    
+}
+
+```
+  
+```{r cache=TRUE}
+
+filePath <- "./RInputFiles/ProcessedMETAR/"
+
+# Example for the basic function for Chicago, IL (2016) written to stdout
+kord_2016 <- wrapCombinedEDA("metar_kord_2016.rds", readPath=filePath)
+
+```
+  
+```{r cache=TRUE}
+
+# Example for the basic function for San Diego, CA (2016) written to 'metar_ksan_2016_EDA.log'
+ksan_2016 <- wrapCombinedEDA("metar_ksan_2016.rds", 
+                             readPath=filePath, 
+                             writeLogFile='metar_ksan_2016_EDA.log',
+                             writeLogPDF='metar_ksan_2016_EDA.pdf', 
+                             writeLogPath=filePath
+                             )
+
+```
+  
+Finally, a function can be called to create the inputs to wrapCombinedEDA() for lower typing:  
+```{r}
+
+logAndPDFCombinedEDA <- function(tblName, filePath="./RInputFiles/ProcessedMETAR/") {
+    
+    # Create the RDS file name
+    rdsName <- paste0("metar_", tblName, ".rds")
+    cat("\nRDS Name:", rdsName)
+    
+    # Create the log file name
+    logName <- paste0("metar_", tblName, "_EDA.log")
+    cat("\nLog Name:", logName)
+    
+    # Create the PDF file name
+    pdfName <- paste0("metar_", tblName, "_EDA.pdf")
+    cat("\nPDF Name:", pdfName)
+    
+    # Call wrapCombinedEDA()
+    tbl <- wrapCombinedEDA(rdsName, 
+                           readPath=filePath, 
+                           writeLogFile=logName, 
+                           writeLogPDF=pdfName,
+                           writeLogPath=filePath
+                           )
+    
+    # Return the tbl
+    tbl
+    
+}
+
+```
+  
+This function can then be run for all of the relevant files (cached to avoid multiple runs):  
+```{r cache=TRUE}
+
+# Run for 2016 only for kdtw, kewr, kgrb, kgrr, kiah, kind, klnk, kmke, kmsn, kmsp, ktvc
+kdtw_2016 <- logAndPDFCombinedEDA("kdtw_2016")
+kewr_2016 <- logAndPDFCombinedEDA("kewr_2016")
+kgrb_2016 <- logAndPDFCombinedEDA("kgrb_2016")
+kgrr_2016 <- logAndPDFCombinedEDA("kgrr_2016")
+kiah_2016 <- logAndPDFCombinedEDA("kiah_2016")
+kind_2016 <- logAndPDFCombinedEDA("kind_2016")
+klnk_2016 <- logAndPDFCombinedEDA("klnk_2016")
+kmke_2016 <- logAndPDFCombinedEDA("kmke_2016")
+kmsn_2016 <- logAndPDFCombinedEDA("kmsn_2016")
+kmsp_2016 <- logAndPDFCombinedEDA("kmsp_2016")
+ktvc_2016 <- logAndPDFCombinedEDA("ktvc_2016")
+
+```
+  
+```{r cache=TRUE}
+
+# Run for 2015-2016-2017 for klas, kmsy, kord, ksan
+klas_2015 <- logAndPDFCombinedEDA("klas_2015")
+klas_2016 <- logAndPDFCombinedEDA("klas_2016")
+klas_2017 <- logAndPDFCombinedEDA("klas_2017")
+kmsy_2015 <- logAndPDFCombinedEDA("kmsy_2015")
+kmsy_2016 <- logAndPDFCombinedEDA("kmsy_2016")
+kmsy_2017 <- logAndPDFCombinedEDA("kmsy_2017")
+kord_2015 <- logAndPDFCombinedEDA("kord_2015")
+kord_2016 <- logAndPDFCombinedEDA("kord_2016")
+kord_2017 <- logAndPDFCombinedEDA("kord_2017")
+ksan_2015 <- logAndPDFCombinedEDA("ksan_2015")
+ksan_2016 <- logAndPDFCombinedEDA("ksan_2016")
+ksan_2017 <- logAndPDFCombinedEDA("ksan_2017")
+
+```
+  
+The files are now available for further analysis, with individual PDF files for plots associated with each locale.
