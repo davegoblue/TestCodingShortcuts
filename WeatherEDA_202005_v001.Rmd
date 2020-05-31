@@ -103,13 +103,35 @@ plotcountsByMetric <- function(df,
                                rotateOn=20, 
                                dropNA=TRUE, 
                                diagnose=FALSE,
-                               mapper=varMapper
+                               mapper=varMapper,
+                               facetOn=NULL, 
+                               showCentral=FALSE
                                ) {
+    
+    # Function arguments
+    # df: dataframe or tibble containing raw data
+    # mets: character vector of variables for plotting counts
+    # title: character vector for plot title
+    # rotateOn: integer, x-axis labels will be rotated by 90 degrees if # categories >= rotateOn
+    # dropNA: boolean for whether to drop all NA prior to plotting (recommended for avoiding warnings)
+    # diagnose: boolean for whether to note in the log the number of NA observations dropped
+    # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
+    # facetOn: a facetting variable for the supplied df (NULL for no faceting)
+    # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    
+    # Function usage
+    # 1.  By default, the function plots overall counts by metric for a given input
+    # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
+    # 3.  If showCentral=TRUE, then the overall mean will be plotted as a point on the main plot (only makes sense if facetOn has been selected)
+    
     
     # Plot of counts by key metric
     for (x in mets) {
+        # If a facetting variable is provided, need to include this in the group_by
+        useVars <- x
+        if (!is.null(facetOn)) { useVars <- c(facetOn, useVars) }
         dat <- df %>%
-            group_by_at(vars(all_of(x))) %>%
+            group_by_at(vars(all_of(useVars))) %>%
             summarize(n=n())
         
         if (dropNA) {
@@ -127,6 +149,7 @@ plotcountsByMetric <- function(df,
             }
         }
         
+        # Create the main plot
         p <- dat %>%
             ggplot(aes_string(x=x, y="n")) + 
             geom_col() + 
@@ -135,9 +158,33 @@ plotcountsByMetric <- function(df,
                  x=paste0(x, " - ", mapper[x]),
                  y="Count"
                  )
+        # If the rotateOn criteria is exceeded, rotate the x-axis by 90 degrees
         if (nrow(dat) >= rotateOn) {
             p <- p + theme(axis.text.x=element_text(angle=90))
         }
+        # If facetting has been requested, facet by the desired variable
+        if (!is.null(facetOn)) {
+            p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+        }
+        # If showCentral=TRUE, add a dot plot for the overall average
+        if (showCentral) {
+            # Get the median number of observations by facet, or the total if facetOn=NULL
+            if (is.null(facetOn)) {
+                useN <- sum(dat$n)
+            } else {
+                useN <- dat %>%
+                    group_by_at(vars(all_of(facetOn))) %>%
+                    summarize(n=sum(n)) %>%
+                    pull(n) %>%
+                    median()
+            }
+            # Get the overall percentages by x
+            centralData <- helperCountsByMetric(tbl=dat, ctVar=x, sumOn="n") %>%
+                mutate(centralValue=nPct*useN)
+            # Apply the median
+            p <- p + geom_point(data=centralData, aes(y=centralValue), color="red", size=2)
+        }
+        # Print the plot
         print(p)
     }
 }
@@ -887,3 +934,166 @@ ksan_2017 <- logAndPDFCombinedEDA("ksan_2017")
 ```
   
 The files are now available for further analysis, with individual PDF files for plots associated with each locale.
+  
+#### _Comparing Multiple Locales_  
+With EDA about each locale saved to .pdf and .log files, it is interesting to investigate comparisons among the various locales.  For example, how do the temperature patterns by month for a given locale compare to the overall global median temperature patterns by month?
+  
+The existing functions contain most of the code needed to perform this.  The main steps to add are:  
+  
+1.  Combine processed data files  
+2.  Adapt the base functions to create the overall mean or median, when requested by parameter  
+3.  Adapt the base functions to add the overall mean or median to the plot, when requested by parameter  
+4.  Facet the plot by locale, when requested by parameter  
+  
+The first step is to combine one or more processed files, with a column added for locale:  
+```{r}
+
+# Combine files from a character list
+combineProcessedFiles <- function(charList, mapper=cityNameMapper) {
+    
+    # Combine the objects represented by charList, and name the list items using charList
+    listFiles <- lapply(charList, FUN=function(x) { get(x) })
+    names(listFiles) <- charList
+    
+    # Bind rows, and add the descriptive locale name as sourceName
+    tblFiles <- bind_rows(listFiles, .id="source") %>%
+        mutate(sourceName=mapper[source])
+    
+    tblFiles
+    
+}
+
+```
+  
+The 2016 data will be used to run the combined process:  
+```{r}
+
+# Grab all the data that ends in _2016
+locales2016 <- ls() %>%
+    grep(pattern="_2016", value=TRUE)
+cat("\nLocales used will be:\n\n", paste0(locales2016, collapse="\n"), "\n\n", sep="")
+
+# Combine the 2016 data
+all2016Data <- combineProcessedFiles(locales2016)
+
+# Show counts by sourceName
+all2016Data %>%
+    count(source, sourceName)
+
+```
+  
+The following global summaries will be useful:  
+  
+* plotCountsByMetric() - overall percentage by metric, applied to total counts for locale  
+* plotNumCor() - overall geom_smooth()  
+* plotFactorNumeric() - overall mean/median of numeric by factor  
+* corMETAR() and lmMETAR() - not applicable, though could be run on full dataset  
+* basicWindPlots() - tbd, perhaps adapt along with consolidatePlotWind  
+* consolidatePlotWind() - tbd, perhaps adapt along with basicWindPlots  
+  
+Helper functions can be created for:  
+  
+* helperCountsByMetric() - get the overall percentage by metric for variable x  
+* helperNumCor() - get an overall geom_smooth for variable y vs. variable x  
+* helperFactorNumeric() - get the overall mean or median for numeric variable y by factor variable x  
+  
+The function helperFactorNumeric is created to apply function f to numeric variable y by factor variable x:  
+```{r}
+
+# Helper function to get overall percentage by metric for variable x
+helperCountsByMetric <- function(tbl, ctVar, sumOn="dummyVar") {
+
+    tbl %>%
+        mutate(dummyVar=1) %>%
+        select_at(vars(all_of(c(ctVar, sumOn)))) %>%
+        filter_all(all_vars(!is.na(.))) %>%
+        group_by_at(ctVar) %>%
+        summarize(n=sum(get(sumOn))) %>%
+        mutate(nPct=n/sum(n))
+        
+}
+
+# Example run to get counts by greatest sky obscuration
+helperCountsByMetric(all2016Data, ctVar="wType")
+
+
+# Helper function to get a geom_smooth for variable y vs variable x
+helperNumCor <- function(tbl, 
+                         xVar, 
+                         yVar, 
+                         se=TRUE, 
+                         color="red", 
+                         method="lm", 
+                         lty=2
+                         ) {
+    
+    plotData <- tbl %>%
+        group_by_at(vars(all_of(c(xVar, yVar)))) %>%
+        summarize(nTotal=n()) %>%
+        filter_all(all_vars(!is.na(.)))
+    
+    geom_smooth(data=plotData, 
+                aes_string(x=xVar, y=yVar, weight="nTotal"), 
+                se=se, 
+                color=color, 
+                method=method, 
+                lty=lty
+                )
+    
+}
+
+# Example run to get TempC vs DewC
+helperNumCor(all2016Data, xVar="TempC", yVar="DewC")
+
+# Example for using the helper function on a plot
+plotNumCor(kdtw_2016, var1="TempC", var2="DewC") + 
+    helperNumCor(all2016Data, xVar="TempC", yVar="DewC")
+
+
+# Helper function to calculate .f(numVar) by byVar
+helperFactorNumeric <- function(tbl, .f, byVar, numVar) {
+    
+    tbl %>%
+        select_at(vars(all_of(c(byVar, numVar)))) %>%
+        filter_all(all_vars(!is.na(.))) %>%
+        group_by_at(byVar) %>%
+        summarize(helpFN=.f(get(numVar)))
+    
+}
+
+# Example for getting median TempF by month
+helperFactorNumeric(all2016Data, .f=median, byVar="month", numVar="TempF")
+
+```
+  
+The function plotCountsByMetric() has been updated above to allow for facetting and plotting of the overall central tendency.  Two examples are shown - the base from previous, and a facetted example:  
+```{r}
+
+# Previous Example for Detroit 2016 - using WindDir, cType1, month, wType
+plotcountsByMetric(kdtw_2016, 
+                   mets=c("WindDir", "cType1", "month", "wType"), 
+                   title="Detroit, MI (2016)", 
+                   dropNA=TRUE, 
+                   diagnose=TRUE
+                   )
+
+
+# Facetted example for kdtw_2016, kord_2016, klas_2016, ksan_2016
+useData <- all2016Data %>%
+    filter(source %in% c("kdtw_2016", "klas_2016", "kord_2016", "ksan_2016"))
+
+plotcountsByMetric(useData, 
+                   mets=c("WindDir", "cType1", "month", "wType"), 
+                   title="Comparison Across Locales (red dots are the median)", 
+                   dropNA=TRUE, 
+                   diagnose=TRUE, 
+                   facetOn="sourceName", 
+                   showCentral=TRUE
+                   )
+
+```
+  
+As observed previously, Las Vegas tends towards southerly winds while San Diego tends towards northwesterly winds and calm (direction 000) winds.  Detroit is most likely to be overcast, while Las Vegas is most likely to be clear.
+  
+Next steps are to adapt the plotNumCor() and plotFactorNumeric() functions similarly.
+  
