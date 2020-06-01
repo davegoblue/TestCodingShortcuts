@@ -75,17 +75,22 @@ A variable mapping is created to allow for better readable variable names:
 ```{r}
 
 varMapper <- c(WindDir="Wind Direction (degrees)", 
-               WindSpeed="Wind Speed (kts)", 
+               WindSpeed="Wind Speed (kts)",
+               WindSpeed5="Wind Speed (kts), rounded to nearest 5 knots", 
                Visibility="Visibility (SM)", 
                TempC="Temperature (C)", 
                DewC="Dew Point (C)", 
-               Altimeter="Altimeter (inches Hg)", 
+               Altimeter="Altimeter (inches Hg)",
+               Altimeter10="Altimeter (inches Hg), rounded to nearest 0.1 inHg", 
                modSLP="Sea-Level Pressure (hPa)", 
                TempF="Temperature (F)",
                DewF="Dew Point (F)", 
+               TempF5="Temperature (F), rounded to nearest 5 degrees",
+               DewF5="Dew Point (F), rounded to nearest 5 degrees", 
                cType1="First Cloud Layer Type", 
                cLevel1="First Cloud Layer Height (ft)",
                month="Month", 
+               year="Year",
                wType="Greatest Sky Obscuration", 
                day="Day of Month"
                )
@@ -208,17 +213,40 @@ plotNumCor <- function(met,
                        subT="", 
                        dropNA=TRUE, 
                        diagnose=FALSE,
-                       mapper=varMapper
+                       mapper=varMapper, 
+                       facetOn=NULL, 
+                       showCentral=FALSE
                        ) {
+    
+    # Function arguments
+    # met: dataframe or tibble containing raw data
+    # var1: character vector of variable to be used for the x-axis
+    # var2: character vector of variable to be used for the y-axis
+    # title: character vector for plot title
+    # subT: character vector for plot subtitle
+    # dropNA: boolean for whether to drop all NA prior to plotting (recommended for avoiding warnings)
+    # diagnose: boolean for whether to note in the log the number of NA observations dropped
+    # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
+    # facetOn: a facetting variable for the supplied met (NULL for no faceting)
+    # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    
+    # Function usage
+    # 1.  By default, the function plots overall counts by the provided x/y metrics, with each point sized based on the number of observations, and with an lm smooth overlaid
+    # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
+    # 3.  If showCentral=TRUE, then the lm smooth that best first to the overall data will be plotted (only makes sense if facetOn has been selected)
     
     # Create the title if not passed
     if (is.null(title)) { 
         title <- paste0("Hourly Observations of ", mapper[var1], " and ", mapper[var2]) 
     }
-    
-    # Pull the counts by var1-var2
+
+    # If a facetting variable is provided, need to include this in the group_by
+    useVars <- c(var1, var2)
+    if (!is.null(facetOn)) { useVars <- c(facetOn, useVars) }
+        
+    # Pull the counts by useVars
     dat <- met %>%
-        group_by_at(vars(all_of(c(var1, var2)))) %>%
+        group_by_at(vars(all_of(useVars))) %>%
         summarize(n=n()) 
     
     # If NA requested to be excluded, remove anything with NA
@@ -228,7 +256,12 @@ plotNumCor <- function(met,
         dat <- dat %>%
             filter_all(all_vars(!is.na(.)))
         if (diagnose) { 
-            cat("\nDropping", nOrig-nrow(dat), "rows", "with", sumOrig-sum(dat$n), "observations due to NA\n")
+            cat("\nDropping", 
+                nOrig-nrow(dat), 
+                "rows with", 
+                sumOrig-sum(dat$n), 
+                "observations due to NA\n"
+                )
         }
     }
     
@@ -241,6 +274,15 @@ plotNumCor <- function(met,
              title=title, 
              subtitle=subT
              )
+    
+    # If facetting has been requested, facet by the desired variable
+    if (!is.null(facetOn)) {
+        p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+    }
+    # If showCentral=TRUE, add a dashed line for the overall data
+    if (showCentral) {
+        p <- p + helperNumCor(dat, xVar=var1, yVar=var2, sumOn="n")
+    }
     
     print(p)
 }
@@ -264,22 +306,44 @@ plotFactorNumeric <- function(met,
                               fctVar, 
                               numVar, 
                               title=NULL, 
-                              subT, 
+                              subT="", 
                               diagnose=TRUE,
                               showXLabel=TRUE,
-                              mapper=varMapper
+                              mapper=varMapper,
+                              facetOn=NULL, 
+                              showCentral=FALSE
                               ) {
+    
+    # Function arguments
+    # met: dataframe or tibble containing raw data
+    # fctVar: character vector of variable to be used for the x-axis (factor in the boxplot)
+    # numVar: character vector of variable to be used for the y-axis (numeric in the boxplot)
+    # title: character vector for plot title
+    # subT: character vector for plot subtitle
+    # diagnose: boolean for whether to note in the log the number of NA observations dropped
+    # showXLabel: boolean for whether to include the x-label (e.g., set to FALSE if using 'month')
+    # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
+    # facetOn: a facetting variable for the supplied met (NULL for no faceting)
+    # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    
+    # Function usage
+    # 1.  By default, the function creates the boxplot of numVar by fctVar
+    # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
+    # 3.  If showCentral=TRUE, then the overall median of numVar by fctVar will be plotted as a red dot
+
     
     # Create the title if not passed
     if (is.null(title)) { 
         title <- paste0("Hourly Observations of ", mapper[numVar], " by ", mapper[fctVar])
     }
     
+    # Remove the NA variables
     nOrig <- nrow(met)
     dat <- met %>%
         filter(!is.na(get(fctVar)), !is.na(get(numVar)))
     if (diagnose) { cat("\nRemoving", nOrig-nrow(dat), "records due to NA\n") }
     
+    # Create the base plot
     p <- dat %>%
         ggplot(aes_string(x=fctVar, y=numVar)) + 
         geom_boxplot(fill="lightblue") + 
@@ -289,6 +353,18 @@ plotFactorNumeric <- function(met,
              y=paste0(mapper[numVar], " - ", numVar)
              )
     
+    # If facetting has been requested, facet by the desired variable
+    if (!is.null(facetOn)) {
+        p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+    }
+    
+    # If showCentral=TRUE, add a dot plot for the overall average
+    if (showCentral) {
+        centData <- helperFactorNumeric(dat, .f=median, byVar=fctVar, numVar=numVar)
+        p <- p + geom_point(data=centData, aes(y=helpFN), size=2, color="red")
+    }
+
+    # Render the final plot
     print(p)
     
 }
@@ -933,6 +1009,11 @@ ksan_2017 <- logAndPDFCombinedEDA("ksan_2017")
 
 ```
   
+Reload Traverse City, MI (2016) due to a previous error (short-term fix to avoid re-running a full cache):  
+```{r cache=TRUE}
+ktvc_2016 <- logAndPDFCombinedEDA("ktvc_2016")
+```
+
 The files are now available for further analysis, with individual PDF files for plots associated with each locale.
   
 #### _Comparing Multiple Locales_  
@@ -1021,16 +1102,20 @@ helperCountsByMetric(all2016Data, ctVar="wType")
 helperNumCor <- function(tbl, 
                          xVar, 
                          yVar, 
+                         sumOn="dummyVar",
                          se=TRUE, 
                          color="red", 
                          method="lm", 
                          lty=2
                          ) {
     
+    # Generate the overall totals for sumOn by xVar and yVar
     plotData <- tbl %>%
+        mutate(dummyVar=1) %>%
+        select_at(vars(all_of(c(xVar, yVar, sumOn)))) %>%
+        filter_all(all_vars(!is.na(.))) %>%
         group_by_at(vars(all_of(c(xVar, yVar)))) %>%
-        summarize(nTotal=n()) %>%
-        filter_all(all_vars(!is.na(.)))
+        summarize(nTotal=sum(get(sumOn)))
     
     geom_smooth(data=plotData, 
                 aes_string(x=xVar, y=yVar, weight="nTotal"), 
@@ -1095,5 +1180,144 @@ plotcountsByMetric(useData,
   
 As observed previously, Las Vegas tends towards southerly winds while San Diego tends towards northwesterly winds and calm (direction 000) winds.  Detroit is most likely to be overcast, while Las Vegas is most likely to be clear.
   
-Next steps are to adapt the plotNumCor() and plotFactorNumeric() functions similarly.
+The function plotNumCor() has been updated above to allow for facetting and plotting of the overall central tendency.  Two examples are shown - the base from previous, and a facetted example:  
+```{r}
+
+# Example for Detroit 2016 - using TempC and DewC
+plotNumCor(kdtw_2016, var1="TempC", var2="DewC", subT="Detroit, MI (2016)", diagnose=TRUE)
+
+
+# Facetted example for kdtw_2016, kord_2016, klas_2016, ksan_2016
+useData <- all2016Data %>%
+    filter(source %in% c("kdtw_2016", "klas_2016", "kord_2016", "ksan_2016"))
+
+# Facetted plot for very highly correlated variables TempC and TempF
+plotNumCor(useData, 
+           var1="TempC", 
+           var2="TempF", 
+           subT="Comparison Across Locales (red dashed lines are the overall)", 
+           dropNA=TRUE, 
+           diagnose=TRUE, 
+           facetOn="sourceName", 
+           showCentral=TRUE
+           )
+
+# Facetted plot for highly correlated variables TempF and DewF
+plotNumCor(useData, 
+           var1="TempF", 
+           var2="DewF", 
+           subT="Comparison Across Locales (red dashed lines are the overall)", 
+           dropNA=TRUE, 
+           diagnose=TRUE, 
+           facetOn="sourceName", 
+           showCentral=TRUE
+           )
+
+```
+  
+The differences in the relationships between temperature and dew point stand out:  
+  
+* Chicago and Detroit have a wide spread of both temperature and dew point, and they tend to rise and fall together  
+* San Diego has a narrow spread of both temperature and dew point, and they have a lesser tendency to rise and fall together  
+* Las Vegas has very little change in average dew point wven as temperatures range from 30-100 degrees F  
+  
+In contrast, of course, temperatures measured in C and F all follow the same pattern regardless of city  
+  
+The function plotFactorNumeric() has been updated above to allow for facetting and plotting of the overall central tendency.  Two examples are shown - the base from previous, and a facetted example:  
+```{r}
+
+# Example for Detroit 2016 - using TempF and month
+plotFactorNumeric(kdtw_2016, 
+                  fctVar="month", 
+                  numVar="TempF", 
+                  subT="Detroit, MI (2016)", 
+                  showXLabel=FALSE,
+                  diagnose=TRUE
+                  )
+
+
+# Facetted example for kdtw_2016, kord_2016, klas_2016, ksan_2016
+useData <- all2016Data %>%
+    filter(source %in% c("kdtw_2016", "klas_2016", "kord_2016", "ksan_2016"))
+
+plotFactorNumeric(useData, 
+                  fctVar="month", 
+                  numVar="TempF", 
+                  subT="Overall median shown as red dot", 
+                  showXLabel=FALSE,
+                  diagnose=TRUE,
+                  facetOn="sourceName", 
+                  showCentral=TRUE
+                  )
+
+```
+  
+Las Vegas consistently runs above the overall median temperature, while Chicago and Detroit run below the overall median temperature, particularly during the cold season.  San Diego has little temperature variation by month and is thus below the median in the warm season and above the median in the cold season.
+  
+It is now possible to re-run the EDA plotting routines, focused on the 2016 data:  
+```{r}
+
+# Create rounded TempF and DewF in all2016Data
+all2016Data <- all2016Data %>%
+    mutate(TempF5=5*round(round(TempF)/5), 
+           DewF5=5*round(round(DewF)/5), 
+           WindSpeed5=5*round(WindSpeed/5),
+           Altimeter10=round(Altimeter, 1)
+           )
+
+# Counts by Metric for all 2016 data
+plotcountsByMetric(all2016Data, 
+                   mets=c("month", "year",
+                          "WindDir", "WindSpeed5", 
+                          "Visibility", "Altimeter10",
+                          "TempF5", "DewF5", 
+                          "wType"
+                          ), 
+                   title="Comparisons Across Locales (red dots are the median)", 
+                   facetOn="sourceName",
+                   showCentral=TRUE
+                   )
+
+```
+  
+The cross-locale comparisons bring out a few salient features:  
+  
+DATA VOLUMES:  
+* All locales have roughly the same amount of data by year and month, focused on 2016 and with 1-2 days on either side  
+  
+WIND DIRECTION and WIND SPEED:  
+* Las Vegas has an excess of no/variable wind and of southerly winds, both appropriate for a desert  
+* Houston has an excess of no wind and southerly winds, both appropriate for the Gulf Coast  
+* San Diego has an excess of no wind and of northwesterly wind, both appropriate for the Pacific coast  
+* Chicago, Grand Rapids, Indianapolis, Minneapolis, and Newark all have lower occurences of no wind, appropriate for relatively cold mid-latitude cities  
+* Lincoln looks "about normal", with the exception that it has slightly more southerly winds; Lincoln is the only Great Plains locale in the analysis, and it appears to be a blend of Gulf Coast and Wintry  
+* Detroit, Green Bay, Milwaukee, and New Orleans all look "about average"; this is not surprising in the first three cases given the predominance of cold, mid-latitude locales, but is surprising for New Orleans  
+* Madison and Traverse City are surprising in that both show a predominance of no/variable winds; this is uncommon for cold-weather cities in the mid-latitude and merits further examination  
+  
+VISIBILITY:  
+* The overwhelming majority of visibilities are 10SM (the highest that is recorded; more or less means unlimited in the METAR)  
+* There is a data issue with a Visibility > 10 that should be addressed  
+* Las Vegas is slightly more likely than most to have unlimited Visibility and Detroit is slightly less likely than most to have unlimited visibility  
+  
+ALTIMETER:  
+* Las Vegas skews low as appropriate for a high-altitude desert locale  
+* New Orleans and Houston show less variance, perhaps driven by being roughly at sea level and in close proximity to the Gulf of Mexico  
+* San Diego shows very low variance, perhaps driven by being roughly at sea level and in close proximity to the Pacific Ocean  
+  
+TEMPERATURE:  
+* Houston, Las Vegas, and New Orleans skew warm as expected  
+* San Diego has ver low variance as expected  
+* At a gross level, the other cities look similar to the median, likely driven by the predominance of cold, mid-latitude locales in the data file  
+  
+DEW POINT:  
+* Houston and New Orleans skew very high as expected  
+* Las Vegas skews very low as expected  
+* San Diego has very low variance as expected  
+  
+SKY OBSCURATION:  
+* Lincoln and Green Bay are the most likely to be CLR (clear, no clouds on the automated sensor).  This may be driven by a difference in maximum sensor heights, and is unexpected in Green Bay which should be frequently cloudy due to its latitude and proximity to a large body of water  
+* Detroit, Traverse City, Grand Rapids, and Minneapolis are especially likely to be overcast  
+* Las Vegas is especially likely to have few clouds or to be clear  
+  
+Next steps are to run the facetted comparisons for the numeric variables and the numeric vs. factor variables.  As well, there are some items above that merit further exploration.
   
