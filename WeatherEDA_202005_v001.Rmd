@@ -75,6 +75,7 @@ A variable mapping is created to allow for better readable variable names:
 ```{r}
 
 varMapper <- c(WindDir="Wind Direction (degrees)", 
+               predomDir="General Prevailing Wind Direction",
                WindSpeed="Wind Speed (kts)",
                WindSpeed5="Wind Speed (kts), rounded to nearest 5 knots", 
                Visibility="Visibility (SM)", 
@@ -96,7 +97,6 @@ varMapper <- c(WindDir="Wind Direction (degrees)",
                )
 
 ```
-
   
 The function plotCountsByMetric() produces bar plots for counts by variable:  
 ```{r}
@@ -1255,7 +1255,7 @@ plotFactorNumeric(useData,
 Las Vegas consistently runs above the overall median temperature, while Chicago and Detroit run below the overall median temperature, particularly during the cold season.  San Diego has little temperature variation by month and is thus below the median in the warm season and above the median in the cold season.
   
 It is now possible to re-run the EDA plotting routines, focused on the 2016 data:  
-```{r}
+```{r cache=TRUE}
 
 # Create rounded TempF and DewF in all2016Data
 all2016Data <- all2016Data %>%
@@ -1319,5 +1319,149 @@ SKY OBSCURATION:
 * Detroit, Traverse City, Grand Rapids, and Minneapolis are especially likely to be overcast  
 * Las Vegas is especially likely to have few clouds or to be clear  
   
-Next steps are to run the facetted comparisons for the numeric variables and the numeric vs. factor variables.  As well, there are some items above that merit further exploration.
+Comparisons are run for a few of the numerical correlations:  
+```{r cache=TRUE}
+
+# Example for 2016 - using mixes of WindSpeed, Altimeter, TempF, DewF, TempC, DewC
+numCorList <- list(c("TempC", "TempF"), 
+                   c("DewC", "DewF"), 
+                   c("TempF", "DewF"), 
+                   c("Altimeter", "WindSpeed"), 
+                   c("Altimeter", "TempF")
+                   )
+
+# Run the list through plotNumCor()
+for (x in numCorList) {
+    plotNumCor(all2016Data, 
+               var1=x[1], 
+               var2=x[2], 
+               subT="Red dashed line is the overall slope", 
+               diagnose=TRUE, 
+               facetOn="sourceName", 
+               showCentral=TRUE
+               )
+}
+
+```
+  
+The cross-locale comparisons bring out a few salient features:  
+  
+FAHRENHEIT AND CELSIUS:  
+* As expected, TempF/C are perfectly correlated and DewF/C are perfectly correlated.  Since the observations were taken in the US, the TempF/DewF data will be used (TempC/DewC are conversions from the measured TempF/DewF to match the international standard for METAR reporting)  
+  
+TEMPERATURE AND DEW POINT:  
+* While many cities have different clusters of temperature/dew point, all but Las Vegas and San Diego follow a pattern where the temperature and the dew point tend to run together at a similar rate  
+* In Las Vegas, the dew point is largely independent of the temperature  
+* In San Diego, there is less variance in temperature and dew point, and a lower (but still obvious) tendency for tenmperature and dew point to rise/fall together  
+  
+ALTIMETER AND WIND SPEED:  
+* As expected, when the altimeter rises, on average, the wind speed falls  
+* This tendency is less pronounced in Houston and New Orleans; and more pronounced in Las Vegas, Dan Diego, and Indianapolis  
+  
+ALTIMETER AND TEMPERATURE:  
+* Overall, low temperatures and high altimeters tend to be observed together  
+* This is especially so in Houston, Las Vegas, and New Orleans  
+* This is more modest in Grand Rapids, Green Bay, and Traverse City  
+  
+Comparisons are then run for numeric variables against factor variables:  
+```{r cache=TRUE}
+
+# Modify windDir so that it is just N, NE, E, SE, S, SW, W, NW, 000, Variable
+mod2016Data <- all2016Data %>%
+    mutate(tempDir=ifelse(is.na(WindDir) | WindDir %in% c("000", "VRB"), -1, as.numeric(WindDir)),
+           predomDir=factor(case_when(is.na(WindDir) ~ "Error", 
+                                      WindDir=="000" ~ "000", 
+                                      WindDir=="VRB" ~ "VRB", 
+                                      tempDir >= 337.5 ~ "N", 
+                                      tempDir <= 22.5 ~ "N",
+                                      tempDir <= 67.5 ~ "NE", 
+                                      tempDir <= 112.5 ~ "E", 
+                                      tempDir <= 157.5 ~ "SE", 
+                                      tempDir <= 202.5 ~ "S", 
+                                      tempDir <= 247.5 ~ "SW", 
+                                      tempDir <= 292.5 ~ "W", 
+                                      tempDir <= 337.5 ~ "NW",
+                                      TRUE ~ "Error"
+                                      ), 
+                            levels=c("Error", "000", "VRB", "NE", "E", "SE", "S", "SW", "W", "NW", "N")
+                            )
+           )
+
+# Key factor variables include month, wType, predomDir
+# Key numeric variables include WindSpeed, Altimeter, TempF, DewF, Visibility
+fctNumList <- list(c("month", "WindSpeed"), 
+                   c("month", "Altimeter"), 
+                   c("month", "TempF"), 
+                   c("month", "DewF"), 
+                   c("month", "Visibility"),
+                   c("wType", "WindSpeed"),
+                   c("wType", "Altimeter"),
+                   c("wType", "Visibility"),
+                   c("predomDir", "WindSpeed"),
+                   c("predomDir", "Altimeter"),
+                   c("predomDir", "TempF"),
+                   c("predomDir", "DewF")
+                   )
+
+for (x in fctNumList) {
+    plotFactorNumeric(mod2016Data, 
+                      fctVar=x[1], 
+                      numVar=x[2], 
+                      subT="Red dots are the overall average", 
+                      showXLabel=FALSE,
+                      diagnose=TRUE, 
+                      facetOn="sourceName",
+                      showCentral=TRUE
+                      )
+}
+
+```
+  
+The cross-locale comparisons bring out a few salient points:  
+  
+WIND SPEED BY MONTH:  
+* The plot is too busy; need to rethink, potentially by removing the outliers and plotting only the box  
+  
+ALTIMETER BY MONTH:  
+* Same as above; this plot is too busy  
+  
+TEMPERATURE BY MONTH:  
+* Seasonal patterns are observed in most of the data, with a warm season centered around July and a cold season centered around December  
+* Las Vegas stand out for running warmer than the overall average in every month  
+* Houston, New Orleans, and San Diego stand out for running warmer than the overall average in the cold season and similar to the overall average in the warm season  
+  
+DEW POINT BY MONTH:  
+* Seasonal patterns are observed in most of the data, with the humid seasons tracking with the warm seasons  
+* Houston and New Orleans run consistently above the average dew point by month  
+* San Diego runs above the average dew point during the cold season  
+* Las Vegas runs below the average dew point during the warm season  
+  
+VISIBILITY BY MONTH:  
+* Visibilities are overwhelmingly likely to be 10 SM  
+* The Newark, NJ outlier described earlier (19 SM) should be deleted  
+* Detroit is especially likely to have Visibility less than 10 SM  
+* Grand Rapids and Traverse City have meaningul occurences of Visibility less than 10 SM during the cold season  
+  
+WIND SPEED BY SKY OBSCURATION:  
+* This chart is too busy as per above  
+  
+ALTIMETER BY SKY OBSCURATION:  
+* Not much at a glance  
+  
+VISIBILITY BY SKY OBSCURATION:  
+* The VV and OVC sky obscurations are most associated with low visibilities; VV in particular is almost always associated with very low visibility  
+  
+WIND SPEED BY WIND DIRECTION:  
+* Wind direction "000" is always associated with wind speed 0, as expected  
+* Wind direction "VRB" is always associated with a low but non-zero wind speed, as expected  
+* While some cities are windier than others, there is no pronounced tendency for wind speed to be highly associated with a given wind direction in any locale  
+  
+ALTIMETER BY WIND DIRECTION:  
+* No gross trends observed  
+* The plot is rather busy, especially given the low variance in median/IQR for altimeter relative to the outlier points  
+  
+TEMPERATURE/DEW POINT BY WIND DIRECTION:  
+* Plot is not great for reading and interpreting  
+  
+Next steps are to modify a few of the plots for better interpretability (less busy, more variation of the core data metric relative to the full y-axis, etc.), investigate and rectify the data issues observed, and save a version of the file for further analysis.
   
