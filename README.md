@@ -1944,4 +1944,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 01-JUN-2020  
 * WeatherEDA_202005_v001 updates EDA functions for comparisons across multiple locales  
+* WeatherEDA_202005_v001 compares numeric vs. numeric and numeric vs. factors for multiple locales  
   
