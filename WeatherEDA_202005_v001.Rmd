@@ -1136,13 +1136,13 @@ plotNumCor(kdtw_2016, var1="TempC", var2="DewC") +
 
 
 # Helper function to calculate .f(numVar) by byVar
-helperFactorNumeric <- function(tbl, .f, byVar, numVar) {
+helperFactorNumeric <- function(tbl, .f, byVar, numVar, ...) {
     
     tbl %>%
         select_at(vars(all_of(c(byVar, numVar)))) %>%
         filter_all(all_vars(!is.na(.))) %>%
         group_by_at(byVar) %>%
-        summarize(helpFN=.f(get(numVar)))
+        summarize(helpFN=.f(get(numVar), ...))
     
 }
 
@@ -1464,4 +1464,297 @@ TEMPERATURE/DEW POINT BY WIND DIRECTION:
 * Plot is not great for reading and interpreting  
   
 Next steps are to modify a few of the plots for better interpretability (less busy, more variation of the core data metric relative to the full y-axis, etc.), investigate and rectify the data issues observed, and save a version of the file for further analysis.
+  
+A modified boxplot function is created to plot only the median and the IQR, with the goal of having more of the variance in the median visible on the plot:  
+```{r}
+
+plotMedianIQR <- function(met, 
+                          fctVar, 
+                          numVar, 
+                          title=NULL, 
+                          subT="", 
+                          mid=0.5,
+                          rng=c(0.25, 0.75),
+                          diagnose=TRUE,
+                          showXLabel=TRUE,
+                          mapper=varMapper,
+                          facetOn=NULL, 
+                          showCentral=FALSE, 
+                          ylimits=NULL
+                          ) {
+    
+    # Function arguments
+    # met: dataframe or tibble containing raw data
+    # fctVar: character vector of variable to be used for the x-axis (factor in the boxplot)
+    # numVar: character vector of variable to be used for the y-axis (numeric in the boxplot)
+    # title: character vector for plot title
+    # subT: character vector for plot subtitle
+    # mid: float between 0 and 1 for the quantile to be used as the midpoint
+    # rng: length-two float vector for (lo, hi) to be used as the dimensions of the box
+    # diagnose: boolean for whether to note in the log the number of NA observations dropped
+    # showXLabel: boolean for whether to include the x-label (e.g., set to FALSE if using 'month')
+    # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
+    # facetOn: a facetting variable for the supplied met (NULL for no faceting)
+    # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    # ylimits: length-two numeric for the y-axis minimum and maximum (default NULL uses plot defaults)
+    
+    # Function usage
+    # 1.  By default, the function creates a modified boxplot of numVar by fctVar - line at mid, box going from rng[1] to rng[2]
+    # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
+    # 3.  If showCentral=TRUE, then the overall median of numVar by fctVar will be plotted as a red dot
+
+    
+    # Check that the quantile variables are sensible
+    if (length(mid) != 1 | length(rng) != 2) {
+        stop("Must pass a single value as mid and a length-two vector as rng\n")    
+    }
+    if (min(c(mid, rng)) < 0 | max(c(mid, rng)) > 1) {
+        stop("All values of mid and rng must be between 0 and 1, inclusive\n")
+    }
+    if ((mid < rng[1]) | (mid > rng[2])) {
+        stop("mid must be at least as big as rng[1] and no greater than rng[2]\n")
+    }
+    quants <- paste0(round(100*c(rng[1], mid, rng[2]), 0), "%", collapse=" ")
+    
+    # Create the title if not passed
+    if (is.null(title)) { 
+        title <- paste0("Hourly Observations of ", mapper[numVar], " by ", mapper[fctVar])
+    }
+    
+    # Remove the NA variables
+    nOrig <- nrow(met)
+    dat <- met %>%
+        filter(!is.na(get(fctVar)), !is.na(get(numVar)))
+    if (diagnose) { cat("\nRemoving", nOrig-nrow(dat), "records due to NA\n") }
+    
+    # Create the quantile data by fctVar and (if passed) facetOn
+    groupVars <- fctVar 
+    if (!is.null(facetOn)) { groupVars <- c(groupVars, facetOn) }
+    plotData <- dat %>%
+        group_by_at(groupVars) %>%
+        summarize(midPoint=quantile(get(numVar), probs=mid), 
+                  loPoint=quantile(get(numVar), probs=rng[1]),
+                  hiPoint=quantile(get(numVar), probs=rng[2])
+                  )
+    
+    # Create the base plot
+    p <- plotData %>%
+        ggplot(aes_string(x=fctVar, y="midPoint")) +
+        geom_crossbar(aes(ymin=loPoint, ymax=hiPoint), fill="lightblue") +
+        labs(title=title,
+             subtitle=subT,
+             x=ifelse(showXLabel, paste0(mapper[fctVar], " - ", fctVar), ""),
+             y=paste0(mapper[numVar], " - ", numVar), 
+             caption=paste0("Quantiles plotted: ", quants)
+             )
+    
+    # If facetting has been requested, facet by the desired variable
+    if (!is.null(facetOn)) {
+        p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+    }
+    
+    # If showCentral=TRUE, add a dot plot for the overall value of 'mid'
+    if (showCentral) {
+        centData <- helperFactorNumeric(dat, .f=quantile, byVar=fctVar, numVar=numVar, probs=mid)
+        p <- p + geom_point(data=centData, aes(y=helpFN), size=2, color="red")
+    }
+    
+    # If ylim has been passed, use it
+    if (!is.null(ylimits)) {
+        p <- p + ylim(ylimits)
+    }
+
+    # Render the final plot
+    print(p)
+    
+}
+
+```
+  
+The function can then be applied in an attempt to get a better look at a few of the comparisons:  
+```{r cache=TRUE}
+
+# Key factor variables include month, wType, predomDir
+# Key numeric variables include WindSpeed, Altimeter, TempF, DewF, Visibility
+fctNumListIQR <- list(c("month", "WindSpeed"), 
+                      c("month", "Altimeter"), 
+                      c("wType", "WindSpeed"),
+                      c("predomDir", "Altimeter"),
+                      c("predomDir", "TempF"),
+                      c("predomDir", "DewF")
+                      )
+
+for (x in fctNumListIQR) {
+    plotMedianIQR(mod2016Data, 
+                  fctVar=x[1], 
+                  numVar=x[2], 
+                  subT="Red dots are the overall mid-quantile", 
+                  showXLabel=FALSE,
+                  diagnose=TRUE, 
+                  facetOn="sourceName",
+                  showCentral=TRUE
+                  )
+}
+
+```
+  
+Limiting the observations to Q1-Median-Q2 brings out a bit more information in the plots:  
+  
+WIND SPEED BY MONTH:  
+* San Diego and Las Vegas are meaningfully less windy than the median, especially during the cold season  
+  
+ALTIMETER BY MONTH:  
+* San Diego has very little variance in altimeter relative to the other locales  
+* Las Vegas runs especially low on altimeter during the warm season  
+* There is a seasonal pattern where altimeters tend to run lower during the warm season while also showing a much smaller Q1-Q3 range  
+  
+WIND SPEED BY SKY OBSCURATION:  
+* Newark shows very high wind speeds when obscuration is VV  
+* Should re-run with data y-axis capped at 15 to visualize the other locales  
+  
+ALTIMETER BY WIND DIRECTION:  
+* Altimeters tend to be a bit lower when winds are from the S-SW-W-NW, a pattern that seems consistent across all locales  
+* Las Vegas runs especially low on altimeter relative to other locales when winds are from E-SE-S    
+  
+TEMPERATURE BY WIND DIRECTION:  
+* Variable winds are associated with higher temperatures than calm (speed 0) winds  
+* Winds from W-NW are generally associated with somewhat lower temperatures  
+  
+DEW POINT BY WIND DIRECTION:  
+* Winds from SW-W-NW-N are associated with generally lower dew points than winds from NE-E-SE-S  
+* Las Vegas typically runs low on dew points while Houston and New Orleans typically run high on dew points  
+* San Diego has little variance in dew points and does not see any dip when winds are from SW-W-NW-N  
+  
+The wind speed vs. sky obscuration plot is re-run with y-limits that suppress Newark VV:  
+```{r cache=TRUE}
+
+plotMedianIQR(mod2016Data, 
+              fctVar="wType", 
+              numVar="WindSpeed", 
+              subT="Red dots are the overall mid-quantile", 
+              showXLabel=FALSE,
+              diagnose=TRUE, 
+              facetOn="sourceName",
+              showCentral=TRUE, 
+              ylimits=c(0, 15)
+              )
+
+```
+  
+Low vertical visibilities (VV) are generally associated with lower winds.  There is also a slight tendency for more obscured skies (OVC) to be associated with slightly stronger winds.  
+
+Further, the previous analysis for counts by wind direction is re-run using the predominant directions:  
+```{r cache=TRUE}
+# Counts by Metric for predomDir using mod2016Data
+plotcountsByMetric(mod2016Data, 
+                   mets=c("predomDir"), 
+                   title="Comparisons Across Locales (red dots are the median)", 
+                   facetOn="sourceName",
+                   showCentral=TRUE
+                   )
+
+```
+  
+Findings include:  
+* Across all locales, winds are more commonly from S-SW-W-NW-N than from NE-E-SE  
+* San Diego is especially likely to have either 0 wind or wind from W-NW  
+* Traverse City is especially likely to have 0 wind or variable wind (very surprising, and possibly a sign of anomalous data)  
+* Minneapolis is especially likely to experience winds from NE  
+* New Orleans and Houston rarely experience winds from SW-W-NW relative to other locales  
+* Lincoln and Las Vegas are especially pronse to winds from S (and for Las Vegas SW)  
+  
+There are several issues identified that should be explored and fixed if appropriate:  
+  
+* Vertical visibility greater than 10 recorded  
+* Tendency for maximum obscuration to be CLR in Lincoln and Green Bay  
+* Tendency for Traverse City to have no or variable winds  
+  
+Cloud exploration can highlight whether all locales are being compared apples to apples.  This is especially the case if some locales have a different maximum sensor height:  
+```{r}
+
+# Select the source, sourceName, dtime and cLevel variables; pivot cLevel down
+cLevels <- mod2016Data %>%
+    select(source, sourceName, dtime, starts_with("cLevel")) %>%
+    pivot_longer(-c(source, sourceName, dtime), names_to="level", values_to="height") %>%
+    mutate(level=as.integer(str_replace(level, pattern="cLevel", replacement="")))
+
+# Select the source, sourceName, dtime and cType variables; pivot cLevel down
+cTypes <- mod2016Data %>%
+    select(source, sourceName, dtime, starts_with("cType")) %>%
+    pivot_longer(-c(source, sourceName, dtime), names_to="level", values_to="type") %>%
+    mutate(level=as.integer(str_replace(level, pattern="cType", replacement="")))
+
+cData <- cLevels %>%
+    inner_join(cTypes, by=c("source", "sourceName", "dtime", "level"))
+
+# Plot cloud heights, using only non-NA
+cData %>%
+    filter(!is.na(height)) %>%
+    ggplot(aes(x=fct_reorder(sourceName, height, .fun=max, na.rm=TRUE), y=height)) + 
+    geom_violin(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", y="Cloud Height (feet)", title="Density of cloud heights by locale")
+
+```
+  
+There are clearly differences in maximum cloud height recorded by locale:  
+  
+* 4 locales record clouds up to 35,000 feet  
+* 5 locales record clouds up to 30,000 feet; there appear to be few if any clouds recorded above 30,000 feet, so cloud distributions may not be meaningfully impacted by this  
+* 3 locales record clouds up to 25,000 feet; there are meaningful clouds between 25,000 and 30,000 feet, so these locales may appear to be "more clear than normal" purely due to maximum recorded height  
+* 2 locales record heights up to 12,000 feet (Lincoln and Green Bay); these are the cities that appeared anomalously clear in the EDA, and the reason is thet they exclude mid/high level cloudiness  
+  
+The distribution of cloud types observed can also be assessed:  
+```{r}
+
+# Plot cloud heights, using only non-""
+fctLayers <- c("VV", "OVC", "BKN", "SCT", "FEW")
+
+cData %>%
+    filter(type!="") %>%
+    mutate(type=factor(type, levels=fctLayers)) %>%
+    ggplot(aes(x=fct_reorder(sourceName, height, .fun=max, na.rm=TRUE), fill=type)) + 
+    geom_bar(position="stack") + 
+    coord_flip() + 
+    labs(x="", y="Cloud Layer Obscuration", title="Cloud obscuration by locale") + 
+    scale_fill_discrete("", rev(fctLayers)) + 
+    theme(legend.position="bottom")
+
+```
+  
+Lincoln and Green Bay stand out for having fewer clouds, likely due to the inability to catch the higher altocumulus and any cirrus cloud (both very common in the mid-latitudes).
+
+Supposing that only clouds of 12,000 feet and under are considered:  
+```{r}
+
+# Plot cloud heights, using only non-NA
+cData %>%
+    filter(!is.na(height)) %>%
+    filter(height <= 12000) %>%
+    ggplot(aes(x=sourceName, y=height)) + 
+    geom_violin(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", y="Cloud Height (feet)", title="Density of cloud heights by locale")
+
+cData %>%
+    filter(type!="") %>%
+    filter(height <= 12000) %>%
+    mutate(type=factor(type, levels=fctLayers)) %>%
+    ggplot(aes(x=fct_reorder(sourceName, sourceName, .fun=length), fill=type)) + 
+    geom_bar(position="stack") + 
+    coord_flip() + 
+    labs(x="", y="Cloud Layer Obscuration", title="Cloud obscuration by locale (up to 12,000 feet)") + 
+    scale_fill_discrete("", rev(fctLayers)) + 
+    theme(legend.position="bottom")
+
+```
+  
+The patterns are much more plausible:  
+  
+* San Diego, known for marine layer, has clouds that skew very low and more obscured  
+* Las Vegas, a desert, has clouds that skew higher and less obscured    
+* The remaining cities have maximum cloud densities in the 2500-5000 foot range, very common cloud heights in the US  
+* Lincoln and Green Bay remain among the least cloudy locales, though this may be due to hitting OVC (cloud layers above an OVC layer are not observed by the sensor/human and thus not recorded)  
+  
+Further investigation of the cloud data may be interesting.
   
