@@ -1758,3 +1758,315 @@ The patterns are much more plausible:
   
 Further investigation of the cloud data may be interesting.
   
+A function is written to take only cloud data up through height x, and to add a layer of clouds that are "clear" at a height that is out-of-interval:  
+```{r}
+
+# Filter to only clouds up to and including height
+cloudsLevel0 <- function(df, 
+                         maxHeight, 
+                         byVars,
+                         baseLevel=0,
+                         heightBase=-100,
+                         typeBase="CLR"
+                         ) {
+    
+    # Function assumptions
+    # Input data are unique by byVars-level and with columns 'height' and 'type'
+    # Clouds increase in height with level
+    # Clouds are non-decreasing in type (VV > OVC > BKN > SCT > FEW) with level
+    
+    # FUNCTION ARGUMENTS:
+    # df: tibble or dataframe contiaining the clouds data
+    # maxHeight: the maximum height to consider (delete all heights above this level)
+    # byVars: the variables that make up a unique observation (df should be unique by byVars-level)
+    # baseLevel: the level to be created as the base level (by default, level 0)
+    # heightBase: the height to be provided to the base level (by default, -100 feet)
+    # typeBase: the type of obscuration observed at the base level (by default, CLR)
+    
+    # Add a cloud level 0 that has height -100 (by default)
+    # Include only levels where the cloud height is not NA
+    # Include only levels where the cloud height is less than or equal to maxHeight
+    modData <- df %>% 
+        group_by_at(vars(all_of(byVars))) %>% 
+        summarize(level=baseLevel, height=heightBase, type=typeBase) %>% 
+        ungroup() %>% 
+        bind_rows(df) %>% 
+        arrange_at(vars(all_of(c(byVars, "level")))) %>% 
+        filter(!is.na(height)) %>% 
+        filter(height <= maxHeight)
+    
+    modData
+    
+}
+
+```
+  
+The function is then run using the existing cData:  
+```{r}
+
+modCData <- cloudsLevel0(cData, maxHeight=12000, byVars=c("source", "sourceName", "dtime"))
+modCData <- modCData %>%
+    mutate(type=factor(type, levels=c("VV", "OVC", "BKN", "SCT", "FEW", "CLR")))
+modCData
+
+```
+  
+An additional function is written to take processed cloud data and to designate 1) the minimum cloud height, 2) the minimum cloud ceiling (a ceiling exists with BKN, OVC, or VV layers), and 3) the maximum obscuration level (using CLR if no clouds exist in that area):  
+```{r}
+
+# Helper function to pull out the minimum cloud height, limited to certain obscurations
+getMinimumHeight <- function(df, 
+                             byVars, 
+                             types, 
+                             baseLevel=0
+                             ) {
+    
+    # Split the data in to the baseLevel and all other levels
+    baseData <- df %>%
+        filter(level==baseLevel)
+    layerData <- df %>%
+        filter(level!=baseLevel)
+        
+    # Take the layerData, limit to type in types, and find the minimum level
+    layerData <- layerData %>%
+        filter(type %in% types) %>%
+        group_by_at(vars(all_of(byVars))) %>%
+        filter(level==min(level)) %>%
+        ungroup()
+    
+    # Put the data back together
+    # Keep the maximum level for each set of byVars (will be 0 if no data for byVars in layerData)
+    cloudData <- baseData %>%
+        bind_rows(layerData) %>%
+        arrange_at(vars(all_of(c(byVars, "level")))) %>%
+        group_by_at(vars(all_of(byVars))) %>%
+        filter(level==max(level))
+    
+}
+
+# Extract the minimum cloud height, minimum ceiling height, and maximum obscuration
+hgtCeilObsc <- function(df, 
+                        byVars,
+                        baseLevel=0
+                        ) {
+
+    # Function assumptions
+    # Input data are unique by byVars-level and with columns 'height' and 'type'
+    # For each byVars, a row with level=baseLevel, height=heightBase, type=typeBase has been created
+    # Clouds increase in height with level
+    # Clouds are non-decreasing in type (VV > OVC > BKN > SCT > FEW) with level
+    
+    # FUNCTION ARGUMENTS:
+    # df: tibble or dataframe contiaining the clouds data
+    # byVars: the variables that make up a unique observation (df should be unique by byVars-level)
+    # baseLevel: the base level in df (by default, level 0)
+    # heightBase: the height of the base level in df (by default, -100 feet)
+    # typeBase: the type of obscuration at the base level in df (by default, CLR)
+    
+    # Get the maximum obscuration
+    maxObsc <- df %>%
+        group_by_at(vars(all_of(byVars))) %>% 
+        filter(level==max(level)) %>%
+        ungroup()
+    
+    # Get the minimum height (any type)
+    minHeight <- getMinimumHeight(df, 
+                                  byVars=byVars, 
+                                  types=c("VV", "OVC", "BKN", "SCT", "FEW"), 
+                                  baseLevel=baseLevel
+                                  )
+    
+    # Get the minimum ceiling height (VV, OVC, BKN)
+    minCeiling <- getMinimumHeight(df, 
+                                   byVars=byVars, 
+                                   types=c("VV", "OVC", "BKN"), 
+                                   baseLevel=baseLevel
+                                   )
+
+    # Put the file together
+    minCeiling <- minCeiling %>%
+        rename(ceilingHeight=height, ceilingType=type, ceilingLevel=level)
+    minHeight <- minHeight %>%
+        rename(cloudHeight=height, cloudType=type, cloudLevel=level)
+    maxObsc <- maxObsc %>%
+        rename(obscHeight=height, obscType=type, obscLevel=level)
+    
+    # Merge
+    cloudSummary <- maxObsc %>%
+        full_join(minHeight, by=byVars) %>%
+        full_join(minCeiling, by=byVars)
+    
+    cloudSummary
+    
+}
+
+```
+  
+The function can then be run on the modified clouds data:  
+```{r}
+
+# Get the key clouds data
+cloudSummary <- hgtCeilObsc(modCData, byVars=c("source", "sourceName", "dtime"))
+
+# Check for consistency
+cloudSummary %>%
+    count(ceilingType, obscType)
+cloudSummary %>%
+    count(cloudType, ceilingType)
+cloudSummary %>%
+    count(cloudType, obscType)
+
+```
+  
+Plots for the maximum obscuration (through 12,000 feet) can then be created:  
+```{r}
+
+plotMaxObsc <- function(df, 
+                        xVar, 
+                        fillVar, 
+                        title, 
+                        subtitle="Up to and including 12,000 feet",
+                        orderByVariable=NULL,
+                        orderByValue=NULL,
+                        posnBar="stack",
+                        yLabel="# Hourly Observations",
+                        legendLabel="",
+                        facetOn=NULL
+                        ) {
+
+    # Get the levels to be used
+    cLevels <- levels(df %>% pull(fillVar))
+    
+    # Create the main plot
+    p1 <- df %>%
+        ggplot(aes_string(fill=fillVar))
+    if (!is.null(orderByVariable)) {
+        p1 <- p1 + 
+            geom_bar(aes(x=fct_reorder(get(xVar), get(orderByVariable)==orderByValue, .fun=sum)),
+                     position=posnBar
+                     )
+    } else {
+        p1 <- p1 + 
+            geom_bar(aes_string(x=xVar), position=posnBar)
+    }
+    p1 <- p1 + 
+        coord_flip() + 
+        labs(x="", 
+             y=yLabel, 
+             title=title, 
+             subtitle=subtitle
+             ) + 
+        theme(legend.position="bottom") + 
+        scale_fill_discrete(legendLabel, rev(cLevels)) + 
+        guides(fill=guide_legend(nrow=1))
+    if (!is.null(facetOn)) {
+        p1 <- p1 + facet_wrap(as.formula(paste("~", facetOn)))
+    }
+    print(p1)
+    
+}
+
+# Cloud obscuration by source
+plotMaxObsc(cloudSummary, 
+            xVar="sourceName", 
+            fillVar="obscType", 
+            title="Maximum Cloud Obscuration", 
+            orderByVariable="obscType",
+            orderByValue="CLR"
+            )
+
+# Cloud obscuration by month
+cloudSummary <- cloudSummary %>%
+    mutate(month=lubridate::month(dtime), 
+           hour=lubridate::hour(dtime), 
+           monthfct=factor(month.abb[month], levels=month.abb[1:12])
+           )
+plotMaxObsc(cloudSummary, 
+            xVar="monthfct", 
+            fillVar="obscType", 
+            title="Maximum Cloud Obscuration", 
+            posnBar="fill"
+            )
+
+```
+  
+A few salient observations stand out about the maximum obscuration level:  
+  
+* Las Vegas is almost always clear or has just a few clouds up to 12,000 feet  
+* Lincoln and Green Bay tend to be either clear up to 12,000 feet or to have an overcast  
+* Traverse City is especially prone to being overcast and not having clear skied to 12,000 feet  
+* Clear skies to 12,000 feet are roughly as likely in any month, but overcast by 12,000 feet is much more common in the cold season while FEW/SCT are more common during the warm season
+  
+Groups of cities can be examined, faceted by month:  
+```{r}
+
+cityCloudList <- list(c("klas_2016", "ksan_2016", "kiah_2016", "kmsy_2016"), 
+                      c("kgrb_2016", "kgrr_2016", "kdtw_2016", "ktvc_2016"), 
+                      c("klnk_2016", "kmsp_2016", "kmsn_2016", "kind_2016"), 
+                      c("kmke_2016", "kord_2016", "kewr_2016")
+                      )
+
+for (x in cityCloudList) {
+    cloudUse <- cloudSummary %>%
+        filter(source %in% x)
+    plotMaxObsc(cloudUse, 
+                xVar="monthfct", 
+                fillVar="obscType", 
+                title="Maximum Cloud Obscuration", 
+                facetOn="sourceName", 
+                posnBar="fill"
+                )
+}
+
+```
+  
+A few findings include:  
+  
+* While there may be some small seasonal patterns, observations in Las Vegas are almost always CLR/FEW  
+* Houston and New Orleans both have few clear observations and few overcasts during June-September  
+* San Diego has most of its overcasts during May-Septemver and most of its clear observations from October-April  
+* Most of the remaining locales show a seasonal pattern with overcasts more common during the cold season  
+* Newark is at a glance less seasonal than the midwestern locales  
+  
+The ceiling heights can also be assessed:  
+```{r}
+
+cloudSummary <- cloudSummary %>%
+    mutate(ceilFactor=factor(case_when(ceilingHeight == -100 ~ "None", 
+                                       ceilingHeight <= 1000 ~ "0-1000", 
+                                       ceilingHeight <= 3000 ~ "1000-3000", 
+                                       ceilingHeight <= 6000 ~ "3000-6000",
+                                       ceilingHeight <= 12000 ~ "6000-12000"
+                                       ), 
+                             levels=c("None", "6000-12000", "3000-6000", "1000-3000", "0-1000")
+                             )
+           )
+
+plotMaxObsc(cloudSummary, 
+            xVar="sourceName", 
+            fillVar="ceilFactor", 
+            title="Ceiling Height", 
+            orderByVariable="ceilFactor",
+            orderByValue="None"
+            )
+
+for (x in cityCloudList) {
+    cloudUse <- cloudSummary %>%
+        filter(source %in% x)
+    plotMaxObsc(cloudUse, 
+                xVar="monthfct", 
+                fillVar="ceilFactor", 
+                title="Ceiling Height", 
+                facetOn="sourceName", 
+                posnBar="fill"
+                )
+}
+
+```
+
+Findings for ceiling height broadly line up with findings for maximum cloud obscuration, as expected:  
+  
+* Las Vegas is least likely to have a ceiling under 12,000 feet, followed by New Orleans, Lincoln, and Houston  
+* San Diego is especially likely to have a ceiling of 1000-3000 feet relative to other locales, likely driven by marine layer  
+  
+Next steps are to extract and explore the precipitation data contained in the METAR.
