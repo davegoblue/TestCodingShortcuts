@@ -2056,9 +2056,11 @@ for (x in cityCloudList) {
     plotMaxObsc(cloudUse, 
                 xVar="monthfct", 
                 fillVar="ceilFactor", 
-                title="Ceiling Height", 
+                title="Ceiling Height (proportion of hourly observations)", 
                 facetOn="sourceName", 
-                posnBar="fill"
+                posnBar="fill", 
+                yLabel="", 
+                legendLabel="Ceiling Height (feet)"
                 )
 }
 
@@ -2069,4 +2071,350 @@ Findings for ceiling height broadly line up with findings for maximum cloud obsc
 * Las Vegas is least likely to have a ceiling under 12,000 feet, followed by New Orleans, Lincoln, and Houston  
 * San Diego is especially likely to have a ceiling of 1000-3000 feet relative to other locales, likely driven by marine layer  
   
-Next steps are to extract and explore the precipitation data contained in the METAR.
+The same analysis can be run for the minimum cloud height:  
+```{r}
+
+cloudSummary <- cloudSummary %>%
+    mutate(minCFactor=factor(case_when(cloudHeight == -100 ~ "None", 
+                                       cloudHeight <= 1000 ~ "0-1000", 
+                                       cloudHeight <= 3000 ~ "1000-3000", 
+                                       cloudHeight <= 6000 ~ "3000-6000",
+                                       cloudHeight <= 12000 ~ "6000-12000"
+                                       ), 
+                             levels=c("None", "6000-12000", "3000-6000", "1000-3000", "0-1000")
+                             )
+           )
+
+plotMaxObsc(cloudSummary, 
+            xVar="sourceName", 
+            fillVar="minCFactor", 
+            title="Minimum Cloud Height", 
+            orderByVariable="minCFactor",
+            orderByValue="None"
+            )
+
+for (x in cityCloudList) {
+    cloudUse <- cloudSummary %>%
+        filter(source %in% x)
+    plotMaxObsc(cloudUse, 
+                xVar="monthfct", 
+                fillVar="minCFactor", 
+                title="Minimum Cloud Height (proportion of hourly observations)", 
+                facetOn="sourceName", 
+                posnBar="fill", 
+                yLabel="", 
+                legendLabel="Minimum Cloud Height (feet)"
+                )
+}
+
+```
+  
+At a glance, there seem to be some similarities and differences among the locales:  
+  
+* San Diego frequently has its lowest clouds in the 0-3000 feet range, particularly during the warm season  
+* Las Vegas almost never has clouds below 6000 feet in any month  
+* Houston and New Orleans look very similar in minimum cloud heights by month  
+* Grand Rapids, Traverse City, Detroit, Indianapolis, Minneapolis, Chicago, Milwaukee, and Madison look similar in minimum cloud heights  
+* Green Bay and Lincoln appear to have more occurences of clear skies up to 12000 feet than the other cold weather cities  
+* Newark seems somewhat close to several different groupings of cities  
+  
+A more analytical approach would look at the distance between the various locales.  Broadly speaking, distance can be calculated based on counts by month by locale.  No scaling is performed since each location has roughly the same number of observations by month, and the intent is to find macro similarities (e.g., if 1 city has 2% data in bucket x and the others all have 0% data in bucket x, this analysis would treat that as a minor difference where with scaled data it would be a primary difference driver).
+  
+There are three main variable to consider for distance:  
+  
+* obscType - the obscuration type observed  
+* minCFactor - minimum cloud height observed, bucketed as 0-1000, 1000-3000, 3000-6000, 6000-12000, None  
+* ceilFactor - ceiling height observed, bucketed as 0-1000, 1000-3000, 3000-6000, 6000-12000, None  
+  
+Distances can be calculated using any or all of these variables.  A function is created to that process can be repeated:  
+```{r}
+
+findCloudDist <- function(df, 
+                          byVar, 
+                          fctVar,
+                          pivotVar="monthfct", 
+                          scaleDistData=FALSE, 
+                          returnPivotOnly=FALSE
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: data frame or tibble containing one record per locale and time
+    # byVar: the variable(s) by which the final distance file should be unique
+    # fctVar: the factor variables to be counted up, with the sums being the distance inputs
+    # pivotVar: the variable(s) which should be pivoted in to columns to make the file unique by byVar
+    # scale: whether to scale the data prior to calculating distances
+    # returnDistMatrix: whether to just return the pivoted data frame (default, FALSE, returns the distance matrix calculated from this pivoted data frame rather than the data frame itself)
+    
+    # Create the counts data by byVar, pivoted by fctVar and pivotVar
+    baseData <- df %>%
+        group_by_at(vars(all_of(c(byVar, fctVar, pivotVar)))) %>%
+        summarize(n=n()) %>%
+        ungroup() %>%
+        pivot_wider(names_from=all_of(c(fctVar, pivotVar)), values_from="n") %>%
+        mutate_if(is.numeric, tidyr::replace_na, replace=0)
+    
+    # If the data are only yo be pivoted, return and exit the function
+    if (returnPivotOnly) {
+        return(baseData)
+    }
+    
+    # Split in to descriptors and data
+    descData <- baseData %>%
+        select_at(vars(all_of(byVar))) %>%
+        mutate(rowN=row_number())
+    distData <- baseData %>%
+        select_at(vars(-any_of(byVar))) %>%
+        as.matrix()
+    
+    # Scale distdata if requested
+    if (scaleDistData) {
+        distData <- scale(distData)
+    }
+    
+    # Create the distances, convert back to data frame, pivot_longer, and attach the labels
+    dist(distData) %>%
+        as.matrix() %>%
+        as_tibble() %>%
+        mutate(row1=row_number()) %>%
+        pivot_longer(-row1, names_to="row2", values_to="dist") %>%
+        mutate(row2=as.integer(row2)) %>%
+        inner_join(descData, by=c("row1"="rowN")) %>%
+        rename_at(vars(all_of(byVar)), ~paste0(., "_1")) %>%
+        inner_join(descData, by=c("row2"="rowN")) %>%
+        rename_at(vars(all_of(byVar)), ~paste0(., "_2"))
+    
+}
+
+```
+  
+The function is then run for the obscuration data as an example:  
+```{r}
+
+# Find the distances for obscType by locale vs. locale
+obscDist <- findCloudDist(cloudSummary, 
+                          byVar=c("source", "sourceName"), 
+                          fctVar="obscType", 
+                          pivotVar="monthfct"
+                          )
+obscDist
+
+```
+  
+A function can then be created to plot the distances as a heamap and to return the minimum distance for each locale:  
+```{r}
+
+plotCloudDist <- function(df, 
+                          var1="sourceName_1", 
+                          var2="sourceName_2", 
+                          met="dist", 
+                          roundDist=0, 
+                          title="Distance Between Locales", 
+                          subT=""
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: tibble or data frame containing distance data
+    # var1: the variable containing the first locale
+    # var2: the variable containing the second locale
+    # dist: the variable containing the pre-calculated distance between var1 and var2
+    # roundDist: the rounding for the distance in the plot
+
+    # Process the data frame and exclude any occurences of distance to self    
+    distData <- df %>%
+        select_at(vars(all_of(c(var1, var2, met)))) %>%
+        filter(get(var1) != get(var2))
+    
+    # Get the locales by minimum distance to any other locale
+    distHiLo <- distData %>%
+        group_by_at(vars(all_of(var1))) %>%
+        filter(dist==min(dist)) %>%
+        arrange(dist) %>%
+        pull(var1)
+    
+    # Create a heatmap of the distances
+    distData %>%
+        ggplot(aes(x=factor(get(var1), levels=distHiLo), y=factor(get(var2), levels=distHiLo))) + 
+        geom_tile(aes(fill=dist)) + 
+        geom_text(aes(label=round(dist, roundDist)), color="lightblue") +
+        labs(x="", y="", title=title, subtitle=subT) + 
+        scale_fill_gradient("Distance", low="black", high="white") + 
+        theme(axis.text.x=element_text(angle=90))
+    
+}
+
+```
+  
+The process can then be run on the obscuration data as a check:  
+```{r}
+
+plotCloudDist(obscDist, subT="Based on % of obscuration type by month")
+
+```
+  
+FINDINGS FOR OBSCURATION DISTANCE:  
+  
+* Las Vegas is far from everything, with its only modestly near neighbor being Lincoln  
+* Lincoln is far from everything except for its moderately near neighbors Las Vegas and Green Bay  
+* San Diego is far from everything except its moderately near neighbors Houston, New Orleans, and Newark  
+* Green Bay is closest to Minneapolis and is moderately close to most of the midwest cities  
+* Newark is reasonably close to many cities, being distant only from Traverse City, Green Bay, Lincoln, and Las Vegas  
+* Houston and New Orleans are closest to each other, then to Newark  
+* Traverse City and Grand Rapids are relatively close to each other  
+* The remaining cold weather cities (Milwaukee, Chicago, Madison, Minneapolis, Indianapolis, Detroit) are all relatively close to each other and also to Grand Rapids  
+  
+This is suggestive that there is a cold-weather cluster, a hot and humid cluster, and then several locales that are more or less standalone but could be grouped loosely to each other.
+  
+The functions can then be run on variations of the data:  
+```{r}
+
+# Run for minCFactor
+findCloudDist(cloudSummary, 
+              byVar=c("source", "sourceName"), 
+              fctVar="minCFactor", 
+              pivotVar="monthfct"
+              ) %>%
+    plotCloudDist(subT="Based on % in each minimum cloud height bucket by month")
+
+# Run for ceilFactor
+findCloudDist(cloudSummary, 
+              byVar=c("source", "sourceName"), 
+              fctVar="ceilFactor", 
+              pivotVar="monthfct"
+              ) %>%
+    plotCloudDist(subT="Based on % in each ceiling height bucket by month")
+```
+  
+Findings by minimum cloud height are similar to findings by obscuration.  
+  
+Findings by ceiling height show that Lincoln and Newark are close to each other and that San Diego and Las Vegas are both segments of one.  Traverse City and Grand Rapids are close to each other; as are New Orleans and Houston.  There continues to be a large, close, segment of cold cities.
+
+Of interest is whether a simple kmeans analysis returns the same findings:  
+```{r}
+
+set.seed(2006040940)
+
+ceilDistData <- findCloudDist(cloudSummary, 
+                              byVar=c("source", "sourceName"), 
+                              fctVar="ceilFactor", 
+                              pivotVar="monthfct", 
+                              returnPivotOnly=TRUE
+                              )
+
+tibble::tibble(locale=ceilDistData$sourceName, 
+               cluster=kmeans(dist(ceilDistData[3:ncol(ceilDistData)]), centers=5, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster)
+
+```
+  
+The five-segment k-means is consistent - solo segments for San Diego and Las Vegas; a Grand Rapids-Traverse City segment; a cold-weather midwestern segment (Grand Rapids and Traverse City are on the downwind side of Lake Michigan and would be expected to see much different clouds than cities with similar temperatures); and a catch-all segment.
+  
+The data can also be assessed using hierarchical clustering:  
+```{r}
+
+hclust(dist(ceilDistData[3:ncol(ceilDistData)]), method="complete") %>%
+    plot(labels=ceilDistData$sourceName, cex=0.5, main="Hierarchical on Ceiling Height: method=complete")
+
+hclust(dist(ceilDistData[3:ncol(ceilDistData)]), method="single") %>%
+    plot(labels=ceilDistData$sourceName, cex=0.5, main="Hierarchical on Ceiling Height: method=single")
+
+```
+  
+Similar conclusions can be drawn from hierarchical clustering based on ceiling height buckets by month:  
+  
+* San Diego and Las Vegas are each segments of one  
+* Houston and New Orleans tend to associate together  
+* Grand Rapids and Traverse City tend to associate together  
+* Lincoln and Newark tend to associate together  
+* There are possibly two sub-groupings of the other cold weather locales  
+  
+This is suggestive of either 6 or 7 segments in this data.  Does k-means match up?  
+```{r}
+
+tibble::tibble(locale=ceilDistData$sourceName, 
+               cluster=kmeans(dist(ceilDistData[3:ncol(ceilDistData)]), centers=6, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster)
+
+tibble::tibble(locale=ceilDistData$sourceName, 
+               cluster=kmeans(dist(ceilDistData[3:ncol(ceilDistData)]), centers=7, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster)
+
+```
+  
+Very nicely aligned.  The addition of the sixth segment splits the catch-all segment (from the previous 5 cluster analysis) in to a Houston-New Orleans segment and a Lincoln-Newark segment.  The addition of the seventh segment splits the cold weather cities in to Chicago-Madison-Milwukee-Indianapolis; and Detroit-Green Bay-Minneapolis.
+  
+Are any differences observed in trends for minimum cloud height?  
+```{r}
+
+heightDistData <- findCloudDist(cloudSummary, 
+                                byVar=c("source", "sourceName"), 
+                                fctVar="minCFactor", 
+                                pivotVar="monthfct", 
+                                returnPivotOnly=TRUE
+                                )
+
+hclust(dist(heightDistData[3:ncol(heightDistData)]), method="complete") %>%
+    plot(labels=heightDistData$sourceName, cex=0.5, 
+         main="Hierarchical on Minimum Cloud Height: method=complete"
+         )
+
+hclust(dist(heightDistData[3:ncol(heightDistData)]), method="single") %>%
+    plot(labels=heightDistData$sourceName, cex=0.5, 
+         main="Hierarchical on Minimum Cloud Height: method=single"
+         )
+
+```
+  
+There are some differences when using the 'complete' linkage method:  
+  
+* There is a Green Bay-Lincoln cluster, with Las Vegas merging in relatively soon  
+* There are arguably two cold weather clusters (including Grand Rapids and Traverse City), with Newark merging in relatively soon  
+* There is a Houston-New Orleans segment, with San Diego merging in relatively soon  
+  
+When using the 'single' linkage method, these patterns become muted:  
+  
+* There are still arguably two cold-weather clusters  
+* Houston and New Orleans form a cluster  
+* San Diego and Las Vegas are their own cluster  
+* Lincoln, Newark, and Green Bay all fall somewhere in the middle
+  
+We would expect k-means to pull out 1-2 cold-weather clusters and a Houston-New Orleans cluster:  
+```{r}
+
+set.seed(2006041003)
+
+tibble::tibble(locale=heightDistData$sourceName, 
+               cluster=kmeans(dist(heightDistData[3:ncol(heightDistData)]), centers=5, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster)
+
+tibble::tibble(locale=heightDistData$sourceName, 
+               cluster=kmeans(dist(heightDistData[3:ncol(heightDistData)]), centers=6, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster)
+
+tibble::tibble(locale=heightDistData$sourceName, 
+               cluster=kmeans(dist(heightDistData[3:ncol(heightDistData)]), centers=7, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster)
+
+tibble::tibble(locale=heightDistData$sourceName, 
+               cluster=kmeans(dist(heightDistData[3:ncol(heightDistData)]), centers=8, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster)
+
+```
+  
+With five segments, there is:  
+  
+* San Diego  
+* Houston and New Orleans  
+* Newark and Green Bay  
+* Las Vegas and Lincoln  
+* Cold weather cities  
+  
+Adding the sixth cluster splits apart Las Vegas and Lincoln.  Adding the seventh cluster cleaves Grand Rapids-Traverse City-Detroit from the other cold weather cities.  Adding the eighth cluster splits apart Green Bay and Newark.
+  
+Next steps are to explore the precipitation data.
