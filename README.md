@@ -1947,4 +1947,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherEDA_202005_v001 compares numeric vs. numeric and numeric vs. factors for multiple locales  
 * WeatherEDA_202005_v001 creates Q1-Q2-Q3 plot (modified boxplot) and runs initial cloud exploration  
 * WeatherEDA_202005_v001 compares maximum obscuration and minimum ceiling height by locale    
+* WeatherEDA_202005_v001 segments locales based on distributions of clouds by month  
   
