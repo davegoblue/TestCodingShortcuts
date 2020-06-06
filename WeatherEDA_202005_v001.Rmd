@@ -1668,7 +1668,8 @@ There are several issues identified that should be explored and fixed if appropr
 * Vertical visibility greater than 10 recorded  
 * Tendency for maximum obscuration to be CLR in Lincoln and Green Bay  
 * Tendency for Traverse City to have no or variable winds  
-  
+
+#### _Cloud Data Exploration_  
 Cloud exploration can highlight whether all locales are being compared apples to apples.  This is especially the case if some locales have a different maximum sensor height:  
 ```{r}
 
@@ -2417,4 +2418,701 @@ With five segments, there is:
   
 Adding the sixth cluster splits apart Las Vegas and Lincoln.  Adding the seventh cluster cleaves Grand Rapids-Traverse City-Detroit from the other cold weather cities.  Adding the eighth cluster splits apart Green Bay and Newark.
   
-Next steps are to explore the precipitation data.
+#### _Precipitation_  
+METAR data include descriptions of the precipitation occuring at any given time.  Two of the most common precipitation forms are rain (RA) and SN().  These can occur together, denoted as RASN or SNRA in the METAR.
+
+Further, the precipitation type can be classified using a prefix as light (-), moderate (no prefix), or heavy (+).  So, RA would be moderate rain, -SNRA would be a light snow-rain mix, +RA would be heavy rain.
+
+Additionally, the timing of the precipitation event is captured in the remarks using B (begin) and E (end).  So, an hourly METAR of RAB20E35B50 would mean rain started at 20 past the hour, ended at 35 past the hour, and began again at 50 past the hour.  Since METAR are often taken just before the top of the hour, a four-digit time is used if it is in the 'previous' hour; for example, RAB1959E36 in the 2053Z METAR.
+
+Broadly speaking, precipitation at a specific point in time can be extracted from the main METAR (preceding RMK) whil prcipitation intervals can be extracted by parsing the remarks (following RMK).  There can be misalignment between these; for example, an interval that suggests rain is occuring at a time the METAR does not show rain.
+
+There are two key functions for the extraction process:  
+  
+* suggestBeginEndTime() - a function that compares the METAR and remarks and suggests precipitation begin timea that should be added or excluded, and precipitation end times that should be added or excluded  
+* runFullPrecipExtraction() - a function that extracts relevant precipitation information, with options for begin/end times to be added or excluded
+  
+Helper function include:  
+  
+* extractPrecipData() - extracts the precipitation begin and end times from a processed METAR file  
+* getBeginendTimeMatrix() - get the beginning and ending times as a matrix  
+* getBeginEndTimeVector() - extract the beginning or ending times from a column of the matrix  
+* extractTime() - extract the time as a zero-padded number from a named vector  
+* createPrecipInterval() -  
+* createPrecipIntervalPlots() -  
+  
+Example code includes:  
+```{r}
+
+# Extract the precipitation begin and end times from a processed METAR file
+extractPrecipData <- function(df, 
+                              pType, 
+                              showRegex=TRUE, 
+                              showSTR=FALSE, 
+                              showTable=FALSE,
+                              dupError=TRUE
+                              ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble
+    # pType: the regex code to be used
+    # showRegex: boolean, whether to print out the regex code used
+    # showSTR: boolean, whether to show the file str()
+    # showTable: boolean, whether to show the file counts of start and end times
+    # dupError: boolean, if TRUE will throw an error if any duplicates are found; if FALSE just notes it
+    
+    # Extract the METAR and the date-time from a processed list
+    procMET <- df %>% 
+        select(origMETAR, dtime)
+
+    # Check whether there are comments for the desired pType either beginning or ending
+    keyPattern <- paste0("(", pType, "[B|E]\\d+[0-9BE]*)")
+    if (showRegex) { cat("\nRegex search code is:", keyPattern, "\n\n") }
+    
+    procMET <- procMET %>% 
+        mutate(precipData=str_extract(origMETAR, pattern=keyPattern), 
+               isPrecip=grepl(paste0(pType, "[B|E]"), origMETAR, perl=TRUE), 
+               nBegin=pmax(0, str_count(precipData, "B"), na.rm=TRUE), 
+               nEnd=pmax(0, str_count(precipData, "E"), na.rm=TRUE), 
+               dateUTC=lubridate::date(dtime), 
+               hourUTC=lubridate::hour(dtime)
+               )
+    if (showSTR) {
+        str(procMET)
+        cat("\n")
+    }
+
+    # Check the counts of precipitation beginning and rain ending
+    if (showTable) {
+        procMET %>%
+            count(isPrecip, nBegin, nEnd) %>%
+            print()
+    }
+
+    # Check that the file is unique by time
+    dupAns <- procMET %>%
+        select(dateUTC, hourUTC) %>%
+        duplicated %>%
+        any()
+
+    if (dupError) {
+        if (dupAns) { stop("Duplicates observed, investigate and fix\n") }
+    } else {
+        cat("\nAre there any problems with duplicated keys?", dupAns, "\n\n")
+    }
+    
+    procMET
+    
+}
+
+
+# Helper function to extract the beginning and ending times using str_extract_all
+getBeginEndTimeMatrix <- function(file, 
+                                  pullVar="precipData", 
+                                  pState="B"
+                                  ) {
+    
+    # FUNCTION ARGUMENTS:
+    # file: file containing data
+    # pullVar: the variable of interest in file
+    # pState: the precipitation state of interest - B (begin) or E (end)
+    
+    file %>%
+        pull(pullVar) %>%
+        str_extract_all(paste0(pState, "\\d+"), simplify=TRUE) %>%
+        as.data.frame(stringsAsFactors=FALSE)
+    
+}
+
+
+getBeginEndTimeVector <- function(timeExtractFile, 
+                                  origFullFile, 
+                                  extractVar, 
+                                  extractSym
+                                  ) {
+    
+    # FUNCTION ARGUMENTS:
+    # timeExtractFile: the file containing the extracted begin and end times
+    # origFullFile: the file that the extraction was run from (includes date and time)
+    # extractVar: the variable name for the column to be extracted from
+    # extractSym: whether it is B (begin) or E (end)
+    
+    timeExtractFile %>%
+        cbind(origFullFile[, c("dateUTC", "hourUTC")]) %>%
+        mutate(hourChar=str_pad(str_trim(as.character(hourUTC)), width=2, pad="0")) %>%
+        apply(1, FUN=extractTime, var=extractVar, sym=extractSym)
+    
+}
+
+
+# Convert the rain begins data to the hour and minute associated to the UTC
+extractTime <- function(x, 
+                        var, 
+                        sym="B"
+                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # x: the named vector
+    # var: the variable name to extract
+    # sym: whether the suppression needs to be on B (begin) or E (end) to convert to a zero-padded number
+    
+    # Extracting the time is tricky
+    # If NA or blank, then the time is NA
+    # Replace the leading B or E and there should then be a 2-digit or 4-digit number
+    # If 2-digit, then append date amd hour in front of it
+    # If 4-digit, then append date in front of it
+    # Exception: if 4-digit and begins with 23, then need to use the previous day
+    
+    if (is.na(x[var]) | x[var]=="") {
+        utcReturn <- NA
+    }
+    else {
+        utcUse <- str_replace(x[var], sym, "")
+        if (str_length(utcUse)==4) {
+            utcReturn <- paste0(x["dateUTC"], " ", utcUse)
+            # If a 4-digit time starts with 23 and is in the 0Z METAR, it is part of the previous day
+            if(str_sub(utcUse, 1, 2)=="23" & as.numeric(x["hourChar"])==0) {
+                utcReturn <- paste0(as.Date(x["dateUTC"]) - 1, " ", utcUse)
+            }
+        } else if (str_length(utcUse)==2) {
+            utcReturn <- paste0(x["dateUTC"], " ", x["hourChar"], utcUse)
+        } else {
+            cat("\nCannot parse data: ", x, "\n", x[var], "\n", var, sym, utcUse)
+            stop()
+        }
+    }
+    utcReturn
+
+}
+
+
+suggestBeginEndTimes <- function(df, regMatch) {
+
+    # FUNCTION ARGUMENTS
+    # df: the data frame to be examined
+    # regMatch: the relevant regex extraction code
+    
+    # Pull the data and check for the specified precipitation pattern and lags
+    sugStates <- df %>%
+        select(dtime, origMETAR) %>%
+        mutate(curPrecip=str_detect(origMETAR, paste0(".*", regMatch, ".*RMK")), 
+               lagPrecip=lag(curPrecip, 1)
+               )
+
+    # Use the analysis data to look for begins and ends flagged in the remarks
+    sugBE <- extractPrecipData(sugStates, pType=regMatch)
+
+    # Inner join the data by dtime
+    sugBEJoin <- sugBE %>% 
+        select(dtime, precipData, chgPrecip=isPrecip, dateUTC, hourUTC)
+    sugStates <- sugStates %>%
+        inner_join(sugBEJoin, by="dtime")
+
+    # Get the beginning and end times data for the desired precipitation type
+    sugBegin <- getBeginEndTimeMatrix(sugStates, pState="B")
+    sugEnd <- getBeginEndTimeMatrix(sugStates, pState="E")
+
+    # Hard-code for at most 3-column files (relax later)
+    # Extract the begin and end times
+    if (ncol(sugBegin) > 3 | ncol(sugEnd) > 3) { stop("Hard-coded for 0-3 columns, fix") }
+    testBT1 <- NA
+    testBT2 <- NA
+    testBT3 <- NA
+    testET1 <- NA
+    testET2 <- NA
+    testET3 <- NA
+    
+    if (ncol(sugBegin) >= 1) {
+        testBT1 <- getBeginEndTimeVector(sugBegin, sugStates, extractVar="V1", extractSym="B")
+    }
+    if (ncol(sugBegin) >= 2) {
+        testBT2 <- getBeginEndTimeVector(sugBegin, sugStates, extractVar="V2", extractSym="B")
+    }
+    if (ncol(sugBegin) >= 3) {
+        testBT3 <- getBeginEndTimeVector(sugBegin, sugStates, extractVar="V3", extractSym="B")
+    }
+
+    if (ncol(sugEnd) >= 1) {
+        testET1 <- getBeginEndTimeVector(sugEnd, sugStates, extractVar="V1", extractSym="E")
+    }
+    if (ncol(sugEnd) >= 2) {
+        testET2 <- getBeginEndTimeVector(sugEnd, sugStates, extractVar="V2", extractSym="E")
+    }
+    if (ncol(sugEnd) >= 3) {
+        testET3 <- getBeginEndTimeVector(sugEnd, sugStates, extractVar="V3", extractSym="E")
+    }
+    
+    # Integrate to a single file
+    sugExceptions <- sugStates %>%
+        mutate(b1=testBT1, 
+               e1=testET1, 
+               b2=testBT2, 
+               e2=testET2, 
+               b3=testBT3, 
+               e3=testET3,
+               begins=ifelse(is.na(b1), 0, 1) + ifelse(is.na(b2), 0, 1) + ifelse(is.na(b3), 0, 1), 
+               ends=ifelse(is.na(e1), 0, 1) + ifelse(is.na(e2), 0, 1) + ifelse(is.na(e3), 0, 1),
+               etob=begins > ends, 
+               btoe=ends > begins, 
+               needBegin=curPrecip & !lagPrecip & !etob, 
+               needEnd=!curPrecip & lagPrecip & !btoe, 
+               overBegin=etob & (lagPrecip | !curPrecip), 
+               overEnd=btoe & (curPrecip | !lagPrecip)
+               )
+    
+    # Report on the NA status by column
+    colSums(is.na(sugExceptions)) %>% 
+        print()
+
+    # Flag potential issues
+    cat("\nNeed Begin time\n")
+    sugExceptions %>%
+        filter(needBegin) %>%
+        select(dtime, origMETAR) %>%
+        print()
+
+    cat("\nNeed End time\n")
+    sugExceptions %>%
+        filter(needEnd) %>%
+        select(dtime, origMETAR) %>%
+        print()
+
+    cat("\nExtraneous Begin time\n")
+    sugExceptions %>%
+        filter(overBegin) %>%
+        select(dtime, b1, b2, b3) %>%
+        print()
+
+    cat("\nExtraneous End time\n")
+    sugExceptions %>%
+        filter(overEnd) %>%
+        select(dtime, e1, e2, e3) %>%
+        print()
+
+    cat("\nWrong amount of begins or ends\n")
+    sugExceptions %>%
+        mutate(absMatch=abs(begins-ends), absLag=lag(absMatch, 1), absLead=lead(absMatch, 1)) %>%
+        filter(pmax(absMatch, absLag, absLead) > 1) %>%
+        select(dtime, e1, e2, e3, b1, b2, b3) %>%
+        print()
+    
+    sugExceptions %>%
+        filter(needBegin | needEnd | overBegin | overEnd | abs(begins - ends) > 1)
+    
+}
+
+```
+  
+A function is then created to run the full precipitation extraction:  
+```{r}
+
+# Function to create the time intervals data
+createPrecipInterval <- function(endVector, 
+                                 beginVector, 
+                                 endExclude=c(), 
+                                 beginExclude=c(), 
+                                 sState=FALSE, 
+                                 nMinPrint=1, 
+                                 maxProb=1000, 
+                                 nMaxPrint=1
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # endVector: vector of end times
+    # beginVector: vector of begin times
+    # endExclude: vector of end times to exclude
+    # beginExclude: vector of begin times to exclude
+    # sState: the starting precipitation state (TRUE for precipitation., FALSE for no precipitation)
+    # nMinPrint: index for the first position of negative intervals to show (typically 1)
+    # maxProb: maximum duration (minutes) of precipitation to flag a print out
+    # nMaxPrint: index for the first position of very long intervals to show (typically 1)
+    
+    # If the starting state is one of precipitation, allow it to 'burn in' by deleting the first end time
+    if(sState) { endVector <- endVector[2:length(endVector)] }
+    
+    # Create the interval data
+    endsUse <- endVector[!(endVector %in% lubridate::ymd_hm(endExclude))]
+    beginsUse <- beginVector[!(beginVector %in% lubridate::ymd_hm(beginExclude))]
+    intervalData <- endsUse - beginsUse
+    
+    # Show a summary of the interval data
+    print(summary(as.numeric(intervalData)))
+    
+    # If there are any non-positive intervals, print the data causing the first of them
+    if (min(as.numeric(intervalData)) <= 0) {
+        cat("\nProblem Detected - Intervals are not positive.  Data to help investigate\n")
+        posns <- which(as.numeric(intervalData) <= 0)
+        posns <- max(1, posns[1]-5):min(length(beginsUse), length(endsUse), posns[nMinPrint]+5)
+        cat("\nVector of Begins\n")
+        print(lubridate::as_datetime(beginsUse[posns]))
+        cat("\nVector of Ends\n")
+        print(lubridate::as_datetime(endsUse[posns]))
+        cat("\n")
+    }
+    
+    # If there are any very long positive intervals, print the data causing the first five of them
+    if (max(as.numeric(intervalData)) >= maxProb) {
+        cat("\nPotential problem Detected - very long.  Data to help investigate\n")
+        posns <- which(as.numeric(intervalData) >= maxProb)
+        cat("\nPositions with problems are:", posns)
+        posns <- max(1, posns[1]-5):min(length(beginsUse), length(endsUse), posns[min(length(posns), nMaxPrint)]+5)
+        cat("\nVector of Begins\n")
+        print(lubridate::as_datetime(beginsUse[posns]))
+        cat("\nVector of Ends\n")
+        print(lubridate::as_datetime(endsUse[posns]))
+        cat("\n")
+    }
+    
+    # Return the interval data
+    intervalData
+    
+}
+
+
+
+createPrecipIntervalPlots <- function(intervalData, 
+                                      beginsData, 
+                                      titleText, 
+                                      yAxisText, 
+                                      beginExclude=c(), 
+                                      returnPlotsAndData=FALSE
+                                      ) {
+
+    # FUNCTION ARGUMENTS:
+    # intervalData: the precipitation interval data
+    # beginsData: the precipitation begin times
+    # titleText: plot title
+    # yAxisText: plot y-axis
+    # beginExclude: begin times to exclude
+    # returnPlotsAndData: whether to return the plot objects
+    
+    # Exclude any data from begins as needed
+    beginsData <- beginsData[!(beginsData %in% lubridate::ymd_hm(beginExclude))]
+    
+    # Create a plotting data frame
+    histFrame <- data.frame(minutesPrecip=as.numeric(intervalData), 
+                            month=lubridate::month(beginsData), 
+                            rainDate=lubridate::date(beginsData)
+                            ) %>%
+        mutate(hoursPrecip=minutesPrecip/60)
+    
+    # Plot the precipitation durations in hours
+    p1 <- histFrame %>%
+        ggplot(aes(x=hoursPrecip)) +
+        geom_histogram() + 
+        labs(title=titleText, x=yAxisText, 
+             subtitle="Distribution of hours per unique precipitation event"
+             )
+    print(p1)
+
+    # Plot the precipitation by day in hours
+    p2 <- histFrame %>%
+        group_by(rainDate) %>%
+        summarize(hoursPrecip=sum(hoursPrecip)) %>%
+        ggplot(aes(x=hoursPrecip)) +
+        geom_histogram() + 
+        labs(title=titleText, x=yAxisText, 
+             subtitle="Distribution of hours per day of precipitation (on days when 1+ minutes occurred)"
+             )
+    print(p2)
+    
+    # Plot the rain totals (in hours) by month
+    # Create a data frame of all months and merge in precipitation data as an where available (0 otherwise)
+    monthFrame <- histFrame %>%
+        group_by(month) %>%
+        summarize(minutesPrecip=sum(minutesPrecip), hoursPrecip=sum(hoursPrecip), nPrecip=n()) %>%
+        right_join(data.frame(month=1:12, monthName=month.abb[1:12]), by="month") %>%
+        tidyr::replace_na(list(minutesPrecip=0, hoursPrecip=0, nPrecip=0))
+    # print(monthFrame)
+    
+    p3 <- monthFrame %>%
+        ggplot(aes(x=factor(monthName, levels=month.abb[1:12]), y=hoursPrecip)) +
+        geom_col() + 
+        labs(title=titleText, y=yAxisText, x="") + 
+        geom_text(aes(y=2 + hoursPrecip, label=round(hoursPrecip, 1)))
+    print(p3)
+    
+    if (returnPlotsAndData) {
+        list(histFrame=histFrame, monthFrame=monthFrame, p1=p1, p2=p2, p3=p3)
+    } else {
+        NULL
+    }
+}
+
+
+
+# Combining all the functions in one place
+runFullPrecipExtraction <- function(df, 
+                                    pType, 
+                                    titleText, 
+                                    yAxisText,
+                                    endExclude=c(), 
+                                    beginExclude=c(), 
+                                    endAdd=c(),
+                                    beginAdd=c(),
+                                    maxProb=1000, 
+                                    sState=FALSE, 
+                                    makePlots=TRUE, 
+                                    returnPlotsAndData=FALSE
+                                    ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: the data frame or tibble
+    # ptype: the regex for the precipitation type of interest
+    # titleText: title text for the associated plot
+    # yAxisText: y-axis text for the associated plot
+    # endExclude: vector of end times to be excluded, formatted as yyyy-mm-dd hhmm (all zero-padded)
+    # beginExclude: vector of begin times to be excluded, formatted as yyyy-mm-dd hhmm (all zero-padded)
+    # endAdd: vector of end times to be added, formatted as yyyy-mm-dd hhmm (all zero-padded)
+    # beginAdd: vector of begin times to be added, formatted as yyyy-mm-dd hhmm (all zero-padded)
+    # maxProb: length of precipitation (in minutes) beyond which a note is thrown
+    # sState: whether the starting state is with precipitation
+    # makePlots: whether to create plots
+    # returnPlotsAndData: whether to return the plot object with the other data
+    
+    # Extract the precipitation data from a specified processed METAR file
+    testFileProc <- extractPrecipData(df, pType=pType)
+    
+    # Confirm that the two-column specification is met (should relax hard-coding on this)
+    testBegin <- getBeginEndTimeMatrix(testFileProc, pState="B")
+    testEnd <- getBeginEndTimeMatrix(testFileProc, pState="E")
+
+    if (!(ncol(testBegin) %in% c(1, 2, 3)) | !(ncol(testEnd) %in% c(1, 2, 3))) { 
+        cat("\nBegin columns:", ncol(testBegin), "\t\tEndcolumns:", ncol(testEnd))
+        stop("Hard-coded for 1-3 columns each of begin/end- Fix")
+    }
+    
+    # Extract the beginning and ending information
+    testBT1 <- getBeginEndTimeVector(testBegin, testFileProc, extractVar="V1", extractSym="B")
+    testET1 <- getBeginEndTimeVector(testEnd, testFileProc, extractVar="V1", extractSym="E")
+    
+    if (ncol(testBegin) >= 2) {
+        testBT2 <- getBeginEndTimeVector(testBegin, testFileProc, extractVar="V2", extractSym="B")
+    } else {
+        testBT2 <- c()
+    }
+    if (ncol(testEnd) >= 2) {
+        testET2 <- getBeginEndTimeVector(testEnd, testFileProc, extractVar="V2", extractSym="E")
+    } else {
+        testET2 <- c()
+    }
+
+    if (ncol(testBegin) >= 3) {
+        testBT3 <- getBeginEndTimeVector(testBegin, testFileProc, extractVar="V3", extractSym="B")
+    } else {
+        testBT3 <- c()
+    }
+    if (ncol(testEnd) >= 3) {
+        testET3 <- getBeginEndTimeVector(testEnd, testFileProc, extractVar="V3", extractSym="E")
+    } else {
+        testET3 <- c()
+    }
+    
+    testAllBegins <- 
+        c(testBT1[!is.na(testBT1)], testBT2[!is.na(testBT2)], testBT3[!is.na(testBT3)], beginAdd) %>%
+        lubridate::ymd_hm() %>%
+        sort()
+
+    testAllEnds <- 
+        c(testET1[!is.na(testET1)], testET2[!is.na(testET2)], testET3[!is.na(testET3)], endAdd) %>%
+        lubridate::ymd_hm() %>%
+        sort()
+    
+    # Create the intervals
+    testIntervals <- createPrecipInterval(testAllEnds, testAllBegins, 
+                                          endExclude=endExclude, beginExclude=beginExclude, 
+                                          maxProb=maxProb, sState=sState
+                                          )
+    
+    # Create the precipitation plots
+    plotOut <- NULL
+    if (makePlots) {
+        plotOut <- createPrecipIntervalPlots(testIntervals, testAllBegins, titleText=titleText, 
+                                             yAxisText=yAxisText, beginExclude=beginExclude, 
+                                             returnPlotsAndData=returnPlotsAndData
+                                             )
+    }
+    
+    if (!returnPlotsAndData) { plotOut <- NULL }
+    
+    # Return all of the key files, along with the parameters used
+    keyParams <- list(fileName=deparse(substitute(df)), 
+                      pType=pType, 
+                      endExclude=endExclude, 
+                      beginExclude=beginExclude, 
+                      endAdd=endAdd, 
+                      beginAdd=beginAdd,
+                      maxProb=maxProb, 
+                      sState=sState
+                      )
+    list(keyParams=keyParams, 
+         testFileProc=testFileProc, 
+         testAllBegins=testAllBegins[!(testAllBegins %in% lubridate::ymd_hm(beginExclude))], 
+         testAllEnds=testAllEnds[!(testAllEnds %in% lubridate::ymd_hm(endExclude))], 
+         testIntervals=testIntervals,
+         plotOut=plotOut
+         )
+}
+
+```
+  
+The functions are then run, using the Chicago 2016 data:
+```{r}
+
+# Run for Chicago 2016, extracting rain that is not freezing rain
+kord2016ExceptRA <- suggestBeginEndTimes(kord_2016, regMatch="(?<!FZ)RA")
+kord2016ExceptRA
+
+# Run extraction for Chicago 2016
+# Attempt to use on the kord2016 rain data
+kordRain2016Test <- runFullPrecipExtraction(kord_2016, 
+                                            pType="(?<!FZ)RA", 
+                                            titleText="Chicago, IL Rainfall (hours) in 2016", 
+                                            yAxisText="Hours of Rain", 
+                                            endExclude=c(),
+                                            beginExclude=c(),
+                                            endAdd=c("2016-07-13 1851"), 
+                                            beginAdd=c("2016-03-24 2151", "2016-08-29 1951"),
+                                            maxProb=1440, 
+                                            sState=FALSE, 
+                                            makePlots=TRUE
+                                            )
+
+```
+  
+A function can then be written to test the intervals for consistency:  
+```{r}
+
+intervalConsistency <- function(lst, pType){
+
+    # FUNCTION ARGUMENTS
+    # lst: list
+    # pType: precipitation type
+    
+    require(lubridate)
+    
+    # Extract the beginning and interval times
+    begins <- lst[["testAllBegins"]]
+    ends <- lst[["testAllEnds"]]
+    durs <- lst[["testIntervals"]]
+
+
+    # Create intervals from the raw list file
+    precipInts <- lubridate::interval(begins, begins + durs - 1)
+
+    
+    # Extract the METAR and date-time information
+    metar <- lst[["testFileProc"]][["origMETAR"]]
+    dtime <- lst[["testFileProc"]][["dtime"]]
+    
+    # Take each METAR observation and check two factors
+    # Is the precipitation type recorded in that METAR?
+    # Does that METAR fall in any of the intervals?
+    precipMETAR <- grepl(paste0(pType, ".*RMK"), metar, perl=TRUE)
+    intMETAR <- sapply(dtime, FUN=function(x) {x %within% precipInts %>% any()})
+
+
+    # Check for the consistency of the observations and print the mismatches
+    print(table(precipMETAR, intMETAR))
+
+    mism <- which(precipMETAR != intMETAR)
+    if (length(mism) == 0) {
+        cat("\nFull matches between METAR observations and intervals\n")
+    } else {
+        for (x in mism) {
+            cat("\nMismatch at time", strftime(dtime[x], format="%Y-%m-%d %H:%M", tz="UTC"), "UTC\n")
+            print(metar[max(1, x-2):min(length(metar), x+2)])
+        }
+    }
+    
+    list(precipInts=precipInts, mismatches=mism, mismatchTimes=dtime[mism])
+}
+
+```
+  
+And, the function can then be run for the Chicago 2016 data:  
+```{r}
+
+tmp <- intervalConsistency(kordRain2016Test, pType="(?<!FZ)RA")
+
+```
+
+So, the process works to extract precipitation data, and for the case of Chicago 2016, creates alignment using only the addition of 1 end time and 2 begin times.
+  
+An additional helper function is written to take the exceptions from suggestBeginEndTimes() and to create the vectors for endExclude(), beginExclude(), endAdd(), and beginAdd() automatically:  
+```{r}
+
+# Helper function to create times in the format preferred by the other functions
+timeFormatter <- function(timeVec) {
+    
+    if (length(timeVec) == 0) {
+        return(character(0))
+    }
+    
+    paste0(as.Date(timeVec), 
+           " ", 
+           str_pad(lubridate::hour(timeVec), pad="0", side="left", width=2),
+           str_pad(lubridate::minute(timeVec), pad="0", side="left", width=2)
+           )
+}
+
+convertExceptionsToTimes <- function(excFile, maxCol=3) {
+    
+    # Basic beginAdd (just add the METAR time)
+    beginAdd <- excFile %>%
+        filter(needBegin) %>%
+        pull(dtime) %>%
+        timeFormatter()
+    
+    # Basic endAdd (just add the METAR time)
+    endAdd <- excFile %>%
+        filter(needEnd) %>%
+        pull(dtime) %>%
+        timeFormatter()
+    
+    # Basic endExclude (just delete the earliest end time - maybe add a guard check later)
+    endExclude <- excFile %>%
+        filter(overEnd) %>%
+        select_at(vars(all_of(paste0("e", 1:maxCol)))) %>%
+        pull(1)
+
+    # Basic beginExclude (just delete the earliest begin time - maybe add a guard check later)
+    beginExclude <- excFile %>%
+        filter(overBegin) %>%
+        select_at(vars(all_of(paste0("b", 1:maxCol)))) %>%
+        pull(1)
+    
+    list(endAdd=endAdd, beginAdd=beginAdd, endExclude=endExclude, beginExclude=beginExclude)
+    
+}
+
+```
+  
+And the process can be attempted on the 2016 Chicago snow data:  
+```{r}
+
+# Run for Chicago 2016, extracting snow that is not blowing snow
+kord2016ExceptSN <- suggestBeginEndTimes(kord_2016, regMatch="(?<!BL)SN")
+kord2016ExceptSNList <- convertExceptionsToTimes(kord2016ExceptSN)
+
+# Attempt to use on the kord2016 snow data
+kordSnow2016Test <- runFullPrecipExtraction(kord_2016, 
+                                            pType="(?<!BL)SN", 
+                                            titleText="Chicago, IL Snowfall (hours) in 2016", 
+                                            yAxisText="Hours of Snow", 
+                                            endExclude=kord2016ExceptSNList$endExclude,
+                                            beginExclude=kord2016ExceptSNList$beginExclude,
+                                            endAdd=kord2016ExceptSNList$endAdd, 
+                                            beginAdd=kord2016ExceptSNList$beginAdd,
+                                            maxProb=1440, 
+                                            sState=FALSE, 
+                                            makePlots=TRUE
+                                            )
+
+tmp <- intervalConsistency(kordSnow2016Test, pType="(?<!BL)SN")
+
+```
+  
+While there is still some work to be done (the current function makes assumptions about the issues with the precipitation data and associated use of e1/b1, as well as not handling cases where there are, for example, 2 begins with no ends), the function shows promise in automating the process of handling precipitation data.
+  
+
