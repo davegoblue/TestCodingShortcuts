@@ -1949,4 +1949,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherEDA_202005_v001 compares maximum obscuration and minimum ceiling height by locale    
 * WeatherEDA_202005_v001 segments locales based on distributions of clouds by month  
 * WeatherEDA_202005_v001 explores precipitation data in METAR  
+* WeatherEDA_202005_v001 combines functions for extracting and exploring precipitation data in METAR  
   
