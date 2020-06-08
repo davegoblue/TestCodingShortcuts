@@ -2438,8 +2438,8 @@ Helper function include:
 * getBeginendTimeMatrix() - get the beginning and ending times as a matrix  
 * getBeginEndTimeVector() - extract the beginning or ending times from a column of the matrix  
 * extractTime() - extract the time as a zero-padded number from a named vector  
-* createPrecipInterval() -  
-* createPrecipIntervalPlots() -  
+* createPrecipInterval() - create the precipitation time intervals, and flag any that are negative or very long  
+* createPrecipIntervalPlots() - distributions of precipitation events, precipitation by day, and precipitation by month  
   
 Example code includes:  
 ```{r}
@@ -3021,11 +3021,15 @@ kordRain2016Test <- runFullPrecipExtraction(kord_2016,
 A function can then be written to test the intervals for consistency:  
 ```{r}
 
-intervalConsistency <- function(lst, pType){
+intervalConsistency <- function(lst, 
+                                pType, 
+                                maxPrint=NULL
+                                ){
 
     # FUNCTION ARGUMENTS
     # lst: list
     # pType: precipitation type
+    # maxPrint: maximum number of mismatches to print (default is to print all)
     
     require(lubridate)
     
@@ -3057,7 +3061,8 @@ intervalConsistency <- function(lst, pType){
     if (length(mism) == 0) {
         cat("\nFull matches between METAR observations and intervals\n")
     } else {
-        for (x in mism) {
+        if (is.null(maxPrint)) { maxPrint <- length(mism) }
+        for (x in mism[1:min(maxPrint, length(mism))]) {
             cat("\nMismatch at time", strftime(dtime[x], format="%Y-%m-%d %H:%M", tz="UTC"), "UTC\n")
             print(metar[max(1, x-2):min(length(metar), x+2)])
         }
@@ -3168,7 +3173,11 @@ combinedPrecipitation <- function(df,
                                   yAxisText=NULL,
                                   maxProb=1440,
                                   sState=FALSE,
-                                  makePlots=TRUE
+                                  makePlots=TRUE, 
+                                  axisMapper=precipMapper,
+                                  titleMapper=cityNameMapper, 
+                                  frameName=NULL, 
+                                  maxConsistencyPrint=NULL
                                   ) {
     
     # FUNCTION ARGUMENTS:
@@ -3179,17 +3188,35 @@ combinedPrecipitation <- function(df,
     # maxProb: flag any precipitation events longer than this number of minutes
     # sState: boolean, is there precipitation in the first record?
     # makePlots: boolean, should plots be created?
+    # axisMapper: mapping file for creating plot axis name from precipitation type
+    # titleMapper: mapping file for creating plot title from data frame name
+    # frameName: name of the data frame (kluge due to deparse(substitute(df)) returning "df" if this function is called by another function or in a for loop
+    # maxConsistencyPrint: how many mismatches should be printed (default, NULL, prints all)
+    
+    # Create titleText and yAxisText if they are not already created
+    if (is.null(yAxisText)) {
+        yAxisText <- paste0("Hours of ", axisMapper[pType])
+    }
+
+    # Create the frame name if it has nott been passed
+    if (is.null(frameName)) {
+        frameName <- deparse(substitute(df))
+    }
+    
+    # Create the title if it has not been provided
+    if (is.null(titleText)) {
+        titleText <- paste0(titleMapper[frameName], " - Hours of ", axisMapper[pType])
+    }    
     
     # Get the suggested edits to the begin and end times, then convert to a usable list
     excSuggest <- suggestBeginEndTimes(df, regMatch=pType)    
     excList <- convertExceptionsToTimes(excSuggest)
     
-    # Create the frame name to pass (deparse and substitute willjust return 'df' in the next function)
-    frameName <- deparse(substitute(df))
-    
     # Run the full precipitation extraction
     precipData <- runFullPrecipExtraction(df, 
                                           pType=pType, 
+                                          titleText=titleText,
+                                          yAxisText=yAxisText,
                                           endExclude=excList$endExclude,
                                           beginExclude=excList$beginExclude,
                                           endAdd=excList$endAdd, 
@@ -3201,7 +3228,7 @@ combinedPrecipitation <- function(df,
                                           )
 
     # Check for consistency    
-    precipIntervals <- intervalConsistency(precipData, pType=pType)
+    precipIntervals <- intervalConsistency(precipData, pType=pType, maxPrint=maxConsistencyPrint)
 
     # For the time being, return the most important data (the precipData list)
     precipData
@@ -3238,3 +3265,297 @@ The algorithm as currently set up is creating a -3 minute interval (from 1736 to
 In practice, it is more likely that the TSE33 should be deleted, leaving a short interval of TSB36 (1736) through TSE05 (1805) that overlaps the -TSRA observation at 1751.
   
 Next steps are to work through this further consistency check and test the functions on other locales.
+  
+An updated function suggestBeginEndTimes() is created to better manage the situation above.  Broadly speaking, there are three types of issues with precipitation data (assuming focus on a single precipitation type, such as rain):  
+  
+* Current METAR precipitation state (yes/no) is the same as previous state, but there is a non-zero net of begin and end in the remarks  
+* Current METAR has precipitation, previous METAR does not, and there is not a net +1 of begin/end  
+* Current METAR has no precipitation, previous METAR does, and there is not a net -1 of begin/end  
+  
+There are two ancillary precipitation issues that can be observed:  
+  
+* Net changes can be OK, but in a manner that implies negative or overlapping intervals - for example, -RA at 1651 and -RA at 1751 with remarks that show RAB18E21 (net change is zero which is OK, but rain already happening cannot begin and if the rain had actually ended at 21 then it would not be occurring at 51)  
+* Net changes can be of magnitude greater than one - for example, no rain at 1151 and rain at 1251 and remarks that show RAB11E26B45B50 (net change in rain of +2 where state change makes clear it should be +1)  
+  
+The primary issues will be addressed first in an updated function:  
+```{r}
+
+# Helper function to print out the potential issue
+printBeginEndIssues <- function(df, nColMax=3) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble containing the issues
+    # nColMax: the maximum number of columns allowed for precipitation begins and precipitation ends
+    # Variable names in the file are assumed to have a specific format as hard-coded in the function
+    
+    cat("\nNeed Begin time\n")
+    df %>%
+        filter(needBegin) %>%
+        select(dtime, origMETAR) %>%
+        print()
+    
+    cat("\nNeed End time\n")
+    df %>%
+        filter(needEnd) %>%
+        select(dtime, origMETAR) %>%
+        print()
+    
+    cat("\nExtraneous Begin time\n")
+    df %>%
+        filter(overBegin) %>%
+        select(dtime, paste0("b", 1:nColMax)) %>%
+        print()
+    
+    cat("\nExtraneous End time\n")
+    df %>%
+        filter(overEnd) %>%
+        select(dtime, paste0("e", 1:nColMax)) %>%
+        print()
+    
+    cat("\nWrong amount of begins or ends\n")
+    df %>%
+        filter(tooManyBE) %>%
+        select(dtime, paste0("e", 1:nColMax), paste0("b", 1:nColMax)) %>%
+        print()
+    
+}
+
+
+# Update suggestBeginEndTimes
+suggestBeginEndTimes <- function(df, 
+                                 regMatch, 
+                                 nColMax=3, 
+                                 printNACols=FALSE, 
+                                 printIssues=TRUE
+                                 ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: the data frame to be examined
+    # regMatch: the relevant regex extraction code
+    # nColMax: the maximum number of columns allowed for precipitation begins and precipitation ends
+    # printNACols: boolean, whether to print the NA column sums
+    # printIssues: boolean, whether to print out all of the issues
+    
+    # Pull the data and check for the specified precipitation pattern and lags
+    # Needs to follow the \\d{6}Z that shows the time and precede the RMK that denotes the remarks
+    sugStates <- df %>%
+        select(dtime, origMETAR) %>%
+        mutate(curPrecip=str_detect(origMETAR, paste0("\\d{6}Z.*", regMatch, ".*RMK")), 
+               lagPrecip=lag(curPrecip, 1)
+        )
+    
+    # Use the analysis data to look for begins and ends flagged in the remarks
+    sugBE <- extractPrecipData(sugStates, pType=regMatch)
+    
+    # Inner join the data by dtime
+    sugBEJoin <- sugBE %>% 
+        select(dtime, precipData, chgPrecip=isPrecip, dateUTC, hourUTC)
+    sugStates <- sugStates %>%
+        inner_join(sugBEJoin, by="dtime")
+    
+    # Get the beginning and end times data for the desired precipitation type
+    sugBegin <- getBeginEndTimeMatrix(sugStates, pState="B")
+    sugEnd <- getBeginEndTimeMatrix(sugStates, pState="E")
+    
+    # Ensure that user-defined maximum number of columns is not exceeded
+    if (ncol(sugBegin) > nColMax | ncol(sugEnd) > nColMax) { 
+        stop("Function argument set to allow only for 0 - ", nColMax, "columns, investigate and fix")
+    }
+    
+    # For each iteration, create testBTn and testETn (use NA if no column)
+    for (ctr in 1:nColMax) {
+        
+        # Create NA as the baseline
+        assign(paste0("testBT", ctr), NA)
+        assign(paste0("testET", ctr), NA)
+        
+        # Assign begin if exists
+        if (ncol(sugBegin) >= ctr) {
+            bt <- getBeginEndTimeVector(sugBegin, sugStates, extractVar=paste0("V", ctr), extractSym="B")
+            assign(paste0("testBT", ctr), bt)
+        }
+        
+        # Assign end if exists
+        if (ncol(sugEnd) >= ctr) {
+            et <- getBeginEndTimeVector(sugEnd, sugStates, extractVar=paste0("V", ctr), extractSym="E")
+            assign(paste0("testET", ctr), et)
+        }
+        
+    }
+    
+    # Integrate to a single file, allowing for nMaxCol applications of variables
+    # Create file sugExceptions as sugStates and initialize the columns for begins and ends
+    sugExceptions <- sugStates %>%
+        mutate(begins=0, ends=0)
+    
+    # Loop through up to nColMax, adding the appropriate bn=testBTn and en=testETn
+    for (ctr in 1:nColMax) {
+        sugExceptions <- sugExceptions %>%
+            mutate(!!paste0("b", ctr) := get(paste0("testBT", ctr)), 
+                   !!paste0("e", ctr) := get(paste0("testET", ctr)), 
+                   begins=begins + ifelse(is.na(get(paste0("b", ctr))), 0, 1),
+                   ends=ends + ifelse(is.na(get(paste0("e", ctr))), 0, 1)
+            )
+    }
+    
+    # Create the final version by checking key criteria
+    # Add a criteria for b before e if previous; and e before b if not previous?
+    # Potential issues include:
+    # Current and lagged state are the same when begins != ends
+    # Current is no, lagged is yes, ends <= begins
+    # Current is yes, lagged is no, begins <= ends
+    sugExceptions <- sugExceptions %>%
+        mutate(issueA=(lagPrecip==curPrecip & begins!=ends), # no state change should have begins==ends
+               issueB=(lagPrecip & !curPrecip & ends <= begins),  # change to 'no' should have ends>bsgins
+               issueC=(curPrecip & !lagPrecip & begins <= ends),  # change to 'yse' should have begins>ends
+               issueD=abs(begins-ends) > 1,  # state is a 1/0 so net change should be -1, 0, or 1
+               needBegin=issueC & begins==0,
+               needEnd=issueB & ends==0,
+               overBegin=(issueA & (begins > ends)) | (issueB & (ends > 0)),
+               overEnd=(issueA & (ends > begins)) | (issueC & (begins > 0)),
+               tooManyBE=issueD
+        )
+    
+    # Report on the NA status by column
+    if (printNACols) {
+        colSums(is.na(sugExceptions)) %>% 
+            print()
+    }
+
+    # Print out the issue if requested
+    if (printIssues) {
+        printBeginEndIssues(sugExceptions, nColMax=nColMax)
+    }
+    
+    sugExceptions %>%
+        filter(issueA | issueB | issueC | issueD)
+    
+}
+
+```
+  
+The function can then be run on the Chicago 2016 snow data and compared to previous:  
+```{r}
+
+# Run for the Chicago snow data
+tmp <- suggestBeginEndTimes(kord_2016, regMatch="(?<!BL)SN")
+
+# Compare to old Chicago snow data
+namesAll <- intersect(names(kord2016ExceptSN), names(tmp))
+cat("\nVariables deleted:", setdiff(names(kord2016ExceptSN), namesAll), "\n")
+cat("\nVariables created:", setdiff(names(tmp), namesAll), "\n")
+identical(kord2016ExceptSN[, namesAll], tmp[, namesAll])
+
+```
+  
+So, for the Chicago 2016 snow data, the new function is pulling the same information, just with somewhat different variables (keeping an issue log as variables may be helpful later).
+  
+The data are also re-run on Chicago thunderstorms to see if the negative interval is correctly pulled out:  
+```{r}
+
+# Run for the Chicago thunderstorm data
+tmp <- suggestBeginEndTimes(kord_2016, regMatch="(?<!VC)TS") 
+
+# Show the data
+tmp %>%
+    select(dtime, curPrecip, lagPrecip, precipData, needBegin, needEnd, overBegin, overEnd, tooManyBE)
+
+# Run through the conversion to begin and end times
+tmp %>%
+    convertExceptionsToTimes()
+
+```
+  
+It appears that this change will correct for the issue on 2016-10-12 with TSE33B36.
+  
+The process can then be run for the rain data in all of the files, with outputs saved to a single master list (initial exploration showed some issues with Minneapolis and New Orleans, so these are excluded to start):  
+```{r}
+
+# Create the list of files to run on - everything in 2016
+fileNames <- grep(pattern="2016", names(cityNameMapper), value=TRUE)
+fileNames <- fileNames[!(fileNames %in% c("kmsp_2016", "kmsy_2016"))]
+print(fileNames)
+
+# Create a main storage list
+listRA <- vector("list", length(fileNames))
+names(listRA) <- fileNames
+
+for (fName in fileNames) {
+
+    listRA[[fName]] <- combinedPrecipitation(get(fName), pType="(?<!FZ)RA", frameName=fName)
+
+}
+
+```
+  
+Initial outputs are encouraging:  
+  
+* In all locales, the rain intervals created perfectly align with the hourly METAR rain data (with the exception of Houston, TX on 2016-03-23 21:53)  
+* In all locales, the minimum rain interval length is positive (with the exception of Houston, TX 2016-08-21 1945/1927)  
+* In all locales, the maximum rain interval length is under 24 hours  
+  
+Further diagnostics of the Houston situation include:  
+```{r}
+
+# August 21, 2016 issue
+kiah_2016 %>% 
+    filter(lubridate::date(dtime)=="2016-08-21", lubridate::hour(dtime) %in% c(18, 19, 20, 21)) %>%
+    pull(origMETAR)
+
+# March 23, 2016 issue
+kiah_2016 %>% 
+    filter(lubridate::date(dtime)=="2016-03-23", lubridate::hour(dtime) %in% c(20, 21, 22, 23)) %>%
+    pull(origMETAR)
+
+```
+  
+The August 21 situation highlights an area where the guard logic needs improvement:  
+  
+* 1953Z ... RAB1857E27B45EMM requires either 1) replace RAEMM with RAE53 (treat as needEnd), or 2) remove the B45 that is paired to the EMM (treat as overBegin)  
+* The current guard logic will see this as 2 begins and 1 end and treat as an overBegin (OK so far); since there is an end time, the guard logic just delete the first begin time to make them equal  
+* This is a guard logic error of potentially very minor consequence in that it produces under 60 minutes of problem across 15 cities over the course of a year  
+  
+The March 23 situation highlights an error in the METAR:  
+  
+* 2253Z ... RAB2145E16 creates rain at a time period that belongs to the 2153Z METAR (likely a transpose typo since RAB2154E16 would be appropriate in the 2253Z METAR)  
+* The guard logic should be updated to only allow four-digit times that 'belong' to the current METAR, flagging a warning and converting them to be in range automatically  
+  
+The New Orleans data are run stand-alone since there were a few more issues:  
+```{r}
+
+tmpMSY <- combinedPrecipitation(kmsy_2016, pType="(?<!FZ)RA", frameName="kmsy_2016")
+
+```
+  
+New Orleans is interesting in that the final hours of the final day of the pulled METARare all raining.  This leads (correctly) to no final RAE in the METAR, and the logic should be updated to place an artificial RAE in the last minute of the file.  Without that, there is recycling, and the interval becomes -365 days.  There is a similar need to add logic in case the beginning state is RAB.
+  
+The Minneapolis data are run stand-alone since there are many issues:  
+```{r}
+
+tmpMSP <- combinedPrecipitation(kmsp_2016, pType="(?<!FZ)RA", frameName="kmsp_2016", maxConsistencyPrint = 5)
+testMSP <- tibble::tibble(beginTime=tmpMSP$testAllBegins, 
+                          endTime=c(tmpMSP$testAllEnds, NA),  # make the same length as begins
+                          ints=tmpMSP$testIntervals
+                          )
+
+testMSP %>%
+    filter(ints >= 2000 | lubridate::date(beginTime) == "2016-09-06") %>%
+    as.data.frame()
+
+```
+  
+The Minneapolis data appear to first become misaligned during a September 6 rain event.  
+  
+* 2016-09-06 0653 no rain
+* 2016-09-06 0753 -TSRA TSB35 (algorithm correctly flags "needs begin" for 0753)  
+* 2016-09-06 0853 TS RAB0744E01B17 (algorithm correctly flags as "over-begin" but guard logic needs to be updated to delete both of the beginning times since net-end should be 1 for -TSRA becoming TS)  
+* Every following record will be erroneous, including overlapping intervals, since the extra begin record is kept  
+* Additionally, the RAB0744 should be in the 0753 observation (same issue as with Houston)  
+
+Next steps are to investigate and fix the following:  
+  
+* Select the correct RAB to discard when RABnnEnnBnn is observed where there should be no net change (same guard issue for RAE)  
+* Remove any RAB/RAE observations that do not "belong" to the hour that falls under the current METAR  
+* Upgrade the logic to manage a start state of precipitation (create RAB at the beginning so the interval overlaps) or an end state of precipitation (create an RAE at the end to avoid recycling vectors)  
+* Check whether overBegin or overEnd have 2+ causes, and upgrade the logic to delete all if needed  
+  
