@@ -1953,4 +1953,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 08-JUN-2020  
 * WeatherEDA_202005_v001 runs precipitation functions for rain across locales in METAR  
+* WeatherEDA_202005_v001 explores fixes to the precipitation extraction functions  
   
