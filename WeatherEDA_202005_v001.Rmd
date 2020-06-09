@@ -3554,8 +3554,252 @@ The Minneapolis data appear to first become misaligned during a September 6 rain
 
 Next steps are to investigate and fix the following:  
   
-* Select the correct RAB to discard when RABnnEnnBnn is observed where there should be no net change (same guard issue for RAE)  
 * Remove any RAB/RAE observations that do not "belong" to the hour that falls under the current METAR  
-* Upgrade the logic to manage a start state of precipitation (create RAB at the beginning so the interval overlaps) or an end state of precipitation (create an RAE at the end to avoid recycling vectors)  
 * Check whether overBegin or overEnd have 2+ causes, and upgrade the logic to delete all if needed  
+* Select the correct RAB to discard when RABnnEnnBnn is observed where there should be no net change (same guard issue for RAE)  
+* Upgrade the logic to manage a start state of precipitation (create RAB at the beginning so the interval overlaps) or an end state of precipitation (create an RAE at the end to avoid recycling vectors)  
   
+The functions that need updating are suggestBeginEndTimes and convertExceptionsToTimes and getBeginEndTimeMatrix:  
+```{r}
+
+# Updateds function to account for:
+# 1. Remove any RAB/RAE observations that have dddd that 'belongs' to a different hourly METAR
+# 2. Check whether overBegin or overEnd have 2+ causes, and delete all that are necessary
+# 3. Upgrade logic to manage a starting state of precipitation, or an ending state of precipitation
+# 4. Select the correct RAB/RAE to discard in cases like RABnnEnnBnn where net change should be 0
+
+
+# Helper function to extract the beginning and ending times using str_extract_all
+# Updated to check that four-digit times are within the proper hour
+getBeginEndTimeMatrix <- function(file, 
+                                  pullVar="precipData", 
+                                  pState="B", 
+                                  timeVar=NULL
+                                  ) {
+    
+    # FUNCTION ARGUMENTS:
+    # file: file containing data
+    # pullVar: the variable of interest in file
+    # pState: the precipitation state of interest - B (begin) or E (end)
+    # timeVar: the datetime variable in file which can be used to check consistency (NULL means no checks)
+    
+    # The basic extraction process
+    mtxBET <- file %>%
+        pull(pullVar) %>%
+        str_extract_all(paste0(pState, "\\d+"), simplify=TRUE) %>%
+        as.data.frame(stringsAsFactors=FALSE) %>%
+        tibble::as_tibble()
+    
+    # If time variable has been passed, check for consistency of extracted times
+    if (!is.null(timeVar)) {
+        chk <- mtxBET %>%
+            mutate(time=pull(file, timeVar)) %>%
+            pivot_longer(-time, names_to="column", values_to="value") %>%
+            mutate(convVal=str_replace(value, pattern="B", replacement=""), 
+                   keyMin=lubridate::minute(time), 
+                   delta=ifelse(str_length(convVal)==4, as.integer(str_sub(convVal, 3, -1))-keyMin, NA)
+                   )
+        
+        issues <- chk %>%
+            filter(delta <= 0)
+        
+        if (nrow(issues) > 0) {
+            
+            # Flag the issue
+            cat("\nMETAR has begin or end time belonging to a different record - will be deleted\n")
+            print(issues)
+            
+            # Delete the issue
+            chk <- chk %>%
+                filter(is.na(delta) | delta > 0)
+            
+            # Fix the V1-Vn due to deletions
+            chk <- chk %>%
+                group_by(time) %>%
+                mutate(column=paste0("V", row_number())) %>%
+                ungroup()
+            
+            # Update mtxBET
+            mtxBET <- chk %>%
+                select(time, column, value) %>%
+                pivot_wider(names_from=column, values_from=value) %>%
+                select(-time)
+        }
+    }
+    
+    # Return the matrix (converted to data frame)
+    mtxBET
+    
+}
+
+
+# Update to pull any cases of 2+ overBegin or 2+ overEnd
+convertExceptionsToTimes <- function(excFile, maxCol=3) {
+    
+    # Basic beginAdd (just add the METAR time)
+    beginAdd <- excFile %>%
+        filter(needBegin) %>%
+        pull(dtime) %>%
+        timeFormatter()
+    
+    # Basic endAdd (just add the METAR time)
+    endAdd <- excFile %>%
+        filter(needEnd) %>%
+        pull(dtime) %>%
+        timeFormatter()
+    
+    # Basic endExclude (just delete the earliest end time - maybe add a guard check later)
+    endExclude <- excFile %>%
+        filter(overEnd) %>%
+        select_at(vars(all_of(c("dtime", "nOverEnd", paste0("e", 1:maxCol))))) %>%
+        pivot_longer(-c(dtime, nOverEnd), names_to="column", values_to="time") %>%
+        filter(as.integer(str_replace(column, pattern="e", replacement="")) <= nOverEnd) %>%
+        pull(time)
+
+    # Basic beginExclude (just delete the earliest begin time - maybe add a guard check later)
+    beginExclude <- excFile %>%
+        filter(overBegin) %>%
+        select_at(vars(all_of(c("dtime", "nOverBegin", paste0("b", 1:maxCol))))) %>%
+        pivot_longer(-c(dtime, nOverBegin), names_to="column", values_to="time") %>%
+        filter(as.integer(str_replace(column, pattern="b", replacement="")) <= nOverBegin) %>%
+        pull(time)
+    
+    list(endAdd=endAdd, beginAdd=beginAdd, endExclude=endExclude, beginExclude=beginExclude)
+    
+}
+
+
+
+# Updated to pull out the number of overBegin and overEnd
+suggestBeginEndTimes <- function(df, 
+                                 regMatch, 
+                                 nColMax=3, 
+                                 printNACols=FALSE, 
+                                 printIssues=TRUE
+                                 ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: the data frame to be examined
+    # regMatch: the relevant regex extraction code
+    # nColMax: the maximum number of columns allowed for precipitation begins and precipitation ends
+    # printNACols: boolean, whether to print the NA column sums
+    # printIssues: boolean, whether to print out all of the issues
+    
+    # Pull the data and check for the specified precipitation pattern and lags
+    # Needs to follow the \\d{6}Z that shows the time and precede the RMK that denotes the remarks
+    sugStates <- df %>%
+        select(dtime, origMETAR) %>%
+        mutate(curPrecip=str_detect(origMETAR, paste0("\\d{6}Z.*", regMatch, ".*RMK")), 
+               lagPrecip=lag(curPrecip, 1)
+        )
+    
+    # Use the analysis data to look for begins and ends flagged in the remarks
+    sugBE <- extractPrecipData(sugStates, pType=regMatch)
+    
+    # Inner join the data by dtime
+    sugBEJoin <- sugBE %>% 
+        select(dtime, precipData, chgPrecip=isPrecip, dateUTC, hourUTC)
+    sugStates <- sugStates %>%
+        inner_join(sugBEJoin, by="dtime")
+    
+    # Get the beginning and end times data for the desired precipitation type
+    sugBegin <- getBeginEndTimeMatrix(sugStates, pState="B", timeVar="dtime")
+    sugEnd <- getBeginEndTimeMatrix(sugStates, pState="E", timeVar="dtime")
+    
+    # Ensure that user-defined maximum number of columns is not exceeded
+    if (ncol(sugBegin) > nColMax | ncol(sugEnd) > nColMax) { 
+        stop("Function argument set to allow only for 0 - ", nColMax, "columns, investigate and fix")
+    }
+    
+    # For each iteration, create testBTn and testETn (use NA if no column)
+    for (ctr in 1:nColMax) {
+        
+        # Create NA as the baseline
+        assign(paste0("testBT", ctr), NA)
+        assign(paste0("testET", ctr), NA)
+        
+        # Assign begin if exists
+        if (ncol(sugBegin) >= ctr) {
+            bt <- getBeginEndTimeVector(sugBegin, sugStates, extractVar=paste0("V", ctr), extractSym="B")
+            assign(paste0("testBT", ctr), bt)
+        }
+        
+        # Assign end if exists
+        if (ncol(sugEnd) >= ctr) {
+            et <- getBeginEndTimeVector(sugEnd, sugStates, extractVar=paste0("V", ctr), extractSym="E")
+            assign(paste0("testET", ctr), et)
+        }
+        
+    }
+    
+    # Integrate to a single file, allowing for nMaxCol applications of variables
+    # Create file sugExceptions as sugStates and initialize the columns for begins and ends
+    sugExceptions <- sugStates %>%
+        mutate(begins=0, ends=0)
+    
+    # Loop through up to nColMax, adding the appropriate bn=testBTn and en=testETn
+    for (ctr in 1:nColMax) {
+        sugExceptions <- sugExceptions %>%
+            mutate(!!paste0("b", ctr) := get(paste0("testBT", ctr)), 
+                   !!paste0("e", ctr) := get(paste0("testET", ctr)), 
+                   begins=begins + ifelse(is.na(get(paste0("b", ctr))), 0, 1),
+                   ends=ends + ifelse(is.na(get(paste0("e", ctr))), 0, 1)
+            )
+    }
+    
+    # Create the final version by checking key criteria
+    # Add a criteria for b before e if previous; and e before b if not previous?
+    # Potential issues include:
+    # Current and lagged state are the same when begins != ends
+    # Current is no, lagged is yes, ends <= begins
+    # Current is yes, lagged is no, begins <= ends
+    sugExceptions <- sugExceptions %>%
+        mutate(issueA=(lagPrecip==curPrecip & begins!=ends), # no state change should have begins==ends
+               issueB=(lagPrecip & !curPrecip & ends <= begins),  # change to 'no' should have ends>bsgins
+               issueC=(curPrecip & !lagPrecip & begins <= ends),  # change to 'yse' should have begins>ends
+               issueD=abs(begins-ends) > 1,  # state is a 1/0 so net change should be -1, 0, or 1
+               netBeginEndShouldBe=(curPrecip - lagPrecip),
+               netBeginEndIs=(begins - ends),
+               needBegin=issueC & begins==0,
+               needEnd=issueB & ends==0,
+               overBegin=(issueA & (begins > ends)) | (issueB & (ends > 0)),
+               overEnd=(issueA & (ends > begins)) | (issueC & (begins > 0)),
+               nOverBegin=pmax(0, netBeginEndIs-netBeginEndShouldBe-needEnd),
+               nOverEnd=pmax(0, netBeginEndShouldBe-netBeginEndIs-needBegin),
+               tooManyBE=issueD
+        )
+    
+    # Report on the NA status by column
+    if (printNACols) {
+        colSums(is.na(sugExceptions)) %>% 
+            print()
+    }
+    
+    # Print out the issue if requested
+    if (printIssues) {
+        printBeginEndIssues(sugExceptions, nColMax=nColMax)
+    }
+    
+    sugExceptions %>%
+        filter(issueA | issueB | issueC | issueD)
+    
+}
+
+```
+  
+With the logic updated to correct for times in the wrong METAR as well as 2+ occurrences of overBegin or overEnd, the process is re-run for Minneapolis:  
+```{r}
+
+tmpMSP2 <- combinedPrecipitation(kmsp_2016, 
+                                 pType="(?<!FZ)RA",
+                                 frameName="kmsp_2016", 
+                                 maxConsistencyPrint = 5
+                                 )
+tmpMSP2$testAllBegins[lubridate::date(tmpMSP2$testAllBegins)=="2016-09-06"]
+tmpMSP2$testAllEnds[lubridate::date(tmpMSP2$testAllEnds)=="2016-09-06"]
+
+```
+  
+The process is correctly noting that it wants to delete the erroneous 0744 record, though it remains in the data causing the same mismatch errors.
+
+The issue appears to be driven by getBeginEndTimeVector, which will be the next function to update.
