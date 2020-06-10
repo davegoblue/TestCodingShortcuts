@@ -3469,7 +3469,7 @@ tmp %>%
 It appears that this change will correct for the issue on 2016-10-12 with TSE33B36.
   
 The process can then be run for the rain data in all of the files, with outputs saved to a single master list (initial exploration showed some issues with Minneapolis and New Orleans, so these are excluded to start):  
-```{r}
+```{r cache=TRUE}
 
 # Create the list of files to run on - everything in 2016
 fileNames <- grep(pattern="2016", names(cityNameMapper), value=TRUE)
@@ -3527,7 +3527,7 @@ tmpMSY <- combinedPrecipitation(kmsy_2016, pType="(?<!FZ)RA", frameName="kmsy_20
 
 ```
   
-New Orleans is interesting in that the final hours of the final day of the pulled METARare all raining.  This leads (correctly) to no final RAE in the METAR, and the logic should be updated to place an artificial RAE in the last minute of the file.  Without that, there is recycling, and the interval becomes -365 days.  There is a similar need to add logic in case the beginning state is RAB.
+New Orleans is interesting in that the final hours of the final day of the pulled METAR are all raining.  This leads (correctly) to no final RAE in the METAR, and the logic should be updated to place an artificial RAE in the last minute of the file.  Without that, there is recycling, and the interval becomes -365 days.  There is a similar need to add logic in case the beginning state is RAB.
   
 The Minneapolis data are run stand-alone since there are many issues:  
 ```{r}
@@ -3562,7 +3562,7 @@ Next steps are to investigate and fix the following:
 The functions that need updating are suggestBeginEndTimes and convertExceptionsToTimes and getBeginEndTimeMatrix:  
 ```{r}
 
-# Updateds function to account for:
+# Updated function to account for:
 # 1. Remove any RAB/RAE observations that have dddd that 'belongs' to a different hourly METAR
 # 2. Check whether overBegin or overEnd have 2+ causes, and delete all that are necessary
 # 3. Upgrade logic to manage a starting state of precipitation, or an ending state of precipitation
@@ -3803,3 +3803,359 @@ tmpMSP2$testAllEnds[lubridate::date(tmpMSP2$testAllEnds)=="2016-09-06"]
 The process is correctly noting that it wants to delete the erroneous 0744 record, though it remains in the data causing the same mismatch errors.
 
 The issue appears to be driven by getBeginEndTimeVector, which will be the next function to update.
+  
+A revisit to the precipitation extraction seems in order.  Broadly, the extraction process is designed to get two things:  
+  
+* Precipitation state (yes/no by type) for each entry in the METAR  
+* Precipitation ranges (start and end times for each interval of precipitation type)  
+  
+Extracting the precipitation state is simple, and is based on ddddddZ...pType...RMK occurring somewhere in the METAR.
+
+Extracting the data for constructing the ranges is based on RMK...pTypeBnnEnnBnn... type records.  There is a need to convert the range data to date-time, to check that the ranges are consistent with the extracted precipitation states, and to make a best guess change to the range data to drive the alignment.
+
+This suggests three functions:
+  
+* Function #1: Extract the precipitation state and precipitation range data for each entry  
+* Function #2: Convert ranges data to date-time  
+* Function #3: Correct for any inconsistencies in ranges date-time and METAR precipitation states  
+  
+Example code includes:  
+```{r}
+
+# Function to extract precipitation state and range data from METAR
+fnPrecip1 <- function(df, pType, showRegex=TRUE) {
+
+    # The remarks pattern is created based on the precipitation type
+    keyPattern <- paste0("(", pType, "[B|E]\\d+[0-9BE]*)")
+    if (showRegex) { cat("\nRegex search code is:", keyPattern, "\n") }
+    
+    # Extract the current precipitation state, lagged precipitation state, and range data from METAR
+    df <- df %>% 
+        select(origMETAR, dtime) %>% 
+        mutate(strPrecip=str_extract(origMETAR, pattern=keyPattern), 
+               curPrecip=str_detect(origMETAR, pattern=paste0("\\d{6}Z.*", pType, ".*RMK")),
+               lagPrecip=lag(curPrecip, 1)
+               )
+    
+    # Confirm that df is unique by dtime (algorithm depends on this)
+    dups <- df %>%
+        select(dtime) %>%
+        duplicated() %>%
+        any()
+    if (dups) {
+        stop("\nThere are duplicate values of dtime - investigate and fix\n")
+    }
+    
+    # Returnt the file
+    df
+    
+}
+
+msp_precip1 <- fnPrecip1(kmsp_2016, pType="(?<!FZ)RA")
+msp_precip1
+
+```
+  
+The next function splits out the B/E data in strPrecip and creates times for each:
+```{r}
+
+# Helper function to zero-pad
+zeroPad <- function(x, width=2, side="left", pad="0") {
+    
+    str_pad(x, width=width, side=side, pad=pad)
+    
+}
+
+# Helper function to take a date-time and a minutes and create a new date-time
+helperBEDateTime <- function(dt, mins) {
+    
+    # Create the date as character (lubridate and dplyr do not always work well together)
+    dateChar <- ifelse(str_length(mins)==4 & str_sub(mins, 1, 2)=="23", 
+                       as.character(lubridate::as_date(lubridate::date(dt)-1)), 
+                       as.character(lubridate::date(dt))
+                       )
+    
+    # Create the hours and minutes as character
+    hrMinChar <- ifelse(str_length(mins)==4, 
+                        mins, 
+                        paste0(zeroPad(lubridate::hour(dt)), mins)
+                        )
+    
+    # Return the appropriate date-time
+    lubridate::ymd_hm(paste0(dateChar, " ", hrMinChar))
+
+}
+
+# Function to create times for each piece of B/E data
+fnPrecip2 <- function(df) {
+
+    # Create the begin and end times by splitting precipString, then format as tibble and reattach dtime
+    bEData <- df %>%
+        pull(strPrecip) %>%
+        str_extract_all(pattern="[BE]\\d+", simplify=TRUE) %>%
+        as.data.frame(stringsAsFactors=FALSE) %>%
+        tibble::as_tibble() %>%
+        bind_cols(select(df, dtime))
+    
+    # Pivot longer, create a dummy record where is.na(V1), and split in to time and state change
+    bEData <- bEData %>%
+        pivot_longer(-dtime) %>%
+        mutate(value=ifelse(name=="V1" & is.na(value), paste0("N", lubridate::minute(dtime)), value)) %>%
+        filter(value != "") %>%
+        mutate(chgType=str_sub(value, 1, 1), 
+               chgNum=str_sub(value, 2, -1), 
+               chgTime=helperBEDateTime(dt=dtime, mins=chgNum)
+               )
+    
+    # Return the data
+    bEData
+    
+}
+
+msp_precip2 <- fnPrecip2(msp_precip1)
+msp_precip2
+
+```
+  
+Then a function can be written to extract issues where the times are out of sequence:
+```{r}
+
+# Function to extract issues - continuity, distance from METAR
+fnPrecip3 <- function(df) {
+
+    issueCheck <- df %>%
+        mutate(deltaMETAR=dtime-chgTime, 
+               deltaPrev=ifelse(row_number()==1, 3600, chgTime-lag(chgTime, 1)), 
+               issueCons=(deltaMETAR < 0 | deltaMETAR > 3599 | deltaPrev <= 0)
+               )
+    
+    cat("\nContinuity or consistency error - record(s) will be deleted\n")
+    issueCheck %>%
+        filter(issueCons) %>%
+        print()
+    
+    issueCheck %>%
+        select(-deltaMETAR, -deltaPrev) %>%
+        filter(!issueCons)
+    
+}
+
+msp_precip3 <- fnPrecip3(msp_precip2)
+msp_precip3
+
+```
+  
+Then a function can be written to find issues where there are the wrong number, or wrong ordering, of begin and end times:  
+```{r}
+
+# Function to find wrong sequence of times
+fnPrecip4 <- function(dfTimes, dfOrig) {
+    
+    # Pivot dfTimes back to a single record, discarding any of the consistency issues
+    # OK if not all dtimes included; will get from dfOrig
+    dfCheck <- dfTimes %>%
+        filter(!issueCons) %>%
+        mutate(newValue=case_when(chgType=="N" ~ 0, chgType=="B" ~ 1, chgType=="E" ~ -1)) %>%
+        pivot_wider(dtime, names_from="name", values_from="newValue") %>%
+        right_join(select(dfOrig, dtime, curPrecip, lagPrecip), by="dtime") %>%
+        mutate_if(is.numeric, ~ifelse(is.na(.), 0, .))
+    
+    # Create the cumsum of state change
+    cs <- dfCheck %>%
+        select(-dtime, -curPrecip) %>%
+        mutate(lagPrecip=as.integer(lagPrecip)) %>%
+        select(lagPrecip, everything()) %>%
+        apply(1, FUN=cumsum) %>%
+        t()
+    
+    # Create the list of issues
+    # If cumsum is every anything other than 1 or 0 there is a problem
+    # If the last value of cumsum does not equal curPrecip there is a problem
+    issue01 <- which(apply(cs, 1, FUN=max) > 1 | apply(cs, 1, FUN=min) < 0)
+    issuelc <- which(dfCheck$curPrecip != cs[, ncol(cs)])
+    issueAll <- sort(unique(c(issue01, issuelc)))
+    
+    cat("\n\nIssues with begin when precipitation or end when no precipitation:", length(issue01))
+    cat("\nIssues where state change does not add to the total:", length(issuelc))
+    cat("\nTotal issues (may be less than sum due to same datetime in both):", length(issueAll), "\n\n")
+    # print(dfCheck[issueAll, ] %>% select(dtime, lagPrecip, everything()))
+    
+    dfCheck[sort(unique(c(issue01, issuelc))), "dtime"]
+    
+}
+
+# Get the list of bad date-times
+msp_precip4 <- fnPrecip4(msp_precip3, msp_precip1)
+
+```
+  
+Then, a function can work through only the bad date-times, leaving the good date-times "as is"
+```{r}
+
+# Function to work through each bad date-time and suggest new ranges
+fnPrecip5 <- function(df, issueTimes, lagCurFrame) {
+    
+    # Create a dataframe for issueTimes
+    issues <- issueTimes %>%
+        mutate(issue=TRUE)
+    
+    # Split df in to issues and non-issue
+    df <- df %>%
+        left_join(issues, by="dtime") %>%
+        mutate(issue=ifelse(is.na(issue), FALSE, issue), 
+               lastRecord=(row_number()==n())
+               ) %>%
+        left_join(select(lagCurFrame, dtime, lagPrecip, curPrecip), by="dtime")
+    
+    dfIssues <- df %>%
+        filter(issue)
+    dfNoIssues <- df %>%
+        filter(!issue)
+    
+    # Note the records to be worked through
+    cat("\nRecords to be addressed include:\n")
+    dfIssues %>%
+        select(-issueCons, -issue) %>%
+        print()
+
+    # Work through a record by starting with lagPrecip
+    # If first record inconsistent with lagPrecip, flag for deletion and keep state; update state otherwise
+    # if next record inconsistent with previous state, flag for deletion and keep state; update otherwise
+    # If final record inconsistent with curPrecip, add a record using dtime as the time
+    
+    # Get the unique times with issues
+    dtimeVec <- dfIssues %>% pull(dtime) %>% unique()
+    
+    # Create empty vectors for deletes and adds
+    delVec <- as.POSIXct(character(0))
+    addBegin <- as.POSIXct(character(0))
+    addEnd <- as.POSIXct(character(0))
+    
+    # Populate the delete and add vectors
+    for (dt in dtimeVec) {
+        
+        # Pull the records for this time
+        dtRecords <- dfIssues %>% filter(dtime==lubridate::as_datetime(dt))
+        
+        # Initialize the previous state to lagPrecip and the error vector to blank
+        preState <-dtRecords$lagPrecip[1]
+        
+        # Loop through and flag state change errors
+        for (ctr in 1:nrow(dtRecords)) {
+            
+            # Grow the deletions vector
+            if ((!preState & dtRecords$chgType[ctr]=="E") | (preState & dtRecords$chgType[ctr]=="B")) {
+                delVec <- c(delVec, dtRecords$chgTime[ctr])
+                # do not modify the state, it has not changed due to the deletion
+            } else {
+                # do not grow the deletion vector, the state change is OK here if chgType is not "N"
+                if (dtRecords$chgType[ctr] != "N") { preState <- !preState }
+            }
+            
+            # Create a single addition if needed
+            if (ctr==nrow(dtRecords) & preState != dtRecords$curPrecip[ctr]) {
+                if (dtRecords$curPrecip[ctr]) { addBegin <- c(addBegin, dt) }
+                if (!dtRecords$curPrecip[ctr]) { addEnd <- c(addEnd, dt) }
+            }
+        }
+        
+    }
+    
+    # If there is precipitation at the very end, addEnd for dTime+1
+    fixEnd <- dfNoIssues %>%
+        filter(lastRecord & curPrecip) %>%
+        mutate(timeUse=dtime+1) %>%
+        pull(timeUse)
+    if (length(fixEnd) > 0) {
+        addEnd <- c(addEnd, fixEnd)
+        cat("\nAdding final end time to cap interval at end of file:", as.character(fixEnd), "\n")
+    }
+    
+    # Print the key vectors
+    cat("\nStart/end times deleted:\n")
+    print(lubridate::as_datetime(delVec))
+    cat("\nBegin times added\n")
+    print(lubridate::as_datetime(addBegin))
+    cat("\nEnd times added:\n")
+    print(lubridate::as_datetime(addEnd))
+    
+    # Create the full list of issue start times
+    beginIssues <- dfIssues %>%
+        filter(chgType=="B") %>%
+        pull(chgTime)
+    endIssues <- dfIssues %>%
+        filter(chgType=="E") %>%
+        pull(chgTime)
+    
+    beginIssues <- c(beginIssues[!beginIssues %in% delVec], addBegin)
+    endIssues <- c(endIssues[!endIssues %in% delVec], addEnd)
+
+    # cat("\nNew begin times list from issues:\n")
+    # print(beginIssues)
+    # cat("\nNew end times list from issues:\n")
+    # print(endIssues)
+    
+    # Create the full list of start and end times
+    beginOK <- dfNoIssues %>%
+        filter(chgType=="B") %>%
+        pull(chgTime)
+    endOK <- dfNoIssues %>%
+        filter(chgType=="E") %>%
+        pull(chgTime)
+    
+    # Return a list of beginTimes and endTimes
+    list(beginTimes=sort(c(beginOK, beginIssues)), 
+         endTimes=sort(c(endOK, endIssues))
+         )
+    
+}
+
+
+msp_precip5 <- fnPrecip5(msp_precip3, issueTimes=msp_precip4, lagCurFrame=msp_precip1)
+
+
+```
+  
+The intervals can then be checked for consistency:  
+```{r}
+
+fnPrecip6 <- function(lst, df){
+
+    # Extract the beginning and interval times
+    begins <- lst[["beginTimes"]]
+    ends <- lst[["endTimes"]]
+    durs <- ends - begins
+
+    # Create intervals from the raw list file
+    precipInts <- interval(begins, ends - 1) # make the interval stop the minute before the end time
+    
+    # Extract the METAR and date-time information and check for overlaps
+    dtime <- df %>% pull(dtime)
+    metar <- df %>% pull(origMETAR)
+    precipMETAR <- df %>% pull(curPrecip)
+    intMETAR <- sapply(dtime, FUN=function(x) {x %within% precipInts %>% any()})
+
+    # Check for the consistency of the observations and print the mismatches
+    print(table(precipMETAR, intMETAR))
+
+    mism <- which(precipMETAR != intMETAR)
+    if (length(mism) == 0) {
+        cat("\nFull matches between METAR observations and intervals\n")
+    } else {
+        for (x in mism) {
+            cat("\nMismatch at time", strftime(dtime[x], format="%Y-%m-%d %H:%M", tz="UTC"), "UTC\n")
+            print(metar[max(1, x-2):min(length(metar), x+2)])
+        }
+    }
+    
+    list(beginTimes=lst$beginTimes, endTimes=lst$endTimes, 
+         precipInts=precipInts, mismatches=mism, mismatchTimes=dtime[mism]
+         )
+    
+}
+
+msp_precip6 <- fnPrecip6(msp_precip5, msp_precip1)
+
+```
+  
+The algorithm correctly fixes the Minneapolis issues, though it is still rather clunky.  Next steps are to make a general algorithm and run against all locales.
