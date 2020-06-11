@@ -4159,3 +4159,157 @@ msp_precip6 <- fnPrecip6(msp_precip5, msp_precip1)
 ```
   
 The algorithm correctly fixes the Minneapolis issues, though it is still rather clunky.  Next steps are to make a general algorithm and run against all locales.
+  
+A final function is built to combine the precipitation functions:  
+```{r}
+
+# Function to combine precipitation functions
+combinePrecipFunctions <- function(df, 
+                                   pType="(?<!FZ)RA", 
+                                   errorLengthInconsistency=TRUE
+                                   ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble containing processed METAR data, including dtime and origMETAR
+    # pType: regex code for the precipitation type of interest
+    # errorLengthInconsistency: boolean, whether to error out if beginTimes, endTimes, or precipInts have different lengths or imply intervals of non-positive durection
+    
+    # Extract the current precipitation state, lagged precipitation state, and string of begin/end times
+    precip1 <- fnPrecip1(df, pType=pType)
+    
+    # Find and delete continuity (next before previous) and consistency (belongs to wrong METAR) errors
+    precip3 <- fnPrecip2(precip1) %>%
+        fnPrecip3()
+    
+    # Find issues with precipitation begin and end times compared to each other and precipitation states
+    precip4 <- fnPrecip4(precip3, precip1)
+    
+    # Correct for the issues with begin and end times and create a vector of begin times and end times
+    precip5 <- fnPrecip5(precip3, issueTimes=precip4, lagCurFrame=precip1)
+    
+    # Check intervals for consistency with precipitation states
+    precip6 <- fnPrecip6(precip5, precip1)
+    
+    # Extract beginTimes, endTimes, and precipInts
+    beginTimes <- precip6$beginTimes
+    endTimes <- precip6$endTimes
+    precipInts <- precip6$precipInts
+    
+    # Check that the intervals are all positive and with same number of begin times and end times
+    lenBT <- length(beginTimes)
+    lenET <- length(endTimes)
+    lenPI <- length(precipInts)
+    piNotPositive <- (lubridate::time_length(precipInts) <= 0)
+    
+    # Check for same lengths    
+    if (max(lenBT, lenET, lenPI) != min(lenBT, lenET, lenPI)) {
+        cat("Inconsistent lengths - beginTimes:", lenBT, ", endTimes:", lenET, "precipInts:", lenPI, "\n")
+        if (errorLengthInconsistency) { 
+            stop("Exiting due to inconsistent lengths") 
+        } else {
+            cat("\nContinuing to process, output frame will append NA where needed\n")
+            maxLen <- max(lenBT, lenET, lenPI)
+            beginTimes <- c(beginTimes, rep(NA, maxLen-lenBT))
+            endTimes <- c(endTimes, rep(NA, maxLen-lenET))
+            precipInts <- c(precipInts, rep(NA, maxLen-lenPI))
+        }
+    }
+    
+    # Check for positive intervals
+    if (sum(piNotPositive) > 0) {
+        cat("\nPrecipitation intervals are non-positive:", 
+            sum(piNotPositive), 
+            "at positions",
+            which(piNotPositive), 
+            "\n"
+            )
+        if (errorLengthInconsistency) { stop("Exiting due to inconsistency in interval lengths") } 
+    }
+    
+    
+    # Return the relevant information
+    list(pStateFrame=precip1, 
+         pIssueTimes=precip4,
+         mismatches=precip6$mismatches,
+         mismatchTimes=precip6$mismatchTimes,
+         beginEndInterval=tibble::tibble(beginTimes=beginTimes, endTime=endTimes, precipInts=precipInts)
+         )
+    
+}
+
+```
+  
+The function can then be run for the Minneapolis 2016 rain data:  
+```{r}
+
+kmsp_2016_RA <- combinePrecipFunctions(kmsp_2016, pType="(?<!FZ)RA", errorLengthInconsistency=TRUE)
+
+```
+  
+And the function can then be run for rain for all of the 2016 data:
+```{r}
+
+fileNames <- grep(pattern="2016", names(cityNameMapper), value=TRUE)
+rainList <- vector("list", length(fileNames))
+names(rainList) <- paste0(fileNames, "_RA")
+
+for (city in fileNames) {
+    
+    cat("\n\n*** Processing for:", cityNameMapper[city], "\n")
+    # Run the rain extraction for city and store in rainList
+    rainList[[paste0(city, "_RA")]] <- combinePrecipFunctions(get(city), 
+                                                              pType="(?<!FZ)RA", 
+                                                              errorLengthInconsistency=TRUE
+                                                              )
+    
+}
+
+```
+  
+The rain data parsed successfully, with all intervals of the proper length.
+
+The function can also be run for snow for all of the 2016 data:  
+```{r}
+
+fileNames <- grep(pattern="2016", names(cityNameMapper), value=TRUE)
+snowList <- vector("list", length(fileNames))
+names(snowList) <- paste0(fileNames, "_SN")
+
+for (city in fileNames) {
+    
+    cat("\n\n*** Processing for:", cityNameMapper[city], "\n")
+    # Run the snow extraction for city and store in snowList
+    snowList[[paste0(city, "_SN")]] <- combinePrecipFunctions(get(city), 
+                                                              pType="(?<!BL)SN", 
+                                                              errorLengthInconsistency=TRUE
+                                                              )
+    
+}
+
+```
+  
+The snow data parsed successfully, with all intervals of the proper length.
+
+The function can also be run for thunderstorm for all of the 2016 data:  
+```{r}
+
+fileNames <- grep(pattern="2016", names(cityNameMapper), value=TRUE)
+thunderList <- vector("list", length(fileNames))
+names(thunderList) <- paste0(fileNames, "_TS")
+
+for (city in fileNames) {
+    
+    cat("\n\n*** Processing for:", cityNameMapper[city], "\n")
+    # Run the thunder extraction for city and store in thunderList
+    thunderList[[paste0(city, "_TS")]] <- combinePrecipFunctions(get(city), 
+                                                                 pType="(?<!VC)TS", 
+                                                                 errorLengthInconsistency=TRUE
+                                                                 )
+    
+}
+
+```
+  
+The thunder data parsed successfully, with all intervals of the proper length.  Notably, there were proportionally many more changes to the begin times and end times for thunder than with rain or snow, suggesting that tracking TSBnnEnn may be less precise than tracking RABnnEnn and SNBnnEnn.
+  
+Next steps are to create and plot metrics by precipitation type across locales.
