@@ -4291,7 +4291,7 @@ for (city in fileNames) {
 The snow data parsed successfully, with all intervals of the proper length.
 
 The function can also be run for thunderstorm for all of the 2016 data:  
-```{r}
+```{r cache=TRUE}
 
 fileNames <- grep(pattern="2016", names(cityNameMapper), value=TRUE)
 thunderList <- vector("list", length(fileNames))
@@ -4313,3 +4313,248 @@ for (city in fileNames) {
 The thunder data parsed successfully, with all intervals of the proper length.  Notably, there were proportionally many more changes to the begin times and end times for thunder than with rain or snow, suggesting that tracking TSBnnEnn may be less precise than tracking RABnnEnn and SNBnnEnn.
   
 Next steps are to create and plot metrics by precipitation type across locales.
+
+There are several areas of interest for precipitation:  
+  
+* What were the monthly totals of precipitation time by locale?  
+* How many total precipitation events occurred by time and locale?  
+* How much total time of each precipitation was observed in each locale?  
+* How many total precipitation events were observed in each locale?  
+  
+The first function takes a list and returns total precipitation length and total precipitation events by locale and month (overall totals can be summed from this):  
+```{r}
+
+# Extract precipitation information (total hours, number of events) by locale and month
+precipByLocale <- function(lst, 
+                           listItem="beginEndInterval", 
+                           subName=-4, 
+                           intervalVar="precipInts", 
+                           minTime=ymd("2016-01-01"),
+                           maxTime=ymd("2016-12-31"), 
+                           mapper=cityNameMapper
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst - the list containing the output for the specified precipitation type
+    # listItem - the name of the item to extract from each element of the list
+    # subName - the second argument for str_sub() for converting list item name to original file name
+    # intervalVar - name of the interval variable in listItem
+    # minTime - ignore any interval with a start time before this date
+    # maxTime - ignore any interval with a start time after this date
+    # mapper - named vector for mapping source to descriptive locale
+    
+    # Get the names of the objects in the list
+    beNames <- names(lst) %>% str_sub(1, subName)
+    
+    # Get the interval data by locale and apply the original file names
+    beData <- sapply(lst, FUN="[", listItem)
+    names(beData) <- beNames
+    
+
+    # Get the total precipitation length and total precipitation events by month
+    # Exclude any event that begins before beginDate or after afterDate
+    # Count the precipitation as being in the month when it begins
+    
+    # Helper function for extraction of total precipitation by month
+    getMonthly <- function(x, y=intervalVar, minT=minTime, maxT=maxTime) {
+        x %>%
+            mutate(intStart=lubridate::int_start(get(intervalVar)), 
+                   intHours=lubridate::time_length(get(intervalVar))/3600, 
+                   month=factor(month.abb[lubridate::month(intStart)], levels=month.abb)
+                   ) %>%
+            filter(intStart >= minTime, intStart <= maxTime) %>%
+            group_by(month) %>%
+            summarize(hours=sum(intHours), events=n()) %>%
+            right_join(tibble::tibble(month=factor(month.abb, levels=month.abb)), by="month") %>%
+            mutate(hours=ifelse(is.na(hours), 0, hours), 
+                   events=ifelse(is.na(events), 0 , events)
+                   ) %>%
+            select(month, hours, events) %>%
+            pivot_longer(-month, names_to="variable", values_to="value")
+    }
+    
+    # Extract total hours and events by month
+    monPrecip <- purrr::map_dfr(beData, .f=getMonthly, .id="source")
+    
+    # Pivot wider so that file is unique by source-month with hours and events are columns
+    # Add locale name from mapper
+    monPrecip %>%
+        pivot_wider(c(source, month), names_from="variable", values_from="value") %>%
+        mutate(locale=mapper[source]) %>%
+        select(source, locale, everything())
+    
+}
+
+```
+  
+The function can then be run on thunderList:  
+```{r}
+
+thunderLength <- precipByLocale(thunderList)
+thunderLength
+
+```
+  
+A function can then be written to create four types of plots:  
+  
+* Total precipitation length by locale  
+* Total precipitation events by locale  
+* Precipitation length by month, faceted by locale  
+* Precipitation events by month, faceted by locale  
+  
+```{r}
+
+plotPrecipitation <- function(tbl, 
+                              pTypeName=""
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # tbl: the tibble containing the processed data
+    # pTypeName: the type of precipitation as a character
+    
+    # Plot 1: Total precipitation length by locale
+    p1 <- tbl %>%
+        group_by(locale) %>%
+        summarize(hours=sum(hours)) %>%
+        ggplot(aes(x=fct_reorder(locale, hours), y=hours)) +
+        geom_col(fill="lightblue") +
+        geom_text(aes(label=round(hours), y=hours/2)) + 
+        coord_flip() + 
+        labs(x="", 
+             y="Hours", 
+             title=paste0("Total hours of ", stringr::str_to_lower(pTypeName), " by locale")
+             )
+    print(p1)
+    
+    
+    # Plot 2: Total precipitation events by locale
+    p2 <- tbl %>%
+        group_by(locale) %>%
+        summarize(events=sum(events)) %>%
+        ggplot(aes(x=fct_reorder(locale, events), y=events)) +
+        geom_col(fill="lightblue") +
+        geom_text(aes(label=round(events), y=events/2)) + 
+        coord_flip() + 
+        labs(x="", 
+             y="# Unique Events", 
+             title=paste0("Total unique events of ", stringr::str_to_lower(pTypeName), " by locale"), 
+             caption="An event is defined by a begin and end and may be as short as a minute\nor with as little as a minute gap to the next event"
+             )
+    print(p2)
+    
+    
+    # Plot 3: Precipitation length by month, facetted by locale
+    mm <- tbl %>%
+        group_by(month) %>%
+        summarize(hours=mean(hours))
+    p3 <- tbl %>%
+        ggplot(aes(x=month, y=hours)) +
+        geom_col(fill="lightblue") +
+        labs(y="Hours", 
+             x="", 
+             title=paste0("Total hours of ", stringr::str_to_lower(pTypeName), " by month"), 
+             subtitle="Red dots are the monthly average across locales in this plot"
+             ) + 
+        geom_point(data=mm, color="red") +
+        facet_wrap(~ locale) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p3)
+    
+    # Plot 4: Precipitation events by month, facetted by locale
+    mm <- tbl %>%
+        group_by(month) %>%
+        summarize(events=mean(events))
+    p4 <- tbl %>%
+        ggplot(aes(x=month, y=events)) +
+        geom_col(fill="lightblue") +
+        labs(y="# Unique Events", 
+             x="", 
+             title=paste0("Total unique events of ", stringr::str_to_lower(pTypeName), " by month"), 
+             subtitle="Red dots are the monthly average across locales in this plot", 
+             caption="An event is defined by a begin and end and may be as short as a minute\nor with as little as a minute gap to the next event"
+             ) + 
+        geom_point(data=mm, color="red") +
+        facet_wrap(~ locale) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p4)
+    
+}
+
+```
+  
+The function is then run for the thunder data:  
+```{r}
+
+plotPrecipitation(thunderLength, pTypeName="thunder")
+
+```
+  
+Processing is then run for the rain and snow data:  
+```{r cache=TRUE}
+
+fileNames <- grep(pattern="2016", names(cityNameMapper), value=TRUE)
+rainList <- vector("list", length(fileNames))
+names(rainList) <- paste0(fileNames, "_RA")
+
+for (city in fileNames) {
+    
+    cat("\n\n*** Processing for:", cityNameMapper[city], "\n")
+    rainList[[paste0(city, "_RA")]] <- combinePrecipFunctions(get(city), 
+                                                              pType="(?<!FZ)RA", 
+                                                              errorLengthInconsistency=TRUE
+                                                                 )
+    
+}
+
+
+fileNames <- grep(pattern="2016", names(cityNameMapper), value=TRUE)
+snowList <- vector("list", length(fileNames))
+names(snowList) <- paste0(fileNames, "_SN")
+
+for (city in fileNames) {
+    
+    cat("\n\n*** Processing for:", cityNameMapper[city], "\n")
+    snowList[[paste0(city, "_SN")]] <- combinePrecipFunctions(get(city), 
+                                                              pType="(?<!BL)SN", 
+                                                              errorLengthInconsistency=TRUE
+                                                              )
+    
+}
+
+```
+  
+All precipitation intervals extracted are consistent with the precipitation noted in the METAR.  
+  
+Plots can then be created for the rain data and snow data:  
+```{r}
+
+rainLength <- precipByLocale(rainList)
+plotPrecipitation(rainLength, pTypeName="rain")
+
+snowLength <- precipByLocale(snowList)
+plotPrecipitation(snowLength, pTypeName="snow")
+
+```
+  
+Findings from the plots include:  
+  
+RAIN:  
+  
+* Las Vegas experience the fewest hours of rain, as expected for a desert, while San Diego also experiences well below average hours of rain  
+* Average hours of rainfall appear seasonal, with a peak in spring and then a smaller peak in fall  
+* Note that this analysis is for hours not for inches, so an hour of heavy rains associated with summer convection will be treated the same as an hour of very light rain during the change of seasons  
+  
+SNOW:  
+  
+* Houston, Las Vegas, New Orleans, and San Diego experienced no snow in 2016  
+* Traverse City and Grand Rapids, both in the lake effect belt, experienced the most hours of snow in 2016  
+* Snow is highly seasonal, occurring in the cold season as expected  
+  
+THUNDER:  
+  
+* New Orleans and Houston experienced the most hours of thunder, as expected for hot-humid cities near the Gulf of Mexico  
+* San Diego almost never experiences thunder, as expected for a city on the Pacific coast  
+* Thunder is seasonal, occurring more often in the warm season as expected  
+  
+Next steps are to combine all of the precipitation functions, allow for output to be directed to a log file, and save processed EDA and precipitation data for later use.
+  
