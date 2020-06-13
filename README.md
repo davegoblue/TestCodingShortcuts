@@ -1957,4 +1957,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherEDA_202005_v001 includes re-writes for the precipitation extraction functions  
 * WeatherEDA_202005_v001 includes combines precipitation extraction functions  
 * WeatherEDA_202005_v001 includes runs precipitation extraction functions for all locales  
+* WeatherEDA_202005_v001 extracts daily summaries for high-low temperature and precipitation amount  
   
