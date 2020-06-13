@@ -4556,5 +4556,216 @@ THUNDER:
 * San Diego almost never experiences thunder, as expected for a city on the Pacific coast  
 * Thunder is seasonal, occurring more often in the warm season as expected  
   
-Next steps are to combine all of the precipitation functions, allow for output to be directed to a log file, and save processed EDA and precipitation data for later use.
+#### _Daily Summaries_  
+METAR periodically contain aggregated summaries of the day's weather.  Two areas summarized include temperature and precipitation:  
   
+* RMK.* 4dddddddd - the first dddd are the daily high temperature (leading d is 1 for negative, trailing d is decimal, report is in Celsius) and the second dddd are the daily low temperature  
+* RMK.* Pdddd - the amount of liquid precipipitation in the past hour, in hundredths of inches  
+* RMK.* 6dddd - the amount of liquid precipitation in the past 3/6 hours, in hundredths of inches  
+* RMK.* 7dddd - the amount of liquid precipitation in the past 24 hours, in hundredths of inches  
+  
+A function is written to extract daily high and low temperatures:  
+```{r}
+
+# Helper function to convert 4-digit function to temperature
+convertTemp <- function(x, convF=TRUE) {
+    
+    # Convert to numeric
+    temp <- ifelse(str_sub(x, 1, 1)==1, -1, 1) * as.numeric(str_sub(x, 2, 4)) / 10
+    
+    # Convert to Fahrenheit if requested
+    if (convF) {
+        temp <- round(32 + temp * 9/5, 0)
+    }
+    
+    temp
+    
+}
+
+# Extract the daily high and low temperature (convert to rounded Fahrenheit)
+getDailyHighLow <- function(df) {
+
+    # If a character has been passed, convert to the associated object
+    if (is.character(df)) {
+        df <- get(df)
+    }
+    
+    df %>%
+        select(dtime, origMETAR) %>%
+        mutate(tempData=str_extract(origMETAR, pattern="RMK.* 4\\d{8}"), 
+               tempFHi=convertTemp(str_sub(tempData, -8, -5)), 
+               tempFLo=convertTemp(str_sub(tempData, -4, -1))
+               ) %>%
+        select(-origMETAR)
+    
+}
+
+```
+  
+The function can then be run for all the 2016 data:  
+```{r}
+
+# Extracted high-low temperatures
+all_2016_hilo <- map_dfr(.x=fileNames, .f=getDailyHighLow, .id="source") %>%
+    mutate(source=fileNames[as.integer(source)], locale=cityNameMapper[source]) %>%
+    select(source, locale, everything())
+all_2016_hilo
+
+# Counts of !is.na by hour
+all_2016_hilo %>%
+    mutate(hour=lubridate::hour(lubridate::round_date(dtime, unit="hours")), 
+           notNA=!is.na(tempFHi)
+           ) %>%
+    ggplot(aes(x=hour, fill=notNA)) + 
+    geom_bar(position="stack") + 
+    scale_fill_discrete("Hi-Lo Data") + 
+    labs(y="Number of Daily Observations", x="METAR Hour", 
+         title="Daily High-Low temperatures are captured based on time zone"
+         ) + 
+    facet_wrap(~locale)
+
+# Box plots of high and low temperatures by locale by month
+all_2016_hilo %>%
+    mutate(month=lubridate::month(dtime)) %>%
+    filter(!is.na(tempData)) %>%
+    ggplot(aes(x=factor(month.abb[month], levels=month.abb))) + 
+    geom_boxplot(aes(y=tempFHi), fill="pink") + 
+    labs(y="Temperature (F)", x="", 
+         title="Daily High Temperatures by Month by Locale"
+         ) + 
+    facet_wrap(~locale) + 
+    theme(axis.text.x=element_text(angle=90))
+
+all_2016_hilo %>%
+    mutate(month=lubridate::month(dtime)) %>%
+    filter(!is.na(tempData)) %>%
+    ggplot(aes(x=factor(month.abb[month], levels=month.abb))) + 
+    geom_boxplot(aes(y=tempFLo), fill="lightblue") + 
+    labs(y="Temperature (F)", x="", 
+         title="Daily Low Temperatures by Month by Locale"
+         ) + 
+    facet_wrap(~locale) + 
+    theme(axis.text.x=element_text(angle=90))
+
+```
+  
+The high-low temperatures appear to be calculated almost always at 6Z in 8 Central time zone locales; captured almost always at 5Z in 5 East time zone locales; and captured almost always at 8Z in 2 West time zone locales.
+
+Precipitation data can also be extracted by function:  
+```{r}
+
+# Helper function to convert 5-character precipitation to inches
+convertPrecip <- function(x, begPos=-4, endPos=-1) {
+    
+    # Convert to numeric and divide by 100 to get inches
+    as.numeric(str_sub(x, begPos, endPos)) / 100
+
+}
+
+# Extract precipitation amounts in inches
+getPrecipAmount <- function(df) {
+    
+    # If a character has been passed, convert to the associated object
+    if (is.character(df)) {
+        df <- get(df)
+    }
+    
+    df %>%
+        select(dtime, origMETAR) %>%
+        mutate(p1Inches=convertPrecip(str_extract(origMETAR, pattern="RMK.* P\\d{4}")), 
+               p36Inches=convertPrecip(str_extract(origMETAR, pattern="RMK.* 6\\d{4}")), 
+               p24Inches=convertPrecip(str_extract(origMETAR, pattern="RMK.* 7\\d{4}"))
+               ) %>%
+        select(-origMETAR)
+    
+}
+
+```
+  
+The function can then be run for all the 2016 data:  
+```{r}
+
+# Extracted high-low temperatures
+all_2016_pin <- map_dfr(.x=fileNames, .f=getPrecipAmount, .id="source") %>%
+    mutate(source=fileNames[as.integer(source)], locale=cityNameMapper[source]) %>%
+    select(source, locale, everything())
+all_2016_pin
+
+# Map of variable to chart name
+mapChartVar <- c(p1Inches="1-hr Precip", p36Inches="3-hr or 6-hr Precip", p24Inches="24-hr Precip")
+
+for (plotVar in c("p1Inches", "p36Inches", "p24Inches")) {
+    
+    # Counts of !is.na by hour
+    p1 <- all_2016_pin %>%
+        mutate(hour=factor(lubridate::hour(lubridate::round_date(dtime, unit="hours"))), 
+               notNA=!is.na(get(plotVar))
+               ) %>%
+        ggplot(aes(x=hour, fill=notNA)) + 
+        geom_bar(position="stack") + 
+        scale_fill_discrete(paste0(mapChartVar[plotVar], " Data")) + 
+        labs(y="Number of Days with Observations at Hour", x="METAR Hour", 
+             title=paste0("Capture for ", mapChartVar[plotVar])
+             ) + 
+        facet_wrap(~locale) + 
+        scale_x_discrete(breaks=seq(0, 23, by=3))
+    print(p1)
+    
+}
+
+```
+  
+Hourly precipitation data is recorded as needed in any hour (if precipitation occurred in the past hour).
+
+3/6 hourly precipitation is recorded as needed in any time period 0Z-3Z-6Z-9Z-12Z-15Z-18Z-21Z as needed (if precipitation occurred in the past 3/6 hours).
+
+24-hourly precipitation is recorded as needed at 12Z (if precipitation occurred in the past 24 hours).
+
+The precipitation sums can also be checked for consistency:  
+```{r}
+
+# Sum precipitation by year for p1, p36 (using only 0Z-6Z-12Z-18Z), p24
+all_2016_pin %>%
+    mutate(p1Inches=ifelse(is.na(p1Inches), 0, p1Inches),
+           p36ok=lubridate::hour(lubridate::round_date(dtime, unit="hours")) %in% c(0, 6, 12, 18),
+           p36Inches=ifelse(is.na(p36Inches) | !p36ok, 0, p36Inches),
+           p24Inches=ifelse(is.na(p24Inches), 0, p24Inches)
+           ) %>%
+    group_by(locale) %>%
+    summarize_if(is.numeric, sum) %>%
+    rename(`1-Hour`=p1Inches, `6-Hour`=p36Inches, `24-Hour`=p24Inches) %>%
+    pivot_longer(-locale, names_to="Unit", values_to="Inches") %>%
+    ggplot(aes(x=Unit, y=Inches)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(label=round(Inches, 1), y=Inches+10)) +
+    labs(title="Annual precipitation when summing by various units", x="") +
+    facet_wrap(~locale)
+
+```
+  
+There are some minor differences when summing the precipitation by different units.  The biggest outlier is that Houston 1-hour total being ~10 inches greater than the Houston 6-hour totals or 24-hour totals:  
+```{r}
+
+# Explore the Houston data by month
+all_2016_pin %>% 
+    filter(source=="kiah_2016") %>% 
+    group_by(month=lubridate::month(dtime)) %>% 
+    summarize(p1=sum(p1Inches, na.rm=TRUE), p24=sum(p24Inches, na.rm=TRUE))
+
+# Explore the April data by day
+all_2016_pin %>% 
+    filter(source=="kiah_2016", lubridate::month(dtime)==4) %>% 
+    group_by(day=lubridate::day(dtime)) %>% 
+    summarize(p1=sum(p1Inches, na.rm=TRUE), p24=sum(p24Inches, na.rm=TRUE)) %>%
+    filter(p1>0 | p24 > 0)
+
+# Explore the April 18 data
+kiah_2016 %>%
+    filter(lubridate::date(dtime) %in% as.Date(c("2016-04-18", "2016-04-19"))) %>%
+    pull(origMETAR)
+
+```
+
+Houston experienced near-record flooding on April 18, 2016 due to ~10 inches of rain.  The 1-hour totals appear to capture this, while the 24-hour total is absent on April 18 and 7//// (data bad) on April 19.
+
+Next steps are to combine all of the precipitation functions, allow for output to be directed to a log file, and consolidate/save all processed EDA for later use.
