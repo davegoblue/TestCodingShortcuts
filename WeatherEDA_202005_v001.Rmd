@@ -4119,7 +4119,7 @@ msp_precip5 <- fnPrecip5(msp_precip3, issueTimes=msp_precip4, lagCurFrame=msp_pr
 The intervals can then be checked for consistency:  
 ```{r}
 
-fnPrecip6 <- function(lst, df){
+fnPrecip6 <- function(lst, df) {
 
     # Extract the beginning and interval times
     begins <- lst[["beginTimes"]]
@@ -4685,7 +4685,7 @@ getPrecipAmount <- function(df) {
 The function can then be run for all the 2016 data:  
 ```{r}
 
-# Extracted high-low temperatures
+# Extracted precipitation amounts
 all_2016_pin <- map_dfr(.x=fileNames, .f=getPrecipAmount, .id="source") %>%
     mutate(source=fileNames[as.integer(source)], locale=cityNameMapper[source]) %>%
     select(source, locale, everything())
@@ -4768,4 +4768,451 @@ kiah_2016 %>%
 
 Houston experienced near-record flooding on April 18, 2016 due to ~10 inches of rain.  The 1-hour totals appear to capture this, while the 24-hour total is absent on April 18 and 7//// (data bad) on April 19.
 
-Next steps are to combine all of the precipitation functions, allow for output to be directed to a log file, and consolidate/save all processed EDA for later use.
+The precipitation function is updated to allow for sending its detailed results to a log file, creating only a summary of the results, and plots if requested.
+
+To begin, the base functions are updated to allow for sending data to a log file.  The actual approach will use capture.output(), so these are back-compatible and available in case direct printing is ever needed:  
+```{r}
+
+# Function to extract precipitation state and range data from METAR
+fnPrecip1 <- function(df, 
+                      pType, 
+                      showRegex=TRUE, 
+                      logFile="", 
+                      append=TRUE) {
+
+    # The remarks pattern is created based on the precipitation type
+    keyPattern <- paste0("(", pType, "[B|E]\\d+[0-9BE]*)")
+    if (showRegex) { 
+        cat("\nRegex search code is:", keyPattern, "\n", file=logFile, append=append) 
+    }
+    
+    # Extract the current precipitation state, lagged precipitation state, and range data from METAR
+    df <- df %>% 
+        select(origMETAR, dtime) %>% 
+        mutate(strPrecip=str_extract(origMETAR, pattern=keyPattern), 
+               curPrecip=str_detect(origMETAR, pattern=paste0("\\d{6}Z.*", pType, ".*RMK")),
+               lagPrecip=lag(curPrecip, 1)
+               )
+    
+    # Confirm that df is unique by dtime (algorithm depends on this)
+    dups <- df %>%
+        select(dtime) %>%
+        duplicated() %>%
+        any()
+    if (dups) {
+        stop("\nThere are duplicate values of dtime - investigate and fix\n")
+    }
+    
+    # Return the file
+    df
+    
+}
+
+
+# Function to extract issues - continuity, distance from METAR
+fnPrecip3 <- function(df, logFile="", append=TRUE) {
+
+    issueCheck <- df %>%
+        mutate(deltaMETAR=dtime-chgTime, 
+               deltaPrev=ifelse(row_number()==1, 3600, chgTime-lag(chgTime, 1)), 
+               issueCons=(deltaMETAR < 0 | deltaMETAR > 3599 | deltaPrev <= 0)
+               )
+    
+    # Flag that there are continuity or consistency errors
+    cat("\nContinuity or consistency error - record(s) will be deleted\n", file=logFile, append=append)
+    
+    # Write the errors to a logFile if provided, otherwiset to stdout
+    if (logFile != "") { sink(logFile, append=append) }
+    issueCheck %>%
+        filter(issueCons) %>%
+        print()
+    if (logFile != "") { sink() }
+    
+    issueCheck %>%
+        select(-deltaMETAR, -deltaPrev) %>%
+        filter(!issueCons)
+    
+}
+
+
+# Function to find wrong sequence of times
+fnPrecip4 <- function(dfTimes, dfOrig, logFile="", append=TRUE) {
+    
+    # Pivot dfTimes back to a single record, discarding any of the consistency issues
+    # OK if not all dtimes included; will get from dfOrig
+    dfCheck <- dfTimes %>%
+        filter(!issueCons) %>%
+        mutate(newValue=case_when(chgType=="N" ~ 0, chgType=="B" ~ 1, chgType=="E" ~ -1)) %>%
+        pivot_wider(dtime, names_from="name", values_from="newValue") %>%
+        right_join(select(dfOrig, dtime, curPrecip, lagPrecip), by="dtime") %>%
+        mutate_if(is.numeric, ~ifelse(is.na(.), 0, .))
+    
+    # Create the cumsum of state change
+    cs <- dfCheck %>%
+        select(-dtime, -curPrecip) %>%
+        mutate(lagPrecip=as.integer(lagPrecip)) %>%
+        select(lagPrecip, everything()) %>%
+        apply(1, FUN=cumsum) %>%
+        t()
+    
+    # Create the list of issues
+    # If cumsum is every anything other than 1 or 0 there is a problem
+    # If the last value of cumsum does not equal curPrecip there is a problem
+    issue01 <- which(apply(cs, 1, FUN=max) > 1 | apply(cs, 1, FUN=min) < 0)
+    issuelc <- which(dfCheck$curPrecip != cs[, ncol(cs)])
+    issueAll <- sort(unique(c(issue01, issuelc)))
+    
+    cat("\n\nIssues with begin when precipitation or end when no precipitation:", length(issue01), 
+        file=logFile, append=append
+        )
+    cat("\nIssues where state change does not add to the total:", length(issuelc), 
+        file=logFile, append=append
+        )
+    cat("\nTotal issues (may be less than sum due to same datetime in both):", length(issueAll), "\n\n", 
+        file=logFile, append=append
+        )
+    # print(dfCheck[issueAll, ] %>% select(dtime, lagPrecip, everything()))
+    
+    dfCheck[sort(unique(c(issue01, issuelc))), "dtime"]
+    
+}
+
+
+# Function to work through each bad date-time and suggest new ranges
+fnPrecip5 <- function(df, issueTimes, lagCurFrame, logFile="", append=TRUE) {
+    
+    # Create a dataframe for issueTimes
+    issues <- issueTimes %>%
+        mutate(issue=TRUE)
+    
+    # Split df in to issues and non-issue
+    df <- df %>%
+        left_join(issues, by="dtime") %>%
+        mutate(issue=ifelse(is.na(issue), FALSE, issue), 
+               lastRecord=(row_number()==n())
+               ) %>%
+        left_join(select(lagCurFrame, dtime, lagPrecip, curPrecip), by="dtime")
+    
+    dfIssues <- df %>%
+        filter(issue)
+    dfNoIssues <- df %>%
+        filter(!issue)
+    
+    # Note the records to be worked through
+    cat("\nRecords to be addressed include:\n", file=logFile, append=append)
+    
+    # Print to logFile if provided, stdout otherwise
+    if (logFile != "") { sink(logFile, append=append) }
+    dfIssues %>%
+        select(-issueCons, -issue) %>%
+        print()
+    if (logFile != "") { sink() }
+
+    # Work through a record by starting with lagPrecip
+    # If first record inconsistent with lagPrecip, flag for deletion and keep state; update state otherwise
+    # if next record inconsistent with previous state, flag for deletion and keep state; update otherwise
+    # If final record inconsistent with curPrecip, add a record using dtime as the time
+    
+    # Get the unique times with issues
+    dtimeVec <- dfIssues %>% 
+        pull(dtime) %>% 
+        unique()
+    
+    # Create empty vectors for deletes and adds
+    delVec <- as.POSIXct(character(0))
+    addBegin <- as.POSIXct(character(0))
+    addEnd <- as.POSIXct(character(0))
+    
+    # Populate the delete and add vectors
+    for (dt in dtimeVec) {
+        
+        # Pull the records for this time
+        dtRecords <- dfIssues %>% filter(dtime==lubridate::as_datetime(dt))
+        
+        # Initialize the previous state to lagPrecip and the error vector to blank
+        preState <-dtRecords$lagPrecip[1]
+        
+        # Loop through and flag state change errors
+        for (ctr in 1:nrow(dtRecords)) {
+            
+            # Grow the deletions vector
+            if ((!preState & dtRecords$chgType[ctr]=="E") | (preState & dtRecords$chgType[ctr]=="B")) {
+                delVec <- c(delVec, dtRecords$chgTime[ctr])
+                # do not modify the state, it has not changed due to the deletion
+            } else {
+                # do not grow the deletion vector, the state change is OK here if chgType is not "N"
+                if (dtRecords$chgType[ctr] != "N") { preState <- !preState }
+            }
+            
+            # Create a single addition if needed
+            if (ctr==nrow(dtRecords) & preState != dtRecords$curPrecip[ctr]) {
+                if (dtRecords$curPrecip[ctr]) { addBegin <- c(addBegin, dt) }
+                if (!dtRecords$curPrecip[ctr]) { addEnd <- c(addEnd, dt) }
+            }
+        }
+        
+    }
+    
+    # If there is precipitation at the very end, addEnd for dTime+1
+    fixEnd <- dfNoIssues %>%
+        filter(lastRecord & curPrecip) %>%
+        mutate(timeUse=dtime+1) %>%
+        pull(timeUse)
+    
+    if (length(fixEnd) > 0) {
+        addEnd <- c(addEnd, fixEnd)
+        cat("\nAdding final end time to cap interval at end of file:", as.character(fixEnd), "\n", 
+            file=logFile, append=append
+            )
+    }
+    
+    
+    # Print the key vectors
+    if (logFile != "") { sink(logFile, append=append) }
+    cat("\nStart/end times deleted:\n", file=logFile, append=append)
+    print(lubridate::as_datetime(delVec))
+    cat("\nBegin times added\n", file=logFile, append=append)
+    print(lubridate::as_datetime(addBegin))
+    cat("\nEnd times added:\n", file=logFile, append=append)
+    print(lubridate::as_datetime(addEnd))
+    if (logFile != "") { sink() }
+    
+    # Create the full list of issue start times
+    beginIssues <- dfIssues %>%
+        filter(chgType=="B") %>%
+        pull(chgTime)
+    endIssues <- dfIssues %>%
+        filter(chgType=="E") %>%
+        pull(chgTime)
+    
+    beginIssues <- c(beginIssues[!beginIssues %in% delVec], addBegin)
+    endIssues <- c(endIssues[!endIssues %in% delVec], addEnd)
+
+    # cat("\nNew begin times list from issues:\n")
+    # print(beginIssues)
+    # cat("\nNew end times list from issues:\n")
+    # print(endIssues)
+    
+    # Create the full list of start and end times
+    beginOK <- dfNoIssues %>%
+        filter(chgType=="B") %>%
+        pull(chgTime)
+    endOK <- dfNoIssues %>%
+        filter(chgType=="E") %>%
+        pull(chgTime)
+    
+    # Return a list of beginTimes and endTimes
+    list(beginTimes=sort(c(beginOK, beginIssues)), 
+         endTimes=sort(c(endOK, endIssues))
+         )
+    
+}
+
+
+fnPrecip6 <- function(lst, df, logFile="", append=TRUE) {
+
+    # Extract the beginning and interval times
+    begins <- lst[["beginTimes"]]
+    ends <- lst[["endTimes"]]
+    durs <- ends - begins
+
+    # Create intervals from the raw list file
+    precipInts <- interval(begins, ends - 1) # make the interval stop the minute before the end time
+    
+    # Extract the METAR and date-time information and check for overlaps
+    dtime <- df %>% pull(dtime)
+    metar <- df %>% pull(origMETAR)
+    precipMETAR <- df %>% pull(curPrecip)
+    intMETAR <- sapply(dtime, FUN=function(x) {x %within% precipInts %>% any()})
+
+    # Check for the consistency of the observations and print the mismatches
+    print(table(precipMETAR, intMETAR))
+
+    mism <- which(precipMETAR != intMETAR)
+    if (length(mism) == 0) {
+        cat("\nFull matches between METAR observations and intervals\n", logFile=logFile, append=append)
+        if (logFile != "") {
+            # This message should be duplicated to stdout if sent to a log
+            cat("\nFull matches between METAR observations and intervals\n")
+        }
+    } else {
+        for (x in mism) {
+            cat("\nMismatch at time", strftime(dtime[x], format="%Y-%m-%d %H:%M", tz="UTC"), "UTC\n", 
+                file=logFile, append=append
+                )
+            if (logFile != "") { 
+                # Send a message to stdout that there were mismatches
+                cat("\nMismatches detected - see log file", logFile, "\n")
+                sink(logFile, append=append) 
+            }
+            print(metar[max(1, x-2):min(length(metar), x+2)])
+            if (logFile != "") { sink() }
+        }
+    }
+    
+    list(beginTimes=lst$beginTimes, endTimes=lst$endTimes, 
+         precipInts=precipInts, mismatches=mism, mismatchTimes=dtime[mism]
+         )
+    
+}
+
+
+```
+  
+The overall process can then be consolidated in to a big function:  
+```{r}
+
+# Function to get the precipitation times for a specific type and list of file names
+getPrecipTimes <- function(files, pType="(?<!FZ)RA", pExt="_RA") {
+
+    precipList <- vector("list", length(files))
+    names(precipList) <- paste0(files, pExt)
+
+    for (city in files) {
+    
+        cat("\n\n*** Processing for:", cityNameMapper[city], "\n")
+        precipList[[paste0(city, pExt)]] <- combinePrecipFunctions(get(city), 
+                                                                   pType=pType, 
+                                                                   errorLengthInconsistency=TRUE
+                                                                   )
+    
+    }
+
+    # Return precipList
+    precipList
+
+}
+
+
+# Function to create plots for a specific precipitation type across locales
+makePrecipTimeGraph <- function(precipList, pTypeName="rain") {
+    
+    precipLength <- precipByLocale(precipList)
+    plotPrecipitation(precipLength, pTypeName=pTypeName)
+    
+    # Return precipLength
+    precipLength
+}
+
+
+# Function to run EDA, send output to logs if requested, and return list
+wrapPrecipTimes <- function(files, 
+                            pType, 
+                            pExt, 
+                            pTypeName,
+                            writeLogFile=NULL,
+                            writeLogPDF=NULL,
+                            writeLogPath=NULL,
+                            appendWriteFile=FALSE,
+                            ...
+                            ) {
+    
+    # Helper function that only runs the getPrecipTimes() routine
+    corePrecipTimes <- function() { getPrecipTimes(files, pType=pType, pExt=pExt) }
+
+    
+    # Run getPrecipTimes, using capture.output to redirect to a log file if specified
+    if (!is.null(writeLogFile)) {
+        
+        # Prepend the provided log path if it has not been made available
+        if (!is.null(writeLogPath)) {
+            writeLogFile <- paste0(writeLogPath, writeLogFile)
+        }
+        
+        # Provide the location of the EDA log file
+        cat("\nPrecipitation times log file is available at:", writeLogFile, "\n")
+        
+        # Run EDA such that the output goes to the log file
+        capture.output(precipList <- corePrecipTimes(), 
+                       file=writeLogFile, 
+                       append=appendWriteFile
+                       )
+        
+    } else {
+        # Run getPrecipTimes such that output stays in stdout
+        precipList <- corePrecipTimes()
+    }
+
+    # Write a summary of the number of mismatches
+    cat("\nSummary of mismatch lengths after processing - see log file if needed\n")
+    sapply(precipList, FUN=function(x) { length(x[["mismatchTimes"]]) }) %>% 
+        t() %>% 
+        t() %>% 
+        print()
+    
+    # Run makePrecipTimeGraph(), sending PDF to file if requested
+    # If writeLogPDF is not NULL, direct the graphs to a suitable PDF
+    if (!is.null(writeLogPDF)) {
+        
+        # Prepend the provided log path if it has not been made available
+        if (!is.null(writeLogPath)) {
+            writeLogPDF <- paste0(writeLogPath, writeLogPDF)
+        }
+        
+        # Provide the location of the EDA pdf file
+        cat("\nPrecipitation times PDF file is available at:", writeLogPDF, "\n")
+
+        # Redirect the writing to writeLogPDF
+        pdf(writeLogPDF)
+    }
+        
+    # Run the plotting routine
+    precipLength <- makePrecipTimeGraph(precipList, pTypeName=pTypeName)
+    
+    # If writeLogPDF is not NULL, redirect to stdout
+    if (!is.null(writeLogPDF)) {
+        dev.off()
+    }
+    
+    # Return precipList and precipLength
+    list(precipList=precipList, precipLength=precipLength)
+    
+}
+
+```
+  
+The functions can then be run for rain on a subset of the 2016 data:  
+```{r}
+
+subFileNames <- grep(pattern="km.*2016", names(cityNameMapper), value=TRUE)
+subFileNames
+
+# Run as normal for the subset of files
+subRainList01 <- wrapPrecipTimes(subFileNames, 
+                                 pType="(?<!FZ)RA", 
+                                 pExt="_RA", 
+                                 pTypeName="rain"
+                                 )
+
+# Confirm that data are the same as previous
+all.equal(rainLength %>% filter(str_detect(source, pattern="km.*2016")), subRainList01$precipLength)
+for (listNames in names(subRainList01$precipList)) {
+    print(identical(subRainList01$precipList[listNames], rainList[listNames]))
+}
+
+
+# Show the path where files will be written
+cat("\nFiles will be written to:", filePath, "\n")
+
+# Redirect to log files for the same subset
+subRainList02 <- wrapPrecipTimes(subFileNames, 
+                                 pType="(?<!FZ)RA", 
+                                 pExt="_RA", 
+                                 pTypeName="rain", 
+                                 writeLogFile="rainIntervalTimes.log",
+                                 writeLogPDF="rainIntervalTimes.pdf",
+                                 writeLogPath=filePath,
+                                 appendWriteFile=FALSE
+                                 )
+
+# Confirm that data are the same as previous
+all.equal(rainLength %>% filter(str_detect(source, pattern="km.*2016")), subRainList02$precipLength)
+for (listNames in names(subRainList02$precipList)) {
+    print(identical(subRainList02$precipList[listNames], rainList[listNames]))
+}
+
+```
+  
+Logs and graphs are available in stand-alone files for deep-dives, leaving the main log file less cluttered.
+
+Next steps are to consolidate/save all processed EDA for later use.
