@@ -1,0 +1,1595 @@
+---
+title: "Weather Exploratory Data Analysis"
+author: "davegoblue"
+date: "6/14/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+The file 'WeatherDownloads_202005_v002.Rmd' contains code for dowloading and processing historical weather data as contained in METAR archives hosted by Iowa State University.
+
+Data have been dowloaded and processed for several stations (airports) and years, with .rds files saved in "./RInputFiles/ProcessedMETAR".
+
+This module will perform exploratory data analysis on the processed weather files, containing the final functions created in WeatherEDA_202005_v001.
+  
+#### _Data Availability_  
+Each processed data file contains one year of hourly weather data for one station.  Files are saved as './RInputFiles/ProcessedMETAR/metar_kxxx_yyyy.rds' where xxx is the three-digit airport code and yyyy is the four-digit year.
+
+Each file contains the following variables:  
+  
+* METAR (chr) - the extracted portion of the METAR based on a regex string  
+* WindDir (chr) - the previaling wind direction in degrees, stored as a character since 'VRB' means variable  
+* WindSpeed (int) - the prevailing wind speed in knots  
+* WindGust (dbl) - the wind gust speed in knots (NA if there is no recorded wind gust at that hour)  
+* Dummy (chr) - artifact, always a blank space  
+* Visibility (dbl) - surface visibility in statute miles  
+* TempC (int) - temperature in degrees Celsius  
+* DewC (int) - dew point in degrees Celsius  
+* Altimeter (int) - altimeter in inches of mercury  
+* SLP (int) - the raw sea-level-pressure reading from the METAR  
+* FahrC (chr) - the raw temperature string pulled from the METAR (Tttttdddd) where tttt is the Fahrenheit temperature recorded in Celsius and dddd is the Fahrenheit dew point recorded in Celsius  
+* dtime (dttm) - the date-time associated with the observation  
+* origMETAR (chr) - the full METAR associated with the observation  
+* TempF (dbl) - the Fahrenheit temperature associated with converting FahrC to Fahrenheit  
+* DewF (dbl) - the Fahrenheit dew point associated with converting FahrC to Fahrenheit  
+* modSLP (dbl) - Sea-Level Pressure (SLP), adjusted to reflect that SLP is recorded as 0-1000 but reflects data that are 950-1050  
+* nSKC (int) - number of times 'SKC' (human-confirmed cloud-free) is recorded in the observation (should be 0 or 1)  
+* nCLR (int) - number of times 'CLR' (austomated-sensor cloud-free) is recorded in the observation (should be 0 or 1, and should never have both nSKC>0 and nCLR>0)  
+* cloudn (chr) - the nth cloud layer recorded in the METAR (layers begin with FEW, SCT, BKN, OVC or VV)  
+* cTypen (chr) - the cloud type of the nth cloud layer (FEW, BKN, SCT, OVC, or VV)  
+* cLeveln (dbl) - the cloud height in feet of the nth cloud layer  
+* wType (fct) - highest level of obscuration recorded in the METAR (VV > OVC > BKN > SCT > FEW > CLR/SKC)  
+* year (dbl) - year of the observation  
+* monthint (dbl) - month of the observation as a number (e.g., 6=June)  
+* month (fct) - month of the observation as three-character abbreviation, saved as a factor (e.g., Jun=June)  
+* day (int) - day of the month of the observation  
+  
+#### _Mappings and Helper Functions_  
+A handful of mapping and helper functions are created to make plotting and formatting easier for the remainder of the code:  
+```{r}
+
+# The process frequently uses tidyverse and lubridate
+library(tidyverse)
+library(lubridate)
+
+
+# The main path for the files
+filePath <- "./RInputFiles/ProcessedMETAR/"
+
+
+# Descriptive names for key variables
+varMapper <- c(WindDir="Wind Direction (degrees)", 
+               predomDir="General Prevailing Wind Direction",
+               WindSpeed="Wind Speed (kts)",
+               WindSpeed5="Wind Speed (kts), rounded to nearest 5 knots", 
+               Visibility="Visibility (SM)", 
+               TempC="Temperature (C)", 
+               DewC="Dew Point (C)", 
+               Altimeter="Altimeter (inches Hg)",
+               Altimeter10="Altimeter (inches Hg), rounded to nearest 0.1 inHg", 
+               modSLP="Sea-Level Pressure (hPa)", 
+               TempF="Temperature (F)",
+               DewF="Dew Point (F)", 
+               TempF5="Temperature (F), rounded to nearest 5 degrees",
+               DewF5="Dew Point (F), rounded to nearest 5 degrees", 
+               cType1="First Cloud Layer Type", 
+               cLevel1="First Cloud Layer Height (ft)",
+               month="Month", 
+               year="Year",
+               wType="Greatest Sky Obscuration", 
+               day="Day of Month"
+               )
+
+
+# File name to city name mapper
+cityNameMapper <- c(kdtw_2016="Detroit, MI (2016)", 
+                    kewr_2016="Newark, NJ (2016)",
+                    kgrb_2016="Green Bay, WI (2016)",
+                    kgrr_2016="Grand Rapids, MI (2016)",
+                    kiah_2016="Houston, TX (2016)",
+                    kind_2016="Indianapolis, IN (2016)",
+                    klas_2015="Las Vegas, NV (2015)",
+                    klas_2016="Las Vegas, NV (2016)", 
+                    klas_2017="Las Vegas, NV (2017)", 
+                    klnk_2016="Lincoln, NE (2016)",
+                    kmke_2016="Milwaukee, WI (2016)",
+                    kmsn_2016="Madison, WI (2016)",
+                    kmsp_2016="Minneapolis, MN (2016)",
+                    kmsy_2015="New Orleans, LA (2015)",
+                    kmsy_2016="New Orleans, LA (2016)", 
+                    kmsy_2017="New Orleans, LA (2017)", 
+                    kord_2015="Chicago, IL (2015)",
+                    kord_2016="Chicago, IL (2016)", 
+                    kord_2017="Chicago, IL (2017)", 
+                    ksan_2015="San Diego, CA (2015)",
+                    ksan_2016="San Diego, CA (2016)",
+                    ksan_2017="San Diego, CA (2017)",
+                    ktvc_2016="Traverse City, MI (2016)"
+                    )
+
+
+# This is a helper function to create a locale description
+getLocaleDescription <- function(x, mapper=cityNameMapper) {
+    
+    # Initialize the description as NULL
+    desc <- NULL
+    
+    for (potMatch in names(mapper)) {
+        if (str_detect(string=x, pattern=potMatch)) {
+            desc <- mapper[potMatch]
+            break
+        }
+    }
+    
+    # If the mapping failed, use UNMAPPED_x as the description
+    if (is.null(desc)) {
+        desc <- paste0("UNMAPPED_", x)
+        cat("\nUnable to find a description, will use ", desc, "\n\n", sep="")
+    } else {
+        cat("\nWill use ", desc, " as the description for ", x, "\n\n", sep="")
+    }
+    
+    # Return the descriptive name
+    desc
+    
+}
+
+
+# Helper function to zero-pad (especially for minutes/hours/months that are 0-9)
+zeroPad <- function(x, width=2, side="left", pad="0") {
+    
+    str_pad(x, width=width, side=side, pad=pad)
+    
+}
+
+
+# Helper function to take a date-time and a minutes and create a new date-time
+helperBEDateTime <- function(dt, mins) {
+    
+    # Create the date as character (lubridate and dplyr do not always work well together)
+    dateChar <- ifelse(str_length(mins)==4 & str_sub(mins, 1, 2)=="23", 
+                       as.character(lubridate::as_date(lubridate::date(dt)-1)), 
+                       as.character(lubridate::date(dt))
+                       )
+    
+    # Create the hours and minutes as character
+    hrMinChar <- ifelse(str_length(mins)==4, 
+                        mins, 
+                        paste0(zeroPad(lubridate::hour(dt)), mins)
+                        )
+    
+    # Return the appropriate date-time
+    lubridate::ymd_hm(paste0(dateChar, " ", hrMinChar))
+
+}
+
+```
+
+
+#### _Basic EDA Functions_  
+The core EDA function is combinedEDA(), which is called by wrapCombinedEDA() for creating log and PDF files, and which is in turn called by logAndPDFCombinedEDA() so that it can be easily run for multiple locales.  
+
+Functions include:  
+```{r}
+
+# The core function for running combined EDA
+combinedEDA <- function(filename=NULL, 
+                        tbl=NULL,
+                        desc=NULL,
+                        mets=c("WindDir", "WindSpeed", "TempC", "DewC", "Altimeter", 
+                               "modSLP", "cType1", "cLevel1", "month", "day"
+                               ),
+                        corPairs=list(c("TempC", "TempF"), 
+                                      c("TempC", "DewC"), 
+                                      c("Altimeter", "modSLP"), 
+                                      c("Altimeter", "WindSpeed")
+                                      ),
+                        fctPairs=list(c("month", "TempF"), 
+                                      c("month", "DewF"), 
+                                      c("month", "WindSpeed"), 
+                                      c("month", "Altimeter"), 
+                                      c("wType", "Visibility"), 
+                                      c("wType", "WindSpeed"), 
+                                      c("WindDir", "WindSpeed"), 
+                                      c("WindDir", "TempF")
+                                      ),
+                        heatVars=c("TempC", "TempF", 
+                                   "DewC", "DewF", 
+                                   "Altimeter", "modSLP", 
+                                   "WindSpeed", "Visibility", 
+                                   "monthint", "day"
+                                   ),
+                        lmVars=list(c("modSLP", "Altimeter"), 
+                                    c("modSLP", "Altimeter + TempF"), 
+                                    c("TempF", "DewF"), 
+                                    c("WindSpeed", "Altimeter + TempF + DewF + month")
+                                    ),
+                        mapVariables=varMapper,
+                        mapFileNames=cityNameMapper,
+                        path="./RInputFiles/ProcessedMETAR/"
+                        ) {
+    
+    # Require that either filename OR tbl be passed
+    if (is.null(filename) & is.null(tbl)) {
+        cat("\nMust provide either a filename or an already-loaded tibble\n")
+        stop("\nfilename=NULL and tbl=NULL may not both be passed to combinedEDA()\n")
+    }
+    
+    # Require that either 1) filename and mapFileNames, OR 2) desc be passed
+    if ((is.null(filename) | is.null(mapFileNames)) & is.null(desc)) {
+        cat("\nMust provide either a filename with mapFileNames or a file description\n")
+        stop("\nWhen desc=NULL must have non-null entries for both filename= and mapFileNames=\n")
+    }
+    
+    # Find the description if it is NULL (default)
+    if (is.null(desc)) {
+        desc <- getLocaleDescription(filename, mapper=mapFileNames)
+    }
+    
+    # Warn if both filename and tbl are passed, since tbl will be used
+    if (!is.null(filename) & !is.null(tbl)) {
+        cat("\nA tibble has been passed and will be used as the dataset for this function\n")
+        warning("\nArgument filename=", filename, " is NOT loaded since a tibble was passed\n")
+    }
+    
+    # Read in the file unless tbl has already been passed to the routine
+    if (is.null(tbl)) {
+        tbl <- readRDS(paste0(path, filename))
+    }
+    
+    # Plot counts by metric
+    plotcountsByMetric(tbl, mets=mets, title=desc, diagnose=TRUE)
+    
+    # Plot relationships between two variables
+    for (ys in corPairs) {
+        plotNumCor(tbl, var1=ys[1], var2=ys[2], subT=desc, diagnose=TRUE)
+    }
+    
+    # plot numeric vs. factor
+    for (ys in fctPairs) {
+        plotFactorNumeric(tbl, fctVar=ys[1], numVar=ys[2], subT=desc, showXLabel=FALSE, diagnose=TRUE)
+    }
+    
+    # Heatmap for variable correlations
+    corMETAR(tbl, numVars=heatVars, subT=paste0(desc, " METAR"))
+
+    # Run linear rergression
+    for (ys in lmVars) {
+        lmMETAR(tbl, y=ys[1], x=ys[2], yName=varMapper[ys[1]], subT=desc)
+    }
+    
+    # Run the basic wind plots
+    basicWindPlots(tbl, desc=desc, gran="")
+    
+    # Return the tibble
+    tbl
+    
+}
+
+
+
+# The core function for placing combined EDA outputs in log and PDF files
+wrapCombinedEDA <- function(readFile, 
+                            readPath="./RInputFiles/ProcessedMETAR/", 
+                            mapFileNames=cityNameMapper,
+                            desc=NULL,
+                            writeLogFile=NULL,
+                            writeLogPDF=NULL,
+                            writeLogPath=NULL,
+                            appendWriteFile=FALSE,
+                            ...
+                            ) {
+    
+    # Read in the requested file
+    tbl <- readRDS(paste0(readPath, readFile))
+
+    # Find the description if it has not been passed
+    if (is.null(desc)) {
+        desc <- getLocaleDescription(readFile, mapper=mapFileNames)
+    }
+    
+    # Helper function that only runs the combinedEDA() routine
+    coreFunc <- function() { combinedEDA(tbl=tbl, desc=desc, mapFileNames=mapFileNames, ...) }
+    
+    # If writeLogPDF is not NULL, direct the graphs to a suitable PDF
+    if (!is.null(writeLogPDF)) {
+        
+        # Prepend the provided log path if it has not been made available
+        if (!is.null(writeLogPath)) {
+            writeLogPDF <- paste0(writeLogPath, writeLogPDF)
+        }
+        
+        # Provide the location of the EDA pdf file
+        cat("\nEDA PDF file is available at:", writeLogPDF, "\n")
+
+        # Redirect the writing to writeLogPDF
+        pdf(writeLogPDF)
+    }
+    
+    # Run EDA on the tbl using capture.output to redirect to a log file if specified
+    if (!is.null(writeLogFile)) {
+        
+        # Prepend the provided log path if it has not been made available
+        if (!is.null(writeLogPath)) {
+            writeLogFile <- paste0(writeLogPath, writeLogFile)
+        }
+        
+        # Provide the location of the EDA log file
+        cat("\nEDA log file is available at:", writeLogFile, "\n")
+        
+        # Run EDA such that the output goes to the log file
+        capture.output(coreFunc(), 
+                       file=writeLogFile, 
+                       append=appendWriteFile
+                       )
+        
+    } else {
+        # Run EDA such that output stays in stdout
+        coreFunc()
+    }
+    
+    # If writeLogPDF is not NULL, redirect to stdout
+    if (!is.null(writeLogPDF)) {
+        dev.off()
+    }
+    
+    # Return the tbl
+    tbl
+    
+}
+
+
+
+# The core function that calls wrapCombinedEDA
+logAndPDFCombinedEDA <- function(tblName, filePath="./RInputFiles/ProcessedMETAR/") {
+    
+    # Create the RDS file name
+    rdsName <- paste0("metar_", tblName, ".rds")
+    cat("\nRDS Name:", rdsName)
+    
+    # Create the log file name
+    logName <- paste0("metar_", tblName, "_EDA.log")
+    cat("\nLog Name:", logName)
+    
+    # Create the PDF file name
+    pdfName <- paste0("metar_", tblName, "_EDA.pdf")
+    cat("\nPDF Name:", pdfName)
+    
+    # Call wrapCombinedEDA()
+    tbl <- wrapCombinedEDA(rdsName, 
+                           readPath=filePath, 
+                           writeLogFile=logName, 
+                           writeLogPDF=pdfName,
+                           writeLogPath=filePath
+                           )
+    
+    # Return the tbl
+    tbl
+    
+}
+
+```
+  
+There are a number of associated functions called by combinedEDA, including:  
+  
+* plotCountsByMetric() - bar plots for counts by variable  
+* plotNumCor() - plot two numeric variables against each other  
+* plotFactorNumeric() - boxplot a numeric variable against a factor variable  
+* corMETAR() - correlations between METAR variables  
+* lmMETAR() - linear regression modeling for METAR variables  
+* basicWindPlots() - plot wind speed and direction  
+  
+```{r}
+
+# Helper function for generating plots by key variables
+plotcountsByMetric <- function(df, 
+                               mets, 
+                               title="", 
+                               rotateOn=20, 
+                               dropNA=TRUE, 
+                               diagnose=FALSE,
+                               mapper=varMapper,
+                               facetOn=NULL, 
+                               showCentral=FALSE
+                               ) {
+    
+    # Function arguments
+    # df: dataframe or tibble containing raw data
+    # mets: character vector of variables for plotting counts
+    # title: character vector for plot title
+    # rotateOn: integer, x-axis labels will be rotated by 90 degrees if # categories >= rotateOn
+    # dropNA: boolean for whether to drop all NA prior to plotting (recommended for avoiding warnings)
+    # diagnose: boolean for whether to note in the log the number of NA observations dropped
+    # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
+    # facetOn: a facetting variable for the supplied df (NULL for no faceting)
+    # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    
+    # Function usage
+    # 1.  By default, the function plots overall counts by metric for a given input
+    # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
+    # 3.  If showCentral=TRUE, then the overall mean will be plotted as a point on the main plot (only makes sense if facetOn has been selected)
+    
+    
+    # Plot of counts by key metric
+    for (x in mets) {
+        # If a facetting variable is provided, need to include this in the group_by
+        useVars <- x
+        if (!is.null(facetOn)) { useVars <- c(facetOn, useVars) }
+        dat <- df %>%
+            group_by_at(vars(all_of(useVars))) %>%
+            summarize(n=n())
+        
+        if (dropNA) {
+            nOrig <- nrow(dat)
+            sumOrig <- sum(dat$n)
+            dat <- dat %>%
+                filter_all(all_vars(!is.na(.)))
+            if (diagnose & (nOrig > nrow(dat))) { 
+                cat("\nDropping", 
+                    nOrig-nrow(dat), 
+                    "rows with", 
+                    sumOrig-sum(dat$n), 
+                    "observations due to NA\n"
+                    )
+            }
+        }
+        
+        # Create the main plot
+        p <- dat %>%
+            ggplot(aes_string(x=x, y="n")) + 
+            geom_col() + 
+            labs(title=title,
+                 subtitle=paste0("Counts By: ", mapper[x]), 
+                 x=paste0(x, " - ", mapper[x]),
+                 y="Count"
+                 )
+        # If the rotateOn criteria is exceeded, rotate the x-axis by 90 degrees
+        if (nrow(dat) >= rotateOn) {
+            p <- p + theme(axis.text.x=element_text(angle=90))
+        }
+        # If facetting has been requested, facet by the desired variable
+        if (!is.null(facetOn)) {
+            p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+        }
+        # If showCentral=TRUE, add a dot plot for the overall average
+        if (showCentral) {
+            # Get the median number of observations by facet, or the total if facetOn=NULL
+            if (is.null(facetOn)) {
+                useN <- sum(dat$n)
+            } else {
+                useN <- dat %>%
+                    group_by_at(vars(all_of(facetOn))) %>%
+                    summarize(n=sum(n)) %>%
+                    pull(n) %>%
+                    median()
+            }
+            # Get the overall percentages by x
+            centralData <- helperCountsByMetric(tbl=dat, ctVar=x, sumOn="n") %>%
+                mutate(centralValue=nPct*useN)
+            # Apply the median
+            p <- p + geom_point(data=centralData, aes(y=centralValue), color="red", size=2)
+        }
+        # Print the plot
+        print(p)
+    }
+}
+
+
+# Create a function for plotting two variables against each other
+plotNumCor <- function(met, 
+                       var1, 
+                       var2, 
+                       title=NULL, 
+                       subT="", 
+                       dropNA=TRUE, 
+                       diagnose=FALSE,
+                       mapper=varMapper, 
+                       facetOn=NULL, 
+                       showCentral=FALSE
+                       ) {
+    
+    # Function arguments
+    # met: dataframe or tibble containing raw data
+    # var1: character vector of variable to be used for the x-axis
+    # var2: character vector of variable to be used for the y-axis
+    # title: character vector for plot title
+    # subT: character vector for plot subtitle
+    # dropNA: boolean for whether to drop all NA prior to plotting (recommended for avoiding warnings)
+    # diagnose: boolean for whether to note in the log the number of NA observations dropped
+    # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
+    # facetOn: a facetting variable for the supplied met (NULL for no faceting)
+    # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    
+    # Function usage
+    # 1.  By default, the function plots overall counts by the provided x/y metrics, with each point sized based on the number of observations, and with an lm smooth overlaid
+    # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
+    # 3.  If showCentral=TRUE, then the lm smooth that best first to the overall data will be plotted (only makes sense if facetOn has been selected)
+    
+    # Create the title if not passed
+    if (is.null(title)) { 
+        title <- paste0("Hourly Observations of ", mapper[var1], " and ", mapper[var2]) 
+    }
+
+    # If a facetting variable is provided, need to include this in the group_by
+    useVars <- c(var1, var2)
+    if (!is.null(facetOn)) { useVars <- c(facetOn, useVars) }
+        
+    # Pull the counts by useVars
+    dat <- met %>%
+        group_by_at(vars(all_of(useVars))) %>%
+        summarize(n=n()) 
+    
+    # If NA requested to be excluded, remove anything with NA
+    if (dropNA) {
+        nOrig <- nrow(dat)
+        sumOrig <- sum(dat$n)
+        dat <- dat %>%
+            filter_all(all_vars(!is.na(.)))
+        if (diagnose) { 
+            cat("\nDropping", 
+                nOrig-nrow(dat), 
+                "rows with", 
+                sumOrig-sum(dat$n), 
+                "observations due to NA\n"
+                )
+        }
+    }
+    
+    p <- dat %>%
+        ggplot(aes_string(x=var1, y=var2)) + 
+        geom_point(alpha=0.5, aes_string(size="n")) + 
+        geom_smooth(method="lm", aes_string(weight="n")) + 
+        labs(x=paste0(mapper[var1], " - ", var1), 
+             y=paste0(mapper[var2], " - ", var2), 
+             title=title, 
+             subtitle=subT
+             )
+    
+    # If facetting has been requested, facet by the desired variable
+    if (!is.null(facetOn)) {
+        p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+    }
+    # If showCentral=TRUE, add a dashed line for the overall data
+    if (showCentral) {
+        p <- p + helperNumCor(dat, xVar=var1, yVar=var2, sumOn="n")
+    }
+    
+    print(p)
+}
+
+
+# Updated function for plotting numeric by factor
+plotFactorNumeric <- function(met, 
+                              fctVar, 
+                              numVar, 
+                              title=NULL, 
+                              subT="", 
+                              diagnose=TRUE,
+                              showXLabel=TRUE,
+                              mapper=varMapper,
+                              facetOn=NULL, 
+                              showCentral=FALSE
+                              ) {
+    
+    # Function arguments
+    # met: dataframe or tibble containing raw data
+    # fctVar: character vector of variable to be used for the x-axis (factor in the boxplot)
+    # numVar: character vector of variable to be used for the y-axis (numeric in the boxplot)
+    # title: character vector for plot title
+    # subT: character vector for plot subtitle
+    # diagnose: boolean for whether to note in the log the number of NA observations dropped
+    # showXLabel: boolean for whether to include the x-label (e.g., set to FALSE if using 'month')
+    # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
+    # facetOn: a facetting variable for the supplied met (NULL for no faceting)
+    # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    
+    # Function usage
+    # 1.  By default, the function creates the boxplot of numVar by fctVar
+    # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
+    # 3.  If showCentral=TRUE, then the overall median of numVar by fctVar will be plotted as a red dot
+
+    
+    # Create the title if not passed
+    if (is.null(title)) { 
+        title <- paste0("Hourly Observations of ", mapper[numVar], " by ", mapper[fctVar])
+    }
+    
+    # Remove the NA variables
+    nOrig <- nrow(met)
+    dat <- met %>%
+        filter(!is.na(get(fctVar)), !is.na(get(numVar)))
+    if (diagnose) { cat("\nRemoving", nOrig-nrow(dat), "records due to NA\n") }
+    
+    # Create the base plot
+    p <- dat %>%
+        ggplot(aes_string(x=fctVar, y=numVar)) + 
+        geom_boxplot(fill="lightblue") + 
+        labs(title=title, 
+             subtitle=subT, 
+             x=ifelse(showXLabel, paste0(mapper[fctVar], " - ", fctVar), ""), 
+             y=paste0(mapper[numVar], " - ", numVar)
+             )
+    
+    # If facetting has been requested, facet by the desired variable
+    if (!is.null(facetOn)) {
+        p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+    }
+    
+    # If showCentral=TRUE, add a dot plot for the overall average
+    if (showCentral) {
+        centData <- helperFactorNumeric(dat, .f=median, byVar=fctVar, numVar=numVar)
+        p <- p + geom_point(data=centData, aes(y=helpFN), size=2, color="red")
+    }
+
+    # Render the final plot
+    print(p)
+    
+}
+
+
+# Function to calculate, display, and plot variable correlations
+corMETAR <- function(met, numVars, subT="") {
+
+    # Keep only complete cases and report on data kept
+    dfUse <- met %>%
+        select_at(vars(all_of(numVars))) %>%
+        filter(complete.cases(.))
+    
+    nU <- nrow(dfUse)
+    nM <- nrow(met)
+    myPct <- round(100*nU/nM, 1)
+    cat("\n *** Correlations use ", nU, " complete cases (", myPct, "% of ", nM, " total) ***\n", sep="")
+    
+    # Create the correlation matrix
+    mtxCorr <- dfUse %>%
+        cor()
+
+    # Print the correlations
+    mtxCorr %>%
+        round(2) %>%
+        print()
+
+    # Display a heat map
+    corrplot::corrplot(mtxCorr, 
+                       method="color", 
+                       title=paste0("Hourly Weather Correlations\n", subT), 
+                       mar=c(0, 0, 2, 0)
+                       )
+}
+
+
+# Function for linear regressions on METAR data
+lmMETAR <- function(met, 
+                    y, 
+                    x, 
+                    yName, 
+                    subT=""
+                    ) {
+    
+    # Convert to formula
+    myChar <- paste0(y, " ~ ", x)
+    cat("\n *** Regression call is:", myChar, "***\n")
+    
+    # Run regression
+    regr <- lm(formula(myChar), data=met)
+    
+    # Summarize regression
+    print(summary(regr))
+    
+    # Predict the new values
+    pred <- predict(regr, newdata=met)
+    
+    # Plot the predictions
+    p <- met %>%
+        select_at(vars(all_of(y))) %>%
+        mutate(pred=pred) %>%
+        filter_all(all_vars(!is.na(.))) %>%
+        group_by_at(vars(all_of(c(y, "pred")))) %>%
+        summarize(n=n()) %>%
+        ggplot(aes_string(x=y, y="pred")) + 
+        geom_point(aes(size=n), alpha=0.25) + 
+        geom_smooth(aes(weight=n), method="lm") + 
+        labs(title=paste0("Predicted vs. Actual ", yName, " - ", x, " as Predictor"), 
+             subtitle=subT, 
+             x=paste0("Actual ", yName), 
+             y=paste0("Predicted ", yName)
+             )
+    print(p)
+    
+}
+
+
+# Generate basic wind plots
+basicWindPlots <- function(met, 
+                           dirVar="WindDir", 
+                           spdVar="WindSpeed",
+                           desc="", 
+                           gran="", 
+                           mapper=varMapper
+                           ) {
+
+    # Plot for the wind direction
+    wDir <- met %>%
+        ggplot(aes_string(x=dirVar)) + 
+        geom_bar() + 
+        labs(title=paste0(desc, " Wind Direction"), subtitle=gran, 
+             y="# Hourly Observations", x=mapper[dirVar]
+             ) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(wDir)
+
+    # Plot for the minimum, average, and maximum wind speed by wind direction
+    # Wind direction 000 is reserved for 0 KT wind, while VRB is reserved for 3-6 KT variable winds
+    wSpeedByDir <- met %>%
+        filter(!is.na(get(dirVar))) %>%
+        group_by_at(vars(all_of(dirVar))) %>%
+        summarize(minWind=min(get(spdVar)), meanWind=mean(get(spdVar)), maxWind=max(get(spdVar))) %>%
+        ggplot(aes_string(x=dirVar)) +
+        geom_point(aes(y=meanWind), color="red", size=2) +
+        geom_errorbar(aes(ymin=minWind, ymax=maxWind)) +
+        labs(title=paste0(desc, " Wind Speed (Max, Mean, Min) By Wind Direction"), 
+             subtitle=gran,
+             y=mapper[spdVar], 
+             x=mapper[dirVar]
+             ) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(wSpeedByDir)
+
+    # Plot for the wind speed
+    pctZero <- sum(pull(met, spdVar)==0, na.rm=TRUE) / nrow(met)
+    wSpeed <- met %>%
+        filter_at(vars(all_of(spdVar)), all_vars(!is.na(.))) %>%
+        ggplot(aes_string(x=spdVar)) +
+        geom_bar(aes(y=..count../sum(..count..))) +
+        labs(title=paste0(round(100*pctZero), "% of wind speeds in ", desc, " measure 0 Knots"),
+             subtitle=gran,
+             y="% Hourly Observations", 
+             x=mapper[spdVar]
+             )
+    print(wSpeed)
+    
+    # Polar plot for wind speed and wind direction
+    wData <- met %>%
+        filter_at(vars(all_of(dirVar)), all_vars(!is.na(.) & !(. %in% c("000", "VRB")))) %>%
+        filter_at(vars(all_of(spdVar)), all_vars(!is.na(.))) %>%
+        mutate_at(vars(all_of(dirVar)), as.numeric) %>%
+        group_by_at(vars(all_of(c(dirVar, spdVar)))) %>%
+        summarize(n=n())
+        
+    wPolarDirSpeed <- wData %>%
+        ggplot(aes_string(x=spdVar, y=dirVar)) +
+        geom_point(alpha=0.1, aes(size=n)) +
+        coord_polar(theta="y") +
+        labs(title=paste0(desc, " Direction vs. Wind Speed"), 
+             subtitle=gran, 
+             x=mapper[spdVar], 
+             y=mapper[dirVar]
+             ) +
+        scale_y_continuous(limits=c(0, 360), breaks=c(0, 90, 180, 270, 360)) +
+        scale_x_continuous(limits=c(0, 40), breaks=c(0, 5, 10, 15, 20, 25, 30, 35, 40)) +
+        geom_point(aes(x=0, y=0), color="red", size=2)
+    print(wPolarDirSpeed)
+
+}
+
+
+```
+  
+The basic EDA can then be run for all of the downloaded files, with results cached and output directed to appropriate log and PDF files:  
+```{r cache=TRUE}
+
+fileNames <- dir("./RInputFiles/ProcessedMETAR/", pattern="^metar_k[a-z]{3}_201\\d\\.rds") %>%
+    str_replace(pattern=".rds", replacement="") %>%
+    str_replace(pattern="metar_", replacement="")
+
+cat("\nEDA process will be run for all of:\n\n", paste0(fileNames, collapse="\n"), "\n", sep="")
+
+for (fName in fileNames) {
+    assign(fName, logAndPDFCombinedEDA(fName))
+}
+
+```
+
+#### _Precipitation Intervals_  
+METAR data include descriptions of the precipitation occuring at any given time.  Two of the most common precipitation forms are rain (RA) and snow (SN).  These can occur together, denoted as RASN or SNRA in the METAR.
+
+Further, the precipitation type can be classified using a prefix as light (-), moderate (no prefix), or heavy (+).  So, RA would be moderate rain, -SNRA would be a light snow-rain mix, +RA would be heavy rain.
+
+Additionally, the timing of the precipitation event is captured in the remarks using B (begin) and E (end).  So, an hourly METAR of RAB20E35B50 would mean rain started at 20 past the hour, ended at 35 past the hour, and began again at 50 past the hour.  Since METAR are often taken just before the top of the hour, a four-digit time is used if it is in the 'previous' hour; for example, RAB1959E36 in the 2053Z METAR.
+
+Broadly speaking, precipitation at a specific point in time can be extracted from the main METAR (preceding RMK) whil prcipitation intervals can be extracted by parsing the remarks (following RMK).  There can be misalignment between these; for example, an interval that suggests rain is occuring at a time the METAR does not show rain.
+
+Precipitation events of three main types (rain, snow, thunder) can be extracted from the METAR, and the associated intervals built from the remarks can be edited such that they align with the METAR extractions.
+
+There are several main functions for the precipitation intervals process:  
+  
+* wrapPrecipTimes() - wrapper function to run for multiple locales for a given precipitation type and direct output to a pdf/log file  
+* getPrecipTimes() - function to run for multiple locales for a given precipitation type (called by wrapPrecipTimes)  
+* combinePrecipFunctions() - calls multiple functions to extract and align precipitations states and precipitation intervals for a specific locale and precipitation type (called by getPrecipTimes)  
+* makePrecipTimeGraph() - creates plots across locales for a specific precipitation type (called by wrapPrecipTimes)  
+  
+```{r}
+
+# Function to combine precipitation functions
+combinePrecipFunctions <- function(df, 
+                                   pType="(?<!FZ)RA", 
+                                   errorLengthInconsistency=TRUE
+                                   ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble containing processed METAR data, including dtime and origMETAR
+    # pType: regex code for the precipitation type of interest
+    # errorLengthInconsistency: boolean, whether to error out if beginTimes, endTimes, or precipInts have different lengths or imply intervals of non-positive durection
+    
+    # Extract the current precipitation state, lagged precipitation state, and string of begin/end times
+    precip1 <- fnPrecip1(df, pType=pType)
+    
+    # Find and delete continuity (next before previous) and consistency (belongs to wrong METAR) errors
+    precip3 <- fnPrecip2(precip1) %>%
+        fnPrecip3()
+    
+    # Find issues with precipitation begin and end times compared to each other and precipitation states
+    precip4 <- fnPrecip4(precip3, precip1)
+    
+    # Correct for the issues with begin and end times and create a vector of begin times and end times
+    precip5 <- fnPrecip5(precip3, issueTimes=precip4, lagCurFrame=precip1)
+    
+    # Check intervals for consistency with precipitation states
+    precip6 <- fnPrecip6(precip5, precip1)
+    
+    # Extract beginTimes, endTimes, and precipInts
+    beginTimes <- precip6$beginTimes
+    endTimes <- precip6$endTimes
+    precipInts <- precip6$precipInts
+    
+    # Check that the intervals are all positive and with same number of begin times and end times
+    lenBT <- length(beginTimes)
+    lenET <- length(endTimes)
+    lenPI <- length(precipInts)
+    piNotPositive <- (lubridate::time_length(precipInts) <= 0)
+    
+    # Check for same lengths    
+    if (max(lenBT, lenET, lenPI) != min(lenBT, lenET, lenPI)) {
+        cat("Inconsistent lengths - beginTimes:", lenBT, ", endTimes:", lenET, "precipInts:", lenPI, "\n")
+        if (errorLengthInconsistency) { 
+            stop("Exiting due to inconsistent lengths") 
+        } else {
+            cat("\nContinuing to process, output frame will append NA where needed\n")
+            maxLen <- max(lenBT, lenET, lenPI)
+            beginTimes <- c(beginTimes, rep(NA, maxLen-lenBT))
+            endTimes <- c(endTimes, rep(NA, maxLen-lenET))
+            precipInts <- c(precipInts, rep(NA, maxLen-lenPI))
+        }
+    }
+    
+    # Check for positive intervals
+    if (sum(piNotPositive) > 0) {
+        cat("\nPrecipitation intervals are non-positive:", 
+            sum(piNotPositive), 
+            "at positions",
+            which(piNotPositive), 
+            "\n"
+            )
+        if (errorLengthInconsistency) { stop("Exiting due to inconsistency in interval lengths") } 
+    }
+    
+    
+    # Return the relevant information
+    list(pStateFrame=precip1, 
+         pIssueTimes=precip4,
+         mismatches=precip6$mismatches,
+         mismatchTimes=precip6$mismatchTimes,
+         beginEndInterval=tibble::tibble(beginTimes=beginTimes, endTime=endTimes, precipInts=precipInts)
+         )
+    
+}
+
+
+# Function to get the precipitation times for a specific type and list of file names
+getPrecipTimes <- function(files, pType="(?<!FZ)RA", pExt="_RA") {
+
+    precipList <- vector("list", length(files))
+    names(precipList) <- paste0(files, pExt)
+
+    for (city in files) {
+    
+        cat("\n\n*** Processing for:", cityNameMapper[city], "\n")
+        precipList[[paste0(city, pExt)]] <- combinePrecipFunctions(get(city), 
+                                                                   pType=pType, 
+                                                                   errorLengthInconsistency=TRUE
+                                                                   )
+    
+    }
+
+    # Return precipList
+    precipList
+
+}
+
+
+# Function to create plots for a specific precipitation type across locales
+makePrecipTimeGraph <- function(precipList, pTypeName="rain") {
+    
+    precipLength <- precipByLocale(precipList)
+    plotPrecipitation(precipLength, pTypeName=pTypeName)
+    
+    # Return precipLength
+    precipLength
+}
+
+
+
+# Function to run precipitation extraction, send output to logs if requested, and return list
+wrapPrecipTimes <- function(files, 
+                            pType, 
+                            pExt, 
+                            pTypeName,
+                            writeLogFile=NULL,
+                            writeLogPDF=NULL,
+                            writeLogPath=NULL,
+                            appendWriteFile=FALSE,
+                            ...
+                            ) {
+    
+    # Helper function that only runs the getPrecipTimes() routine
+    corePrecipTimes <- function() { getPrecipTimes(files, pType=pType, pExt=pExt) }
+
+    
+    # Run getPrecipTimes, using capture.output to redirect to a log file if specified
+    if (!is.null(writeLogFile)) {
+        
+        # Prepend the provided log path if it has not been made available
+        if (!is.null(writeLogPath)) {
+            writeLogFile <- paste0(writeLogPath, writeLogFile)
+        }
+        
+        # Provide the location of the EDA log file
+        cat("\nPrecipitation times log file is available at:", writeLogFile, "\n")
+        
+        # Run EDA such that the output goes to the log file
+        capture.output(precipList <- corePrecipTimes(), 
+                       file=writeLogFile, 
+                       append=appendWriteFile
+                       )
+        
+    } else {
+        # Run getPrecipTimes such that output stays in stdout
+        precipList <- corePrecipTimes()
+    }
+
+    # Write a summary of the number of mismatches
+    cat("\nSummary of mismatch lengths after processing - see log file if needed\n")
+    sapply(precipList, FUN=function(x) { length(x[["mismatchTimes"]]) }) %>% 
+        t() %>% 
+        t() %>% 
+        print()
+    
+    # Run makePrecipTimeGraph(), sending PDF to file if requested
+    # If writeLogPDF is not NULL, direct the graphs to a suitable PDF
+    if (!is.null(writeLogPDF)) {
+        
+        # Prepend the provided log path if it has not been made available
+        if (!is.null(writeLogPath)) {
+            writeLogPDF <- paste0(writeLogPath, writeLogPDF)
+        }
+        
+        # Provide the location of the EDA pdf file
+        cat("\nPrecipitation times PDF file is available at:", writeLogPDF, "\n")
+
+        # Redirect the writing to writeLogPDF
+        pdf(writeLogPDF)
+    }
+        
+    # Run the plotting routine
+    precipLength <- makePrecipTimeGraph(precipList, pTypeName=pTypeName)
+    
+    # If writeLogPDF is not NULL, redirect to stdout
+    if (!is.null(writeLogPDF)) {
+        dev.off()
+    }
+    
+    # Return precipList and precipLength
+    list(precipList=precipList, precipLength=precipLength)
+    
+}
+
+```
+  
+There are many functions called by the main precipitation extraction and interval functions, including:  
+  
+* fnPrecip1() - extracts precipitation state from METAR and precipitation ranges from remarks  
+* fnPrecip2() - converts B/E times in remarks to date-times  
+* fnPrecip3() - extract issues with continuity (time in remarks belongs to a different METAR or comes at or after the next time listed)  
+* fnPrecip4() - finds consistency issues such as precipitation begin time when there is already precipitation, end time when there is no precipitation, and lack of begin/end time when state changes  
+* fnPrecip5() - works through any inconsistencies and automates a solution to regain consistency (assumes that the states listed in the METAR are the source of truth)  
+* fnPrecip6() - confirms consistency of the final intervals and output a list containing the begin times, end times, intervals, and mismatches  
+* precipByLocale() - extracts precipitation hours and events from processed intervals data  
+* plotPrecipitation() - plots precipitation hours and events, facetted by month or locale  
+  
+```{r}
+
+# Function to extract precipitation state and range data from METAR
+fnPrecip1 <- function(df, pType, showRegex=TRUE) {
+
+    # The remarks pattern is created based on the precipitation type
+    keyPattern <- paste0("(", pType, "[B|E]\\d+[0-9BE]*)")
+    if (showRegex) { cat("\nRegex search code is:", keyPattern, "\n") }
+    
+    # Extract the current precipitation state, lagged precipitation state, and range data from METAR
+    df <- df %>% 
+        select(origMETAR, dtime) %>% 
+        mutate(strPrecip=str_extract(origMETAR, pattern=keyPattern), 
+               curPrecip=str_detect(origMETAR, pattern=paste0("\\d{6}Z.*", pType, ".*RMK")),
+               lagPrecip=lag(curPrecip, 1)
+               )
+    
+    # Confirm that df is unique by dtime (algorithm depends on this)
+    dups <- df %>%
+        select(dtime) %>%
+        duplicated() %>%
+        any()
+    if (dups) {
+        stop("\nThere are duplicate values of dtime - investigate and fix\n")
+    }
+    
+    # Returnt the file
+    df
+    
+}
+
+
+# Function to create times for each piece of B/E data
+fnPrecip2 <- function(df) {
+
+    # Create the begin and end times by splitting precipString, then format as tibble and reattach dtime
+    bEData <- df %>%
+        pull(strPrecip) %>%
+        str_extract_all(pattern="[BE]\\d+", simplify=TRUE) %>%
+        as.data.frame(stringsAsFactors=FALSE) %>%
+        tibble::as_tibble() %>%
+        bind_cols(select(df, dtime))
+    
+    # Pivot longer, create a dummy record where is.na(V1), and split in to time and state change
+    bEData <- bEData %>%
+        pivot_longer(-dtime) %>%
+        mutate(value=ifelse(name=="V1" & is.na(value), paste0("N", lubridate::minute(dtime)), value)) %>%
+        filter(value != "") %>%
+        mutate(chgType=str_sub(value, 1, 1), 
+               chgNum=str_sub(value, 2, -1), 
+               chgTime=helperBEDateTime(dt=dtime, mins=chgNum)
+               )
+    
+    # Return the data
+    bEData
+    
+}
+
+
+# Function to extract issues - continuity, distance from METAR
+fnPrecip3 <- function(df) {
+
+    # Issues that can exist with the data
+    # 1. Greater than or equal to 3600 seconds before the current dtime, or after the current time
+    # 2. At or prior to the previous time
+    # 3. First record starts with an end time (there would never be a begin time associated)
+    issueCheck <- df %>%
+        mutate(deltaMETAR=dtime-chgTime, 
+               deltaPrev=ifelse(row_number()==1, ifelse(chgType=="E", -1, 3600), chgTime-lag(chgTime, 1)), 
+               issueCons=(deltaMETAR < 0 | deltaMETAR > 3599 | deltaPrev <= 0)
+               )
+    
+    cat("\nContinuity or consistency error - record(s) will be deleted\n")
+    issueCheck %>%
+        filter(issueCons) %>%
+        print()
+    
+    issueCheck %>%
+        select(-deltaMETAR, -deltaPrev) %>%
+        filter(!issueCons)
+    
+}
+
+
+# Function to find wrong sequence of times
+fnPrecip4 <- function(dfTimes, dfOrig) {
+    
+    # Pivot dfTimes back to a single record, discarding any of the consistency issues
+    # OK if not all dtimes included; will get from dfOrig
+    dfCheck <- dfTimes %>%
+        filter(!issueCons) %>%
+        mutate(newValue=case_when(chgType=="N" ~ 0, chgType=="B" ~ 1, chgType=="E" ~ -1)) %>%
+        pivot_wider(dtime, names_from="name", values_from="newValue") %>%
+        right_join(select(dfOrig, dtime, curPrecip, lagPrecip), by="dtime") %>%
+        mutate_if(is.numeric, ~ifelse(is.na(.), 0, .))
+    
+    # Create the cumsum of state change
+    cs <- dfCheck %>%
+        select(-dtime, -curPrecip) %>%
+        mutate(lagPrecip=as.integer(lagPrecip)) %>%
+        select(lagPrecip, everything()) %>%
+        apply(1, FUN=cumsum) %>%
+        t()
+    
+    # Create the list of issues
+    # If cumsum is every anything other than 1 or 0 there is a problem
+    # If the last value of cumsum does not equal curPrecip there is a problem
+    issue01 <- which(apply(cs, 1, FUN=max) > 1 | apply(cs, 1, FUN=min) < 0)
+    issuelc <- which(dfCheck$curPrecip != cs[, ncol(cs)])
+    issueAll <- sort(unique(c(issue01, issuelc)))
+    
+    cat("\n\nIssues with begin when precipitation or end when no precipitation:", length(issue01))
+    cat("\nIssues where state change does not add to the total:", length(issuelc))
+    cat("\nTotal issues (may be less than sum due to same datetime in both):", length(issueAll), "\n\n")
+    # print(dfCheck[issueAll, ] %>% select(dtime, lagPrecip, everything()))
+    
+    dfCheck[sort(unique(c(issue01, issuelc))), "dtime"]
+    
+}
+
+
+# Function to work through each bad date-time and suggest new ranges
+fnPrecip5 <- function(df, issueTimes, lagCurFrame) {
+    
+    # Create a dataframe for issueTimes
+    issues <- issueTimes %>%
+        mutate(issue=TRUE)
+    
+    # Split df in to issues and non-issue
+    df <- df %>%
+        left_join(issues, by="dtime") %>%
+        mutate(issue=ifelse(is.na(issue), FALSE, issue), 
+               lastRecord=(row_number()==n())
+               ) %>%
+        left_join(select(lagCurFrame, dtime, lagPrecip, curPrecip), by="dtime")
+    
+    dfIssues <- df %>%
+        filter(issue)
+    dfNoIssues <- df %>%
+        filter(!issue)
+    
+    # Note the records to be worked through
+    cat("\nRecords to be addressed include:\n")
+    dfIssues %>%
+        select(-issueCons, -issue) %>%
+        print()
+
+    # Work through a record by starting with lagPrecip
+    # If first record inconsistent with lagPrecip, flag for deletion and keep state; update state otherwise
+    # if next record inconsistent with previous state, flag for deletion and keep state; update otherwise
+    # If final record inconsistent with curPrecip, add a record using dtime as the time
+    
+    # Get the unique times with issues
+    dtimeVec <- dfIssues %>% pull(dtime) %>% unique()
+    
+    # Create empty vectors for deletes and adds
+    delVec <- as.POSIXct(character(0))
+    addBegin <- as.POSIXct(character(0))
+    addEnd <- as.POSIXct(character(0))
+    
+    # Populate the delete and add vectors
+    for (dt in dtimeVec) {
+        
+        # Pull the records for this time
+        dtRecords <- dfIssues %>% filter(dtime==lubridate::as_datetime(dt))
+        
+        # Initialize the previous state to lagPrecip and the error vector to blank
+        preState <-dtRecords$lagPrecip[1]
+        
+        # Loop through and flag state change errors
+        for (ctr in 1:nrow(dtRecords)) {
+            
+            # Grow the deletions vector
+            if ((!preState & dtRecords$chgType[ctr]=="E") | (preState & dtRecords$chgType[ctr]=="B")) {
+                delVec <- c(delVec, dtRecords$chgTime[ctr])
+                # do not modify the state, it has not changed due to the deletion
+            } else {
+                # do not grow the deletion vector, the state change is OK here if chgType is not "N"
+                if (dtRecords$chgType[ctr] != "N") { preState <- !preState }
+            }
+            
+            # Create a single addition if needed
+            if (ctr==nrow(dtRecords) & preState != dtRecords$curPrecip[ctr]) {
+                if (dtRecords$curPrecip[ctr]) { addBegin <- c(addBegin, dt) }
+                if (!dtRecords$curPrecip[ctr]) { addEnd <- c(addEnd, dt) }
+            }
+        }
+        
+    }
+    
+    # If there is precipitation at the very end, addEnd for dTime+1
+    fixEnd <- dfNoIssues %>%
+        filter(lastRecord & curPrecip) %>%
+        mutate(timeUse=dtime+1) %>%
+        pull(timeUse)
+    if (length(fixEnd) > 0) {
+        addEnd <- c(addEnd, fixEnd)
+        cat("\nAdding final end time to cap interval at end of file:", as.character(fixEnd), "\n")
+    }
+    
+    # Print the key vectors
+    cat("\nStart/end times deleted:\n")
+    print(lubridate::as_datetime(delVec))
+    cat("\nBegin times added\n")
+    print(lubridate::as_datetime(addBegin))
+    cat("\nEnd times added:\n")
+    print(lubridate::as_datetime(addEnd))
+    
+    # Create the full list of issue start times
+    beginIssues <- dfIssues %>%
+        filter(chgType=="B") %>%
+        pull(chgTime)
+    endIssues <- dfIssues %>%
+        filter(chgType=="E") %>%
+        pull(chgTime)
+    
+    beginIssues <- c(beginIssues[!beginIssues %in% delVec], addBegin)
+    endIssues <- c(endIssues[!endIssues %in% delVec], addEnd)
+
+    # cat("\nNew begin times list from issues:\n")
+    # print(beginIssues)
+    # cat("\nNew end times list from issues:\n")
+    # print(endIssues)
+    
+    # Create the full list of start and end times
+    beginOK <- dfNoIssues %>%
+        filter(chgType=="B") %>%
+        pull(chgTime)
+    endOK <- dfNoIssues %>%
+        filter(chgType=="E") %>%
+        pull(chgTime)
+    
+    # Return a list of beginTimes and endTimes
+    list(beginTimes=sort(c(beginOK, beginIssues)), 
+         endTimes=sort(c(endOK, endIssues))
+         )
+    
+}
+
+
+fnPrecip6 <- function(lst, df) {
+
+    # Extract the beginning and interval times
+    begins <- lst[["beginTimes"]]
+    ends <- lst[["endTimes"]]
+    durs <- ends - begins
+
+    # Create intervals from the raw list file
+    precipInts <- interval(begins, ends - 1) # make the interval stop the minute before the end time
+    
+    # Extract the METAR and date-time information and check for overlaps
+    dtime <- df %>% pull(dtime)
+    metar <- df %>% pull(origMETAR)
+    precipMETAR <- df %>% pull(curPrecip)
+    intMETAR <- sapply(dtime, FUN=function(x) {x %within% precipInts %>% any()})
+
+    # Check for the consistency of the observations and print the mismatches
+    print(table(precipMETAR, intMETAR))
+
+    mism <- which(precipMETAR != intMETAR)
+    if (length(mism) == 0) {
+        cat("\nFull matches between METAR observations and intervals\n")
+    } else {
+        for (x in mism) {
+            cat("\nMismatch at time", strftime(dtime[x], format="%Y-%m-%d %H:%M", tz="UTC"), "UTC\n")
+            print(metar[max(1, x-2):min(length(metar), x+2)])
+        }
+    }
+    
+    list(beginTimes=lst$beginTimes, endTimes=lst$endTimes, 
+         precipInts=precipInts, mismatches=mism, mismatchTimes=dtime[mism]
+         )
+    
+}
+
+
+# Extract precipitation information (total hours, number of events) by locale and month
+# Need to fix issue of hard-coding minTime and maxTime to 2016 (fixed, but uses a single minTime and a single maxTime which means each batch of years must be processed separately)
+precipByLocale <- function(lst, 
+                           listItem="beginEndInterval", 
+                           subName=-4, 
+                           intervalVar="precipInts", 
+                           minTime=NULL,
+                           maxTime=NULL, 
+                           mapper=cityNameMapper
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst - the list containing the output for the specified precipitation type
+    # listItem - the name of the item to extract from each element of the list
+    # subName - the second argument for str_sub() for converting list item name to original file name
+    # intervalVar - name of the interval variable in listItem
+    # minTime - ignore any interval with a start time before this date (guess from data if NULL)
+    # maxTime - ignore any interval with a start time after this date (guess from data if NULL)
+    # mapper - named vector for mapping source to descriptive locale
+    
+    # Get the names of the objects in the list
+    beNames <- names(lst) %>% str_sub(1, subName)
+    
+    # Get the interval data by locale and apply the original file names
+    beData <- sapply(lst, FUN="[", listItem)
+    names(beData) <- beNames
+    
+    # If minTime is NULL or maxTime is NULL, infer a best starting month from the data
+    if (is.null(minTime) | is.null(maxTime)) {
+        
+        # Grab total occurrences of dtime in "pStateFrame"
+        # Set minTime and maxTime to keep only year-month combos that average 27+ full days of data
+        metData <- sapply(lst, FUN="[", "pStateFrame") %>%
+            bind_rows() %>%
+            count(ym=paste0(lubridate::year(dtime), "-", zeroPad(lubridate::month(dtime)))) %>%
+            mutate(pct=n/max(n), okUse=(pct > 27/31)) %>%
+            group_by(okUse) %>%
+            mutate(ymMin=first(ym), ymMax=last(ym)) %>%
+            ungroup()
+        
+        # Grab the overall minimum and maximum times
+        ovrMin <- metData %>%
+            filter(okUse) %>%
+            pull(ymMin) %>%
+            first()
+        ovrMax <- metData %>%
+            filter(okUse) %>%
+            pull(ymMax) %>%
+            first()
+        
+        # Flag any issues
+        contIssues <- metData %>%
+            mutate(metProb1=okUse & (ym < ovrMin | ym > ovrMax), 
+                   metProb2=!okUse & ym >= ovrMin & ym <= ovrMax
+                   )
+        if (contIssues %>% summarize(sum(metProb1 | metProb2)) %>% pull() > 0) {
+            cat("\nMinimum and maximum time alignment issue\n")
+            print(contIssues)
+        }
+        
+        # Set the minimum time based on day 1 of ovrMin and maximum time based on last day of ovrMax
+        if (is.null(minTime)) { minTime <- lubridate::ymd(paste0(ovrMin, "-01")) }
+        if (is.null(maxTime)) { maxTime <- lubridate::ymd(paste0(ovrMax, "-01")) + months(1) - days(1) }
+        cat("\nWill use minTime:", as.character(minTime), "and maxTime:", as.character(maxTime), "\n")
+        
+    }
+
+    # Get the total precipitation length and total precipitation events by month
+    # Exclude any event that begins before beginDate or after afterDate
+    # Count the precipitation as being in the month when it begins
+    
+    # Helper function for extraction of total precipitation by month
+    getMonthly <- function(x, y=intervalVar, minT=minTime, maxT=maxTime) {
+        x %>%
+            mutate(intStart=lubridate::int_start(get(intervalVar)), 
+                   intHours=lubridate::time_length(get(intervalVar))/3600, 
+                   month=factor(month.abb[lubridate::month(intStart)], levels=month.abb)
+                   ) %>%
+            filter(lubridate::as_date(intStart) >= minT, lubridate::as_date(intStart) <= maxT) %>%
+            group_by(month) %>%
+            summarize(hours=sum(intHours), events=n()) %>%
+            right_join(tibble::tibble(month=factor(month.abb, levels=month.abb)), by="month") %>%
+            mutate(hours=ifelse(is.na(hours), 0, hours), 
+                   events=ifelse(is.na(events), 0 , events)
+                   ) %>%
+            select(month, hours, events) %>%
+            pivot_longer(-month, names_to="variable", values_to="value")
+    }
+    
+    # Extract total hours and events by month
+    monPrecip <- purrr::map_dfr(beData, .f=getMonthly, .id="source")
+    
+    # Pivot wider so that file is unique by source-month with hours and events are columns
+    # Add locale name from mapper
+    monPrecip %>%
+        pivot_wider(c(source, month), names_from="variable", values_from="value") %>%
+        mutate(locale=mapper[source]) %>%
+        select(source, locale, everything())
+    
+}
+
+
+# Plot precipitation length and events, facetted by locale or month
+plotPrecipitation <- function(tbl, 
+                              pTypeName=""
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # tbl: the tibble containing the processed data
+    # pTypeName: the type of precipitation as a character
+    
+    # Plot 1: Total precipitation length by locale
+    p1 <- tbl %>%
+        group_by(locale) %>%
+        summarize(hours=sum(hours)) %>%
+        ggplot(aes(x=fct_reorder(locale, hours), y=hours)) +
+        geom_col(fill="lightblue") +
+        geom_text(aes(label=round(hours), y=hours/2)) + 
+        coord_flip() + 
+        labs(x="", 
+             y="Hours", 
+             title=paste0("Total hours of ", stringr::str_to_lower(pTypeName), " by locale")
+             )
+    print(p1)
+    
+    
+    # Plot 2: Total precipitation events by locale
+    p2 <- tbl %>%
+        group_by(locale) %>%
+        summarize(events=sum(events)) %>%
+        ggplot(aes(x=fct_reorder(locale, events), y=events)) +
+        geom_col(fill="lightblue") +
+        geom_text(aes(label=round(events), y=events/2)) + 
+        coord_flip() + 
+        labs(x="", 
+             y="# Unique Events", 
+             title=paste0("Total unique events of ", stringr::str_to_lower(pTypeName), " by locale"), 
+             caption="An event is defined by a begin and end and may be as short as a minute\nor with as little as a minute gap to the next event"
+             )
+    print(p2)
+    
+    
+    # Plot 3: Precipitation length by month, facetted by locale
+    mm <- tbl %>%
+        group_by(month) %>%
+        summarize(hours=mean(hours))
+    p3 <- tbl %>%
+        ggplot(aes(x=month, y=hours)) +
+        geom_col(fill="lightblue") +
+        labs(y="Hours", 
+             x="", 
+             title=paste0("Total hours of ", stringr::str_to_lower(pTypeName), " by month"), 
+             subtitle="Red dots are the monthly average across locales in this plot"
+             ) + 
+        geom_point(data=mm, color="red") +
+        facet_wrap(~ locale) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p3)
+    
+    # Plot 4: Precipitation events by month, facetted by locale
+    mm <- tbl %>%
+        group_by(month) %>%
+        summarize(events=mean(events))
+    p4 <- tbl %>%
+        ggplot(aes(x=month, y=events)) +
+        geom_col(fill="lightblue") +
+        labs(y="# Unique Events", 
+             x="", 
+             title=paste0("Total unique events of ", stringr::str_to_lower(pTypeName), " by month"), 
+             subtitle="Red dots are the monthly average across locales in this plot", 
+             caption="An event is defined by a begin and end and may be as short as a minute\nor with as little as a minute gap to the next event"
+             ) + 
+        geom_point(data=mm, color="red") +
+        facet_wrap(~ locale) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p4)
+    
+}
+
+
+```
+  
+The functions can then be run for rain, snow, and thunder, using only the 2016 data:  
+```{r cache=TRUE}
+
+memFiles <- ls(pattern="^k[a-z]{3}_2016$")
+cat("\nProcesses will be run for files:\n\n", paste0(memFiles, collapse="\n"), "\n", sep="")
+
+# Run for rain, with logs and pdf sent to files
+rain_2016_List <- wrapPrecipTimes(memFiles, 
+                                  pType="(?<!FZ)RA", 
+                                  pExt="_RA", 
+                                  pTypeName="rain", 
+                                  writeLogFile="rain_2016_IntervalTimes.log",
+                                  writeLogPDF="rain_2016_IntervalTimes.pdf",
+                                  writeLogPath=filePath,
+                                  appendWriteFile=FALSE
+                                  )
+
+# Run for snow, with logs and pdf sent to files
+snow_2016_List <- wrapPrecipTimes(memFiles, 
+                                  pType="(?<!BL)SN", 
+                                  pExt="_SN", 
+                                  pTypeName="snow", 
+                                  writeLogFile="snow_2016_IntervalTimes.log",
+                                  writeLogPDF="snow_2016_IntervalTimes.pdf",
+                                  writeLogPath=filePath,
+                                  appendWriteFile=FALSE
+                                  )
+
+# Run for thunder, with logs and pdf sent to files
+thunder_2016_List <- wrapPrecipTimes(memFiles, 
+                                     pType="(?<!VC)TS", 
+                                     pExt="_TS", 
+                                     pTypeName="thunder", 
+                                     writeLogFile="thunder_2016_IntervalTimes.log",
+                                     writeLogPDF="thunder_2016_IntervalTimes.pdf",
+                                     writeLogPath=filePath,
+                                     appendWriteFile=FALSE
+                                     )
+
+
+```
+  
+The functions can then be run for rain, snow, and thunder, using only the 2015 data:  
+```{r cache=TRUE}
+
+memFiles <- ls(pattern="^k[a-z]{3}_2015$")
+cat("\nProcesses will be run for files:\n\n", paste0(memFiles, collapse="\n"), "\n", sep="")
+
+# Run for rain, with logs and pdf sent to files
+rain_2015_List <- wrapPrecipTimes(memFiles, 
+                                  pType="(?<!FZ)RA", 
+                                  pExt="_RA", 
+                                  pTypeName="rain", 
+                                  writeLogFile="rain_2015_IntervalTimes.log",
+                                  writeLogPDF="rain_2015_IntervalTimes.pdf",
+                                  writeLogPath=filePath,
+                                  appendWriteFile=FALSE
+                                  )
+
+# Run for snow, with logs and pdf sent to files
+snow_2015_List <- wrapPrecipTimes(memFiles, 
+                                  pType="(?<!BL)SN", 
+                                  pExt="_SN", 
+                                  pTypeName="snow", 
+                                  writeLogFile="snow_2015_IntervalTimes.log",
+                                  writeLogPDF="snow_2015_IntervalTimes.pdf",
+                                  writeLogPath=filePath,
+                                  appendWriteFile=FALSE
+                                  )
+
+# Run for thunder, with logs and pdf sent to files
+thunder_2015_List <- wrapPrecipTimes(memFiles, 
+                                     pType="(?<!VC)TS", 
+                                     pExt="_TS", 
+                                     pTypeName="thunder", 
+                                     writeLogFile="thunder_2015_IntervalTimes.log",
+                                     writeLogPDF="thunder_2015_IntervalTimes.pdf",
+                                     writeLogPath=filePath,
+                                     appendWriteFile=FALSE
+                                     )
+
+```
+  
+The functions can then be run for rain, snow, and thunder, using only the 2017 data:  
+```{r cache=TRUE}
+
+memFiles <- ls(pattern="^k[a-z]{3}_2017$")
+cat("\nProcesses will be run for files:\n\n", paste0(memFiles, collapse="\n"), "\n", sep="")
+
+# Run for rain, with logs and pdf sent to files
+rain_2017_List <- wrapPrecipTimes(memFiles, 
+                                  pType="(?<!FZ)RA", 
+                                  pExt="_RA", 
+                                  pTypeName="rain", 
+                                  writeLogFile="rain_2017_IntervalTimes.log",
+                                  writeLogPDF="rain_2017_IntervalTimes.pdf",
+                                  writeLogPath=filePath,
+                                  appendWriteFile=FALSE
+                                  )
+
+# Run for snow, with logs and pdf sent to files
+snow_2017_List <- wrapPrecipTimes(memFiles, 
+                                  pType="(?<!BL)SN", 
+                                  pExt="_SN", 
+                                  pTypeName="snow", 
+                                  writeLogFile="snow_2017_IntervalTimes.log",
+                                  writeLogPDF="snow_2017_IntervalTimes.pdf",
+                                  writeLogPath=filePath,
+                                  appendWriteFile=FALSE
+                                  )
+
+# Run for thunder, with logs and pdf sent to files
+thunder_2017_List <- wrapPrecipTimes(memFiles, 
+                                     pType="(?<!VC)TS", 
+                                     pExt="_TS", 
+                                     pTypeName="thunder", 
+                                     writeLogFile="thunder_2017_IntervalTimes.log",
+                                     writeLogPDF="thunder_2017_IntervalTimes.pdf",
+                                     writeLogPath=filePath,
+                                     appendWriteFile=FALSE
+                                     )
+
+```
+  
+Next steps are to continue automating the process.
