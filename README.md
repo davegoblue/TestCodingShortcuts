@@ -1960,3 +1960,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherEDA_202005_v001 extracts daily summaries for high-low temperature and precipitation amount  
 * WeatherEDA_202005_v001 directs precipitation processing logs and plots to files  
   
+### Expansions week of 15-JUN-2020  
+* WeatherEDA_202005_v002 created to hold final functions from _v001  
+  
