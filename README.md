@@ -1962,4 +1962,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 15-JUN-2020  
 * WeatherEDA_202005_v002 created to hold final functions from _v001  
+* WeatherEDA_202005_v002 extracts daily temperature and precipitation summaries and runs cross-locale comparisons  
   
