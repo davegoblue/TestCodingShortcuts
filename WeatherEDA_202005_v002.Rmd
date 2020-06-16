@@ -167,6 +167,31 @@ helperBEDateTime <- function(dt, mins) {
 
 }
 
+
+# Helper function to convert 4-digit function to temperature
+convertTemp <- function(x, convF=TRUE) {
+    
+    # Convert to numeric
+    temp <- ifelse(str_sub(x, 1, 1)==1, -1, 1) * as.numeric(str_sub(x, 2, 4)) / 10
+    
+    # Convert to Fahrenheit if requested
+    if (convF) {
+        temp <- round(32 + temp * 9/5, 0)
+    }
+    
+    temp
+    
+}
+
+
+# Helper function to convert 5-character precipitation to inches
+convertPrecip <- function(x, begPos=-4, endPos=-1) {
+    
+    # Convert to numeric and divide by 100 to get inches
+    as.numeric(str_sub(x, begPos, endPos)) / 100
+
+}
+
 ```
 
 
@@ -1592,4 +1617,940 @@ thunder_2017_List <- wrapPrecipTimes(memFiles,
 
 ```
   
-Next steps are to continue automating the process.
+#### _Extracting Precipitation and Temperature Summaries_  
+METAR periodically contain aggregated summaries of the day's weather.  Two areas summarized include temperature and precipitation:  
+  
+* RMK.* 4dddddddd - the first dddd are the daily high temperature (leading d is 1 for negative, trailing d is decimal, report is in Celsius) and the second dddd are the daily low temperature  
+* RMK.* Pdddd - the amount of liquid precipipitation in the past hour, in hundredths of inches  
+* RMK.* 6dddd - the amount of liquid precipitation in the past 3/6 hours, in hundredths of inches  
+* RMK.* 7dddd - the amount of liquid precipitation in the past 24 hours, in hundredths of inches  
+  
+A function is written to extract daily high and low temperatures:  
+```{r}
+
+# Extract the daily high and low temperature (convert to rounded Fahrenheit)
+getDailyHighLow <- function(df) {
+
+    # If a character has been passed, convert to the associated object
+    if (is.character(df)) {
+        df <- get(df)
+    }
+    
+    df %>%
+        select(dtime, origMETAR) %>%
+        mutate(tempData=str_extract(origMETAR, pattern="RMK.* 4\\d{8}"), 
+               tempFHi=convertTemp(str_sub(tempData, -8, -5)), 
+               tempFLo=convertTemp(str_sub(tempData, -4, -1))
+               ) %>%
+        select(-origMETAR)
+    
+}
+
+```
+  
+The function can then be run on all the relevant files:  
+```{r}
+
+# Extract all of the relevant files
+fileNames <- names(cityNameMapper)
+fileNames
+
+# Extracted high-low temperatures
+all_hilo <- map_dfr(.x=fileNames, .f=getDailyHighLow, .id="source") %>%
+    mutate(source=fileNames[as.integer(source)], locale=cityNameMapper[source]) %>%
+    select(source, locale, everything())
+all_hilo
+```
+  
+A function can then be written to create relevant plots for the high-low temperature timing, routed to a file if requested:  
+```{r}
+
+plotDailyHiLo <- function(df, 
+                          pdfName=NULL,
+                          pdfPath=filePath
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: the data frame or tibble containing the extracted high-low temperature data
+    # pdfName: the file name for saving the PDF plots (NULL means print to stdout)
+    # pdfPath: location to save PDF plots (only used if pdfName is not null; NULL means no pre-pended path)
+    
+    # Send to file if pdfName is provided
+    if (!is.null(pdfName)) {
+        
+        # Pre-pend pdfPath if provided
+        if (!is.null(pdfPath)) { pdfName <- paste0(pdfPath, pdfName) }
+        
+        # Provide the location of the EDA pdf file
+        cat("\nDaily High-Low Temperature PDF file is available at:", pdfName, "\n")
+
+        # Redirect the writing to writeLogPDF
+        pdf(pdfName)
+    }
+    
+
+    # Data with the hour and notNA status
+    dat <- df %>%
+        mutate(hour=lubridate::hour(lubridate::round_date(dtime, unit="hours")), 
+               month=lubridate::month(dtime),
+               notNA=!is.na(tempFHi)
+               )
+    # Plot for counts of !is.na by hour
+    p1 <- dat %>%
+        ggplot(aes(x=hour, fill=notNA)) + 
+        geom_bar(position="stack") + 
+        scale_fill_discrete("Hi-Lo Data") + 
+        labs(y="Number of Daily Observations", x="METAR Hour", 
+             title="Daily High-Low temperatures are captured based on time zone"
+             ) + 
+        facet_wrap(~locale)
+    print(p1)
+    
+    # Summary of notNA times by locale
+    cat("\nZulu times for high-low temperatures by locale\n\n")
+    notNATimes <- dat %>%
+        mutate(hourZ=ifelse(notNA, paste0("Time_", zeroPad(hour), "Z"), "Time_NA")) %>%
+        group_by(locale, hourZ) %>%
+        summarize(n=n()) %>%
+        ungroup() 
+    notNANames <- notNATimes %>%
+        filter(hourZ != "Time_NA") %>%
+        pull(hourZ) %>%
+        unique() %>%
+        sort()
+    notNATimes %>%
+        pivot_wider(locale, names_from="hourZ", values_from="n") %>%
+        mutate_at(vars(all_of(notNANames)), ~ifelse(is.na(.), 0, .)) %>%
+        select_at(vars(all_of(c("locale", notNANames, "Time_NA")))) %>%
+        as.data.frame() %>%
+        print()
+
+    # Box plots of high and low temperatures by locale by month
+    p2 <- dat %>%
+        filter(!is.na(tempData)) %>%
+        ggplot(aes(x=factor(month.abb[month], levels=month.abb))) + 
+        geom_boxplot(aes(y=tempFHi), fill="pink") + 
+        labs(y="Temperature (F)", x="", 
+             title="Daily High Temperatures by Month by Locale"
+             ) + 
+        facet_wrap(~locale) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p2)
+
+    p3 <- dat %>%
+        filter(!is.na(tempData)) %>%
+        ggplot(aes(x=factor(month.abb[month], levels=month.abb))) + 
+        geom_boxplot(aes(y=tempFLo), fill="lightblue") + 
+        labs(y="Temperature (F)", x="", 
+             title="Daily Low Temperatures by Month by Locale"
+             ) + 
+        facet_wrap(~locale) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p3)
+
+    # If pdfName is not NULL, redirect to stdout
+    if (!is.null(pdfName)) {
+        dev.off()
+    }
+
+}
+
+```
+  
+The function can then be run for all the high-low temperature data, with output directed to PDF:  
+```{r cache=TRUE}
+
+plotDailyHiLo(all_hilo, pdfName="DailyHighLow.pdf")
+
+```
+
+The high-low temperatures appear to be recorded at 6Z in Central time zone locales; at 5Z in East time zone locales; at 8Z in 2 West time zone locales.
+  
+A function is also written to extract the 1-hour, 3/6-hour, and 24-hour liquid precipitation totals from METAR data:  
+```{r}
+
+# Extract precipitation amounts in inches
+getPrecipAmount <- function(df) {
+    
+    # If a character has been passed, convert to the associated object
+    if (is.character(df)) {
+        df <- get(df)
+    }
+
+    # Helper function convertPrecip() contained in the helper functions section of this file    
+    df %>%
+        select(dtime, origMETAR) %>%
+        mutate(p1Inches=convertPrecip(str_extract(origMETAR, pattern="RMK.* P\\d{4}")), 
+               p36Inches=convertPrecip(str_extract(origMETAR, pattern="RMK.* 6\\d{4}")), 
+               p24Inches=convertPrecip(str_extract(origMETAR, pattern="RMK.* 7\\d{4}"))
+               ) %>%
+        select(-origMETAR)
+    
+}
+
+```
+  
+The function can be run for all the data:  
+```{r}
+
+# Extracted precipitation amounts
+all_pin <- map_dfr(.x=fileNames, .f=getPrecipAmount, .id="source") %>%
+    mutate(source=fileNames[as.integer(source)], locale=cityNameMapper[source]) %>%
+    select(source, locale, everything())
+all_pin
+```
+  
+A function can be created to extract the time periods in which 1-hour, 3/6-hour, and 24-hour precipitation summaries are captured:  
+```{r}
+
+# Function to plot the time periods in which precipitation summaries are captured
+plotPrecipNAHours <- function(df, 
+                              mapper, 
+                              pdfName=NULL, 
+                              pdfPath=filePath
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble containing the precipitation data
+    # mapper: file containing variables mapped to descriptive plotting names
+    # pdfName: name for PDF files (NULL means print to stdout)
+    # pdfPath: path for PDF files (only used if pdfName is not null; if pdfPath is null, no pre-pend)
+
+    # Send to file if pdfName is provided
+    if (!is.null(pdfName)) {
+        
+        # Pre-pend pdfPath if provided
+        if (!is.null(pdfPath)) { pdfName <- paste0(pdfPath, pdfName) }
+        
+        # Provide the location of the EDA pdf file
+        cat("\nDaily High-Low Temperature PDF file is available at:", pdfName, "\n")
+
+        # Redirect the writing to writeLogPDF
+        pdf(pdfName)
+    }
+    
+    # Plot the time periods provided in mapper
+    for (plotVar in names(mapper)) {
+        # Counts of !is.na by hour
+        p1 <- df %>%
+            mutate(hour=factor(lubridate::hour(lubridate::round_date(dtime, unit="hours"))), 
+                   notNA=!is.na(get(plotVar))
+                   ) %>%
+            ggplot(aes(x=hour, fill=notNA)) + 
+            geom_bar(position="stack") + 
+            scale_fill_discrete(paste0(mapper[plotVar], " Data")) + 
+            labs(y="Number of Days with Observations at Hour", 
+                 x="METAR Hour", 
+                 title=paste0("Capture for ", mapper[plotVar])
+                 ) + 
+            facet_wrap(~locale) + 
+            scale_x_discrete(breaks=seq(0, 23, by=3))
+        print(p1)
+    }
+
+    # If pdfName is not NULL, redirect to stdout
+    if (!is.null(pdfName)) {
+        dev.off()
+    }
+    
+}
+
+```
+  
+Plots can then be created for the 1-hour, 3/6-hour, and 24-hour summaries:  
+```{r cache=TRUE}
+
+# Map of variable to chart name
+mapChartVar <- c(p1Inches="1-hr Precip", p36Inches="3-hr or 6-hr Precip", p24Inches="24-hr Precip")
+
+# Run the precipitation plots
+plotPrecipNAHours(all_pin, mapper=mapChartVar, pdfName="Precipitation_NonNA_Hours.pdf")
+
+```
+  
+Further, summaries can be created for when the various times are used:  
+```{r}
+
+# Plot the time periods provided in mapper
+for (plotVar in names(mapChartVar)) {
+    # Counts of !is.na by hour
+    p1 <- all_pin %>%
+        mutate(hour=factor(lubridate::hour(lubridate::round_date(dtime, unit="hours"))), 
+               notNA=!is.na(get(plotVar))
+               ) %>%
+        group_by(source, hour) %>%
+        summarize(pct=mean(notNA)) %>%
+        ggplot(aes(x=hour, y=pct, group=source)) + 
+        geom_line(alpha=0.25) + 
+        labs(y="Percent of Days with Observations at Hour", 
+             x="METAR Hour (Z)", 
+             title=paste0("Capture for ", mapChartVar[plotVar]), 
+             caption="Each line is a single location/year"
+             ) +
+        scale_x_discrete(breaks=seq(0, 23, by=3))
+    print(p1)
+}
+
+```
+  
+While there is significant variation in the frequency of precipitation by locale and year, several trends are evident in the data:  
+  
+* Hourly precipitation data is recorded as needed in any hour (if precipitation occurred in the past hour)  
+* 3/6 hourly precipitation is recorded as needed in any time period 0Z-3Z-6Z-9Z-12Z-15Z-18Z-21Z as needed (if precipitation occurred in the past 3/6 hours)  
+* 24-hourly precipitation is recorded as needed at 12Z (if precipitation occurred in the past 24 hours)  
+  
+The precipitation sums can also be checked for consistency:  
+```{r}
+
+# Sum precipitation by year for p1, p36 (using only 0Z-6Z-12Z-18Z), p24
+mod_pin <- all_pin %>%
+    mutate(p1Inches=ifelse(is.na(p1Inches), 0, p1Inches),
+           p36ok=lubridate::hour(lubridate::round_date(dtime, unit="hours")) %in% c(0, 6, 12, 18),
+           p36Inches=ifelse(is.na(p36Inches) | !p36ok, 0, p36Inches),
+           p24Inches=ifelse(is.na(p24Inches), 0, p24Inches)
+           )
+
+mod_pin %>%
+    group_by(locale) %>%
+    summarize_if(is.numeric, sum) %>%
+    rename(`1-Hour`=p1Inches, `6-Hour`=p36Inches, `24-Hour`=p24Inches) %>%
+    pivot_longer(-locale, names_to="Unit", values_to="Inches") %>%
+    ggplot(aes(x=Unit, y=Inches)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(label=round(Inches, 1), y=Inches+10)) +
+    labs(title="Annual precipitation when summing by various units", x="") +
+    facet_wrap(~locale)
+
+```
+  
+There are some minor differences when summing annual precipitation by different units.  The biggest outlier is the Houston 2016 1-hour total being ~10 inches greater than the 6-hour totals or 24-hour totals:  
+```{r}
+
+# Explore the Houston data by month
+all_pin %>% 
+    filter(source=="kiah_2016") %>% 
+    group_by(month=lubridate::month(dtime)) %>% 
+    summarize(p1=sum(p1Inches, na.rm=TRUE), p24=sum(p24Inches, na.rm=TRUE))
+
+# Explore the April data by day
+all_pin %>% 
+    filter(source=="kiah_2016", lubridate::month(dtime)==4) %>% 
+    group_by(day=lubridate::day(dtime)) %>% 
+    summarize(p1=sum(p1Inches, na.rm=TRUE), p24=sum(p24Inches, na.rm=TRUE)) %>%
+    filter(p1>0 | p24 > 0)
+
+# Explore the April 18 data
+kiah_2016 %>%
+    filter(dtime == lubridate::ymd_hm("2016-04-18 17:53")) %>%
+    pull(origMETAR)
+
+```
+
+Houston experienced near-record flooding on April 18, 2016 due to ~10 inches of rain.  The 1-hour totals appear to capture this, while the 24-hour total is absent on April 18 and 7//// (data bad) on April 19.  The April 18, 2016 1753Z METAR captures this extreme rainfall event in an explanatory note.
+  
+An automated routine is designed to check for other material mimatches in liquid precipitation by month.  A material mismatch is defined as rainfall totals where the minimum is under 90% of the maximum, and there is a gap of at least 0.25 inches.  The 1-hour and 24-hour summaries are used:  
+```{r}
+
+pIssues <- mod_pin %>%
+    mutate(month=lubridate::month(dtime)) %>%
+    group_by(locale, month) %>%
+    summarize(p1Inches=sum(p1Inches), p24Inches=sum(p24Inches)) %>%
+    ungroup() %>%
+    mutate(absDelta=abs(p1Inches-p24Inches), 
+           pctDelta=absDelta/pmax(p1Inches, p24Inches), 
+           mism=(absDelta >= 0.25) & (pctDelta > 0.1)
+           )
+
+pIssues %>%
+    count(mism)
+
+pIssues %>% 
+    filter(mism) %>% 
+    arrange(-absDelta)
+
+```
+  
+There are meaningful mismatches in the data, with 50 month-locale combinations having a material mismatch.  And, since material mismatch was defined in a forgiving manner (need to be 0.25 inches and 10% different), there are likely a number of underlying factors.  Further, since the annual sums are roughly the same across metrics in most cases, there is no obvious pattern such as "1-hour sums tend to record high".
+
+This data may be of lower integrity, which should be considered during the modeling process.
+  
+#### _Cross-Locale EDA Summaries_  
+The basic EDA summaries can also be run across locales.  First, a function is written to attach locale names and create a single file for 1+ locations:  
+```{r}
+
+# Combine files from a character list
+combineProcessedFiles <- function(charList, mapper=cityNameMapper) {
+    
+    # Combine the objects represented by charList, and name the list items using charList
+    listFiles <- lapply(charList, FUN=function(x) { get(x) })
+    names(listFiles) <- charList
+    
+    # Bind rows, and add the descriptive locale name as sourceName
+    tblFiles <- bind_rows(listFiles, .id="source") %>%
+        mutate(sourceName=mapper[source])
+    
+    tblFiles
+    
+}
+
+```
+  
+The function is then applied to every file in cityNameMapper:  
+```{r}
+
+# Combine the 2016 data
+allData <- combineProcessedFiles(names(cityNameMapper))
+
+# Show counts by sourceName
+allData %>%
+    count(source, sourceName)
+
+```
+  
+The following global summaries will be useful:  
+  
+* plotCountsByMetric() - overall percentage by metric, applied to total counts for locale  
+* plotNumCor() - overall geom_smooth()  
+* plotFactorNumeric() - overall mean/median of numeric by factor  
+* corMETAR() and lmMETAR() - not applicable, though could be run on full dataset  
+* basicWindPlots() - tbd, perhaps adapt along with consolidatePlotWind  
+* consolidatePlotWind() - tbd, perhaps adapt along with basicWindPlots  
+  
+Helper functions can be created for:  
+  
+* helperCountsByMetric() - get the overall percentage by metric for variable x  
+* helperNumCor() - get an overall geom_smooth for variable y vs. variable x  
+* helperFactorNumeric() - get the overall mean or median for numeric variable y by factor variable x  
+  
+The helper functions are created below:  
+```{r}
+
+# Helper function to get overall percentage by metric for variable x
+helperCountsByMetric <- function(tbl, 
+                                 ctVar, 
+                                 sumOn="dummyVar"
+                                 ) {
+
+    # FUNCTION ARGUMENTS:
+    # tbl: the tibble or data frame
+    # ctVar: the variable for which overall percentage is desired
+    # sumOn: the variable to be summed (default is counts, and the program makes "dummyVar" for this)
+    
+    tbl %>%
+        mutate(dummyVar=1) %>%
+        select_at(vars(all_of(c(ctVar, sumOn)))) %>%
+        filter_all(all_vars(!is.na(.))) %>%
+        group_by_at(ctVar) %>%
+        summarize(n=sum(get(sumOn))) %>%
+        mutate(nPct=n/sum(n))
+        
+}
+
+
+# Helper function to get a geom_smooth for variable y vs variable x
+helperNumCor <- function(tbl, 
+                         xVar, 
+                         yVar, 
+                         sumOn="dummyVar",
+                         se=TRUE, 
+                         color="red", 
+                         method="lm", 
+                         lty=2
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # tbl: the tibble or data frame
+    # xVar: the x-axis variable
+    # yVar: the y-axis variable
+    # sumOn: the variable to be summed (default is counts, and the program makes "dummyVar" for this)
+    # se: whether to include the standard error in the overall geom_smooth()
+    # color: color for the main line in the overall geom_smooth()
+    # method: will be passed as geom_smooth(method=method)
+    # lty: the line-type for the main line in the geom_smooth (default, 2, is dashed)
+    
+    # Generate the overall totals for sumOn by xVar and yVar
+    plotData <- tbl %>%
+        mutate(dummyVar=1) %>%
+        select_at(vars(all_of(c(xVar, yVar, sumOn)))) %>%
+        filter_all(all_vars(!is.na(.))) %>%
+        group_by_at(vars(all_of(c(xVar, yVar)))) %>%
+        summarize(nTotal=sum(get(sumOn)))
+    
+    geom_smooth(data=plotData, 
+                aes_string(x=xVar, y=yVar, weight="nTotal"), 
+                se=se, 
+                color=color, 
+                method=method, 
+                lty=lty
+                )
+    
+}
+
+
+# Helper function to calculate .f(numVar) by byVar
+helperFactorNumeric <- function(tbl, 
+                                .f, 
+                                byVar, 
+                                numVar, 
+                                ...
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # tbl: the tibble or data frame
+    # .f: the function to be applied
+    # byVar: the grouping variable for applying the function
+    # numVar: the numeric variable the function is applied to
+    # ...: other arguments passed to .f, such as na.rm=TRUE
+    
+    tbl %>%
+        select_at(vars(all_of(c(byVar, numVar)))) %>%
+        filter_all(all_vars(!is.na(.))) %>%
+        group_by_at(byVar) %>%
+        summarize(helpFN=.f(get(numVar), ...))
+    
+}
+
+```
+  
+The main plotting functions above were already written to call and use the helper functions.
+
+It is now possible to re-run the EDA plotting routines across all locales:  
+```{r cache=TRUE}
+
+# Create rounded TempF and DewF in allData
+allData <- allData %>%
+    mutate(TempF5=5*round(round(TempF)/5), 
+           DewF5=5*round(round(DewF)/5), 
+           WindSpeed5=5*round(WindSpeed/5),
+           Altimeter10=round(Altimeter, 1)
+           )
+
+# Save to an external PDF
+pdf(paste0(filePath, "CrossLocaleCountsByMetric.pdf"))
+
+# Counts by Metric for allData
+plotcountsByMetric(allData, 
+                   mets=c("month", "year",
+                          "WindDir", "WindSpeed5", 
+                          "Visibility", "Altimeter10",
+                          "TempF5", "DewF5", 
+                          "wType"
+                          ), 
+                   title="Comparisons Across Locales (red dots are the median)", 
+                   facetOn="sourceName",
+                   showCentral=TRUE
+                   )
+
+# Redirect to standard plotting
+dev.off()
+
+```
+  
+The cross-locale comparisons bring out a few salient features:  
+  
+DATA VOLUMES:  
+* All locale-year combinations have roughly the same amount of data by month, all focused on the year of interest (with 1-2 days on either side added as buffers)  
+  
+WIND DIRECTION and WIND SPEED:  
+* Las Vegas has an excess of no/variable wind and of southerly winds, both appropriate for a desert  
+* Houston has an excess of no wind and southerly winds, both appropriate for the Gulf Coast  
+* San Diego has an excess of no wind and of northwesterly wind, both appropriate for the Pacific coast  
+* Chicago, Grand Rapids, Indianapolis, Minneapolis, and Newark all have lower occurences of no wind, appropriate for relatively cold mid-latitude cities  
+* Detroit, Green Bay, Lincoln, Madison, Milwaukee, and New Orleans all look "about average"; this is not surprising in the first four cases given the predominance of cold, mid-latitude locales, but is surprising for New Orleans  
+* Traverse City is surprising in showing a predominance of no/variable winds; this is unexpected for a cold-weather city in the mid-latitudes and merits further examination  
+  
+VISIBILITY:  
+* The overwhelming majority of visibilities are 10SM (the highest that is recorded; more or less means unlimited in the METAR)  
+* There is a data issue with a Visibility > 10 that should be addressed  
+* Las Vegas is slightly more likely than most to have unlimited Visibility, while Detroit and Grand Rapids are slightly less likely than most to have unlimited visibility  
+  
+ALTIMETER:  
+* Las Vegas skews low as appropriate for a high-altitude desert locale  
+* New Orleans and Houston show less variance, perhaps driven by being roughly at sea level and in close proximity to the Gulf of Mexico  
+* San Diego shows very low variance, perhaps driven by being roughly at sea level and in close proximity to the Pacific Ocean  
+  
+TEMPERATURE:  
+* Houston, Las Vegas, and New Orleans skew warm as expected  
+* San Diego has very low variance as expected  
+* At a gross level, the other cities look similar to the median but with slightly more cold, likely driven by the predominance of cold, mid-latitude locales in the data file  
+  
+DEW POINT:  
+* Houston and New Orleans skew very high as expected  
+* Las Vegas skews very low as expected  
+* San Diego has very low variance as expected  
+  
+SKY OBSCURATION:  
+* Lincoln and Green Bay are the most likely to be CLR (clear, no clouds on the automated sensor).  This may be driven by a difference in maximum sensor heights, and is unexpected in Green Bay which should be frequently cloudy due to its latitude and proximity to a large body of water  
+* Detroit, Traverse City, Grand Rapids, and Minneapolis are especially likely to be overcast  
+* Las Vegas is especially likely to not have an overcast
+  
+Comparisons are run for a few of the numerical correlations:  
+```{r cache=TRUE}
+
+# Example for allData - using mixes of WindSpeed, Altimeter, TempF, DewF, TempC, DewC
+numCorList <- list(c("TempC", "TempF"), 
+                   c("DewC", "DewF"), 
+                   c("TempF", "DewF"), 
+                   c("Altimeter", "WindSpeed"), 
+                   c("Altimeter", "TempF")
+                   )
+
+# Save to an external PDF
+pdf(paste0(filePath, "CrossLocaleCorrelations.pdf"))
+
+# Run the list through plotNumCor()
+for (x in numCorList) {
+    plotNumCor(allData, 
+               var1=x[1], 
+               var2=x[2], 
+               subT="Red dashed line is the overall slope", 
+               diagnose=TRUE, 
+               facetOn="sourceName", 
+               showCentral=TRUE
+               )
+}
+
+# Redirect to standard plotting
+dev.off()
+
+```
+  
+The cross-locale comparisons bring out a few salient features:  
+  
+FAHRENHEIT AND CELSIUS:  
+* As expected, TempF/C are perfectly correlated and DewF/C are perfectly correlated.  Since the observations were taken in the US, the TempF/DewF data will be used (TempC/DewC are conversions from the measured TempF/DewF to match the international standard for METAR reporting)  
+  
+TEMPERATURE AND DEW POINT:  
+* While many cities have different clusters of temperature/dew point, all but Las Vegas follow a pattern where the temperature and the dew point tend to run together at a similar rate  
+* In Las Vegas, the dew point is largely independent of the temperature  
+  
+ALTIMETER AND WIND SPEED:  
+* As expected, when the altimeter rises, on average, the wind speed falls  
+* This tendency is less pronounced in Houston and New Orleans; and more pronounced in Las Vegas, San Diego, and Indianapolis  
+  
+ALTIMETER AND TEMPERATURE:  
+* Overall, low temperatures and high altimeters tend to be observed together  
+* This is especially so in Houston, Las Vegas, and New Orleans  
+* This is modest or perhaps even close to non-existent in Grand Rapids, Green Bay, and Traverse City  
+  
+Comparisons are then run for numeric variables against factor variables:  
+```{r cache=TRUE}
+
+# Modify windDir so that it is just N, NE, E, SE, S, SW, W, NW, 000, Variable
+modData <- allData %>%
+    mutate(tempDir=ifelse(is.na(WindDir) | WindDir %in% c("000", "VRB"), -1, as.numeric(WindDir)),
+           predomDir=factor(case_when(is.na(WindDir) ~ "Error", 
+                                      WindDir=="000" ~ "000", 
+                                      WindDir=="VRB" ~ "VRB", 
+                                      tempDir >= 337.5 ~ "N", 
+                                      tempDir <= 22.5 ~ "N",
+                                      tempDir <= 67.5 ~ "NE", 
+                                      tempDir <= 112.5 ~ "E", 
+                                      tempDir <= 157.5 ~ "SE", 
+                                      tempDir <= 202.5 ~ "S", 
+                                      tempDir <= 247.5 ~ "SW", 
+                                      tempDir <= 292.5 ~ "W", 
+                                      tempDir <= 337.5 ~ "NW",
+                                      TRUE ~ "Error"
+                                      ), 
+                            levels=c("Error", "000", "VRB", "NE", "E", "SE", "S", "SW", "W", "NW", "N")
+                            )
+           )
+
+# Key factor variables include month, wType, predomDir
+# Key numeric variables include WindSpeed, Altimeter, TempF, DewF, Visibility
+fctNumList <- list(c("month", "WindSpeed"), 
+                   c("month", "Altimeter"), 
+                   c("month", "TempF"), 
+                   c("month", "DewF"), 
+                   c("month", "Visibility"),
+                   c("wType", "WindSpeed"),
+                   c("wType", "Altimeter"),
+                   c("wType", "Visibility"),
+                   c("predomDir", "WindSpeed"),
+                   c("predomDir", "Altimeter"),
+                   c("predomDir", "TempF"),
+                   c("predomDir", "DewF")
+                   )
+
+# Save to an external PDF
+pdf(paste0(filePath, "CrossLocaleFactorVsNumeric.pdf"))
+
+for (x in fctNumList) {
+    plotFactorNumeric(modData, 
+                      fctVar=x[1], 
+                      numVar=x[2], 
+                      subT="Red dots are the overall average", 
+                      showXLabel=FALSE,
+                      diagnose=TRUE, 
+                      facetOn="sourceName",
+                      showCentral=TRUE
+                      )
+}
+
+# Redirect to standard plotting
+dev.off()
+
+```
+  
+The cross-locale comparisons bring out a few salient points:  
+  
+WIND SPEED BY MONTH:  
+* The plot is too busy; need to rethink, potentially by removing the outliers and plotting only the box  
+  
+ALTIMETER BY MONTH:  
+* Same as above; this plot is too busy  
+  
+TEMPERATURE BY MONTH:  
+* Seasonal patterns are observed in most of the data, with a warm season centered around July and a cold season centered around December  
+* Cities run warm or cold relative to average as expected based on their climates    
+  
+DEW POINT BY MONTH:  
+* Seasonal patterns are observed in most of the data, with the humid seasons tracking with the warm seasons  
+* Houston and New Orleans run consistently above the average dew point by month  
+* San Diego runs above the average dew point during the cold season  
+* Las Vegas runs below the average dew point during the warm season  
+  
+VISIBILITY BY MONTH:  
+* Visibilities are overwhelmingly likely to be 10 SM  
+* The Newark, NJ outlier described earlier (19 SM) should be deleted  
+* Detroit is especially likely to have Visibility less than 10 SM  
+* Grand Rapids and Traverse City have meaningul occurences of Visibility less than 10 SM during the cold season  
+  
+WIND SPEED BY SKY OBSCURATION:  
+* This chart is too busy as per above  
+  
+ALTIMETER BY SKY OBSCURATION:  
+* Not much at a glance  
+  
+VISIBILITY BY SKY OBSCURATION:  
+* The VV and OVC sky obscurations are most associated with low visibilities; VV in particular is almost always associated with very low visibility  
+  
+WIND SPEED BY WIND DIRECTION:  
+* Wind direction "000" is always associated with wind speed 0, as expected  
+* Wind direction "VRB" is always associated with a low but non-zero wind speed, as expected  
+* While some cities are windier than others, there is no pronounced tendency for wind speed to be highly associated with a given wind direction in any locale  
+  
+ALTIMETER BY WIND DIRECTION:  
+* No gross trends observed  
+* The plot is rather busy, especially given the low variance in median/IQR for altimeter relative to the outlier points  
+  
+TEMPERATURE/DEW POINT BY WIND DIRECTION:  
+* Plot is not great for reading and interpreting  
+  
+Next steps are to modify a few of the plots for better interpretability (less busy, more variation of the core data metric relative to the full y-axis, etc.), investigate and rectify the data issues observed, and save a version of the file for further analysis.
+  
+A modified boxplot function is created to plot only the median and the IQR, with the goal of having more of the variance in the median visible on the plot:  
+```{r}
+
+plotMedianIQR <- function(met, 
+                          fctVar, 
+                          numVar, 
+                          title=NULL, 
+                          subT="", 
+                          mid=0.5,
+                          rng=c(0.25, 0.75),
+                          diagnose=TRUE,
+                          showXLabel=TRUE,
+                          mapper=varMapper,
+                          facetOn=NULL, 
+                          showCentral=FALSE, 
+                          ylimits=NULL
+                          ) {
+    
+    # Function arguments
+    # met: dataframe or tibble containing raw data
+    # fctVar: character vector of variable to be used for the x-axis (factor in the boxplot)
+    # numVar: character vector of variable to be used for the y-axis (numeric in the boxplot)
+    # title: character vector for plot title
+    # subT: character vector for plot subtitle
+    # mid: float between 0 and 1 for the quantile to be used as the midpoint
+    # rng: length-two float vector for (lo, hi) to be used as the dimensions of the box
+    # diagnose: boolean for whether to note in the log the number of NA observations dropped
+    # showXLabel: boolean for whether to include the x-label (e.g., set to FALSE if using 'month')
+    # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
+    # facetOn: a facetting variable for the supplied met (NULL for no faceting)
+    # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    # ylimits: length-two numeric for the y-axis minimum and maximum (default NULL uses plot defaults)
+    
+    # Function usage
+    # 1.  By default, the function creates a modified boxplot of numVar by fctVar - line at mid, box going from rng[1] to rng[2]
+    # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
+    # 3.  If showCentral=TRUE, then the overall median of numVar by fctVar will be plotted as a red dot
+
+    
+    # Check that the quantile variables are sensible
+    if (length(mid) != 1 | length(rng) != 2) {
+        stop("Must pass a single value as mid and a length-two vector as rng\n")    
+    }
+    if (min(c(mid, rng)) < 0 | max(c(mid, rng)) > 1) {
+        stop("All values of mid and rng must be between 0 and 1, inclusive\n")
+    }
+    if ((mid < rng[1]) | (mid > rng[2])) {
+        stop("mid must be at least as big as rng[1] and no greater than rng[2]\n")
+    }
+    quants <- paste0(round(100*c(rng[1], mid, rng[2]), 0), "%", collapse=" ")
+    
+    # Create the title if not passed
+    if (is.null(title)) { 
+        title <- paste0("Hourly Observations of ", mapper[numVar], " by ", mapper[fctVar])
+    }
+    
+    # Remove the NA variables
+    nOrig <- nrow(met)
+    dat <- met %>%
+        filter(!is.na(get(fctVar)), !is.na(get(numVar)))
+    if (diagnose) { cat("\nRemoving", nOrig-nrow(dat), "records due to NA\n") }
+    
+    # Create the quantile data by fctVar and (if passed) facetOn
+    groupVars <- fctVar 
+    if (!is.null(facetOn)) { groupVars <- c(groupVars, facetOn) }
+    plotData <- dat %>%
+        group_by_at(groupVars) %>%
+        summarize(midPoint=quantile(get(numVar), probs=mid), 
+                  loPoint=quantile(get(numVar), probs=rng[1]),
+                  hiPoint=quantile(get(numVar), probs=rng[2])
+                  )
+    
+    # Create the base plot
+    p <- plotData %>%
+        ggplot(aes_string(x=fctVar, y="midPoint")) +
+        geom_crossbar(aes(ymin=loPoint, ymax=hiPoint), fill="lightblue") +
+        labs(title=title,
+             subtitle=subT,
+             x=ifelse(showXLabel, paste0(mapper[fctVar], " - ", fctVar), ""),
+             y=paste0(mapper[numVar], " - ", numVar), 
+             caption=paste0("Quantiles plotted: ", quants)
+             )
+    
+    # If facetting has been requested, facet by the desired variable
+    if (!is.null(facetOn)) {
+        p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+    }
+    
+    # If showCentral=TRUE, add a dot plot for the overall value of 'mid'
+    if (showCentral) {
+        centData <- helperFactorNumeric(dat, .f=quantile, byVar=fctVar, numVar=numVar, probs=mid)
+        p <- p + geom_point(data=centData, aes(y=helpFN), size=2, color="red")
+    }
+    
+    # If ylim has been passed, use it
+    if (!is.null(ylimits)) {
+        p <- p + ylim(ylimits)
+    }
+
+    # Render the final plot
+    print(p)
+    
+}
+
+```
+  
+The function can then be applied in an attempt to get a better look at a few of the comparisons:  
+```{r cache=TRUE}
+
+# Key factor variables include month, wType, predomDir
+# Key numeric variables include WindSpeed, Altimeter, TempF, DewF, Visibility
+fctNumListIQR <- list(c("month", "WindSpeed"), 
+                      c("month", "Altimeter"), 
+                      c("wType", "WindSpeed"),
+                      c("predomDir", "Altimeter"),
+                      c("predomDir", "TempF"),
+                      c("predomDir", "DewF")
+                      )
+
+# Save to an external PDF
+pdf(paste0(filePath, "CrossLocaleIQRFactorVsNumeric.pdf"))
+
+for (x in fctNumListIQR) {
+    plotMedianIQR(modData, 
+                  fctVar=x[1], 
+                  numVar=x[2], 
+                  subT="Red dots are the overall mid-quantile", 
+                  showXLabel=FALSE,
+                  diagnose=TRUE, 
+                  facetOn="sourceName",
+                  showCentral=TRUE
+                  )
+}
+
+# Redirect to standard plotting
+dev.off()
+
+```
+  
+Limiting the observations to Q1-Median-Q2 brings out a bit more information in the plots:  
+  
+WIND SPEED BY MONTH:  
+* San Diego is meaningfully less windy than the median, especially during the cold season  
+* Traverse City is frequently less windy than the mdeian, which is surprising  
+* Chicago frequently runs above the median, as do Lincoln, Milwaukee, Minneapolis  
+  
+ALTIMETER BY MONTH:  
+* San Diego has very little variance in altimeter relative to the other locales  
+* Las Vegas runs especially low on altimeter during the warm season  
+* There is a seasonal pattern where altimeters tend to run lower during the warm season while also showing a much smaller Q1-Q3 range  
+  
+WIND SPEED BY SKY OBSCURATION:  
+* Newark shows very high wind speeds when obscuration is VV  
+* Should re-run with data y-axis capped at 15 to visualize the other locales  
+  
+ALTIMETER BY WIND DIRECTION:  
+* Altimeters tend to be a bit lower when winds are from the S-SW-W-NW, a pattern that seems consistent across all locales  
+* Las Vegas runs especially low on altimeter relative to other locales when winds are from E-SE-S    
+  
+TEMPERATURE BY WIND DIRECTION:  
+* Variable winds are associated with higher temperatures than calm (speed 0) winds  
+* Winds from W-NW are generally associated with somewhat lower temperatures  
+  
+DEW POINT BY WIND DIRECTION:  
+* Winds from SW-W-NW-N are associated with generally lower dew points than winds from NE-E-SE-S  
+* Las Vegas typically runs low on dew points while Houston and New Orleans typically run high on dew points  
+* San Diego has little variance in dew points and does not see any dip when winds are from SW-W-NW-N  
+  
+The wind speed vs. sky obscuration plot is re-run with y-limits that suppress Newark VV:  
+```{r cache=TRUE}
+
+plotMedianIQR(modData, 
+              fctVar="wType", 
+              numVar="WindSpeed", 
+              subT="Red dots are the overall mid-quantile", 
+              showXLabel=FALSE,
+              diagnose=TRUE, 
+              facetOn="sourceName",
+              showCentral=TRUE, 
+              ylimits=c(0, 15)
+              )
+
+```
+  
+Low vertical visibilities (VV) are generally associated with lower winds.  There is also a slight tendency for more obscured skies (OVC) to be associated with slightly stronger winds.  
+
+Further, the previous analysis for counts by wind direction is re-run using the predominant directions:  
+```{r cache=TRUE}
+# Counts by Metric for predomDir using mod2016Data
+plotcountsByMetric(modData, 
+                   mets=c("predomDir"), 
+                   title="Comparisons Across Locales (red dots are the median)", 
+                   facetOn="sourceName",
+                   showCentral=TRUE
+                   )
+
+```
+  
+Findings include:  
+* Across all locales, winds are more commonly from S-SW-W-NW-N than from NE-E-SE  
+* San Diego is especially likely to have either 0 wind or wind from W-NW  
+* Traverse City is especially likely to have 0 wind or variable wind (very surprising, and possibly a sign of anomalous data)  
+* Minneapolis is especially likely to experience winds from NE  
+* New Orleans and Houston rarely experience winds from SW-W-NW relative to other locales  
+* Lincoln and Las Vegas are especially pronse to winds from S (and for Las Vegas SW)  
+  
+There are several issues identified that should be explored and fixed if appropriate:  
+  
+* Vertical visibility greater than 10 recorded  
+* Tendency for maximum obscuration to be CLR in Lincoln and Green Bay  
+* Tendency for Traverse City to have no or variable winds  
+  
+Next steps are to explore the clouds data, fix any issues, and create/save a consolidated file for further analysis.
+  
