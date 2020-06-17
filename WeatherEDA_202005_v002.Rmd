@@ -192,6 +192,67 @@ convertPrecip <- function(x, begPos=-4, endPos=-1) {
 
 }
 
+
+# Function to split facets across multiple plots
+multiPageFacet <- function(gg, 
+                           facetVar, 
+                           maxPerPage=12, 
+                           balancePages=FALSE, 
+                           sameYLimits=NULL, 
+                           useYLow=NULL
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # gg: a ggplot object that is ready except for facetting
+    # facetVar: the facetting variable, passed as character
+    # maxPerPage: the maximum number of objects desired for facetting
+    # balancePages: boolean, whether to make roughly equal number of facets per page
+    # sameYLimits: variable to be used to set constant y-max across plots (NULL means allow to float)
+    # useYLow: variable to be used to set constant y-min across plots (NULL means allow to float); will be ignored if sameYLimits is NULL
+    
+    # Find the levels for facetVar
+    facetLevels <- gg$data %>%
+        pull(facetVar) %>%
+        unique()
+    
+    # The number of facet variables will drive the number of pages to create
+    nPages <- ceiling(length(facetLevels) / maxPerPage)
+    
+    # Recreate maxPerPage if balancePages is requested
+    if (balancePages) { maxPerPage <- ceiling(length(facetLevels) / nPages) }
+    
+    # Create the groupings to be applied
+    groups <- vector("list", nPages)
+    for (ctr in 1:nPages) {
+        groups[[ctr]] <- facetLevels[(1 + (ctr-1)*maxPerPage):(min(length(facetLevels), ctr*maxPerPage))]
+    }
+    
+    # Get the ylimits if applicable
+    if (!is.null(sameYLimits)) {
+        ymin <- 0
+        ymax <- gg$data %>%
+            pull(sameYLimits) %>%
+            max()
+        if (!is.null(useYLow)) {
+            ymin <- gg$data %>%
+                pull(useYLow) %>%
+                min()
+        }
+    }
+
+    # Create the facetplots
+    for (ctr in 1:nPages) {
+        ggTemp <- gg
+        ggTemp$data <- ggTemp$data %>% 
+            filter(get(facetVar) %in% groups[[ctr]])
+        p1 <- ggTemp +
+            facet_wrap(as.formula(paste("~", facetVar)))
+        if (!is.null(sameYLimits)) { p1 <- p1 + ylim(ymin, ymax) }
+        print(p1)
+    }
+    
+}
+
 ```
 
 
@@ -419,7 +480,10 @@ plotcountsByMetric <- function(df,
                                diagnose=FALSE,
                                mapper=varMapper,
                                facetOn=NULL, 
-                               showCentral=FALSE
+                               showCentral=FALSE, 
+                               multiPageWrap=FALSE, 
+                               maxPerPage=9,
+                               balancePages=FALSE
                                ) {
     
     # Function arguments
@@ -432,11 +496,15 @@ plotcountsByMetric <- function(df,
     # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
     # facetOn: a facetting variable for the supplied df (NULL for no faceting)
     # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    # multiPageWrap: boolean, will call multiPageFacet() rather than facetWrap() if TRUE
+    # maxPerPage: integer, maximum facets per plot, passed to multiPageFacet()
+    # balancePages: boolean, whether to balance the number of facets per page across all pages or allow the final page to have as few as 1 facets
     
     # Function usage
     # 1.  By default, the function plots overall counts by metric for a given input
     # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
     # 3.  If showCentral=TRUE, then the overall mean will be plotted as a point on the main plot (only makes sense if facetOn has been selected)
+    # 4.  If multiPageWrap=TRUE, then the faceting data will be paginated so that there is easier readability for the plots on any given page
     
     
     # Plot of counts by key metric
@@ -476,10 +544,6 @@ plotcountsByMetric <- function(df,
         if (nrow(dat) >= rotateOn) {
             p <- p + theme(axis.text.x=element_text(angle=90))
         }
-        # If facetting has been requested, facet by the desired variable
-        if (!is.null(facetOn)) {
-            p <- p + facet_wrap(as.formula(paste("~", facetOn)))
-        }
         # If showCentral=TRUE, add a dot plot for the overall average
         if (showCentral) {
             # Get the median number of observations by facet, or the total if facetOn=NULL
@@ -498,8 +562,24 @@ plotcountsByMetric <- function(df,
             # Apply the median
             p <- p + geom_point(data=centralData, aes(y=centralValue), color="red", size=2)
         }
-        # Print the plot
-        print(p)
+        # If facetting has been requested, facet by the desired variable
+        # multiPageFacet will print by default, so use print(p) only if multiPageWrap=FALSE
+        if (!is.null(facetOn)) {
+            if (multiPageWrap) {
+                multiPageFacet(p, 
+                               facetVar=facetOn, 
+                               maxPerPage=maxPerPage, 
+                               balancePages=balancePages, 
+                               sameYLimits="n"
+                               )
+            } else {
+                p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+                print(p)
+            }
+        } else {
+            # Print the plot
+            print(p)
+        }
     }
 }
 
@@ -508,6 +588,8 @@ plotcountsByMetric <- function(df,
 plotNumCor <- function(met, 
                        var1, 
                        var2, 
+                       alpha=0.5,
+                       maxSize=6,
                        title=NULL, 
                        subT="", 
                        dropNA=TRUE, 
@@ -521,6 +603,8 @@ plotNumCor <- function(met,
     # met: dataframe or tibble containing raw data
     # var1: character vector of variable to be used for the x-axis
     # var2: character vector of variable to be used for the y-axis
+    # alpha: the alpha for the plotted points
+    # maxSize: the maximum size for the plotted points (ggplot default is 6)
     # title: character vector for plot title
     # subT: character vector for plot subtitle
     # dropNA: boolean for whether to drop all NA prior to plotting (recommended for avoiding warnings)
@@ -566,21 +650,23 @@ plotNumCor <- function(met,
     
     p <- dat %>%
         ggplot(aes_string(x=var1, y=var2)) + 
-        geom_point(alpha=0.5, aes_string(size="n")) + 
+        geom_point(alpha=alpha, aes_string(size="n")) + 
         geom_smooth(method="lm", aes_string(weight="n")) + 
         labs(x=paste0(mapper[var1], " - ", var1), 
              y=paste0(mapper[var2], " - ", var2), 
              title=title, 
              subtitle=subT
-             )
+             ) + 
+        scale_size_area(max_size=maxSize)
     
-    # If facetting has been requested, facet by the desired variable
-    if (!is.null(facetOn)) {
-        p <- p + facet_wrap(as.formula(paste("~", facetOn)))
-    }
     # If showCentral=TRUE, add a dashed line for the overall data
     if (showCentral) {
         p <- p + helperNumCor(dat, xVar=var1, yVar=var2, sumOn="n")
+    }
+
+    # If facetting has been requested, facet by the desired variable
+    if (!is.null(facetOn)) {
+        p <- p + facet_wrap(as.formula(paste("~", facetOn)))
     }
     
     print(p)
@@ -597,7 +683,12 @@ plotFactorNumeric <- function(met,
                               showXLabel=TRUE,
                               mapper=varMapper,
                               facetOn=NULL, 
-                              showCentral=FALSE
+                              showCentral=FALSE, 
+                              multiPageWrap = FALSE, 
+                              maxPerPage = 9, 
+                              balancePages = FALSE, 
+                              sameYLimits=numVar, 
+                              useYLow=numVar
                               ) {
     
     # Function arguments
@@ -611,11 +702,17 @@ plotFactorNumeric <- function(met,
     # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
     # facetOn: a facetting variable for the supplied met (NULL for no faceting)
     # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    # multiPageWrap: boolean, will call multiPageFacet() rather than facetWrap() if TRUE
+    # maxPerPage: integer, maximum facets per plot, passed to multiPageFacet()
+    # balancePages: boolean, whether to balance the number of facets per page across all pages or allow the final page to have as few as 1 facets
+    # sameYLimits: variable for making all y-axes maxima the same across multiPageFacet; numVar is the numeric variable passed; will be set to NULL if ylimits has been passed (is not null)
+    # useYLow: variable for making all y-axes minima the same across multiPageFacet; numVar is the numeric variable passed; will be set to NULL if ylimits has been passed (is not null)
     
     # Function usage
     # 1.  By default, the function creates the boxplot of numVar by fctVar
     # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
     # 3.  If showCentral=TRUE, then the overall median of numVar by fctVar will be plotted as a red dot
+    # 4.  If multiPageWrap=TRUE, then the faceting data will be paginated so that there is easier readability for the plots on any given page
 
     
     # Create the title if not passed
@@ -639,19 +736,31 @@ plotFactorNumeric <- function(met,
              y=paste0(mapper[numVar], " - ", numVar)
              )
     
-    # If facetting has been requested, facet by the desired variable
-    if (!is.null(facetOn)) {
-        p <- p + facet_wrap(as.formula(paste("~", facetOn)))
-    }
-    
     # If showCentral=TRUE, add a dot plot for the overall average
     if (showCentral) {
         centData <- helperFactorNumeric(dat, .f=median, byVar=fctVar, numVar=numVar)
         p <- p + geom_point(data=centData, aes(y=helpFN), size=2, color="red")
     }
 
-    # Render the final plot
-    print(p)
+    # If facetting has been requested, facet by the desired variable
+    # multiPageFacet will print by default, so use print(p) only if multiPageWrap=FALSE
+    if (!is.null(facetOn)) {
+        if (multiPageWrap) {
+            multiPageFacet(p, 
+                           facetVar=facetOn, 
+                           maxPerPage=maxPerPage, 
+                           balancePages=balancePages, 
+                           sameYLimits=sameYLimits, 
+                           useYLow=useYLow
+                           )
+        } else {
+            p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+            print(p)
+        }
+    } else {
+        # Print the plot
+        print(p)
+    }
     
 }
 
@@ -1660,6 +1769,7 @@ all_hilo <- map_dfr(.x=fileNames, .f=getDailyHighLow, .id="source") %>%
     mutate(source=fileNames[as.integer(source)], locale=cityNameMapper[source]) %>%
     select(source, locale, everything())
 all_hilo
+
 ```
   
 A function can then be written to create relevant plots for the high-low temperature timing, routed to a file if requested:  
@@ -1695,6 +1805,7 @@ plotDailyHiLo <- function(df,
                month=lubridate::month(dtime),
                notNA=!is.na(tempFHi)
                )
+    
     # Plot for counts of !is.na by hour
     p1 <- dat %>%
         ggplot(aes(x=hour, fill=notNA)) + 
@@ -1702,9 +1813,8 @@ plotDailyHiLo <- function(df,
         scale_fill_discrete("Hi-Lo Data") + 
         labs(y="Number of Daily Observations", x="METAR Hour", 
              title="Daily High-Low temperatures are captured based on time zone"
-             ) + 
-        facet_wrap(~locale)
-    print(p1)
+             )
+    multiPageFacet(p1, facetVar="locale", balancePages=TRUE, maxPerPage=6)
     
     # Summary of notNA times by locale
     cat("\nZulu times for high-low temperatures by locale\n\n")
@@ -1733,9 +1843,14 @@ plotDailyHiLo <- function(df,
         labs(y="Temperature (F)", x="", 
              title="Daily High Temperatures by Month by Locale"
              ) + 
-        facet_wrap(~locale) + 
         theme(axis.text.x=element_text(angle=90))
-    print(p2)
+    multiPageFacet(p2, 
+                   facetVar="locale", 
+                   maxPerPage=12, 
+                   balancePages=TRUE, 
+                   sameYLimits="tempFHi",
+                   useYLow="tempFHi"
+                   )
 
     p3 <- dat %>%
         filter(!is.na(tempData)) %>%
@@ -1744,9 +1859,14 @@ plotDailyHiLo <- function(df,
         labs(y="Temperature (F)", x="", 
              title="Daily Low Temperatures by Month by Locale"
              ) + 
-        facet_wrap(~locale) + 
         theme(axis.text.x=element_text(angle=90))
-    print(p3)
+    multiPageFacet(p3, 
+                   facetVar="locale", 
+                   maxPerPage=12, 
+                   balancePages=TRUE, 
+                   sameYLimits="tempFLo",
+                   useYLow="tempFLo"
+                   )
 
     # If pdfName is not NULL, redirect to stdout
     if (!is.null(pdfName)) {
@@ -1798,6 +1918,7 @@ all_pin <- map_dfr(.x=fileNames, .f=getPrecipAmount, .id="source") %>%
     mutate(source=fileNames[as.integer(source)], locale=cityNameMapper[source]) %>%
     select(source, locale, everything())
 all_pin
+
 ```
   
 A function can be created to extract the time periods in which 1-hour, 3/6-hour, and 24-hour precipitation summaries are captured:  
@@ -2138,7 +2259,10 @@ plotcountsByMetric(allData,
                           ), 
                    title="Comparisons Across Locales (red dots are the median)", 
                    facetOn="sourceName",
-                   showCentral=TRUE
+                   showCentral=TRUE, 
+                   multiPageWrap=TRUE, 
+                   maxPerPage=12, 
+                   balancePages=TRUE
                    )
 
 # Redirect to standard plotting
@@ -2203,6 +2327,8 @@ for (x in numCorList) {
     plotNumCor(allData, 
                var1=x[1], 
                var2=x[2], 
+               alpha=0.2,
+               maxSize=3,
                subT="Red dashed line is the overall slope", 
                diagnose=TRUE, 
                facetOn="sourceName", 
@@ -2284,7 +2410,10 @@ for (x in fctNumList) {
                       showXLabel=FALSE,
                       diagnose=TRUE, 
                       facetOn="sourceName",
-                      showCentral=TRUE
+                      showCentral=TRUE, 
+                      multiPageWrap=TRUE,
+                      maxPerPage=12,
+                      balancePages=TRUE
                       )
 }
 
@@ -2355,7 +2484,12 @@ plotMedianIQR <- function(met,
                           mapper=varMapper,
                           facetOn=NULL, 
                           showCentral=FALSE, 
-                          ylimits=NULL
+                          ylimits=NULL, 
+                          multiPageWrap = FALSE, 
+                          maxPerPage = 9, 
+                          balancePages = FALSE, 
+                          sameYLimits="hiPoint", 
+                          useYLow="loPoint"
                           ) {
     
     # Function arguments
@@ -2372,11 +2506,17 @@ plotMedianIQR <- function(met,
     # facetOn: a facetting variable for the supplied met (NULL for no faceting)
     # showCentral: boolean for whether to show the central tendency over-plotted on the main data
     # ylimits: length-two numeric for the y-axis minimum and maximum (default NULL uses plot defaults)
+    # multiPageWrap: boolean, will call multiPageFacet() rather than facetWrap() if TRUE
+    # maxPerPage: integer, maximum facets per plot, passed to multiPageFacet()
+    # balancePages: boolean, whether to balance the number of facets per page across all pages or allow the final page to have as few as 1 facets
+    # sameYLimits: variable for making all y-axes maxima the same across multiPageFacet; "hiPoint" is created by this function as the ymax variable; will be set to NULL if ylimits has been passed (is not null)
+    # useYLow: variable for making all y-axes minima the same across multiPageFacet; "loPoint" is created by this function as the ymin variable; will be set to NULL if ylimits has been passed (is not null)
     
     # Function usage
     # 1.  By default, the function creates a modified boxplot of numVar by fctVar - line at mid, box going from rng[1] to rng[2]
     # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
     # 3.  If showCentral=TRUE, then the overall median of numVar by fctVar will be plotted as a red dot
+    # 4.  If multiPageWrap=TRUE, then the faceting data will be paginated so that there is easier readability for the plots on any given page
 
     
     # Check that the quantile variables are sensible
@@ -2423,11 +2563,6 @@ plotMedianIQR <- function(met,
              caption=paste0("Quantiles plotted: ", quants)
              )
     
-    # If facetting has been requested, facet by the desired variable
-    if (!is.null(facetOn)) {
-        p <- p + facet_wrap(as.formula(paste("~", facetOn)))
-    }
-    
     # If showCentral=TRUE, add a dot plot for the overall value of 'mid'
     if (showCentral) {
         centData <- helperFactorNumeric(dat, .f=quantile, byVar=fctVar, numVar=numVar, probs=mid)
@@ -2437,10 +2572,30 @@ plotMedianIQR <- function(met,
     # If ylim has been passed, use it
     if (!is.null(ylimits)) {
         p <- p + ylim(ylimits)
+        # Set sameYLimits and useYLow to NULL since adding ylim() guarantees this in a user-specified manner
+        sameYLimits <- NULL
+        useYLow <- NULL
     }
 
-    # Render the final plot
-    print(p)
+    # If facetting has been requested, facet by the desired variable
+    # multiPageFacet will print by default, so use print(p) only if multiPageWrap=FALSE
+    if (!is.null(facetOn)) {
+        if (multiPageWrap) {
+            multiPageFacet(p, 
+                           facetVar=facetOn, 
+                           maxPerPage=maxPerPage, 
+                           balancePages=balancePages, 
+                           sameYLimits=sameYLimits, 
+                           useYLow=useYLow
+                           )
+        } else {
+            p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+            print(p)
+        }
+    } else {
+        # Print the plot
+        print(p)
+    }
     
 }
 
@@ -2470,7 +2625,10 @@ for (x in fctNumListIQR) {
                   showXLabel=FALSE,
                   diagnose=TRUE, 
                   facetOn="sourceName",
-                  showCentral=TRUE
+                  showCentral=TRUE, 
+                  multiPageWrap=TRUE,
+                  maxPerPage=12,
+                  balancePages=TRUE
                   )
 }
 
@@ -2519,7 +2677,10 @@ plotMedianIQR(modData,
               diagnose=TRUE, 
               facetOn="sourceName",
               showCentral=TRUE, 
-              ylimits=c(0, 15)
+              ylimits=c(0, 15), 
+              multiPageWrap=TRUE,
+              maxPerPage=12,
+              balancePages=TRUE
               )
 
 ```
@@ -2528,17 +2689,22 @@ Low vertical visibilities (VV) are generally associated with lower winds.  There
 
 Further, the previous analysis for counts by wind direction is re-run using the predominant directions:  
 ```{r cache=TRUE}
+
 # Counts by Metric for predomDir using mod2016Data
 plotcountsByMetric(modData, 
                    mets=c("predomDir"), 
                    title="Comparisons Across Locales (red dots are the median)", 
                    facetOn="sourceName",
-                   showCentral=TRUE
+                   showCentral=TRUE, 
+                   multiPageWrap=TRUE, 
+                   maxPerPage=12,
+                   balancePages=TRUE
                    )
 
 ```
   
 Findings include:  
+  
 * Across all locales, winds are more commonly from S-SW-W-NW-N than from NE-E-SE  
 * San Diego is especially likely to have either 0 wind or wind from W-NW  
 * Traverse City is especially likely to have 0 wind or variable wind (very surprising, and possibly a sign of anomalous data)  
@@ -2551,6 +2717,11 @@ There are several issues identified that should be explored and fixed if appropr
 * Vertical visibility greater than 10 recorded  
 * Tendency for maximum obscuration to be CLR in Lincoln and Green Bay  
 * Tendency for Traverse City to have no or variable winds  
+
+The cross-locale plotting has been updated as follows:  
   
+* Function multiPageFacet() is created and incorporated to allow for facetted graphs to be split in to several pages.  This is particularly useful for the PDF summaries  
+* plotNumCor() is updated to allow for a user-specified alpha and maximum point size.  This is useful for correlations of variables where large numbers of points fall in a specific combination, such as TempC/TempF  
+
 Next steps are to explore the clouds data, fix any issues, and create/save a consolidated file for further analysis.
   
