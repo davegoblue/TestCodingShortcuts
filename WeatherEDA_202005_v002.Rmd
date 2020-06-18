@@ -2722,6 +2722,988 @@ The cross-locale plotting has been updated as follows:
   
 * Function multiPageFacet() is created and incorporated to allow for facetted graphs to be split in to several pages.  This is particularly useful for the PDF summaries  
 * plotNumCor() is updated to allow for a user-specified alpha and maximum point size.  This is useful for correlations of variables where large numbers of points fall in a specific combination, such as TempC/TempF  
+  
+#### _Cloud Data Exploration_  
+Cloud exploration can highlight whether all locales are being compared apples to apples.  This is especially the case if some locales have a different maximum sensor height:  
+```{r}
+
+# Select the source, sourceName, dtime and cLevel variables; pivot cLevel down
+cLevels <- modData %>%
+    select(source, sourceName, dtime, starts_with("cLevel")) %>%
+    pivot_longer(-c(source, sourceName, dtime), names_to="level", values_to="height") %>%
+    mutate(level=as.integer(str_replace(level, pattern="cLevel", replacement="")))
+
+# Select the source, sourceName, dtime and cType variables; pivot cLevel down
+cTypes <- modData %>%
+    select(source, sourceName, dtime, starts_with("cType")) %>%
+    pivot_longer(-c(source, sourceName, dtime), names_to="level", values_to="type") %>%
+    mutate(level=as.integer(str_replace(level, pattern="cType", replacement="")))
+
+cData <- cLevels %>%
+    inner_join(cTypes, by=c("source", "sourceName", "dtime", "level"))
+
+# Plot cloud heights, using only non-NA
+cData %>%
+    filter(!is.na(height)) %>%
+    ggplot(aes(x=fct_reorder(sourceName, height, .fun=max, na.rm=TRUE), y=height)) + 
+    geom_violin(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", y="Cloud Height (feet)", title="Density of cloud heights by locale")
+
+```
+  
+There are clearly differences in maximum cloud height recorded by locale:  
+  
+* 6 locales/years record clouds up to 35,000 feet  
+* 7 locales/years record clouds up to 30,000 feet; there appear to be few if any clouds recorded above 30,000 feet, so cloud distributions may not be meaningfully impacted by this  
+* 2 locales/years record clouds up to 26,000-28,000 feet  
+* 6 locales/years record clouds up to 25,000 feet; there are meaningful clouds between 25,000 and 30,000 feet, so these locales may appear to be "more clear than normal" purely due to maximum recorded height  
+* 2 locales/years record heights up to 12,000 feet (Lincoln and Green Bay); these are the cities that appeared anomalously clear in the EDA; the reason appears to be the exclusion of mid/high level cloudiness  
+  
+The distribution of cloud types observed can also be assessed:  
+```{r}
+
+# Plot cloud heights, using only non-""
+fctLayers <- c("VV", "OVC", "BKN", "SCT", "FEW")
+
+cData %>%
+    filter(type!="") %>%
+    mutate(type=factor(type, levels=fctLayers)) %>%
+    ggplot(aes(x=fct_reorder(sourceName, height, .fun=max, na.rm=TRUE), fill=type)) + 
+    geom_bar(position="stack") + 
+    coord_flip() + 
+    labs(x="", y="Cloud Layer Obscuration", title="Cloud obscuration by locale") + 
+    scale_fill_discrete("", rev(fctLayers)) + 
+    theme(legend.position="bottom")
+
+```
+  
+Lincoln and Green Bay stand out for having fewer clouds, likely due to the inability to catch the higher altocumulus and any cirrus cloud (both very common in the mid-latitudes).
+
+Supposing that only clouds of 12,000 feet and under are considered:  
+```{r}
+
+# Plot cloud heights, using only non-NA
+cData %>%
+    filter(!is.na(height)) %>%
+    filter(height <= 12000) %>%
+    ggplot(aes(x=sourceName, y=height)) + 
+    geom_violin(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", y="Cloud Height (feet)", title="Density of cloud heights by locale")
+
+cData %>%
+    filter(type!="") %>%
+    filter(height <= 12000) %>%
+    mutate(type=factor(type, levels=fctLayers)) %>%
+    ggplot(aes(x=fct_reorder(sourceName, sourceName, .fun=length), fill=type)) + 
+    geom_bar(position="stack") + 
+    coord_flip() + 
+    labs(x="", y="Cloud Layer Obscuration", title="Cloud obscuration by locale (up to 12,000 feet)") + 
+    scale_fill_discrete("", rev(fctLayers)) + 
+    theme(legend.position="bottom")
+
+```
+  
+The patterns are much more plausible:  
+  
+* San Diego, known for marine layer, has clouds that skew very low and more obscured  
+* Las Vegas, a desert, has clouds that skew higher and less obscured    
+* The remaining cities have maximum cloud densities in the 2500-5000 foot range, very common cloud heights in the US  
+* Lincoln and Green Bay remain among the least cloudy locales, though this may be due to hitting OVC (cloud layers above an OVC layer are not observed by the sensor/human and thus not recorded)  
+  
+A function is written to take only cloud data up through height x, and to add a layer of clouds that are "clear" at a height that is out-of-interval:  
+```{r}
+
+# Filter to only clouds up to and including height
+cloudsLevel0 <- function(df, 
+                         maxHeight, 
+                         byVars,
+                         baseLevel=0,
+                         heightBase=-100,
+                         typeBase="CLR"
+                         ) {
+    
+    # Function assumptions
+    # Input data are unique by byVars-level and with columns 'height' and 'type'
+    # Clouds increase in height with level
+    # Clouds are non-decreasing in type (VV > OVC > BKN > SCT > FEW) with level
+    
+    # FUNCTION ARGUMENTS:
+    # df: tibble or dataframe contiaining the clouds data
+    # maxHeight: the maximum height to consider (delete all heights above this level)
+    # byVars: the variables that make up a unique observation (df should be unique by byVars-level)
+    # baseLevel: the level to be created as the base level (by default, level 0)
+    # heightBase: the height to be provided to the base level (by default, -100 feet)
+    # typeBase: the type of obscuration observed at the base level (by default, CLR)
+    
+    # Add a cloud level 0 that has height -100 (by default)
+    # Include only levels where the cloud height is not NA
+    # Include only levels where the cloud height is less than or equal to maxHeight
+    modData <- df %>% 
+        group_by_at(vars(all_of(byVars))) %>% 
+        summarize(level=baseLevel, height=heightBase, type=typeBase) %>% 
+        ungroup() %>% 
+        bind_rows(df) %>% 
+        arrange_at(vars(all_of(c(byVars, "level")))) %>% 
+        filter(!is.na(height)) %>% 
+        filter(height <= maxHeight)
+    
+    modData
+    
+}
+
+```
+  
+The function is then run using the existing cData:  
+```{r}
+
+modCData <- cloudsLevel0(cData, maxHeight=12000, byVars=c("source", "sourceName", "dtime")) %>%
+    mutate(type=factor(type, levels=c("VV", "OVC", "BKN", "SCT", "FEW", "CLR")))
+modCData
+
+```
+  
+An additional function is written to take processed cloud data and to designate 1) the minimum cloud height, 2) the minimum cloud ceiling (a ceiling exists with BKN, OVC, or VV layers), and 3) the maximum obscuration level (using CLR if no clouds exist in that area):  
+```{r}
+
+# Helper function to pull out the minimum cloud height, limited to certain obscurations
+getMinimumHeight <- function(df, 
+                             byVars, 
+                             types, 
+                             baseLevel=0
+                             ) {
+    
+    # Split the data in to the baseLevel and all other levels
+    baseData <- df %>%
+        filter(level==baseLevel)
+    layerData <- df %>%
+        filter(level!=baseLevel)
+        
+    # Take the layerData, limit to type in types, and find the minimum level
+    layerData <- layerData %>%
+        filter(type %in% types) %>%
+        group_by_at(vars(all_of(byVars))) %>%
+        filter(level==min(level)) %>%
+        ungroup()
+    
+    # Put the data back together
+    # Keep the maximum level for each set of byVars (will be 0 if no data for byVars in layerData)
+    cloudData <- baseData %>%
+        bind_rows(layerData) %>%
+        arrange_at(vars(all_of(c(byVars, "level")))) %>%
+        group_by_at(vars(all_of(byVars))) %>%
+        filter(level==max(level))
+    
+}
+
+# Extract the minimum cloud height, minimum ceiling height, and maximum obscuration
+hgtCeilObsc <- function(df, 
+                        byVars,
+                        baseLevel=0
+                        ) {
+
+    # Function assumptions
+    # Input data are unique by byVars-level and with columns 'height' and 'type'
+    # For each byVars, a row with level=baseLevel, height=heightBase, type=typeBase has been created
+    # Clouds increase in height with level
+    # Clouds are non-decreasing in type (VV > OVC > BKN > SCT > FEW) with level
+    
+    # FUNCTION ARGUMENTS:
+    # df: tibble or dataframe contiaining the clouds data
+    # byVars: the variables that make up a unique observation (df should be unique by byVars-level)
+    # baseLevel: the base level in df (by default, level 0)
+    # heightBase: the height of the base level in df (by default, -100 feet)
+    # typeBase: the type of obscuration at the base level in df (by default, CLR)
+    
+    # Get the maximum obscuration
+    maxObsc <- df %>%
+        group_by_at(vars(all_of(byVars))) %>% 
+        filter(level==max(level)) %>%
+        ungroup()
+    
+    # Get the minimum height (any type)
+    minHeight <- getMinimumHeight(df, 
+                                  byVars=byVars, 
+                                  types=c("VV", "OVC", "BKN", "SCT", "FEW"), 
+                                  baseLevel=baseLevel
+                                  )
+    
+    # Get the minimum ceiling height (VV, OVC, BKN)
+    minCeiling <- getMinimumHeight(df, 
+                                   byVars=byVars, 
+                                   types=c("VV", "OVC", "BKN"), 
+                                   baseLevel=baseLevel
+                                   )
+
+    # Put the file together
+    minCeiling <- minCeiling %>%
+        rename(ceilingHeight=height, ceilingType=type, ceilingLevel=level)
+    minHeight <- minHeight %>%
+        rename(cloudHeight=height, cloudType=type, cloudLevel=level)
+    maxObsc <- maxObsc %>%
+        rename(obscHeight=height, obscType=type, obscLevel=level)
+    
+    # Merge
+    cloudSummary <- maxObsc %>%
+        full_join(minHeight, by=byVars) %>%
+        full_join(minCeiling, by=byVars)
+    
+    cloudSummary
+    
+}
+
+```
+  
+The function can then be run on the modified clouds data:  
+```{r}
+
+# Get the key clouds data
+cloudSummary <- hgtCeilObsc(modCData, byVars=c("source", "sourceName", "dtime"))
+
+# Check for consistency
+cloudSummary %>%
+    count(ceilingType, obscType)
+cloudSummary %>%
+    count(cloudType, ceilingType)
+cloudSummary %>%
+    count(cloudType, obscType)
+
+```
+  
+Plots for the maximum obscuration (through 12,000 feet) can then be created:  
+```{r}
+
+plotMaxObsc <- function(df, 
+                        xVar, 
+                        fillVar, 
+                        title, 
+                        subtitle="Up to and including 12,000 feet",
+                        orderByVariable=NULL,
+                        orderByValue=NULL,
+                        posnBar="stack",
+                        yLabel="# Hourly Observations",
+                        legendLabel="",
+                        facetOn=NULL
+                        ) {
+
+    # Get the levels to be used
+    cLevels <- levels(df %>% pull(fillVar))
+    
+    # Create the main plot
+    p1 <- df %>%
+        ggplot(aes_string(fill=fillVar))
+    if (!is.null(orderByVariable)) {
+        p1 <- p1 + 
+            geom_bar(aes(x=fct_reorder(get(xVar), get(orderByVariable)==orderByValue, .fun=sum)),
+                     position=posnBar
+                     )
+    } else {
+        p1 <- p1 + 
+            geom_bar(aes_string(x=xVar), position=posnBar)
+    }
+    p1 <- p1 + 
+        coord_flip() + 
+        labs(x="", 
+             y=yLabel, 
+             title=title, 
+             subtitle=subtitle
+             ) + 
+        theme(legend.position="bottom") + 
+        scale_fill_discrete(legendLabel, rev(cLevels)) + 
+        guides(fill=guide_legend(nrow=1))
+    if (!is.null(facetOn)) {
+        p1 <- p1 + facet_wrap(as.formula(paste("~", facetOn)))
+    }
+    print(p1)
+    
+}
+
+# Cloud obscuration by source
+plotMaxObsc(cloudSummary, 
+            xVar="sourceName", 
+            fillVar="obscType", 
+            title="Maximum Cloud Obscuration", 
+            orderByVariable="obscType",
+            orderByValue="CLR"
+            )
+
+# Cloud obscuration by month
+cloudSummary <- cloudSummary %>%
+    mutate(month=lubridate::month(dtime), 
+           hour=lubridate::hour(dtime), 
+           monthfct=factor(month.abb[month], levels=month.abb[1:12])
+           )
+plotMaxObsc(cloudSummary, 
+            xVar="monthfct", 
+            fillVar="obscType", 
+            title="Maximum Cloud Obscuration", 
+            posnBar="fill"
+            )
+
+```
+  
+A few salient observations stand out about the maximum obscuration level:  
+  
+* Las Vegas is almost always clear or has just a few clouds up to 12,000 feet  
+* Lincoln and Green Bay tend to be either clear up to 12,000 feet or to have an overcast  
+* Traverse City is especially prone to being overcast and not having clear skies to 12,000 feet  
+* Clear skies to 12,000 feet are roughly as likely in any month, but overcast by 12,000 feet is more common in the cold season while FEW/SCT are more common during the warm season  
+  
+Groups of cities can be examined, faceted by month:  
+```{r}
+
+cityCloudList <- list(c("klas_2016", "ksan_2016", "kiah_2016", "kmsy_2016"), 
+                      c("kgrb_2016", "kgrr_2016", "kdtw_2016", "ktvc_2016"), 
+                      c("klnk_2016", "kmsp_2016", "kmsn_2016", "kind_2016"), 
+                      c("kmke_2016", "kord_2016", "kewr_2016")
+                      )
+
+for (x in cityCloudList) {
+    cloudUse <- cloudSummary %>%
+        filter(source %in% x)
+    plotMaxObsc(cloudUse, 
+                xVar="monthfct", 
+                fillVar="obscType", 
+                title="Maximum Cloud Obscuration", 
+                facetOn="sourceName", 
+                posnBar="fill"
+                )
+}
+
+```
+  
+A few findings include:  
+  
+* While there may be some small seasonal patterns, observations in Las Vegas are almost always CLR/FEW  
+* Houston and New Orleans both have few clear observations and few overcasts during June-September  
+* San Diego has most of its overcasts during May-Septemver and most of its clear observations from October-April  
+* Most of the remaining locales show a seasonal pattern with overcasts more common during the cold season  
+* Newark is at a glance less seasonal than the midwestern locales  
+  
+The ceiling heights can also be assessed:  
+```{r}
+
+cloudSummary <- cloudSummary %>%
+    mutate(ceilFactor=factor(case_when(ceilingHeight == -100 ~ "None", 
+                                       ceilingHeight <= 1000 ~ "0-1000", 
+                                       ceilingHeight <= 3000 ~ "1000-3000", 
+                                       ceilingHeight <= 6000 ~ "3000-6000",
+                                       ceilingHeight <= 12000 ~ "6000-12000"
+                                       ), 
+                             levels=c("None", "6000-12000", "3000-6000", "1000-3000", "0-1000")
+                             )
+           )
+
+plotMaxObsc(cloudSummary, 
+            xVar="sourceName", 
+            fillVar="ceilFactor", 
+            title="Ceiling Height", 
+            orderByVariable="ceilFactor",
+            orderByValue="None"
+            )
+
+```
+
+Findings for ceiling height broadly line up with findings for maximum cloud obscuration, as expected:  
+  
+* Las Vegas is least likely to have a ceiling under 12,000 feet, followed by New Orleans, Lincoln, and Houston  
+* San Diego is especially likely to have a ceiling of 1000-3000 feet relative to other locales, likely driven by marine layer  
+* Traverse City and Grand Rapids are most likely to have a ceiling, likely driven by being just downwind of a large body of water  
+  
+The same analysis can be run for the minimum cloud height:  
+```{r}
+
+cloudSummary <- cloudSummary %>%
+    mutate(minCFactor=factor(case_when(cloudHeight == -100 ~ "None", 
+                                       cloudHeight <= 1000 ~ "0-1000", 
+                                       cloudHeight <= 3000 ~ "1000-3000", 
+                                       cloudHeight <= 6000 ~ "3000-6000",
+                                       cloudHeight <= 12000 ~ "6000-12000"
+                                       ), 
+                             levels=c("None", "6000-12000", "3000-6000", "1000-3000", "0-1000")
+                             )
+           )
+
+plotMaxObsc(cloudSummary, 
+            xVar="sourceName", 
+            fillVar="minCFactor", 
+            title="Minimum Cloud Height", 
+            orderByVariable="minCFactor",
+            orderByValue="None"
+            )
+
+```
+  
+At a glance, there seem to be some similarities and differences among the locales:  
+  
+* San Diego frequently has its lowest clouds in the 0-3000 feet range  
+* Las Vegas almost never has clouds below 6000 feet  
+* Houston and New Orleans look very similar in minimum cloud heights by month  
+* Green Bay and Lincoln appear to have more occurences of clear skies up to 12000 feet than the other cold weather cities  
+  
+A more analytical approach would look at the distance between the various locales.  Broadly speaking, distance can be calculated based on counts by month by locale.  No scaling is performed since each location has roughly the same number of observations by month, and the intent is to find macro similarities (e.g., if 1 city has 2% data in bucket x and the others all have 0% data in bucket x, this analysis would treat that as a minor difference where with scaled data it would be a primary difference driver).
+  
+There are three main variable to consider for distance:  
+  
+* obscType - the obscuration type observed  
+* minCFactor - minimum cloud height observed, bucketed as 0-1000, 1000-3000, 3000-6000, 6000-12000, None  
+* ceilFactor - ceiling height observed, bucketed as 0-1000, 1000-3000, 3000-6000, 6000-12000, None  
+  
+Distances can be calculated using any or all of these variables.  A function is created to that process can be repeated:  
+```{r}
+
+findCloudDist <- function(df, 
+                          byVar, 
+                          fctVar,
+                          pivotVar="monthfct", 
+                          scaleDistData=FALSE, 
+                          returnPivotOnly=FALSE
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: data frame or tibble containing one record per locale and time
+    # byVar: the variable(s) by which the final distance file should be unique
+    # fctVar: the factor variables to be counted up, with the sums being the distance inputs
+    # pivotVar: the variable(s) which should be pivoted in to columns to make the file unique by byVar
+    # scale: whether to scale the data prior to calculating distances
+    # returnDistMatrix: whether to just return the pivoted data frame (default, FALSE, returns the distance matrix calculated from this pivoted data frame rather than the data frame itself)
+    
+    # Create the counts data by byVar, pivoted by fctVar and pivotVar
+    baseData <- df %>%
+        group_by_at(vars(all_of(c(byVar, fctVar, pivotVar)))) %>%
+        summarize(n=n()) %>%
+        ungroup() %>%
+        pivot_wider(names_from=all_of(c(fctVar, pivotVar)), values_from="n") %>%
+        mutate_if(is.numeric, tidyr::replace_na, replace=0)
+    
+    # If the data are only yo be pivoted, return and exit the function
+    if (returnPivotOnly) {
+        return(baseData)
+    }
+    
+    # Split in to descriptors and data
+    descData <- baseData %>%
+        select_at(vars(all_of(byVar))) %>%
+        mutate(rowN=row_number())
+    distData <- baseData %>%
+        select_at(vars(-any_of(byVar))) %>%
+        as.matrix()
+    
+    # Scale distdata if requested
+    if (scaleDistData) {
+        distData <- scale(distData)
+    }
+    
+    # Create the distances, convert back to data frame, pivot_longer, and attach the labels
+    dist(distData) %>%
+        as.matrix() %>%
+        as_tibble() %>%
+        mutate(row1=row_number()) %>%
+        pivot_longer(-row1, names_to="row2", values_to="dist") %>%
+        mutate(row2=as.integer(row2)) %>%
+        inner_join(descData, by=c("row1"="rowN")) %>%
+        rename_at(vars(all_of(byVar)), ~paste0(., "_1")) %>%
+        inner_join(descData, by=c("row2"="rowN")) %>%
+        rename_at(vars(all_of(byVar)), ~paste0(., "_2"))
+    
+}
+
+```
+  
+The function is then run for the obscuration data as an example:  
+```{r}
+
+# Find the distances for obscType by locale vs. locale
+obscDist <- findCloudDist(cloudSummary, 
+                          byVar=c("source", "sourceName"), 
+                          fctVar="obscType", 
+                          pivotVar="monthfct"
+                          )
+obscDist
+
+```
+  
+A function can then be created to plot the distances as a heamap and to return the minimum distance for each locale:  
+```{r}
+
+plotCloudDist <- function(df, 
+                          var1="sourceName_1", 
+                          var2="sourceName_2", 
+                          met="dist", 
+                          roundDist=0, 
+                          title="Distance Between Locales", 
+                          subT=""
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: tibble or data frame containing distance data
+    # var1: the variable containing the first locale
+    # var2: the variable containing the second locale
+    # dist: the variable containing the pre-calculated distance between var1 and var2
+    # roundDist: the rounding for the distance in the plot
+
+    # Process the data frame and exclude any occurences of distance to self    
+    distData <- df %>%
+        select_at(vars(all_of(c(var1, var2, met)))) %>%
+        filter(get(var1) != get(var2))
+    
+    # Get the locales by minimum distance to any other locale
+    distHiLo <- distData %>%
+        group_by_at(vars(all_of(var1))) %>%
+        filter(dist==min(dist)) %>%
+        arrange(dist) %>%
+        pull(var1)
+    
+    # Create a heatmap of the distances
+    distData %>%
+        ggplot(aes(x=factor(get(var1), levels=distHiLo), y=factor(get(var2), levels=distHiLo))) + 
+        geom_tile(aes(fill=dist)) + 
+        geom_text(aes(label=round(dist, roundDist)), color="lightblue") +
+        labs(x="", y="", title=title, subtitle=subT) + 
+        scale_fill_gradient("Distance", low="black", high="white") + 
+        theme(axis.text.x=element_text(angle=90))
+    
+}
+
+```
+  
+The process can then be run on the obscuration data as a check:  
+```{r}
+
+plotCloudDist(obscDist, subT="Based on % of obscuration type by month")
+
+```
+  
+FINDINGS FOR OBSCURATION DISTANCE:  
+  
+* Las Vegas is relatively far from everything, with its only modestly near neighbor being Lincoln  
+* Lincoln is relatively far from everything  
+* San Diego is far from everything except its moderately near neighbors Houston, New Orleans, and Newark  
+* Green Bay is closest to Madison/Minneapolis and is moderately close to most of the midwest cities  
+* Newark is reasonably close to many cities, being distant only from Traverse City, Green Bay, Lincoln, and Las Vegas  
+* Houston and New Orleans are closest to each other, then to Newark  
+* Traverse City and Grand Rapids are relatively close to each other  
+* The remaining cold weather cities (Milwaukee, Chicago, Madison, Minneapolis, Indianapolis, Detroit) are all relatively close to each other and also to Grand Rapids  
+  
+This is suggestive that there is a cold-weather cluster, a hot and humid cluster, and then several locales that are more or less standalone but could be grouped loosely to each other.
+  
+The functions can then be run on variations of the data:  
+```{r}
+
+# Run for minCFactor
+findCloudDist(cloudSummary, 
+              byVar=c("source", "sourceName"), 
+              fctVar="minCFactor", 
+              pivotVar="monthfct"
+              ) %>%
+    plotCloudDist(subT="Based on % in each minimum cloud height bucket by month")
+
+# Run for ceilFactor
+findCloudDist(cloudSummary, 
+              byVar=c("source", "sourceName"), 
+              fctVar="ceilFactor", 
+              pivotVar="monthfct"
+              ) %>%
+    plotCloudDist(subT="Based on % in each ceiling height bucket by month")
+
+```
+  
+Findings by minimum cloud height are similar to findings by obscuration.  
+  
+Findings by ceiling height show that Lincoln and Newark are close to each other and that San Diego and Las Vegas are both segments of one.  Traverse City and Grand Rapids are close to each other; as are New Orleans and Houston.  There continues to be a large, close, segment of cold cities.
+
+Of interest is whether a simple kmeans analysis returns the same findings:  
+```{r}
+
+set.seed(2006040940)
+
+ceilDistData <- findCloudDist(cloudSummary, 
+                              byVar=c("source", "sourceName"), 
+                              fctVar="ceilFactor", 
+                              pivotVar="monthfct", 
+                              returnPivotOnly=TRUE
+                              )
+
+tibble::tibble(locale=ceilDistData$sourceName, 
+               cluster=kmeans(dist(ceilDistData[3:ncol(ceilDistData)]), centers=5, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster) %>%
+    as.data.frame()
+
+```
+  
+The five-segment k-means is consistent - solo segments for San Diego and Las Vegas; a Grand Rapids-Traverse City segment; a cold-weather midwestern segment (Grand Rapids and Traverse City are on the downwind side of Lake Michigan and would be expected to see much different clouds than cities with similar temperatures); and a catch-all segment.
+  
+The data can also be assessed using hierarchical clustering:  
+```{r}
+
+hclust(dist(ceilDistData[3:ncol(ceilDistData)]), method="complete") %>%
+    plot(labels=ceilDistData$sourceName, cex=0.5, main="Hierarchical on Ceiling Height: method=complete")
+
+hclust(dist(ceilDistData[3:ncol(ceilDistData)]), method="single") %>%
+    plot(labels=ceilDistData$sourceName, cex=0.5, main="Hierarchical on Ceiling Height: method=single")
+
+```
+  
+Similar conclusions can be drawn from hierarchical clustering based on ceiling height buckets by month:  
+  
+* San Diego and Las Vegas are each segments of one  
+* Houston, New Orleans, Lincoln, and Newark tend to associate together  
+* Grand Rapids and Traverse City tend to associate together  
+* There are possibly two sub-groupings of the other cold weather locales  
+  
+Are any differences observed in trends for minimum cloud height?  
+```{r}
+
+heightDistData <- findCloudDist(cloudSummary, 
+                                byVar=c("source", "sourceName"), 
+                                fctVar="minCFactor", 
+                                pivotVar="monthfct", 
+                                returnPivotOnly=TRUE
+                                )
+
+hclust(dist(heightDistData[3:ncol(heightDistData)]), method="complete") %>%
+    plot(labels=heightDistData$sourceName, cex=0.5, 
+         main="Hierarchical on Minimum Cloud Height: method=complete"
+         )
+
+hclust(dist(heightDistData[3:ncol(heightDistData)]), method="single") %>%
+    plot(labels=heightDistData$sourceName, cex=0.5, 
+         main="Hierarchical on Minimum Cloud Height: method=single"
+         )
+
+```
+  
+There are some differences when using the 'complete' linkage method:  
+  
+* There is a Green Bay-Lincoln cluster, with Las Vegas merging in relatively soon  
+* There are arguably two cold weather clusters (including Grand Rapids and Traverse City), with Newark merging in relatively soon  
+  
+When using the 'single' linkage method, these patterns become muted:  
+  
+* There are still arguably two cold-weather clusters  
+* Houston and New Orleans form a cluster  
+* San Diego and Las Vegas are their own cluster  
+* Lincoln, Newark, and Green Bay all fall somewhere in the middle
+  
+We would expect k-means to pull out 1-2 cold-weather clusters and a Houston-New Orleans cluster:  
+```{r}
+
+set.seed(2006041003)
+
+cl5 <- tibble::tibble(locale=heightDistData$sourceName, 
+               cluster=kmeans(dist(heightDistData[3:ncol(heightDistData)]), centers=5, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster)
+
+cl6 <- tibble::tibble(locale=heightDistData$sourceName, 
+               cluster=kmeans(dist(heightDistData[3:ncol(heightDistData)]), centers=6, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster)
+
+cl7 <- tibble::tibble(locale=heightDistData$sourceName, 
+               cluster=kmeans(dist(heightDistData[3:ncol(heightDistData)]), centers=7, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster)
+
+
+cl5 %>%
+    rename(cl5=cluster) %>%
+    inner_join(rename(cl6, cl6=cluster), by="locale") %>%
+    inner_join(rename(cl7, cl7=cluster), by="locale") %>%
+    as.data.frame()
+
+```
+  
+With five segments, there is:  
+  
+* Houston and New Orleans  
+* San Diego  
+* Lincoln and Green Bay  
+* Las Vegas  
+* Cold weather cities  
+  
+Adding the sixth cluster splits apart Green Bay and Lincoln.  
+
+Adding the seventh cluster cleaves Grand Rapids-Traverse City-Detroit from the other cold weather cities.  
 
 Next steps are to explore the clouds data, fix any issues, and create/save a consolidated file for further analysis.
   
+#### _Storing Output Data_  
+The primary EDA data is available, in consolidated form, in the modData file.  Variables to keep include:  
+  
+* source (chr) - the reporting station and time  
+* sourceName (chr) - the descriptive name for source (rename to 'locale')  
+* dtime (dttm) - the date-time for the observation  
+* origMETAR (chr) - the original METAR associated with the observation  
+* year (int) - the year, extracted from dtime  
+* monthint (int) - the month, extracted from dtime, as an integer  
+* month (fct) - the month, extracted from dtime, as a three-character abbreviation (factor)  
+* day (int) - the day of the month, extracted from dtime  
+* WindDir (chr) - previaling wind direction in degrees, stored as a character since 'VRB' means variable  
+* WindSpeed (int) - the prevailing wind speed in knots  
+* WindGust (dbl) - the wind gust speed in knots (NA if there is no recorded wind gust at that hour)  
+* Visibility (dbl) - surface visibility in statute miles  
+* Altimeter (int) - altimeter in inches of mercury  
+* TempF (dbl) - the Fahrenheit temperature  
+* DewF (dbl) - the Fahrenheit dew point  
+* modSLP (dbl) - Sea-Level Pressure (SLP), adjusted to reflect that SLP is recorded as 0-1000 but reflects data that are 950-1050  
+* cTypen (chr) - the cloud type of the nth cloud layer (FEW, BKN, SCT, OVC, or VV)  
+* cLeveln (dbl) - the cloud height in feet of the nth cloud layer  
+* predomDir (chr) - the predominant wind direction as NE-E-SE-S-SW-W-NW-N-VRB-000-Error  
+  
+Additionally, other data can be brought in from the EDA:  
+  
+* raState, snState, tsState from the precipitation analysis  
+* tempFHi, tempFLo from the daily temperature analysis  
+* p1Inches, p36Inches, p24Inches from the daily precipitation analysis  
+* Minimum cloud height and minimum ceiling height from the cloud analysis
+
+And, other key data can be stored for use later:  
+  
+* Precipitation extraction lists  
+* Cloud data  
+  
+The main data frame is created:  
+```{r}
+
+# Select the appropriate variables from modData
+finalData <- modData %>%
+    select(source, 
+           locale=sourceName, 
+           dtime, 
+           origMETAR, 
+           year, 
+           monthint, 
+           month, 
+           day, 
+           WindDir,
+           WindSpeed,
+           WindGust,
+           predomDir,
+           Visibility,
+           Altimeter,
+           TempF,
+           DewF,
+           modSLP,
+           starts_with("cType"),
+           starts_with("cLevel")
+           )
+
+```
+  
+The precipitation data are integrated, then merged in to the main data frame:  
+```{r}
+
+# Function to take a precipitation list and make a tibble
+makeTibbleFromPrecip <- function(lst, varName) {
+    
+    sapply(lst[["precipList"]], FUN="[", "pStateFrame") %>%
+        bind_rows(.id="source") %>%
+        mutate(source=str_sub(source, 1, 9)) %>%
+        select(source, dtime, curPrecip) %>%
+        rename_at(vars(all_of(c("curPrecip"))), ~varName)
+        
+}
+
+thunderData <- map_dfr(.x=list(thunder_2015_List, thunder_2016_List, thunder_2017_List), 
+                       .f=makeTibbleFromPrecip, 
+                       varName="isThunder"
+                       )
+
+rainData <- map_dfr(.x=list(rain_2015_List, rain_2016_List, rain_2017_List), 
+                    .f=makeTibbleFromPrecip, 
+                    varName="isRain"
+                    )
+
+snowData <- map_dfr(.x=list(snow_2015_List, snow_2016_List, snow_2017_List), 
+                    .f=makeTibbleFromPrecip, 
+                    varName="isSnow"
+                    )
+
+# Inner join the precipitation data
+precipData <- rainData %>%
+    inner_join(snowData, by=c("source", "dtime")) %>%
+    inner_join(thunderData, by=c("source", "dtime"))
+
+# Confirm that no rows have been lost
+if (nrow(precipData) < max(nrow(rainData), nrow(snowData), nrow(thunderData))) {
+    stop("\nPrecipitation data have mislaignment issues")
+}
+
+
+# Merge in to finalData
+if (nrow(finalData) != nrow(precipData)) {
+    stop("\nPrecipitation data are not aligned with final data")
+}
+
+finalData <- finalData %>%
+    inner_join(precipData, by=c("source", "dtime"))
+
+# Confirm that no rows have been lost
+if (nrow(finalData) < nrow(precipData)) {
+    stop("\nPrecipitation data did not merge correctly with final data")
+}
+
+```
+  
+Daily high-low temperatures and precipitation summaries (1 hour, 3/6 hour, 24 hour) are also merged in:  
+```{r}
+
+# Merge together the precipitation and temperature data
+precipTempData <- all_pin %>%
+    select(source, dtime, p1Inches, p36Inches, p24Inches) %>%
+    inner_join(select(all_hilo, source, dtime, tempFHi, tempFLo), 
+               by=c("source", "dtime")
+               )
+
+# Confirm that no rows have been lost
+if (nrow(precipTempData) < max(nrow(all_pin), nrow(all_hilo))) {
+    stop("\nPrecipitation and temperature summaries have mislaignment issues")
+}
+
+
+# Merge in to finalData
+if (nrow(finalData) != nrow(precipTempData)) {
+    stop("\nPrecipitation and temperature summaries are not aligned with final data")
+}
+
+finalData <- finalData %>%
+    inner_join(precipTempData, by=c("source", "dtime"))
+
+# Confirm that no rows have been lost
+if (nrow(finalData) < nrow(precipTempData)) {
+    stop("\nPrecipitation and temperature summaries did not merge correctly with final data")
+}
+
+```
+  
+Minimum cloud height (through 12,000 feet) and minimum ceiling height (through 12,000 feet) are also merged in:  
+```{r}
+
+# Merge in to finalData
+if (nrow(finalData) != nrow(cloudSummary)) {
+    stop("\nCloud summaries are not aligned with final data")
+}
+
+finalData <- finalData %>%
+    inner_join(select(cloudSummary, source, dtime, cloudHeight, cloudType, ceilingHeight, ceilingType), 
+               by=c("source", "dtime")
+               ) %>%
+    rename(minHeight=cloudHeight, minType=cloudType)
+
+# Confirm that no rows have been lost
+if (nrow(finalData) < nrow(cloudSummary)) {
+    stop("\nCloud summaries did not merge correctly with final data")
+}
+
+```
+  
+Address the issues that there is a handful of time overlap (a day or two of 2014 data included in 2015):  
+```{r}
+
+stationTime <- finalData %>%
+    select(source, dtime) %>%
+    mutate(station=str_sub(source, 1, 4)) %>%
+    select(station, dtime)
+
+finalDups <- stationTime %>%
+    duplicated()
+
+cat("\nDuplicated records occur during:\n")
+stationTime %>% 
+    filter(finalDups) %>% 
+    count(station, date=lubridate::date(dtime))
+
+```
+  
+As expected, the duplicated occur at the change-over from 2015-2016 and 2016-2017.  To simplify future processing, each source will be filtered to include only the matching year:  
+```{r}
+
+filteredData <- finalData %>%
+    filter(as.integer(str_sub(source, 6, -1))==year)
+
+cat("\nEnforcing year restriction reduces data rows from:", nrow(finalData), "to:", nrow(filteredData), "\n")
+
+```
+  
+The list of variables is output, and summaries run:  
+```{r}
+
+cat("\nVariables includes in the final file are:\n")
+names(filteredData)
+
+cat("\nSummary of the final file:\n")
+summary(filteredData)
+
+cat("\nResetting Visibility > 10 to 10\n")
+filteredData %>% 
+    filter(Visibility > 10)
+
+summary(filteredData$Visibility)
+filteredData <- filteredData %>%
+    mutate(Visibility=ifelse(is.na(Visibility), NA, pmin(Visibility, 10)))
+summary(filteredData$Visibility)
+
+```
+  
+The final file is then saved for future use:  
+```{r}
+
+saveRDS(filteredData, "./RInputFiles/ProcessedMETAR/metar_postEDA_20200617.rds")
+
+```
+  
+The precipitation extract lists are then consolidated and saved:  
+```{r}
+
+allPrecipList <- list(rain2015=thunder_2015_List, 
+                      rain2016=rain_2016_List, 
+                      rain2017=rain_2017_List,
+                      snow2015=snow_2015_List, 
+                      snow2016=snow_2016_List, 
+                      snow2017=snow_2017_List, 
+                      thunder2015=thunder_2015_List, 
+                      thunder2016=thunder_2016_List, 
+                      thunder2017=thunder_2017_List
+                      )
+str(allPrecipList, max.level = 2)
+
+saveRDS(allPrecipList, "./RInputFiles/ProcessedMETAR/metar_precipLists_20200617.rds")
+
+```
+  
+The modified clouds data tibble is also saved:  
+```{r}
+
+# Example of the modCData format
+modCData
+
+# Check that modCData includes every date-time in filteredData, and no others
+modCDataTimes <- modCData %>%
+    count(source, dtime)
+    
+# In filteredData but not in modCDataTimes
+filteredData %>%
+    select(source, dtime) %>%
+    anti_join(modCDataTimes, by=c("source", "dtime"))
+
+# In modCDataTimes but not in filteredData
+modCDataTimes %>%
+    select(source, dtime) %>%
+    anti_join(filteredData, by=c("source", "dtime")) %>%
+    count(source, date=lubridate::date(dtime)) %>%
+    pivot_wider(source, names_from="date", values_from="n") %>%
+    mutate_if(is.numeric, ~ifelse(is.na(.), 0, .)) %>%
+    as.data.frame()
+
+# Filter modCData so that year aligns as with fileteredData
+modCSaveData <- modCData %>%
+    filter(as.integer(str_sub(source, 6, 9))==lubridate::year(dtime))
+
+saveRDS(modCSaveData, "./RInputFiles/ProcessedMETAR/metar_modifiedClouds_20200617.rds")
+
+```
+  
+With the EDA files saved, next steps are to build models to predict the locale based on the data elements (see WeatherModels_202006_v001).
