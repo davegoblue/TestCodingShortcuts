@@ -1965,4 +1965,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherEDA_202005_v002 extracts daily temperature and precipitation summaries and runs cross-locale comparisons  
 * WeatherEDA_202005_v002 wraps facetted plots across multiple pages  
 * WeatherEDA_202005_v002 runs EDA for clouds data and stores output files  
+* WeatherModeling_202006_v001 created to run models on the processed METAR data  
   
