@@ -1,0 +1,451 @@
+---
+title: "Weather Modeling"
+author: "davegoblue"
+date: "6/18/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+The file 'WeatherEDA_202005_v002.Rmd' contains exploratory data analysis for historical weather data as contained in METAR archives hosted by Iowa State University.
+
+Data have been dowloaded, processed, cleaned, and integrated for several stations (airports) and years, with .rds files saved in "./RInputFiles/ProcessedMETAR".
+
+This module will perform initial modeling on the processed weather files.
+
+#### _Data Availability_  
+There are three main processed files available for further exploration:  
+  
+_metar_postEDA_20200617.rds_  
+  
+* source (chr) - the reporting station and time  
+* locale (chr) - the descriptive name for source  
+* dtime (dttm) - the date-time for the observation  
+* origMETAR (chr) - the original METAR associated with the observation at that source and date-time  
+* year (dbl) - the year, extracted from dtime  
+* monthint (dbl) - the month, extracted from dtime, as an integer  
+* month (fct) - the month, extracted from dtime, as a three-character abbreviation (factor)  
+* day (int) - the day of the month, extracted from dtime  
+* WindDir (chr) - previaling wind direction in degrees, stored as a character since 'VRB' means variable  
+* WindSpeed (int) - the prevailing wind speed in knots  
+* WindGust (dbl) - the wind gust speed in knots (NA if there is no recorded wind gust at that hour)  
+* predomDir (chr) - the predominant wind direction as NE-E-SE-S-SW-W-NW-N-VRB-000-Error  
+* Visibility (dbl) - surface visibility in statute miles  
+* Altimeter (dbl) - altimeter in inches of mercury  
+* TempF (dbl) - the Fahrenheit temperature  
+* DewF (dbl) - the Fahrenheit dew point  
+* modSLP (dbl) - Sea-Level Pressure (SLP), adjusted to reflect that SLP is recorded as 0-1000 but reflects data that are 950-1050  
+* cTypen (chr) - the cloud type of the nth cloud layer (FEW, BKN, SCT, OVC, or VV)  
+* cLeveln (dbl) - the cloud height in feet of the nth cloud layer  
+* isRain (lgl) - was rain occurring at the moment the METAR was captured?  
+* isSnow (lgl) - was snow occurring at the moment the METAR was captured?  
+* isThunder (lgl) - was thunder occurring at the moment the METAR was captured?  
+* p1Inches (dbl) - how many inches of rain occurred in the past hour?  
+* p36Inches (dbl) - how many inches of rain occurred in the past 3/6 hours (3-hour summaries at 3Z-9Z-15Z-21Z and 6-hour summaries at 6Z-12Z-18Z-24Z and NA at any other Z times)?  
+* p24Inches (dbl) - how many inches of rain occurred in the past 24 hours (at 12Z, NA at all other times)  
+* tempFHi (dbl) - the high temperature in the past 24 hours, in Fahrenheit (reported once per day)  
+* tempFLo (dbl) - the low temperature in the past 24 hours, in Fahrenheit (reported once per day)  
+* minHeight (dbl) - the minimum cloud height in feet (-100 means 'no clouds')  
+* minType (fct) - amount of obscuration at the minimum cloud height (VV > OVC > BKN > SCT > FEW > CLR)  
+* ceilingHeight (dbl) - the minimum cloud ceiling in feet (-100 means 'no ceiling')  
+* ceilingType (fct) - amount of obscuration at the minimum ceiling height (VV > OVC > BKN)  
+  
+_metar_modifiedClouds_20200617.rds_  
+  
+* source (chr) - the reporting station and time  
+* sourceName (chr) - the descriptive name for source  
+* dtime (dttm) - the date-time for the observation  
+* level (dbl) - cloud level (level 0 is inserted for every source-dtime as a base layer of clear)  
+* height (dbl) - level height (height -100 is inserted for every source-dtime as a base layer of clear)  
+* type (dbl) - level type (type CLR is inserted for every source-dtime as a base layer of clear)  
+  
+_metar_precipLists_20200617.rds_  
+  
+* Contains elements for each of rain/snow/thunder for each of 2015/2016/2017  
+* Each element contains a list and a tibble  
+* The tibble is precipLength and contains precipitation by month as source-locale-month-hours-events  
+* The list is precipList and contains data on each precipitation interval  
+  
+Glimpses of the three main files are as follows:  
+```{r}
+
+# The tidyverse library will be used throughout
+library(tidyverse)
+
+
+# Main weather data
+metarData <- readRDS("./RInputFiles/ProcessedMETAR/metar_postEDA_20200617.rds")
+glimpse(metarData)
+
+# Extra clouds data
+cloudData <- readRDS("./RInputFiles/ProcessedMETAR/metar_modifiedClouds_20200617.rds")
+glimpse(cloudData)
+
+# Precipitation summaries
+precipData <- readRDS("./RInputFiles/ProcessedMETAR/metar_precipLists_20200617.rds")
+names(precipData)
+names(precipData$rain2016)
+names(precipData$rain2016$precipList)
+names(precipData$rain2016$precipList$kdtw_2016_RA)
+glimpse(precipData$rain2016$precipLength)
+glimpse(precipData$rain2016$precipList$kdtw_2016_RA)
+
+```
+
+#### _Initial Modeling_  
+The caret package allows for many types of models to be called on the data.
+
+A function is written to subset the data and create appropriate train-test splits:  
+```{r}
+
+# Create test and train data, filtered for locales and months, and keeping only relevant variables
+createTestTrain <- function(df, 
+                            sources=NULL, 
+                            vrbls=NULL,
+                            convFactor="locale",
+                            months=1:12,
+                            testSize=0.3,
+                            noNA=TRUE,
+                            seed=NULL
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble containing the data
+    # sources: the source records to be included (NULL will include all)
+    # vrbls: the variables to be included (NULL will include all)
+    # convFactor: variable to convert to a factor after processing (NULL for none)
+    # months: the months to be included
+    # testSize: the fraction of observations to be included as test
+    # seed: the seed for reproducibility
+
+    # Set the seed if it has been passed
+    if (!is.null(seed)) { set.seed(seed) }
+    
+    # Set sources to be all sources if NULL
+    if (is.null(sources)) { 
+        sources <- df %>%
+            count(source) %>%
+            pull(source)
+    }
+    
+    # Set vrbls to be all variables if NULL
+    if (is.null(vrbls)) { vrbls <- names(df) }
+    
+    # Filter the data for the relevant sources and months, and limit to vars
+    dfMod <- df %>%
+        filter(source %in% sources, monthint %in% months) %>%
+        select_at(vars(all_of(vrbls)))
+    
+    # Use only complete cases if noNA=TRUE
+    if (noNA) {
+        dfMod <- dfMod %>%
+            filter(complete.cases(dfMod))
+    }
+    
+    # Convert the key variable to a factor if requested
+    if (!is.null(convFactor)) {
+        dfMod <- dfMod %>%
+            mutate_at(vars(all_of(convFactor)), factor)
+    }
+    
+    # Split in to test and train (do not sort so that records by locale do not end up in any given order)
+    idx <- sample(1:nrow(dfMod), round((1-testSize) * nrow(dfMod)), replace=FALSE)
+
+    # Return the test and train data
+    list(testData=dfMod[-idx, ], 
+         trainData=dfMod[idx, ]
+         )
+    
+}
+
+```
+  
+As an example, data for 2016 are pulled for two of the cities - Las Vegas and New Orleans:  
+```{r}
+
+ttLists <- createTestTrain(metarData, 
+                           sources=c("klas_2016", "kmsy_2016"), 
+                           vrbls=c("locale", "month", "predomDir", "TempF", "DewF", "Altimeter", "modSLP"),
+                           seed=2006181356
+                           )
+ttLists
+
+```
+  
+A simple random forest can then be applied to the data, with several options for complexity:  
+```{r cache=TRUE}
+
+# Create a tuning grid and run the models
+trGrid <- expand.grid(min.node.size=c(1, 5, 10, 25, 100), 
+                      mtry=c(1, 2, 3, 4, 5, 6), 
+                      splitrule=c("gini")
+                      )
+
+caretModel <- caret::train(locale ~ ., 
+                           data=ttLists$trainData,
+                           method="ranger",
+                           tuneGrid=trGrid,
+                           trControl=caret::trainControl(method="cv", number=5),
+                           num.trees=50
+                           )
+caretModel
+
+```
+  
+The model is not worried about over-fitting, choosing the smallest minimum node size and the largest mrty.  How well does this model work on the test data?  
+```{r}
+
+# Run the best parameters from ranger in randomForest
+caretBest <- randomForest::randomForest(locale ~ ., 
+                                        data=ttLists$trainData,
+                                        ntree=50, 
+                                        nodesize=1, 
+                                        mtry=6
+                                        )
+caretBest
+
+```
+  
+The model estimates an OOB error rate of between 1%-2%, suggesting a strong ability to differentiate Las Vegas from New Orleans.
+
+A function is built to assess performance on the test data:  
+```{r}
+
+# Predictions and confusion matrices on test data
+evalPredictions <- function(model, 
+                            testData, 
+                            printAll=TRUE,
+                            printCM=printAll, 
+                            printConfSummary=printAll, 
+                            printConfTable=printAll, 
+                            showPlots=TRUE
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # model: a trained model
+    # testData: the test data to apply the model against
+    # printAll: whether to print the text summaries (by default, carries to the next three arguments)
+    # printCM: whether to print the confusion matrix
+    # printConfSummary: whether to print the voting summary (rough proxy for confidence) of the predictions
+    # printConfTable: whether to summarize the accuracy by voting summary
+    # showPlots: whether to display plots related to the outputs
+    
+    # Get the predicted class and probabilities
+    testClass <- predict(model, newdata=testData)
+    testProbs <- predict(model, newdata=testData, type="prob")
+    if (printCM) {
+        print(caret::confusionMatrix(testClass, testData$locale))
+    }
+    
+    # Create a tibble containing class prediction, maximum probability, and individual predictions
+    tblProbs <- tibble::as_tibble(testProbs) %>%
+        mutate(maxProb=apply(., 1, FUN=max), 
+               sumProb=apply(., 1, FUN=sum), 
+               predClass=testClass, 
+               locale=testData$locale, 
+               accurate=(predClass==locale)
+               )
+    
+    # Describe the maximum probability by source
+    if (printConfSummary) {
+        tblProbs %>%
+            group_by(locale) %>%
+            summarize(meanMax=mean(maxProb), medianMax=median(maxProb), 
+                      pct90Plus=mean(maxProb > 0.9), pct50Minus=mean(maxProb < 0.5)
+                      ) %>%
+        print()
+    }
+    
+    # Create a table of accuracy by source and prediction confidence
+    p1Data <- tblProbs %>%
+        mutate(predProb=0.5 * round(2*maxProb, 1)) %>%
+        group_by(predProb, locale) %>%
+        summarize(pctCorrect=mean(accurate), nCorrect=sum(accurate), nObs=n())
+    
+    p1Print <- p1Data %>%
+        group_by(predProb) %>%
+        summarize(nCorrect=sum(nCorrect), nObs=sum(nObs)) %>%
+        mutate(pctCorrect=nCorrect/nObs)
+    if (printConfTable) {
+        print(p1Print)
+    }
+    
+    cat("\nMean Error-Squared Between Confidence of Prediction and Accuracy of Precition\n")
+    p1Print %>%
+        mutate(err2=nObs*(pctCorrect-predProb)**2) %>%
+        summarize(meanError2=sum(err2)/sum(nObs)) %>%
+        print()
+    
+    # Plot the maximum probability forecasted by row
+    p1 <- p1Data %>%
+        ggplot(aes(x=predProb)) +
+        geom_col(aes(y=nObs, fill=locale)) + 
+        labs(x="Maximum probability predicted", y="# Observations", 
+             title="Count of Maximum Probability Predicted by Locale"
+             )
+    p2 <- p1Data %>%
+        ggplot(aes(x=predProb)) +
+        geom_line(aes(y=pctCorrect, group=locale, color=locale)) + 
+        geom_abline(aes(intercept=0, slope=1), lty=2) +
+        ylim(c(0, 1)) + 
+        labs(x="Maximum probability predicted", y="Actual Probability Correct", 
+             title="Accuracy of Maximum Probability Predicted by Locale"
+             )
+    
+    if (showPlots) {
+        print(p1)
+        print(p2)
+    }
+    
+    tblProbs
+    
+}
+
+```
+  
+And the function is then run for the Las Vegas and New Orleans data:  
+```{r}
+
+evalPredictions(caretBest, testData=ttLists$testData)
+
+varImp(caretBest) %>%
+    rownames_to_column() %>%
+    ggplot(aes(x=fct_reorder(rowname, -Overall), y=Overall)) + 
+    geom_col() + 
+    labs(x="", y="Importance")
+
+```
+  
+The model has greater than 98% accuracy in splitting Las Vegas and New Orleans, driven by 1) New Orleans being extremely humid and Las Vegas being a desert, and 2) New Orleans being at sea level and Las Vegas being at high altitude.
+  
+Using modSLP and Altimeter is arguably cheating since the values and relationships between them are highly driven by a location's height relative to sea-level.  How does the model perform if these are deleted?  
+```{r cache=TRUE}
+
+# Create a tuning grid and run the models
+trGrid <- expand.grid(min.node.size=c(1, 5, 10, 25, 100), 
+                      mtry=c(1, 2, 3, 4), 
+                      splitrule=c("gini")
+                      )
+
+caretModel <- caret::train(locale ~ DewF + month + predomDir + TempF, 
+                           data=ttLists$trainData,
+                           method="ranger",
+                           tuneGrid=trGrid,
+                           trControl=caret::trainControl(method="cv", number=5),
+                           num.trees=50
+                           )
+caretModel
+
+```
+  
+The model can then be run using the best parameters:  
+```{r}
+
+# Run the best parameters from ranger in randomForest
+caretBest <- randomForest::randomForest(locale ~ DewF + month + predomDir + TempF, 
+                                        data=ttLists$trainData,
+                                        ntree=50, 
+                                        nodesize=1, 
+                                        mtry=4
+                                        )
+caretBest
+
+```
+  
+As expected, performance dips to around 95% accuracy:  
+```{r}
+
+evalPredictions(caretBest, testData=ttLists$testData)
+
+varImp(caretBest) %>%
+    rownames_to_column() %>%
+    ggplot(aes(x=fct_reorder(rowname, -Overall), y=Overall)) + 
+    geom_col() + 
+    labs(x="", y="Importance")
+
+```
+  
+The very large difference in dew point drives the high classification ability:  
+```{r}
+
+ttLists$trainData %>% 
+    bind_rows(ttLists$testData) %>%
+    ggplot(aes(x=TempF, y=DewF)) + 
+    geom_bin2d() + 
+    facet_wrap(~locale) + 
+    geom_density_2d() + 
+    scale_fill_continuous(low="white", high="black")
+
+```
+
+Suppose on the other hand that the model tries to distinguish New Orleans from Houston:  
+```{r}
+
+ttLists <- createTestTrain(metarData, 
+                           sources=c("kiah_2016", "kmsy_2016"), 
+                           vrbls=c("locale", "month", "predomDir", "TempF", "DewF"),
+                           seed=2006181440
+                           )
+ttLists
+
+
+# Create a tuning grid and run the models
+trGrid <- expand.grid(min.node.size=c(1, 5, 10, 25, 100), 
+                      mtry=c(1, 2, 3, 4), 
+                      splitrule=c("gini")
+                      )
+
+caretModel <- caret::train(locale ~ DewF + month + predomDir + TempF, 
+                           data=ttLists$trainData,
+                           method="ranger",
+                           tuneGrid=trGrid,
+                           trControl=caret::trainControl(method="cv", number=5),
+                           num.trees=50
+                           )
+caretModel
+```
+  
+The best parameters from the model can then be run:  
+```{r}
+
+# Run the best parameters from ranger in randomForest
+caretBest <- randomForest::randomForest(locale ~ DewF + month + predomDir + TempF, 
+                                        data=ttLists$trainData,
+                                        ntree=50, 
+                                        nodesize=10, 
+                                        mtry=4
+                                        )
+caretBest
+
+```
+  
+Accuracy dips to the 70% range, though this is still surprisingly high given how similar the climates are in New Orleans and Houston:  
+```{r}
+
+evalPredictions(caretBest, testData=ttLists$testData)
+
+varImp(caretBest) %>%
+    rownames_to_column() %>%
+    ggplot(aes(x=fct_reorder(rowname, -Overall), y=Overall)) + 
+    geom_col() + 
+    labs(x="", y="Importance")
+
+```
+  
+The mix of temperature and dew-point is the primary driver of the classiciations.  There are many more "low confidence" (close voting) predictions for these two cities:  
+```{r}
+
+ttLists$trainData %>% 
+    bind_rows(ttLists$testData) %>%
+    ggplot(aes(x=TempF, y=DewF)) + 
+    geom_bin2d() + 
+    facet_wrap(~locale) + 
+    geom_density_2d() + 
+    scale_fill_continuous(low="white", high="black")
+
+```
+  
+It is impressive that the model can tease out distinctions in data that are, at a glance, very similar.
