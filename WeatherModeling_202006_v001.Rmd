@@ -95,7 +95,81 @@ glimpse(precipData$rain2016$precipList$kdtw_2016_RA)
 
 ```
 
-#### _Initial Modeling_  
+#### _Helpers - Functions and Mappings_  
+There are a few functions and mappings that can help with the modeling process:  
+```{r}
+
+# The process frequently uses tidyverse and lubridate
+library(tidyverse)
+library(lubridate)
+
+
+# The main path for the files
+filePath <- "./RInputFiles/ProcessedMETAR/"
+
+
+# Descriptive names for key variables
+varMapper <- c(source="Original source file name", 
+               locale="Descriptive name",
+               dtime="Date-Time (UTC)",
+               origMETAR="Original METAR",
+               year="Year",
+               monthint="Month",
+               month="Month", 
+               day="Day of Month",
+               WindDir="Wind Direction (degrees)", 
+               WindSpeed="Wind Speed (kts)",
+               WindGust="Wind Gust (kts)",
+               predomDir="General Prevailing Wind Direction",
+               Visibility="Visibility (SM)", 
+               Altimeter="Altimeter (inches Hg)",
+               TempF="Temperature (F)",
+               DewF="Dew Point (F)", 
+               modSLP="Sea-Level Pressure (hPa)", 
+               cType1="First Cloud Layer Type", 
+               cLevel1="First Cloud Layer Height (ft)",
+               isRain="Rain at Observation Time",
+               isSnow="Snow at Observation Time",
+               isThunder="Thunder at Obsevation Time",
+               tempFHi="24-hour High Temperature (F)",
+               tempFLo="24-hour Low Temperature (F)",
+               minHeight="Minimum Cloud Height (ft)",
+               minType="Obscuration Level at Minimum Cloud Height",
+               ceilingHeight="Minimum Ceiling Height (ft)",
+               ceilingType="Obscuration Level at Minimum Ceiling Height"
+               )
+
+
+# File name to city name mapper
+cityNameMapper <- c(kdtw_2016="Detroit, MI (2016)", 
+                    kewr_2016="Newark, NJ (2016)",
+                    kgrb_2016="Green Bay, WI (2016)",
+                    kgrr_2016="Grand Rapids, MI (2016)",
+                    kiah_2016="Houston, TX (2016)",
+                    kind_2016="Indianapolis, IN (2016)",
+                    klas_2015="Las Vegas, NV (2015)",
+                    klas_2016="Las Vegas, NV (2016)", 
+                    klas_2017="Las Vegas, NV (2017)", 
+                    klnk_2016="Lincoln, NE (2016)",
+                    kmke_2016="Milwaukee, WI (2016)",
+                    kmsn_2016="Madison, WI (2016)",
+                    kmsp_2016="Minneapolis, MN (2016)",
+                    kmsy_2015="New Orleans, LA (2015)",
+                    kmsy_2016="New Orleans, LA (2016)", 
+                    kmsy_2017="New Orleans, LA (2017)", 
+                    kord_2015="Chicago, IL (2015)",
+                    kord_2016="Chicago, IL (2016)", 
+                    kord_2017="Chicago, IL (2017)", 
+                    ksan_2015="San Diego, CA (2015)",
+                    ksan_2016="San Diego, CA (2016)",
+                    ksan_2017="San Diego, CA (2017)",
+                    ktvc_2016="Traverse City, MI (2016)"
+                    )
+
+
+```
+  
+#### _Initial Exploration_  
 The caret package allows for many types of models to be called on the data.
 
 A function is written to subset the data and create appropriate train-test splits:  
@@ -368,6 +442,7 @@ varImp(caretBest) %>%
 
 ```
   
+
 The very large difference in dew point drives the high classification ability:  
 ```{r}
 
@@ -449,3 +524,352 @@ ttLists$trainData %>%
 ```
   
 It is impressive that the model can tease out distinctions in data that are, at a glance, very similar.
+  
+#### _Temperature and Dew Point_  
+Suppose that the only information available about two cities were their temperatures and dew points.  How well would a basic random forest, with mtry=2, classify the cities?
+
+A function is written to take two locales and a random seed, create relevant test-train data, run a random forest model, make predictions, assess the accuracy, and return the relevant objects:  
+```{r}
+
+# The createTestTrain function is updated to purely split an input dataframe
+createTestTrain <- function(df, 
+                            testSize=0.3, 
+                            sortTrain=FALSE,
+                            noNA=TRUE,
+                            seed=NULL
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble for analysis
+    # testSize: the proportion of the data to be used as test
+    # sortTrain: boolean, whether to sort training indices to maintain the original order of training data
+    # noNA: boolean, whether to include only complete cases
+    # seed: the random seed to be used (NULL means no seed)
+    
+    # Filter out NA if requested
+    if (noNA) {
+        df <- df %>%
+            filter(complete.cases(df))
+    }
+    
+    # Get the desired number of train objects
+    nTrain <- round((1-testSize) * nrow(df))
+    
+    # Set the random seed if it has been passed
+    if (!is.null(seed)) { set.seed(seed) }
+    
+    # Get the indices for the training data
+    idxTrain <- sample(1:nrow(df), size=nTrain, replace=FALSE)
+    
+    # Sort if requested
+    if (sortTrain) { idxTrain <- sort(idxTrain) }
+    
+    # Return a list containing the train and test data
+    list(trainData=df[idxTrain, ], 
+         testData=df[-idxTrain, ]
+         )
+    
+}
+
+
+# Run a random forest for two locales
+rfTwoLocales <- function(df,
+                         loc1, 
+                         loc2,
+                         locVar="source",
+                         otherVar="dtime",
+                         vrbls=c("TempF", "DewF"),
+                         pred="locale",
+                         seed=NULL,
+                         ntree=100,
+                         mtry=NULL
+                         ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble
+    # loc1: the first locale
+    # loc2: the second locale
+    # locVar: the name of the variable where loc1 and loc2 can be found
+    # otherVar: other variables to be kept, but not used in modeling
+    # vrbls: explanatory variables for modeling
+    # pred: predictor variable for modeling
+    # seed: the random seed (NULL means no seed)
+    # ntree: the number of trees to grow in the random forest
+    # mtry: the splitting parameter for the random forest (NULL means use all variables)
+    
+    # Filter df such that it includes only observations in loc1 or loc2
+    # Select only the predictor and variables of interest
+    dfModel <- df %>%
+        filter(get(locVar) %in% c(loc1, loc2)) %>%
+        select_at(vars(all_of(c(pred, otherVar, vrbls))))
+    
+    # Create the test-train split (will randomize using seed if provided)
+    ttLists <- createTestTrain(dfModel, testSize=0.3, seed=seed)
+
+    # Set the seed if requested
+    if (!is.null(seed)) { set.seed(seed) }
+    
+    # Set mtry to be the length of the variables if not provided
+    if (is.null(mtry)) { mtry <- length(vrbls) }
+    
+    # Run the random forest on the training data
+    rfModel <- randomForest::randomForest(x=ttLists$trainData[, vrbls], 
+                                          y=factor(ttLists$trainData[, pred, drop=TRUE]), 
+                                          mtry=mtry, 
+                                          ntree=ntree
+                                          )
+    
+    # Create predictions on the test data
+    testPred <- predict(rfModel, ttLists$testData)
+    
+    # Augment the test data with the predictions
+    testData <- ttLists$testData %>%
+        mutate(predicted=testPred, correct=(testPred==get(pred)))
+    
+    # Grab the accuracy and accuracy by class
+    
+    # Return the objects as a list
+    list(rfModel=rfModel, 
+         testData=testData,
+         errorRate=colMeans(rfModel$err.rate)
+         )
+    
+}
+
+```
+  
+The function is then run for every combination of locales from 2016 in cityNameMapper.  A common random seed is applied to every run of the process:  
+```{r cache=TRUE}
+
+# Create the file names to explore
+names_2016 <- grep(x=names(cityNameMapper), pattern="_2016", value=TRUE)
+
+# Create a container list to hold the output
+list_2016_TempF_DewF <- vector("list", 0.5*length(names_2016)*(length(names_2016)-1))
+
+n <- 1
+for (ctr in 1:(length(names_2016)-1)) {
+    for (ctr2 in (ctr+1):length(names_2016)) {
+        list_2016_TempF_DewF[[n]] <- rfTwoLocales(metarData, 
+                                                  loc1=names_2016[ctr], 
+                                                  loc2=names_2016[ctr2], 
+                                                  vrbls=c("TempF", "DewF"),
+                                                  ntree=25
+                                                  )
+        n <- n + 1
+    }
+}
+
+```
+  
+Statistics about the overall accuracy can then be captured:  
+```{r}
+
+# Helper function for map_dfr
+helperAccuracyLocale <- function(x) {
+    
+    y <- x$errorRate
+    tibble::tibble(locale1=names(y)[2], 
+                   locale2=names(y)[3], 
+                   accOverall=1-y[1], 
+                   accLocale1=1-y[2], 
+                   accLocale2=1-y[3]
+                   )
+    
+}
+
+# Create a tibble from the underlying accuracy data
+acc_TempF_DewF <- map_dfr(list_2016_TempF_DewF, .f=helperAccuracyLocale)
+
+# Assess the top 10 accuracy and the bottom 10 accuracy
+acc_TempF_DewF %>%
+    arrange(-accOverall) %>%
+    head(10)
+acc_TempF_DewF %>%
+    arrange(accOverall) %>%
+    head(10)
+
+```
+  
+Not surprisingly, accuracy is highest when comparing cold-weather cities or hot-humid cities to Las Vegas.  Accuracy is lowest when comparing cold-weather cities against each other.  Interestingly, Chicago-Milwaukee and Grand Rapids-Traverse City have again emerged as the two "closest" cities in this analysis.
+
+Of further interest is an overall accuracy by city:  
+```{r}
+
+allAccuracy <- select(acc_TempF_DewF, locale=locale1, other=locale2, accOverall, accLocale=accLocale1) %>%
+    bind_rows(select(acc_TempF_DewF, locale=locale2, other=locale1, accOverall, accLocale=accLocale2))
+
+# Find the best match by locale
+allAccuracy %>%
+    group_by(locale) %>%
+    top_n(accOverall, n=1) %>%
+    arrange(-accOverall)
+
+# Find the worst match by locale
+allAccuracy %>%
+    group_by(locale) %>%
+    top_n(-accOverall, n=1) %>%
+    arrange(accOverall)
+
+# Overall accuracy by location plot
+allAccuracy %>%
+    group_by(locale) %>%
+    summarize_if(is.numeric, mean) %>%
+    ggplot(aes(x=fct_reorder(locale, accOverall), y=accOverall)) + 
+    geom_point(size=2) + 
+    geom_text(aes(y=accOverall+0.02, label=paste0(round(100*accOverall), "%"))) +
+    coord_flip() + 
+    labs(x="", 
+         y="Average Accuracy", 
+         title="Average Accuracy Predicting Locale",
+         subtitle="Predictions made 1:1 to each other locale (average accuracy reported)",
+         caption="Temperature and Dew Point as only predictors\n(50% is baseline coinflip accuracy)"
+         ) + 
+    ylim(c(0.5, 1))
+
+# Overall accuracy heatmap
+allAccuracy %>% 
+    ggplot(aes(x=locale, y=other)) + 
+    geom_tile(aes(fill=accOverall)) + 
+    theme(axis.text.x=element_text(angle=90)) + 
+    scale_fill_continuous("Accuracy", high="darkblue", low="white") + 
+    labs(title="Accuracy Predicting Locale vs. Locale", 
+         caption="Temperature and Dew Point as only predictors\n(50% is baseline coinflip accuracy)",
+         x="",
+         y=""
+         )
+
+```
+  
+One hypothesis is that adding month as a predictor may help for distinguishing cities in different climates.  For example, summer in the warm season in Detroit may look like spring/fall in Houston or New Orleans:  
+```{r cache=TRUE}
+
+# Create a container list to hold the output
+list_2016_TempF_DewF_month <- vector("list", 0.5*length(names_2016)*(length(names_2016)-1))
+
+n <- 1
+for (ctr in 1:(length(names_2016)-1)) {
+    for (ctr2 in (ctr+1):length(names_2016)) {
+        list_2016_TempF_DewF_month[[n]] <- rfTwoLocales(metarData, 
+                                                        loc1=names_2016[ctr], 
+                                                        loc2=names_2016[ctr2], 
+                                                        vrbls=c("TempF", "DewF", "month"),
+                                                        ntree=25
+                                                        )
+        n <- n + 1
+    }
+}
+
+```
+  
+Accuracy can then be assessed:  
+```{r}
+
+# Create a tibble from the underlying accuracy data
+acc_TempF_DewF_month <- map_dfr(list_2016_TempF_DewF_month, .f=helperAccuracyLocale)
+
+# Assess the top 10 accuracy and the bottom 10 accuracy
+acc_TempF_DewF_month %>%
+    arrange(-accOverall) %>%
+    head(10)
+acc_TempF_DewF_month %>%
+    arrange(accOverall) %>%
+    head(10)
+
+
+allAccuracy_month <- select(acc_TempF_DewF_month, 
+                            locale=locale1, 
+                            other=locale2, 
+                            accOverall, 
+                            accLocale=accLocale1
+                            ) %>%
+    bind_rows(select(acc_TempF_DewF_month, 
+                     locale=locale2, 
+                     other=locale1, 
+                     accOverall, 
+                     accLocale=accLocale2
+                     )
+              )
+
+# Find the best match by locale
+allAccuracy_month %>%
+    group_by(locale) %>%
+    top_n(accOverall, n=1) %>%
+    arrange(-accOverall)
+
+# Find the worst match by locale
+allAccuracy_month %>%
+    group_by(locale) %>%
+    top_n(-accOverall, n=1) %>%
+    arrange(accOverall)
+
+# Overall accuracy by location plot
+allAccuracy_month %>%
+    group_by(locale) %>%
+    summarize_if(is.numeric, mean) %>%
+    ggplot(aes(x=fct_reorder(locale, accOverall), y=accOverall)) + 
+    geom_point(size=2) + 
+    geom_text(aes(y=accOverall+0.02, label=paste0(round(100*accOverall), "%"))) +
+    coord_flip() + 
+    labs(x="", 
+         y="Average Accuracy", 
+         title="Average Accuracy Predicting Locale",
+         subtitle="Predictions made 1:1 to each other locale (average accuracy reported)",
+         caption="Temperature and Dew Point as only predictors\n(50% is baseline coinflip accuracy)"
+         ) + 
+    ylim(c(0.5, 1))
+
+# Overall accuracy heatmap
+allAccuracy_month %>% 
+    ggplot(aes(x=locale, y=other)) + 
+    geom_tile(aes(fill=accOverall)) + 
+    theme(axis.text.x=element_text(angle=90)) + 
+    scale_fill_continuous("Accuracy", high="darkblue", low="white") + 
+    labs(title="Accuracy Predicting Locale vs. Locale", 
+         caption="Temperature and Dew Point as only predictors\n(50% is baseline coinflip accuracy)",
+         x="",
+         y=""
+         )
+
+```
+  
+Accuracies are meaningfully higher.  Of interest, there is a new group of highly differentiated locales, including New Orleans/Houston vs. Traverse City/Minneapolis.  As hypothesized, adding month significantly aids in differentiating wintry cities from hot-humid cities, as summer in a wintry city may otherwise be hard to distinguish from spring/fall in a hot-humid city.
+
+In fact, with the exception of Houston vs. New Orleans, there appears to be very good differentiation for each of Las Vegas, San Diego, Hoston, and New Orleans from all other locales.
+
+Change in accuracy can also be plotted:  
+```{r}
+
+# Pull the accuracies for the two different models
+x1 <- allAccuracy %>%
+    group_by(locale) %>%
+    summarize(acc1=mean(accOverall))
+x2 <- allAccuracy_month %>%
+    group_by(locale) %>%
+    summarize(acc2=mean(accOverall))
+
+# Merge accuracy data and plot
+x1 %>%
+    inner_join(x2, by="locale") %>%
+    ggplot(aes(x=fct_reorder(locale, acc2))) + 
+    geom_point(aes(y=acc2), size=2) +
+    geom_point(aes(y=acc1), size=1) + 
+    geom_text(aes(y=acc2+0.02, label=paste0(round(100*acc2), "%"))) +
+    geom_text(aes(y=acc1-0.02, label=paste0(round(100*acc1), "%")), size=3) +
+    geom_segment(aes(xend=fct_reorder(locale, acc2), y=acc1, yend=acc2-0.005), 
+                 arrow=arrow(length=unit(0.3, "cm"), type="closed")
+                 ) +
+    coord_flip() + 
+    labs(x="", 
+         y="Average Accuracy", 
+         title="Average Accuracy Predicting Locale",
+         subtitle="Predictions made 1:1 to each other locale (average accuracy reported)",
+         caption="Temperature, Dew Point, month as predictors\n(50% is baseline coinflip accuracy)"
+         ) + 
+    ylim(c(0.5, 1))
+
+```
+  
+The increase in accuracy is particularly striking for New Orleans and Houston.
+
+Next steps are to explore additional predictor variables.
