@@ -1967,4 +1967,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherEDA_202005_v002 runs EDA for clouds data and stores output files  
 * WeatherModeling_202006_v001 created to run models on the processed METAR data  
 * WeatherModeling_202006_v001 makes predictions based on temperature and dew point  
+* WeatherModeling_202006_v001 makes predictions for all locales  
   
