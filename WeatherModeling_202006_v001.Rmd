@@ -385,7 +385,7 @@ And the function is then run for the Las Vegas and New Orleans data:
 
 evalPredictions(caretBest, testData=ttLists$testData)
 
-varImp(caretBest) %>%
+caret::varImp(caretBest) %>%
     rownames_to_column() %>%
     ggplot(aes(x=fct_reorder(rowname, -Overall), y=Overall)) + 
     geom_col() + 
@@ -434,7 +434,7 @@ As expected, performance dips to around 95% accuracy:
 
 evalPredictions(caretBest, testData=ttLists$testData)
 
-varImp(caretBest) %>%
+caret::varImp(caretBest) %>%
     rownames_to_column() %>%
     ggplot(aes(x=fct_reorder(rowname, -Overall), y=Overall)) + 
     geom_col() + 
@@ -465,7 +465,9 @@ ttLists <- createTestTrain(metarData,
                            seed=2006181440
                            )
 ttLists
-
+```
+  
+```{r cache=TRUE}
 
 # Create a tuning grid and run the models
 trGrid <- expand.grid(min.node.size=c(1, 5, 10, 25, 100), 
@@ -481,6 +483,7 @@ caretModel <- caret::train(locale ~ DewF + month + predomDir + TempF,
                            num.trees=50
                            )
 caretModel
+
 ```
   
 The best parameters from the model can then be run:  
@@ -502,7 +505,7 @@ Accuracy dips to the 70% range, though this is still surprisingly high given how
 
 evalPredictions(caretBest, testData=ttLists$testData)
 
-varImp(caretBest) %>%
+caret::varImp(caretBest) %>%
     rownames_to_column() %>%
     ggplot(aes(x=fct_reorder(rowname, -Overall), y=Overall)) + 
     geom_col() + 
@@ -872,4 +875,285 @@ x1 %>%
   
 The increase in accuracy is particularly striking for New Orleans and Houston.
 
-Next steps are to explore additional predictor variables.
+Next, the simple model is run to classify locale across the full dataset.  The rfTwoLocales() function can be called in a slightly modified manner for this purpose:  
+```{r}
+
+# Run random forest for multiple locales
+rfMultiLocale <- function(tbl, 
+                          vrbls,
+                          locs=NULL, 
+                          locVar="source", 
+                          otherVar="dtime",
+                          pred="locale", 
+                          seed=NULL, 
+                          ntree=100, 
+                          mtry=NULL
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble
+    # vrbls: explanatory variables for modeling
+    # locs: the locations to use (NULL means all)
+    # locVar: the name of the variable where locs can be found
+    # otherVar: other variables to be kept, but not used in modeling
+    # pred: predictor variable for modeling
+    # seed: the random seed (NULL means no seed)
+    # ntree: the number of trees to grow in the random forest
+    # mtry: the splitting parameter for the random forest (NULL means use all variables)    
+    
+    # Create locs if it has not been passed
+    if (is.null(locs)) {
+        locs <- tbl %>% pull(locVar) %>% unique() %>% sort()
+        cat("\nRunning for locations:\n")
+        print(locs)
+    }
+    
+    # Pass to rfTwoLocales
+    rfOut <- rfTwoLocales(tbl, 
+                          loc1=locs, 
+                          loc2=c(), 
+                          locVar=locVar,
+                          otherVar=otherVar, 
+                          vrbls=vrbls, 
+                          pred=pred, 
+                          seed=seed, 
+                          ntree=ntree, 
+                          mtry=mtry
+                          )
+    
+    # Return the list object
+    rfOut
+    
+}
+
+```
+  
+The function can then be applied to the 2016 data:  
+```{r cache=TRUE}
+
+# Run random forest for all 2016 locales
+rf_all_2016_TDm <- rfMultiLocale(metarData, 
+                                 vrbls=c("TempF", "DewF", "month"),
+                                 locs=names_2016, 
+                                 ntree=50, 
+                                 seed=2006201341
+                                 )
+
+```
+  
+Summaries can then be created for the accuracy in predicting each locale:  
+```{r}
+
+# Create summary of accuracy
+all2016Accuracy <- rf_all_2016_TDm$testData %>%
+    mutate(locale=factor(locale, levels=levels(predicted))) %>%
+    count(locale, predicted, correct) %>%
+    group_by(locale) %>%
+    mutate(pct=n/sum(n)) %>%
+    ungroup()
+
+# Calculate the number of levels
+nLevels <- length(levels(factor(all2016Accuracy$locale)))
+nullAcc <- 1 / nLevels
+
+# Create plot for overall accuracy
+all2016Accuracy %>%
+    filter(locale==predicted) %>%
+    ggplot(aes(x=fct_reorder(locale, pct))) + 
+    geom_point(aes(y=pct), size=2) + 
+    geom_text(aes(y=pct+0.04, label=paste0(round(100*pct), "%"))) +
+    geom_hline(aes(yintercept=nullAcc), lty=2) +
+    coord_flip() + 
+    ylim(0, 1) + 
+    labs(x="", 
+         y="Correctly Predicted", 
+         title="Accuracy of Locale Predictions", 
+         subtitle="(positive detection rate by locale)", 
+         caption=paste0("Temperature, Dew Point, Month as predictors\n(", 
+                        round(100*nullAcc), 
+                        "% is baseline null accuracy)"
+                        )
+         )
+
+# Order locales sensibly
+locOrder <- all2016Accuracy %>%
+    filter(correct) %>%
+    arrange(pct) %>%
+    pull(locale)
+
+# Create plot for which locales are classified as each other
+all2016Accuracy %>%
+    mutate(locale=factor(locale, levels=locOrder), 
+           predPretty=factor(str_replace(predicted, pattern=", ", replacement="\n"), 
+                             levels=str_replace(locOrder, pattern=", ", replacement="\n")
+                             )
+           ) %>%
+    ggplot(aes(y=locale, x=predPretty)) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(round(100*pct), "%"))) + 
+    scale_fill_continuous("% Predicted As", low="white", high="green") + 
+    scale_x_discrete(position="top") +
+    theme(axis.text.x=element_text(angle=90)) + 
+    labs(x="",
+         y="Actual Locale", 
+         title="Predicted Locale vs. Actual Locale", 
+         caption="Temperature, Dew Point, Month as predictors"
+         )
+
+```
+  
+The model is fairly accurate in predicting Las Vegas and San Diego.  The model frequently predicts Houston and New Orleans as one of the group, but often classifying one locale as the other.
+
+Accuracy is much lower for many of the cold wether cities.  While there is improvement relative to the null accuracy, there is significant overlap in the temperature and dew point by month.
+
+Clouds (minimum levels and ceiling heights) can potentially help further differentiate the cold weather cities on the downwind side of the lake, as well as helping to further pull apart Las Vegas (almost always clear) and San Diego (frequent marine layer).
+
+A helper function is built to map cloud heights to buckets, then minimum cloud height and ceiling are added to the model:  
+```{r}
+
+# Convert cloud height to buckets and factor
+mapCloudHeight <- function(x) {
+    
+    factor(case_when(x==-100 ~ "None", 
+                     x <= 1000 ~ "Surface", 
+                     x <= 3000 ~ "Low", 
+                     x <= 6000 ~ "Medium", 
+                     x <= 12000 ~ "High", 
+                     TRUE ~ "Error"
+                     ), 
+           levels=c("Surface", "Low", "Medium", "High", "None")
+           )
+    
+}
+
+# Apply to metarData and keep variables of interest
+modData <- metarData %>%
+    mutate(minHeight=mapCloudHeight(minHeight), ceilingHeight=mapCloudHeight(ceilingHeight))
+
+```
+  
+An updated random forest model is then run:  
+```{r cache=TRUE}
+
+# Run random forest for all 2016 locales
+rf_all_2016_TDmc <- rfMultiLocale(modData, 
+                                  vrbls=c("TempF", "DewF", "month", "minHeight", "ceilingHeight"),
+                                  locs=names_2016, 
+                                  ntree=50, 
+                                  seed=2006201355
+                                  )
+
+```
+  
+The evaluation process is converted to a function:  
+```{r}
+
+# Evaluate model predictions
+evalPredictions <- function(lst, 
+                            plotCaption
+                            ) {
+
+    # FUNCTION ARGUMENTS:
+    # lst: the list containing outputs of the modeling
+    # plotCaption: description of predictors used
+    
+    # Create summary of accuracy
+    all2016Accuracy <- lst$testData %>%
+        mutate(locale=factor(locale, levels=levels(predicted))) %>%
+        count(locale, predicted, correct) %>%
+        group_by(locale) %>%
+        mutate(pct=n/sum(n)) %>%
+        ungroup()
+
+    # Calculate the number of levels
+    nLevels <- length(levels(factor(all2016Accuracy$locale)))
+    nullAcc <- 1 / nLevels
+
+    # Create plot for overall accuracy
+    p1 <- all2016Accuracy %>%
+        filter(locale==predicted) %>%
+        ggplot(aes(x=fct_reorder(locale, pct))) + 
+        geom_point(aes(y=pct), size=2) + 
+        geom_text(aes(y=pct+0.04, label=paste0(round(100*pct), "%"))) +
+        geom_hline(aes(yintercept=nullAcc), lty=2) +
+        coord_flip() + 
+        ylim(0, 1) + 
+        labs(x="", 
+             y="Correctly Predicted", 
+             title="Accuracy of Locale Predictions", 
+             subtitle="(positive detection rate by locale)", 
+             caption=paste0(plotCaption, 
+                            " as predictors\n(", 
+                            round(100*nullAcc), 
+                            "% is baseline null accuracy)"
+                            )
+             )
+    print(p1)
+
+    # Order locales sensibly
+    locOrder <- all2016Accuracy %>%
+        filter(correct) %>%
+        arrange(pct) %>%
+        pull(locale)
+
+    # Create plot for which locales are classified as each other
+    p2 <- all2016Accuracy %>%
+        mutate(locale=factor(locale, levels=locOrder), 
+               predPretty=factor(str_replace(predicted, pattern=", ", replacement="\n"), 
+                                 levels=str_replace(locOrder, pattern=", ", replacement="\n")
+                                 )
+               ) %>%
+        ggplot(aes(y=locale, x=predPretty)) + 
+        geom_tile(aes(fill=pct)) + 
+        geom_text(aes(label=paste0(round(100*pct), "%"))) + 
+        scale_fill_continuous("% Predicted As", low="white", high="green") + 
+        scale_x_discrete(position="top") +
+        theme(axis.text.x=element_text(angle=90)) + 
+        labs(x="",
+             y="Actual Locale", 
+             title="Predicted Locale vs. Actual Locale", 
+             caption=paste0(plotCaption, " as predictors")
+             )
+    print(p2)
+    
+    # Return the accuracy object
+    all2016Accuracy
+    
+}
+
+evalPredictions(rf_all_2016_TDmc, plotCaption = "Temp, Dew Point, Month, Cloud/Ceiling Height")
+
+```
+  
+Accuracy increases, especially for San Diego and several of the cold wether cities.
+  
+The model can also be built out to consider wind speed and wind direction.  No attempt yet is made to control for over-fitting, which becomes especially likely with wind direction classified by every 10 degrees:  
+```{r cache=TRUE}
+
+# Run random forest for all 2016 locales
+rf_all_2016_TDmcw <- rfMultiLocale(modData, 
+                                   vrbls=c("TempF", "DewF", 
+                                           "month", 
+                                           "minHeight", "ceilingHeight", 
+                                           "WindSpeed", "predomDir"
+                                           ),
+                                   locs=names_2016, 
+                                   ntree=50, 
+                                   seed=2006201355
+                                   )
+
+```
+  
+The evaluation process can again be run:  
+```{r}
+
+evalPredictions(rf_all_2016_TDmcw, 
+                plotCaption = "Temp, Dew Point, Month, Cloud/Ceiling Height, Wind Speed/Direction"
+                )
+
+```
+  
+Including wind significantly improves model accuracy for most locales.  Even the cold weather cities are now being predicted with 33%-50% accurcay.
+  
+Next steps are to explore the prediction accuracy by month, hour, etc., to see if there is any low-hanging fruit for further modifications to the model.
+
