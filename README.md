@@ -1969,3 +1969,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v001 makes predictions based on temperature and dew point  
 * WeatherModeling_202006_v001 makes predictions for all locales  
   
+### Expansions week of 22-JUN-2020  
+* WeatherModeling_202006_v001 makes predictions by locale type  
+  
