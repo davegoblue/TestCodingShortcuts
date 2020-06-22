@@ -585,7 +585,8 @@ rfTwoLocales <- function(df,
                          pred="locale",
                          seed=NULL,
                          ntree=100,
-                         mtry=NULL
+                         mtry=NULL, 
+                         testSize=0.3
                          ) {
 
     # FUNCTION ARGUMENTS:
@@ -599,6 +600,7 @@ rfTwoLocales <- function(df,
     # seed: the random seed (NULL means no seed)
     # ntree: the number of trees to grow in the random forest
     # mtry: the splitting parameter for the random forest (NULL means use all variables)
+    # testSize: proportion of data to use as test dataset
     
     # Filter df such that it includes only observations in loc1 or loc2
     # Select only the predictor and variables of interest
@@ -607,7 +609,7 @@ rfTwoLocales <- function(df,
         select_at(vars(all_of(c(pred, otherVar, vrbls))))
     
     # Create the test-train split (will randomize using seed if provided)
-    ttLists <- createTestTrain(dfModel, testSize=0.3, seed=seed)
+    ttLists <- createTestTrain(dfModel, testSize=testSize, seed=seed)
 
     # Set the seed if requested
     if (!is.null(seed)) { set.seed(seed) }
@@ -887,7 +889,8 @@ rfMultiLocale <- function(tbl,
                           pred="locale", 
                           seed=NULL, 
                           ntree=100, 
-                          mtry=NULL
+                          mtry=NULL, 
+                          testSize=0.3
                           ) {
     
     # FUNCTION ARGUMENTS:
@@ -899,7 +902,8 @@ rfMultiLocale <- function(tbl,
     # pred: predictor variable for modeling
     # seed: the random seed (NULL means no seed)
     # ntree: the number of trees to grow in the random forest
-    # mtry: the splitting parameter for the random forest (NULL means use all variables)    
+    # mtry: the splitting parameter for the random forest (NULL means use all variables)
+    # testSize: the fractional portion of data that should be used as the test dataset
     
     # Create locs if it has not been passed
     if (is.null(locs)) {
@@ -918,7 +922,8 @@ rfMultiLocale <- function(tbl,
                           pred=pred, 
                           seed=seed, 
                           ntree=ntree, 
-                          mtry=mtry
+                          mtry=mtry, 
+                          testSize=testSize
                           )
     
     # Return the list object
@@ -1050,16 +1055,18 @@ The evaluation process is converted to a function:
 
 # Evaluate model predictions
 evalPredictions <- function(lst, 
-                            plotCaption
+                            plotCaption, 
+                            keyVar="locale"
                             ) {
 
     # FUNCTION ARGUMENTS:
     # lst: the list containing outputs of the modeling
     # plotCaption: description of predictors used
+    # keyVar: the variable that represents truth when assessing predictions
     
     # Create summary of accuracy
     all2016Accuracy <- lst$testData %>%
-        mutate(locale=factor(locale, levels=levels(predicted))) %>%
+        mutate(locale=factor(get(keyVar), levels=levels(predicted))) %>%
         count(locale, predicted, correct) %>%
         group_by(locale) %>%
         mutate(pct=n/sum(n)) %>%
@@ -1127,7 +1134,7 @@ evalPredictions(rf_all_2016_TDmc, plotCaption = "Temp, Dew Point, Month, Cloud/C
   
 Accuracy increases, especially for San Diego and several of the cold wether cities.
   
-The model can also be built out to consider wind speed and wind direction.  No attempt yet is made to control for over-fitting, which becomes especially likely with wind direction classified by every 10 degrees:  
+The model can also be built out to consider wind speed and wind direction.  No attempt yet is made to control for over-fitting:  
 ```{r cache=TRUE}
 
 # Run random forest for all 2016 locales
@@ -1155,5 +1162,272 @@ evalPredictions(rf_all_2016_TDmcw,
   
 Including wind significantly improves model accuracy for most locales.  Even the cold weather cities are now being predicted with 33%-50% accurcay.
   
-Next steps are to explore the prediction accuracy by month, hour, etc., to see if there is any low-hanging fruit for further modifications to the model.
+Next, a smaller subset of the weather data is explored, with the cities grouped as:  
+  
+* Las Vegas  
+* San Diego  
+* New Orleans / Houston  
+* Newark  
+* Lincoln  
+* Traverse City / Grand Rapids / Detroit  
+* Chicago / Milwaukee / Madison / Green Bay / Minneapolis / Indianapolis  
+  
+Further, a variable will be created for "hr", the Zulu hour of the observation:  
+```{r}
 
+locale2016Mapper <- c('Cold-MI', 'Newark', 'Cold', 'Cold-MI', 'Humid', 'Cold', 'Desert', 'Lincoln', 'Cold', 'Cold', 'Cold', 'Humid', 'Cold', 'Marine', 'Cold-MI')
+names(locale2016Mapper) <- c('Detroit, MI (2016)', 'Newark, NJ (2016)', 'Green Bay, WI (2016)', 'Grand Rapids, MI (2016)', 'Houston, TX (2016)', 'Indianapolis, IN (2016)', 'Las Vegas, NV (2016)', 'Lincoln, NE (2016)', 'Milwaukee, WI (2016)', 'Madison, WI (2016)', 'Minneapolis, MN (2016)', 'New Orleans, LA (2016)', 'Chicago, IL (2016)', 'San Diego, CA (2016)', 'Traverse City, MI (2016)')
+
+tibble::tibble(locale=names(locale2016Mapper), mapping=locale2016Mapper) %>%
+    arrange(mapping, locale)
+
+modData <- modData %>%
+    mutate(hr=lubridate::hour(dtime), 
+           locType=locale2016Mapper[locale]
+           )
+
+modData %>%
+    count(locType, year) %>%
+    pivot_wider(locType, names_from="year", values_from="n")
+
+```
+  
+The data are the filtered so that there are an equal number of observations from each locale type.  The model can later be predicted against the remaining items:  
+```{r}
+
+# Set a seed for reporducibility
+set.seed(2006211352)
+
+# Find the smallest locale type
+nSmall <- modData %>%
+    filter(!is.na(locType)) %>%
+    count(locType) %>%
+    pull(n) %>%
+    min()
+
+# Create the relevant data subset
+subData <- modData %>%
+    filter(!is.na(locType)) %>%
+    group_by(locType) %>%
+    sample_n(size=nSmall, replace=FALSE) %>%
+    ungroup()
+
+# Sumarize the data subset
+subData %>% 
+    count(locale) %>% 
+    arrange(-n)
+
+```
+  
+The previous model can then be run on the data subset:  
+```{r cache=TRUE}
+
+# Run random forest for all 2016 locale types
+rf_types_2016_TDmcw <- rfMultiLocale(subData, 
+                                     vrbls=c("TempF", "DewF", 
+                                             "month", 
+                                             "minHeight", "ceilingHeight", 
+                                             "WindSpeed", "predomDir"
+                                             ),
+                                     locs=NULL, 
+                                     locVar="locType",
+                                     pred="locType",
+                                     ntree=50, 
+                                     seed=2006211401
+                                     )
+
+```
+  
+The evaluation process can again be run:  
+```{r}
+
+evalPredictions(rf_types_2016_TDmcw, 
+                plotCaption = "Temp, Dew Point, Month, Cloud/Ceiling Height, Wind Speed/Direction", 
+                keyVar="locType"
+                )
+
+```
+  
+Predictive ability is strongest for the well-differentiated types, and weakest for the more poorly differentiated types.  The model is about 50% accurate in classifying cold climates; 25% of the time they are classified as they other type of cold climate, and 25% of the time they are classified as something else (typically Lincoln or Newark).
+  
+The modeling is run again using a much smaller training dataset (testSize set to 0.9) to see the implication of a much smaller data volume:  
+```{r cache=TRUE}
+
+# Run random forest for all 2016 locale types
+rf_types_2016_small_TDmcw <- rfMultiLocale(subData, 
+                                           vrbls=c("TempF", "DewF", 
+                                                   "month", 
+                                                   "minHeight", "ceilingHeight", 
+                                                   "WindSpeed", "predomDir"
+                                                   ),
+                                           locs=NULL, 
+                                           locVar="locType",
+                                           pred="locType",
+                                           ntree=50, 
+                                           seed=2006211419,
+                                           testSize=0.9
+                                           )
+
+```
+  
+The evaluation process can again be run:  
+```{r}
+
+evalPredictions(rf_types_2016_small_TDmcw, 
+                plotCaption = "Temp, Dew Point, Month, Cloud/Ceiling Height, Wind Speed/Direction", 
+                keyVar="locType"
+                )
+
+```
+  
+As expected, predictions are less accurate with a smaller training dataset.  Overall acuuracy falls from ~70% to ~60% with the much smaller training data volumes.  This suggests the model is continuing to learn from the data, and may benefit from an expanded sample.
+  
+Next, the model is adapted to include the hour (as an integer, which may need to be rethought, though this will generally capture whether it is daytime or nighttime even without factoring) and the sea-level pressure variable:  
+```{r cache=TRUE}
+
+# Run random forest for all 2016 locale types - add hour and modSLP, limit mtry to 4
+rf_types_2016_TDmcwha <- rfMultiLocale(subData, 
+                                       vrbls=c("TempF", "DewF", 
+                                               "month", "hr",
+                                               "minHeight", "ceilingHeight", 
+                                               "WindSpeed", "predomDir", 
+                                               "modSLP"
+                                               ),
+                                       locs=NULL, 
+                                       locVar="locType",
+                                       pred="locType",
+                                       ntree=50, 
+                                       seed=2006211423, 
+                                       mtry=4
+                                       )
+
+```
+  
+The evaluation process can again be run:  
+```{r}
+
+evalPredictions(rf_types_2016_TDmcwha, 
+                plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind, SLP", 
+                keyVar="locType"
+                )
+
+```
+  
+Accuracy increases to 75%.  In particular, the model is better able to distinguish Lincoln and Newark from the remaining locations, which has a follow-on effect of improving cold weather classifications.
+  
+Exploration is then run on distinguishing two locales from each other, to see the implications of parameters like data volume (controlled through testSize) and the number of trees.
+  
+Comparisons will be run as follows:  
+  
+* Desert vs. Humid (should be easiest to pull apart)  
+* Cold vs. Cold-MI (should be hardest to pull apart)  
+  
+```{r cache=TRUE}
+
+ntrees <- c(10, 25, 50, 100, 250, 500)
+testSizes <- c(0.9, 0.7, 0.3)
+
+desertHumid <- vector("list", length(ntrees) * length(testSizes))
+n <- 1
+
+for (ntree in ntrees) {
+    for (testSize in testSizes) {
+
+        desertHumid[[n]] <- rfTwoLocales(subData, 
+                                         loc1="Desert", 
+                                         loc2="Humid", 
+                                         locVar="locType", 
+                                         vrbls=c("TempF", "DewF", "month", "hr", 
+                                                 "minHeight", "ceilingHeight", 
+                                                 "WindSpeed", "predomDir", "modSLP"
+                                                 ),
+                                         pred="locType", 
+                                         seed=2006211432,
+                                         ntree=ntree, 
+                                         mtry=4,
+                                         testSize=testSize
+                                         )
+        desertHumid[[n]]$ntree <- ntree
+        desertHumid[[n]]$testSize <- testSize
+        
+        n <- n+1
+        
+    }
+}
+
+```
+  
+An assessment of accuracy can then be performed:  
+```{r}
+
+df <- sapply(desertHumid, 
+             FUN=function(x) { c(x[["errorRate"]]["OOB"], ntree=x$ntree, testSize=x$testSize) }
+             ) %>%
+    t() %>%
+    tibble::as_tibble()
+
+df %>%
+    mutate(accuracy=1-OOB, trainSize=1-testSize) %>%
+    ggplot(aes(x=ntree, y=trainSize)) +
+    geom_text(aes(label=paste0(round(100*accuracy), "%"))) + 
+    scale_x_log10()
+
+```
+  
+As expected, accuracy is very high for distinguishing Desert and Humid climates, even with small data volumes (training size 10% of the data) and a small number of trees.
+  
+The approach is then run for the cold weather cities:  
+```{r cache=TRUE}
+
+ntrees <- c(10, 25, 50, 100, 250, 500)
+testSizes <- c(0.9, 0.7, 0.3)
+
+coldColdMI <- vector("list", length(ntrees) * length(testSizes))
+n <- 1
+
+for (ntree in ntrees) {
+    for (testSize in testSizes) {
+
+        coldColdMI[[n]] <- rfTwoLocales(subData, 
+                                        loc1="Cold", 
+                                        loc2="Cold-MI", 
+                                        locVar="locType", 
+                                        vrbls=c("TempF", "DewF", "month", "hr", 
+                                                "minHeight", "ceilingHeight", 
+                                                "WindSpeed", "predomDir", "modSLP"
+                                                ),
+                                        pred="locType", 
+                                        seed=2006211501,
+                                        ntree=ntree, 
+                                        mtry=4,
+                                        testSize=testSize
+                                        )
+        coldColdMI[[n]]$ntree <- ntree
+        coldColdMI[[n]]$testSize <- testSize
+        
+        n <- n+1
+        
+    }
+}
+
+```
+  
+An assessment of accuracy can then be performed:  
+```{r}
+
+dfColdColdMI <- sapply(coldColdMI, 
+                       FUN=function(x) { c(x[["errorRate"]]["OOB"], ntree=x$ntree, testSize=x$testSize) }
+                       ) %>%
+    t() %>%
+    tibble::as_tibble()
+
+dfColdColdMI %>%
+    mutate(accuracy=1-OOB, trainSize=1-testSize) %>%
+    ggplot(aes(x=ntree, y=trainSize)) +
+    geom_text(aes(label=paste0(round(100*accuracy), "%"))) + 
+    scale_x_log10()
+
+```
+  
+Greater data volumes and greater tree depths are more helpful for distinguishing cold weather city types from each other.  The smallest forest has a 56% accuracy (null 50%) while the largest has a 68% accuracy.  This suggests some potential upside to continuing the cold weather modeling process with more cities added for greater data volumes.
+  
