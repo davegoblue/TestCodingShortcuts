@@ -1971,4 +1971,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 22-JUN-2020  
 * WeatherModeling_202006_v001 makes predictions by locale type  
+* WeatherModeling_202006_v001 makes predictions for four climate archetypes  
   
