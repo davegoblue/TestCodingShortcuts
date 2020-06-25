@@ -1895,3 +1895,222 @@ Patterns in the predictions stand out:
 * Newark, Lincoln, and Indianapolis are generally not classified with confidence (~50% of predictions are to 'Too Low'), suggesting these cities may fall in between the four archetypes  
 * There are a meaningful number of 'Too Low' predictions for every locale, suggesting that many locales "loo like" at least two of these archetypes at certain times of the year  
   
+Next, a sequential approach can be taken to see the gain in predictive ability as additional variables are added.  The data will again be the 2015-2017 data for the four climate archetypes:  
+```{r}
+
+# Repeat the process until all variables have been added
+# 1. Run forests with the pre-existing variables plus each potential new variable
+# 2. Assess the accuracy on OOB and the archetypes
+# 3. Add the best new predictor to the pre-existing variables list
+
+# STEP 1: Helper function to run forests for pre-existing variables plus one new variable
+helperRFCombinations <- function(possVars, 
+                                 df,
+                                 prevVars=c(), 
+                                 predVarName="city",
+                                 ntree=25,
+                                 seed=NULL, 
+                                 maxmtry=4
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # possVars: possible variables to be considered
+    # df: the data frame or tibble containing the data
+    # prevVars: the previous variables run
+    # predVarName: the name of the variable being predicted
+    # ntree: the number of trees to run in the forest
+    # seed: the seed to use (NULL means none, can be passed through to next function)
+    # maxmtry: the maximum value for mtry
+
+    
+    # Define the variables to be checked
+    possVars <- possVars[!(possVars %in% prevVars)]
+    cat("\nWill run for:", paste(possVars, collapse=" "))
+    cat("\nFixed variable(s) will be:", paste(prevVars, collapse=" "), "\n")
+    
+    # Create a container for the accuracy data
+    accContainer <- vector("list", length=length(possVars))
+    
+    # Run loop to get all results
+    n <- 1
+    for (vrbl in possVars) {
+    
+        # Create the variables to pass
+        vrbls <- c(prevVars, vrbl)
+    
+        # Run random forest for 2015-2017 data
+        accContainer[[n]] <- rfMultiLocale(df, 
+                                           vrbls=vrbls,
+                                           locs=NULL, 
+                                           locVar=predVarName,
+                                           pred=predVarName,
+                                           ntree=ntree, 
+                                           seed=seed, 
+                                           mtry=min(maxmtry, length(vrbls))
+                                           )
+    
+        # Increment n
+        n <- n + 1
+    
+    }
+    
+    # Return the accuracy container
+    accContainer
+    
+}
+
+    
+# Helper function to extract data from rfContainer
+helperExtractAccuracy <- function(x, elem="errorRate") {
+    tibble::tibble(locale=names(x[[elem]]), 
+                   accuracy=1-x[[elem]]
+                   )
+}
+    
+
+# STEP 2: Assess accuracy on OOB and archetype locales
+helperVariableAccuracy <- function(lst, 
+                                   possVars,
+                                   elem="errorRate", 
+                                   prevVars=c()
+                                   ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: the list containing the random forest runs
+    # possVars: the full set of possible variables being considered
+    # elem: the element of the list containing the error rates
+    # prevVars: the subset of possible variables that have already been included
+    
+    # Filter possVars to exclude variables already considered
+    possVars <- possVars[!(possVars %in% prevVars)]
+    
+    # Get the accuracy data
+    tmp <- map_dfr(lst, .f=helperExtractAccuracy, .id="vrblNum") %>%
+        mutate(vrblName=possVars[as.integer(vrblNum)], 
+               locale=factor(locale, levels=c("OOB", unique(locale)[unique(locale) != "OOB"]))
+               )
+    
+    # Get the variable order
+    varOrder <- tmp %>%
+        filter(locale=="OOB") %>%
+        arrange(accuracy) %>%
+        pull(vrblName)
+    
+    # Plot the variable impacts on accuracy
+    p1 <- ggplot(tmp, aes(x=factor(vrblName, levels=varOrder))) + 
+        geom_point(aes(y=accuracy)) + 
+        geom_text(aes(y=accuracy + 0.1, label=paste0(round(100*accuracy), "%"))) + 
+        ylim(c(0, 1.1)) +
+        facet_wrap(~locale) + 
+        labs(title="Accuracy by Next Variable Added", 
+             y="Overall Accuracy", 
+             x="", 
+             subtitle=paste0("Variables previously added:", paste(prevVars, collapse=" "))
+             ) +
+        coord_flip()
+    print(p1)
+
+    tmp
+    
+}
+
+```
+  
+The actual run is cached since it takes a meaningful amount of time:  
+```{r cache=TRUE}
+
+# Define the variables to be considered
+possVars <- c("TempF", "DewF", "month", "hr", "minHeight", 
+              "ceilingHeight", "WindSpeed", "predomDir", "modSLP"
+              )
+
+# Create a container for storing the best random forest and variable added from each run
+rfContainer <- vector("list", length=length(possVars))
+rfVarAdds <- vector("character", length=length(possVars))
+
+# Run the functions using a for loop over the length of possVars
+for (ctr in 1:length(possVars)) {
+    
+    # Pull in the results of the previous run
+    if (ctr==1) {
+        prevVars <- c()
+    } else {
+        prevVars <- rfVarAdds[1:(ctr-1)]
+    }
+    
+    # Run each of them through the combinations
+    tmpList <- helperRFCombinations(possVars, df=sub_2015_2017_data, prevVars=prevVars)
+
+    # Assess the performance
+    tmpAccuracy <- helperVariableAccuracy(tmpList, possVars=possVars, prevVars=prevVars)
+    
+    # Prepare to repeat the process
+    bestRow <- tmpAccuracy %>%
+        filter(locale=="OOB") %>%
+        filter(accuracy==max(accuracy))
+    bestRow
+    
+    # Update the rfContainer and rfVarAdds elements
+    rfContainer[[ctr]] <- tmpList[[as.integer(pull(bestRow, vrblNum))]]
+    rfVarAdds[ctr] <- pull(bestRow, vrblName)
+    cat("\nVariable Added:", rfVarAdds[ctr], "\n")
+
+}
+
+```
+  
+The evolution of accuracy can then be plotted:  
+```{r}
+
+# Pull the accuracy data from the variables selected
+tblAccuracy <- map_dfr(rfContainer, .f=helperExtractAccuracy, .id="vrblNum") %>%
+    mutate(vrblName=rfVarAdds[as.integer(vrblNum)], 
+           locale=factor(locale, levels=c("OOB", unique(locale)[unique(locale) != "OOB"])), 
+           plotLabel=ifelse(as.integer(vrblNum)==1, vrblName, paste0("add ", vrblName))
+           )
+
+# Plot the gains in accuracy, facetted by 'locale'
+ggplot(tblAccuracy, aes(x=fct_reorder(plotLabel, -as.integer(vrblNum)))) + 
+    geom_text(aes(y=accuracy, label=paste0(round(100*accuracy), "%"))) + 
+    facet_wrap(~locale, nrow=1) + 
+    ylim(c(0, 1)) +
+    geom_hline(yintercept=0.25, lty=2) +
+    labs(x="", 
+         y="", 
+         title="Evolution of accuracy as next-best variables are added",
+         caption="Null accuracy is 25%"
+         ) +
+    coord_flip()
+
+```
+  
+As seen previously, dew point, temperature, and month are significant differentiating variables, driving roughly 75% accuracy in classifying the archetypes.
+
+Adding altimeter (SLP) bumps the accuracy by another ~10%, while adding minimum cloud height and prevailing wind direction bump the accuracy by another ~5%.
+
+This shows some of the power of the random forest algorithm as it is given additional variables to explore.
+
+Further, the OOB estimates provided by the modeling are pessimistic relative to performance on the hold-out sample (which has 94%-96% accuracy rather than the estimated 89%-93% accuracy).  This is driven partly by rfTwoLocales() pulling the average error rate rather than the final error rate, an oversight that carries throughout the analysis.  The next version of this modeling should fix the approach to classifying errors.
+
+Evolution of error can be plotted to see the impact:  
+```{r}
+
+oobError <- c()
+for (ctr in 1:9) {
+    oobError <- c(oobError, rfContainer[[ctr]]$rfModel$err.rate[, "OOB"])
+}
+
+tibble::tibble(nVars=rep(1:9, each=25), 
+               ntrees=rep(1:25, times=9), 
+               accuracy=1-oobError
+               ) %>%
+    ggplot(aes(x=ntrees, y=accuracy)) + 
+    geom_line(aes(group=nVars, color=factor(nVars))) +
+    labs(x="Number of Trees", 
+         y="OOB Accuracy", 
+         title="Accuracy improves with more trees and more variables"
+         ) + 
+    scale_color_discrete("# Variables")
+
+```
+
