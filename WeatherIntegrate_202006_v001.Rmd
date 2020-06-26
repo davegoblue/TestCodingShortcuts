@@ -1,0 +1,1033 @@
+---
+title: "Integrate Download and EDA Functions"
+author: "davegoblue"
+date: "6/25/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background  
+[METAR](https://en.wikipedia.org/wiki/METAR) are hourly weather data collected at airports, including  visibility, wind, temperature, dew point, precipitation, clouds, barometric pressure, and other features that may impact safe aviation.
+
+Iowa State University has a great database of archived METAR data, stored in a manner that makes for easy, automated downloads in CSV format.
+
+The files 'WeatherDownload_202005_v002.Rmd' and 'WeatherEDA_202005_v002.Rmd' contain functions for downloading weather files from the Iowa State server, running EDA, applying a constant format, and saving for further analysis.
+
+The intent of this script is to take the key download and EDA functions, place them in a source file, and then run them as needed to output additional data.
+  
+#### _Sourcing Files_  
+Prior to sourcing functions, here are a few formatting helpers that are included here:  
+```{r}
+
+# The functions sourced from the scripts use tidyverse and lubridate frequently
+library(tidyverse)
+library(lubridate)
+
+
+# Create a regex search string for METAR (the hourly time such as 53Z is pre-pended)
+genMET <- ".*?(VRB|\\d{3})(\\d{2})(G\\d{2})?KT(.*?)(\\d{1,2}SM).*?\\s(M?\\d{2})/(M?\\d{2}).*?(A\\d{4}).*?RMK.*?(SLP\\d{3}).*?(T\\d{8})"
+
+# Create the variable names that the above regex parses in to
+labsMET <- c("METAR", "WindDir", "WindSpeed", "WindGust", "Dummy", "Visibility", 
+             "TempC", "DewC", "Altimeter", "SLP", "FahrC"
+             )
+
+# Expected columns for the downloaded METAR files
+metType <- readr::cols(station=readr::col_character(), 
+                       valid=readr::col_datetime(), 
+                       tmpf=readr::col_double(),
+                       dwpf=readr::col_double(),
+                       relh=readr::col_double(),
+                       drct=readr::col_double(),
+                       sknt=readr::col_double(),
+                       p01i=readr::col_character(),  # needs to handle 'T' for trace
+                       alti=readr::col_double(),
+                       mslp=readr::col_double(),
+                       vsby=readr::col_double(),
+                       gust=readr::col_double(),
+                       skyc1=readr::col_character(),
+                       skyc2=readr::col_character(), 
+                       skyc3=readr::col_character(), 
+                       skyc4=readr::col_character(),
+                       skyl1=readr::col_double(),
+                       skyl2=readr::col_double(),
+                       skyl3=readr::col_double(),
+                       skyl4=readr::col_double(),
+                       wxcodes=readr::col_character(),
+                       ice_accretion_1hr=readr::col_character(), # needs to handle 'T' for trace
+                       ice_accretion_3hr=readr::col_character(), # needs to handle 'T' for trace
+                       ice_accretion_6hr=readr::col_character(), # needs to handle 'T' for trace
+                       peak_wind_gust=readr::col_double(),
+                       peak_wind_drct=readr::col_double(),
+                       peak_wind_time=readr::col_datetime(),
+                       feel=readr::col_double(),
+                       metar=readr::col_character()
+                       )
+
+# The main path for the files
+filePath <- "./RInputFiles/ProcessedMETAR/"
+
+# Descriptive names for key variables
+varMapper <- c(WindDir="Wind Direction (degrees)", 
+               predomDir="General Prevailing Wind Direction",
+               WindSpeed="Wind Speed (kts)",
+               WindSpeed5="Wind Speed (kts), rounded to nearest 5 knots", 
+               Visibility="Visibility (SM)", 
+               TempC="Temperature (C)", 
+               DewC="Dew Point (C)", 
+               Altimeter="Altimeter (inches Hg)",
+               Altimeter10="Altimeter (inches Hg), rounded to nearest 0.1 inHg", 
+               modSLP="Sea-Level Pressure (hPa)", 
+               TempF="Temperature (F)",
+               DewF="Dew Point (F)", 
+               TempF5="Temperature (F), rounded to nearest 5 degrees",
+               DewF5="Dew Point (F), rounded to nearest 5 degrees", 
+               cType1="First Cloud Layer Type", 
+               cLevel1="First Cloud Layer Height (ft)",
+               month="Month", 
+               year="Year",
+               wType="Greatest Sky Obscuration", 
+               day="Day of Month"
+               )
+
+# File name to city name mapper
+cityNameMapper <- c(katl_2016="Atlanta, GA (2016)",
+                    kbos_2016="Boston, MA (2016)", 
+                    kdca_2016="Washington, DC (2016)", 
+                    kden_2016="Denver, CO (2016)", 
+                    kdfw_2016="Dallas, TX (2016)", 
+                    kdtw_2016="Detroit, MI (2016)", 
+                    kewr_2016="Newark, NJ (2016)",
+                    kgrb_2016="Green Bay, WI (2016)",
+                    kgrr_2016="Grand Rapids, MI (2016)",
+                    kiah_2016="Houston, TX (2016)",
+                    kind_2016="Indianapolis, IN (2016)",
+                    klas_2015="Las Vegas, NV (2015)",
+                    klas_2016="Las Vegas, NV (2016)", 
+                    klas_2017="Las Vegas, NV (2017)", 
+                    klas_2018="Las Vegas, NV (2018)",
+                    klas_2019="Las Vegas, NV (2019)",
+                    klax_2016="Los Angeles, CA (2016)", 
+                    klnk_2016="Lincoln, NE (2016)",
+                    kmia_2016="Miama, FL (2016)", 
+                    kmke_2016="Milwaukee, WI (2016)",
+                    kmsn_2016="Madison, WI (2016)",
+                    kmsp_2016="Minneapolis, MN (2016)",
+                    kmsy_2015="New Orleans, LA (2015)",
+                    kmsy_2016="New Orleans, LA (2016)", 
+                    kmsy_2017="New Orleans, LA (2017)", 
+                    kord_2014="Chicago, IL (2014)",
+                    kord_2015="Chicago, IL (2015)",
+                    kord_2016="Chicago, IL (2016)", 
+                    kord_2017="Chicago, IL (2017)", 
+                    kord_2018="Chicago, IL (2018)",
+                    kphl_2016="Philadelphia, PA (2016)", 
+                    kphx_2016="Phoenix, AZ (2016)", 
+                    ksan_2015="San Diego, CA (2015)",
+                    ksan_2016="San Diego, CA (2016)",
+                    ksan_2017="San Diego, CA (2017)",
+                    ksat_2016="San Antonio, TX (2016)", 
+                    ksea_2016="Seattle, WA (2016)", 
+                    ksfo_2016="San Francisco, CA (2016)", 
+                    ksjc_2016="San Jose, CA (2016)",
+                    kstl_2016="Saint Louis, MO (2016)", 
+                    ktpa_2016="Tampa Bay, FL (2016)", 
+                    ktvc_2016="Traverse City, MI (2016)"
+                    )
+
+# Map of variable to chart name
+mapChartVar <- c(p1Inches="1-hr Precip", 
+                 p36Inches="3-hr or 6-hr Precip", 
+                 p24Inches="24-hr Precip"
+                 )
+
+
+```
+  
+The relevant functions are stored in 'WeatherDownloadFunctions_v001.R' and 'WeatherEDAFunctions_v001.R'.  They are now sourced here:  
+```{r}
+
+# Functions for downloading and saving a weather file
+source("./WeatherDownloadFunctions_v001.R")
+source("./WeatherEDAFunctions_v001.R")
+
+```
+  
+Remaining cities from top 20 MSA are downloaded for 2016:  
+```{r}
+
+# STEP 0: Define a named list of the stations and years for downloading
+runFiles <- list(bos=c(2016), 
+                 sfo=c(2016),
+                 sea=c(2016),
+                 tpa=c(2016),
+                 den=c(2016),
+                 stl=c(2016)
+                 )
+
+```
+  
+```{r cache=TRUE}
+
+cat("\nRunning downloads by station for:\n")
+sapply(runFiles, FUN=function(x) length(x))
+
+# STEP 1: Download the raw data files from Iowa State
+for (station in names(runFiles)) {
+    for (year in runFiles[[station]]) {
+        getASOSStationTime(stationID=str_to_upper(station), analysisYears=year, ovrWrite=TRUE)
+    }
+}
+
+```
+  
+```{r cache=TRUE}
+
+cat("\nRunning main EDA process on key files\n")
+
+# STEP 2: Process and format the raw data files, and save as .rds
+for (station in names(runFiles)) {
+    for (year in runFiles[[station]]) {
+    
+        coreString <- paste0("metar_k", station, "_", as.character(year))
+    
+        cat("\nProcessing Airport:", station, "for year:", year)
+        integrateProcessingMETAR(paste0("./RInputFiles/", coreString, ".txt"), 
+                                 startDay=paste0(as.character(year-1), "-12-31"), 
+                                 endDay=paste0(as.character(year+1), "-01-01"), 
+                                 genMET=genMET, 
+                                 labsMET=labsMET, 
+                                 saveLoc=paste0("./RInputFiles/ProcessedMETAR/", coreString, ".rds"), 
+                                 ovrWrite=TRUE,
+                                 colTypes=metType, 
+                                 logFile=paste0("./RInputFiles/ProcessedMETAR/", coreString, ".log"),
+                                 useNAforIncomplete=TRUE,
+                                 showSLPGraph=FALSE
+                                 )
+        cat("\nFinished Processing Airport:", station, "in year:", year,"\n")
+        
+    }
+}
+
+```
+  
+Only the components of the EDA that are essential to checking the data and creating an output file for analysis are included.
+
+Base EDA is run, with log files produced (pulls in a number of files previously downloaded, as well as the files recently downloaded):  
+```{r cache=TRUE}
+
+# Update the runFiles list for the stations to be run here
+runFiles <- list(ord=c(2014, 2018), 
+                 las=c(2018, 2019),
+                 atl=c(2016),
+                 bos=c(2016),
+                 dca=c(2016),
+                 den=c(2016),
+                 dfw=c(2016),
+                 lax=c(2016),
+                 mia=c(2016),
+                 phl=c(2016),
+                 phx=c(2016),
+                 sat=c(2016),
+                 sea=c(2016),
+                 sfo=c(2016),
+                 sjc=c(2016),
+                 stl=c(2016),
+                 tpa=c(2016)
+                 )
+
+# STEP 3a: Create the list of files to be run, process EDA, and output log files
+fileNames <- character(0)
+for (station in names(runFiles)) {
+    for (year in runFiles[[station]]) {
+        fileNames <- c(fileNames, paste0("k", station, "_", as.character(year)))
+    }
+}
+
+cat("\nEDA process will be run for all of:\n\n", paste0(fileNames, collapse="\n"), "\n", sep="")
+
+for (fName in fileNames) {
+    assign(fName, logAndPDFCombinedEDA(fName))
+}
+
+```
+  
+```{r cache=TRUE}
+
+cat("\nRunning the rain data\n")
+
+# NEED TO FIX for Chicago 2014 rainfall - time recorded as 013 should be 0013
+# Should fix function fnPrecip1-fnPrecip6 to handle this better
+if (exists("kord_2014")) {
+    kord_2014 <- kord_2014 %>%
+        mutate(origMETAR=str_replace(origMETAR, pattern="RAB013 ", replacement="RAB0013 "))
+}
+
+# Run for rain, with logs and pdf sent to files
+rain_List <- wrapPrecipTimes(fileNames, 
+                             pType="(?<!FZ)RA", 
+                             pExt="_RA", 
+                             pTypeName="rain", 
+                             writeLogFile="rain_extra0625_IntervalTimes.log",
+                             writeLogPDF="rain_extra0625_IntervalTimes.pdf",
+                             writeLogPath=filePath,
+                             appendWriteFile=FALSE
+                             )
+
+```
+  
+```{r cache=TRUE}
+
+cat("\nRunning the snow data\n")
+
+# Run for snow, with logs and pdf sent to files
+snow_List <- wrapPrecipTimes(fileNames, 
+                             pType="(?<!BL)SN", 
+                             pExt="_SN", 
+                             pTypeName="snow", 
+                             writeLogFile="snow_extra0625_IntervalTimes.log",
+                             writeLogPDF="snow_extra0625_IntervalTimes.pdf",
+                             writeLogPath=filePath,
+                             appendWriteFile=FALSE
+                             )
+
+```
+  
+```{r cache=TRUE}
+
+cat("\nRunning the thunder data\n")
+
+# NEED TO FIX for Saint Louis 2016 thunder - time recorded as TSE57 should be TSE0757
+# Should fix function fnPrecip1-fnPrecip6 to handle this better
+if (exists("kstl_2016")) {
+    kstl_2016 <- kstl_2016 %>%
+        mutate(origMETAR=str_replace(origMETAR, pattern="TSE57 ", replacement="TSE0757 "))
+}
+
+# Run for thunder, with logs and pdf sent to files
+thunder_List <- wrapPrecipTimes(fileNames, 
+                                pType="(?<!VC)TS", 
+                                pExt="_TS", 
+                                pTypeName="thunder", 
+                                writeLogFile="thunder_extra0625_IntervalTimes.log",
+                                writeLogPDF="thunder_extra0625_IntervalTimes.pdf",
+                                writeLogPath=filePath,
+                                appendWriteFile=FALSE
+                                )
+
+```
+  
+Daily high-low temperatures and precipitation summaries are extracted and an integrated file is produced:  
+```{r}
+
+# Extracted high-low temperatures
+all_hilo <- map_dfr(.x=fileNames, .f=getDailyHighLow, .id="source") %>%
+    mutate(source=fileNames[as.integer(source)], locale=cityNameMapper[source]) %>%
+    select(source, locale, everything())
+all_hilo
+
+# Plot is not created; just need the high-low data for this
+# plotDailyHiLo(all_hilo, pdfName="DailyHighLow.pdf")
+
+
+# Extracted precipitation amounts
+all_pin <- map_dfr(.x=fileNames, .f=getPrecipAmount, .id="source") %>%
+    mutate(source=fileNames[as.integer(source)], locale=cityNameMapper[source]) %>%
+    select(source, locale, everything())
+all_pin
+
+# Plot is not created, just need the precipitation inches for this
+# Run the precipitation plots
+# plotPrecipNAHours(all_pin, mapper=mapChartVar, pdfName="Precipitation_NonNA_Hours.pdf")
+
+# Plot the time periods provided in mapper
+for (plotVar in names(mapChartVar)) {
+    # Counts of !is.na by hour
+    p1 <- all_pin %>%
+        mutate(hour=factor(lubridate::hour(lubridate::round_date(dtime, unit="hours"))), 
+               notNA=!is.na(get(plotVar))
+               ) %>%
+        group_by(source, hour) %>%
+        summarize(pct=mean(notNA)) %>%
+        ggplot(aes(x=hour, y=pct, group=source)) + 
+        geom_line(alpha=0.25) + 
+        labs(y="Percent of Days with Observations at Hour", 
+             x="METAR Hour (Z)", 
+             title=paste0("Capture for ", mapChartVar[plotVar]), 
+             caption="Each line is a single location/year"
+             ) +
+        scale_x_discrete(breaks=seq(0, 23, by=3))
+    print(p1)
+}
+
+
+# Sum precipitation by year for p1, p36 (using only 0Z-6Z-12Z-18Z), p24
+mod_pin <- all_pin %>%
+    mutate(p1Inches=ifelse(is.na(p1Inches), 0, p1Inches),
+           p36ok=lubridate::hour(lubridate::round_date(dtime, unit="hours")) %in% c(0, 6, 12, 18),
+           p36Inches=ifelse(is.na(p36Inches) | !p36ok, 0, p36Inches),
+           p24Inches=ifelse(is.na(p24Inches), 0, p24Inches)
+           )
+
+mod_pin %>%
+    group_by(locale) %>%
+    summarize_if(is.numeric, sum) %>%
+    rename(`1-Hour`=p1Inches, `6-Hour`=p36Inches, `24-Hour`=p24Inches) %>%
+    pivot_longer(-locale, names_to="Unit", values_to="Inches") %>%
+    ggplot(aes(x=Unit, y=Inches)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(label=round(Inches, 1), y=Inches+10)) +
+    labs(title="Annual precipitation when summing by various units", x="") +
+    facet_wrap(~locale)
+
+
+# Combine the relevant data files
+allData <- combineProcessedFiles(fileNames)
+
+# Show counts by sourceName
+allData %>%
+    count(source, sourceName)
+
+# Modify windDir so that it is just N, NE, E, SE, S, SW, W, NW, 000, Variable
+modData <- allData %>%
+    mutate(tempDir=ifelse(is.na(WindDir) | WindDir %in% c("000", "VRB"), -1, as.numeric(WindDir)),
+           predomDir=factor(case_when(is.na(WindDir) ~ "Error", 
+                                      WindDir=="000" ~ "000", 
+                                      WindDir=="VRB" ~ "VRB", 
+                                      tempDir >= 337.5 ~ "N", 
+                                      tempDir <= 22.5 ~ "N",
+                                      tempDir <= 67.5 ~ "NE", 
+                                      tempDir <= 112.5 ~ "E", 
+                                      tempDir <= 157.5 ~ "SE", 
+                                      tempDir <= 202.5 ~ "S", 
+                                      tempDir <= 247.5 ~ "SW", 
+                                      tempDir <= 292.5 ~ "W", 
+                                      tempDir <= 337.5 ~ "NW",
+                                      TRUE ~ "Error"
+                                      ), 
+                            levels=c("Error", "000", "VRB", "NE", "E", "SE", "S", "SW", "W", "NW", "N")
+                            )
+           )
+
+# Show a glimpse of the processed data
+glimpse(modData)
+
+```
+  
+```{r}
+
+# Select the source, sourceName, dtime and cLevel variables; pivot cLevel down
+cLevels <- modData %>%
+    select(source, sourceName, dtime, starts_with("cLevel")) %>%
+    pivot_longer(-c(source, sourceName, dtime), names_to="level", values_to="height") %>%
+    mutate(level=as.integer(str_replace(level, pattern="cLevel", replacement="")))
+
+# Select the source, sourceName, dtime and cType variables; pivot cType down
+cTypes <- modData %>%
+    select(source, sourceName, dtime, starts_with("cType")) %>%
+    pivot_longer(-c(source, sourceName, dtime), names_to="level", values_to="type") %>%
+    mutate(level=as.integer(str_replace(level, pattern="cType", replacement="")))
+
+cData <- cLevels %>%
+    inner_join(cTypes, by=c("source", "sourceName", "dtime", "level"))
+
+# Plot cloud heights, using only non-NA
+cData %>%
+    filter(!is.na(height)) %>%
+    ggplot(aes(x=fct_reorder(sourceName, height, .fun=max, na.rm=TRUE), y=height)) + 
+    geom_violin(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", y="Cloud Height (feet)", title="Density of cloud heights by locale")
+
+
+# Plot cloud heights, using only non-""
+fctLayers <- c("VV", "OVC", "BKN", "SCT", "FEW")
+
+cData %>%
+    filter(type!="") %>%
+    mutate(type=factor(type, levels=fctLayers)) %>%
+    ggplot(aes(x=fct_reorder(sourceName, height, .fun=max, na.rm=TRUE), fill=type)) + 
+    geom_bar(position="stack") + 
+    coord_flip() + 
+    labs(x="", y="Cloud Layer Obscuration", title="Cloud obscuration by locale") + 
+    scale_fill_discrete("", rev(fctLayers)) + 
+    theme(legend.position="bottom")
+
+
+# Plot cloud heights, using only non-NA
+cData %>%
+    filter(!is.na(height)) %>%
+    filter(height <= 12000) %>%
+    ggplot(aes(x=sourceName, y=height)) + 
+    geom_violin(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", y="Cloud Height (feet)", title="Density of cloud heights by locale")
+
+cData %>%
+    filter(type!="") %>%
+    filter(height <= 12000) %>%
+    mutate(type=factor(type, levels=fctLayers)) %>%
+    ggplot(aes(x=fct_reorder(sourceName, sourceName, .fun=length), fill=type)) + 
+    geom_bar(position="stack") + 
+    coord_flip() + 
+    labs(x="", y="Cloud Layer Obscuration", title="Cloud obscuration by locale (up to 12,000 feet)") + 
+    scale_fill_discrete("", rev(fctLayers)) + 
+    theme(legend.position="bottom")
+
+
+modCData <- cloudsLevel0(cData, maxHeight=12000, byVars=c("source", "sourceName", "dtime")) %>%
+    mutate(type=factor(type, levels=c("VV", "OVC", "BKN", "SCT", "FEW", "CLR")))
+modCData
+
+
+# Get the key clouds data
+cloudSummary <- hgtCeilObsc(modCData, byVars=c("source", "sourceName", "dtime"))
+
+# Check for consistency
+cloudSummary %>%
+    count(ceilingType, obscType)
+cloudSummary %>%
+    count(cloudType, ceilingType)
+cloudSummary %>%
+    count(cloudType, obscType)
+
+
+# Cloud obscuration by source
+plotMaxObsc(cloudSummary, 
+            xVar="sourceName", 
+            fillVar="obscType", 
+            title="Maximum Cloud Obscuration", 
+            orderByVariable="obscType",
+            orderByValue="CLR"
+            )
+
+# Cloud obscuration by month
+cloudSummary <- cloudSummary %>%
+    mutate(month=lubridate::month(dtime), 
+           hour=lubridate::hour(dtime), 
+           monthfct=factor(month.abb[month], levels=month.abb[1:12])
+           )
+plotMaxObsc(cloudSummary, 
+            xVar="monthfct", 
+            fillVar="obscType", 
+            title="Maximum Cloud Obscuration", 
+            posnBar="fill"
+            )
+
+```
+  
+```{r}
+
+cloudSummary <- cloudSummary %>%
+    mutate(ceilFactor=factor(case_when(ceilingHeight == -100 ~ "None", 
+                                       ceilingHeight <= 1000 ~ "0-1000", 
+                                       ceilingHeight <= 3000 ~ "1000-3000", 
+                                       ceilingHeight <= 6000 ~ "3000-6000",
+                                       ceilingHeight <= 12000 ~ "6000-12000"
+                                       ), 
+                             levels=c("None", "6000-12000", "3000-6000", "1000-3000", "0-1000")
+                             )
+           )
+
+plotMaxObsc(cloudSummary, 
+            xVar="sourceName", 
+            fillVar="ceilFactor", 
+            title="Ceiling Height", 
+            orderByVariable="ceilFactor",
+            orderByValue="None"
+            )
+
+
+
+cloudSummary <- cloudSummary %>%
+    mutate(minCFactor=factor(case_when(cloudHeight == -100 ~ "None", 
+                                       cloudHeight <= 1000 ~ "0-1000", 
+                                       cloudHeight <= 3000 ~ "1000-3000", 
+                                       cloudHeight <= 6000 ~ "3000-6000",
+                                       cloudHeight <= 12000 ~ "6000-12000"
+                                       ), 
+                             levels=c("None", "6000-12000", "3000-6000", "1000-3000", "0-1000")
+                             )
+           )
+
+plotMaxObsc(cloudSummary, 
+            xVar="sourceName", 
+            fillVar="minCFactor", 
+            title="Minimum Cloud Height", 
+            orderByVariable="minCFactor",
+            orderByValue="None"
+            )
+
+```
+  
+```{r}
+
+# Select the appropriate variables from modData
+finalData <- modData %>%
+    select(source, 
+           locale=sourceName, 
+           dtime, 
+           origMETAR, 
+           year, 
+           monthint, 
+           month, 
+           day, 
+           WindDir,
+           WindSpeed,
+           WindGust,
+           predomDir,
+           Visibility,
+           Altimeter,
+           TempF,
+           DewF,
+           modSLP,
+           starts_with("cType"),
+           starts_with("cLevel")
+           )
+
+thunderData <- map_dfr(.x=list(thunder_List), 
+                       .f=makeTibbleFromPrecip, 
+                       varName="isThunder"
+                       )
+
+rainData <- map_dfr(.x=list(rain_List), 
+                    .f=makeTibbleFromPrecip, 
+                    varName="isRain"
+                    )
+
+snowData <- map_dfr(.x=list(snow_List), 
+                    .f=makeTibbleFromPrecip, 
+                    varName="isSnow"
+                    )
+
+# Inner join the precipitation data
+precipData <- rainData %>%
+    inner_join(snowData, by=c("source", "dtime")) %>%
+    inner_join(thunderData, by=c("source", "dtime"))
+
+# Confirm that no rows have been lost
+if (nrow(precipData) < max(nrow(rainData), nrow(snowData), nrow(thunderData))) {
+    stop("\nPrecipitation data have mislaignment issues")
+}
+
+
+# Merge in to finalData
+if (nrow(finalData) != nrow(precipData)) {
+    stop("\nPrecipitation data are not aligned with final data")
+}
+
+finalData <- finalData %>%
+    inner_join(precipData, by=c("source", "dtime"))
+
+# Confirm that no rows have been lost
+if (nrow(finalData) < nrow(precipData)) {
+    stop("\nPrecipitation data did not merge correctly with final data")
+}
+
+
+# Merge together the precipitation and temperature data
+precipTempData <- all_pin %>%
+    select(source, dtime, p1Inches, p36Inches, p24Inches) %>%
+    inner_join(select(all_hilo, source, dtime, tempFHi, tempFLo), 
+               by=c("source", "dtime")
+               )
+
+# Confirm that no rows have been lost
+if (nrow(precipTempData) < max(nrow(all_pin), nrow(all_hilo))) {
+    stop("\nPrecipitation and temperature summaries have mislaignment issues")
+}
+
+
+# Merge in to finalData
+if (nrow(finalData) != nrow(precipTempData)) {
+    stop("\nPrecipitation and temperature summaries are not aligned with final data")
+}
+
+finalData <- finalData %>%
+    inner_join(precipTempData, by=c("source", "dtime"))
+
+# Confirm that no rows have been lost
+if (nrow(finalData) < nrow(precipTempData)) {
+    stop("\nPrecipitation and temperature summaries did not merge correctly with final data")
+}
+
+
+# Merge in to finalData
+if (nrow(finalData) != nrow(cloudSummary)) {
+    stop("\nCloud summaries are not aligned with final data")
+}
+
+finalData <- finalData %>%
+    inner_join(select(cloudSummary, source, dtime, cloudHeight, cloudType, ceilingHeight, ceilingType), 
+               by=c("source", "dtime")
+               ) %>%
+    rename(minHeight=cloudHeight, minType=cloudType)
+
+# Confirm that no rows have been lost
+if (nrow(finalData) < nrow(cloudSummary)) {
+    stop("\nCloud summaries did not merge correctly with final data")
+}
+
+
+stationTime <- finalData %>%
+    select(source, dtime) %>%
+    mutate(station=str_sub(source, 1, 4)) %>%
+    select(station, dtime)
+
+finalDups <- stationTime %>%
+    duplicated()
+
+cat("\nDuplicated records occur during:\n")
+stationTime %>% 
+    filter(finalDups) %>% 
+    count(station, date=lubridate::date(dtime))
+
+
+filteredData <- finalData %>%
+    filter(as.integer(str_sub(source, 6, -1))==year)
+
+cat("\nEnforcing year restriction reduces data rows from:", nrow(finalData), "to:", nrow(filteredData), "\n")
+
+
+cat("\nVariables includes in the final file are:\n")
+names(filteredData)
+
+cat("\nSummary of the final file:\n")
+summary(filteredData)
+
+cat("\nResetting Visibility > 10 to 10\n")
+filteredData %>% 
+    filter(Visibility > 10)
+
+summary(filteredData$Visibility)
+filteredData <- filteredData %>%
+    mutate(Visibility=ifelse(is.na(Visibility), NA, pmin(Visibility, 10)))
+summary(filteredData$Visibility)
+
+
+saveRDS(filteredData, "./RInputFiles/ProcessedMETAR/metar_postEDA_extra_20200625.rds")
+
+
+allPrecipList <- list(rain=rain_List, 
+                      snow=snow_List, 
+                      thunder=thunder_List
+                      )
+str(allPrecipList, max.level = 2)
+
+saveRDS(allPrecipList, "./RInputFiles/ProcessedMETAR/metar_precipLists_extra_20200625.rds")
+
+
+# Example of the modCData format
+modCData
+
+# Check that modCData includes every date-time in filteredData, and no others
+modCDataTimes <- modCData %>%
+    count(source, dtime)
+    
+# In filteredData but not in modCDataTimes
+filteredData %>%
+    select(source, dtime) %>%
+    anti_join(modCDataTimes, by=c("source", "dtime"))
+
+# In modCDataTimes but not in filteredData
+modCDataTimes %>%
+    select(source, dtime) %>%
+    anti_join(filteredData, by=c("source", "dtime")) %>%
+    count(source, date=lubridate::date(dtime)) %>%
+    pivot_wider(source, names_from="date", values_from="n") %>%
+    mutate_if(is.numeric, ~ifelse(is.na(.), 0, .)) %>%
+    as.data.frame()
+
+# Filter modCData so that year aligns as with fileteredData
+modCSaveData <- modCData %>%
+    filter(as.integer(str_sub(source, 6, 9))==lubridate::year(dtime))
+
+saveRDS(modCSaveData, "./RInputFiles/ProcessedMETAR/metar_modifiedClouds_extra_20200625.rds")
+
+
+```
+
+Functions and analyses not run:  
+```{r eval=FALSE}
+
+# Create rounded TempF and DewF in allData
+allData <- allData %>%
+    mutate(TempF5=5*round(round(TempF)/5), 
+           DewF5=5*round(round(DewF)/5), 
+           WindSpeed5=5*round(WindSpeed/5),
+           Altimeter10=round(Altimeter, 1)
+           )
+
+# Save to an external PDF
+pdf(paste0(filePath, "CrossLocaleCountsByMetric.pdf"))
+
+# Counts by Metric for allData
+plotcountsByMetric(allData, 
+                   mets=c("month", "year",
+                          "WindDir", "WindSpeed5", 
+                          "Visibility", "Altimeter10",
+                          "TempF5", "DewF5", 
+                          "wType"
+                          ), 
+                   title="Comparisons Across Locales (red dots are the median)", 
+                   facetOn="sourceName",
+                   showCentral=TRUE, 
+                   multiPageWrap=TRUE, 
+                   maxPerPage=12, 
+                   balancePages=TRUE
+                   )
+
+# Redirect to standard plotting
+dev.off()
+
+
+# Example for allData - using mixes of WindSpeed, Altimeter, TempF, DewF, TempC, DewC
+numCorList <- list(c("TempC", "TempF"), 
+                   c("DewC", "DewF"), 
+                   c("TempF", "DewF"), 
+                   c("Altimeter", "WindSpeed"), 
+                   c("Altimeter", "TempF")
+                   )
+
+# Save to an external PDF
+pdf(paste0(filePath, "CrossLocaleCorrelations.pdf"))
+
+# Run the list through plotNumCor()
+for (x in numCorList) {
+    plotNumCor(allData, 
+               var1=x[1], 
+               var2=x[2], 
+               alpha=0.2,
+               maxSize=3,
+               subT="Red dashed line is the overall slope", 
+               diagnose=TRUE, 
+               facetOn="sourceName", 
+               showCentral=TRUE
+               )
+}
+
+# Redirect to standard plotting
+dev.off()
+
+
+
+# Key factor variables include month, wType, predomDir
+# Key numeric variables include WindSpeed, Altimeter, TempF, DewF, Visibility
+fctNumList <- list(c("month", "WindSpeed"), 
+                   c("month", "Altimeter"), 
+                   c("month", "TempF"), 
+                   c("month", "DewF"), 
+                   c("month", "Visibility"),
+                   c("wType", "WindSpeed"),
+                   c("wType", "Altimeter"),
+                   c("wType", "Visibility"),
+                   c("predomDir", "WindSpeed"),
+                   c("predomDir", "Altimeter"),
+                   c("predomDir", "TempF"),
+                   c("predomDir", "DewF")
+                   )
+
+# Save to an external PDF
+pdf(paste0(filePath, "CrossLocaleFactorVsNumeric.pdf"))
+
+for (x in fctNumList) {
+    plotFactorNumeric(modData, 
+                      fctVar=x[1], 
+                      numVar=x[2], 
+                      subT="Red dots are the overall average", 
+                      showXLabel=FALSE,
+                      diagnose=TRUE, 
+                      facetOn="sourceName",
+                      showCentral=TRUE, 
+                      multiPageWrap=TRUE,
+                      maxPerPage=12,
+                      balancePages=TRUE
+                      )
+}
+
+# Redirect to standard plotting
+dev.off()
+
+
+# Key factor variables include month, wType, predomDir
+# Key numeric variables include WindSpeed, Altimeter, TempF, DewF, Visibility
+fctNumListIQR <- list(c("month", "WindSpeed"), 
+                      c("month", "Altimeter"), 
+                      c("wType", "WindSpeed"),
+                      c("predomDir", "Altimeter"),
+                      c("predomDir", "TempF"),
+                      c("predomDir", "DewF")
+                      )
+
+# Save to an external PDF
+pdf(paste0(filePath, "CrossLocaleIQRFactorVsNumeric.pdf"))
+
+for (x in fctNumListIQR) {
+    plotMedianIQR(modData, 
+                  fctVar=x[1], 
+                  numVar=x[2], 
+                  subT="Red dots are the overall mid-quantile", 
+                  showXLabel=FALSE,
+                  diagnose=TRUE, 
+                  facetOn="sourceName",
+                  showCentral=TRUE, 
+                  multiPageWrap=TRUE,
+                  maxPerPage=12,
+                  balancePages=TRUE
+                  )
+}
+
+# Redirect to standard plotting
+dev.off()
+
+
+plotMedianIQR(modData, 
+              fctVar="wType", 
+              numVar="WindSpeed", 
+              subT="Red dots are the overall mid-quantile", 
+              showXLabel=FALSE,
+              diagnose=TRUE, 
+              facetOn="sourceName",
+              showCentral=TRUE, 
+              ylimits=c(0, 15), 
+              multiPageWrap=TRUE,
+              maxPerPage=12,
+              balancePages=TRUE
+              )
+
+
+# Counts by Metric for predomDir using mod2016Data
+plotcountsByMetric(modData, 
+                   mets=c("predomDir"), 
+                   title="Comparisons Across Locales (red dots are the median)", 
+                   facetOn="sourceName",
+                   showCentral=TRUE, 
+                   multiPageWrap=TRUE, 
+                   maxPerPage=12,
+                   balancePages=TRUE
+                   )
+
+```
+  
+```{r eval=FALSE}
+
+cityCloudList <- list(c("klas_2016", "ksan_2016", "kiah_2016", "kmsy_2016"), 
+                      c("kgrb_2016", "kgrr_2016", "kdtw_2016", "ktvc_2016"), 
+                      c("klnk_2016", "kmsp_2016", "kmsn_2016", "kind_2016"), 
+                      c("kmke_2016", "kord_2016", "kewr_2016")
+                      )
+
+for (x in cityCloudList) {
+    cloudUse <- cloudSummary %>%
+        filter(source %in% x)
+    plotMaxObsc(cloudUse, 
+                xVar="monthfct", 
+                fillVar="obscType", 
+                title="Maximum Cloud Obscuration", 
+                facetOn="sourceName", 
+                posnBar="fill"
+                )
+}
+
+```
+  
+```{r eval=FALSE}
+
+# Find the distances for obscType by locale vs. locale
+obscDist <- findCloudDist(cloudSummary, 
+                          byVar=c("source", "sourceName"), 
+                          fctVar="obscType", 
+                          pivotVar="monthfct"
+                          )
+obscDist
+
+
+plotCloudDist(obscDist, subT="Based on % of obscuration type by month")
+
+# Run for minCFactor
+findCloudDist(cloudSummary, 
+              byVar=c("source", "sourceName"), 
+              fctVar="minCFactor", 
+              pivotVar="monthfct"
+              ) %>%
+    plotCloudDist(subT="Based on % in each minimum cloud height bucket by month")
+
+# Run for ceilFactor
+findCloudDist(cloudSummary, 
+              byVar=c("source", "sourceName"), 
+              fctVar="ceilFactor", 
+              pivotVar="monthfct"
+              ) %>%
+    plotCloudDist(subT="Based on % in each ceiling height bucket by month")
+
+
+set.seed(2006040940)
+
+ceilDistData <- findCloudDist(cloudSummary, 
+                              byVar=c("source", "sourceName"), 
+                              fctVar="ceilFactor", 
+                              pivotVar="monthfct", 
+                              returnPivotOnly=TRUE
+                              )
+
+tibble::tibble(locale=ceilDistData$sourceName, 
+               cluster=kmeans(dist(ceilDistData[3:ncol(ceilDistData)]), centers=5, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster) %>%
+    as.data.frame()
+
+
+hclust(dist(ceilDistData[3:ncol(ceilDistData)]), method="complete") %>%
+    plot(labels=ceilDistData$sourceName, cex=0.5, main="Hierarchical on Ceiling Height: method=complete")
+
+hclust(dist(ceilDistData[3:ncol(ceilDistData)]), method="single") %>%
+    plot(labels=ceilDistData$sourceName, cex=0.5, main="Hierarchical on Ceiling Height: method=single")
+
+
+heightDistData <- findCloudDist(cloudSummary, 
+                                byVar=c("source", "sourceName"), 
+                                fctVar="minCFactor", 
+                                pivotVar="monthfct", 
+                                returnPivotOnly=TRUE
+                                )
+
+hclust(dist(heightDistData[3:ncol(heightDistData)]), method="complete") %>%
+    plot(labels=heightDistData$sourceName, cex=0.5, 
+         main="Hierarchical on Minimum Cloud Height: method=complete"
+         )
+
+hclust(dist(heightDistData[3:ncol(heightDistData)]), method="single") %>%
+    plot(labels=heightDistData$sourceName, cex=0.5, 
+         main="Hierarchical on Minimum Cloud Height: method=single"
+         )
+
+
+set.seed(2006041003)
+
+cl5 <- tibble::tibble(locale=heightDistData$sourceName, 
+               cluster=kmeans(dist(heightDistData[3:ncol(heightDistData)]), centers=5, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster)
+
+cl6 <- tibble::tibble(locale=heightDistData$sourceName, 
+               cluster=kmeans(dist(heightDistData[3:ncol(heightDistData)]), centers=6, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster)
+
+cl7 <- tibble::tibble(locale=heightDistData$sourceName, 
+               cluster=kmeans(dist(heightDistData[3:ncol(heightDistData)]), centers=7, nstart=1000)$cluster
+               ) %>%
+    arrange(-cluster)
+
+
+cl5 %>%
+    rename(cl5=cluster) %>%
+    inner_join(rename(cl6, cl6=cluster), by="locale") %>%
+    inner_join(rename(cl7, cl7=cluster), by="locale") %>%
+    as.data.frame()
+
+```
+  
