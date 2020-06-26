@@ -1,0 +1,2165 @@
+# This is a helper function to create a locale description
+getLocaleDescription <- function(x, mapper=cityNameMapper) {
+    
+    # Initialize the description as NULL
+    desc <- NULL
+    
+    for (potMatch in names(mapper)) {
+        if (str_detect(string=x, pattern=potMatch)) {
+            desc <- mapper[potMatch]
+            break
+        }
+    }
+    
+    # If the mapping failed, use UNMAPPED_x as the description
+    if (is.null(desc)) {
+        desc <- paste0("UNMAPPED_", x)
+        cat("\nUnable to find a description, will use ", desc, "\n\n", sep="")
+    } else {
+        cat("\nWill use ", desc, " as the description for ", x, "\n\n", sep="")
+    }
+    
+    # Return the descriptive name
+    desc
+    
+}
+
+
+# Helper function to zero-pad (especially for minutes/hours/months that are 0-9)
+zeroPad <- function(x, width=2, side="left", pad="0") {
+    
+    str_pad(x, width=width, side=side, pad=pad)
+    
+}
+
+
+# Helper function to take a date-time and a minutes and create a new date-time
+helperBEDateTime <- function(dt, mins) {
+    
+    # Create the date as character (lubridate and dplyr do not always work well together)
+    dateChar <- ifelse(str_length(mins)==4 & str_sub(mins, 1, 2)=="23", 
+                       as.character(lubridate::as_date(lubridate::date(dt)-1)), 
+                       as.character(lubridate::date(dt))
+    )
+    
+    # Create the hours and minutes as character
+    hrMinChar <- ifelse(str_length(mins)==4, 
+                        mins, 
+                        paste0(zeroPad(lubridate::hour(dt)), mins)
+    )
+    
+    # Return the appropriate date-time
+    lubridate::ymd_hm(paste0(dateChar, " ", hrMinChar))
+    
+}
+
+
+# Helper function to convert 4-digit function to temperature
+convertTemp <- function(x, convF=TRUE) {
+    
+    # Convert to numeric
+    temp <- ifelse(str_sub(x, 1, 1)==1, -1, 1) * as.numeric(str_sub(x, 2, 4)) / 10
+    
+    # Convert to Fahrenheit if requested
+    if (convF) {
+        temp <- round(32 + temp * 9/5, 0)
+    }
+    
+    temp
+    
+}
+
+
+# Helper function to convert 5-character precipitation to inches
+convertPrecip <- function(x, begPos=-4, endPos=-1) {
+    
+    # Convert to numeric and divide by 100 to get inches
+    as.numeric(str_sub(x, begPos, endPos)) / 100
+    
+}
+
+
+# Function to split facets across multiple plots
+multiPageFacet <- function(gg, 
+                           facetVar, 
+                           maxPerPage=12, 
+                           balancePages=FALSE, 
+                           sameYLimits=NULL, 
+                           useYLow=NULL
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # gg: a ggplot object that is ready except for facetting
+    # facetVar: the facetting variable, passed as character
+    # maxPerPage: the maximum number of objects desired for facetting
+    # balancePages: boolean, whether to make roughly equal number of facets per page
+    # sameYLimits: variable to be used to set constant y-max across plots (NULL means allow to float)
+    # useYLow: variable to be used to set constant y-min across plots (NULL means allow to float); 
+    #          will be ignored if sameYLimits is NULL
+    
+    # Find the levels for facetVar
+    facetLevels <- gg$data %>%
+        pull(facetVar) %>%
+        unique()
+    
+    # The number of facet variables will drive the number of pages to create
+    nPages <- ceiling(length(facetLevels) / maxPerPage)
+    
+    # Recreate maxPerPage if balancePages is requested
+    if (balancePages) { maxPerPage <- ceiling(length(facetLevels) / nPages) }
+    
+    # Create the groupings to be applied
+    groups <- vector("list", nPages)
+    for (ctr in 1:nPages) {
+        groups[[ctr]] <- facetLevels[(1 + (ctr-1)*maxPerPage):(min(length(facetLevels), ctr*maxPerPage))]
+    }
+    
+    # Get the ylimits if applicable
+    if (!is.null(sameYLimits)) {
+        ymin <- 0
+        ymax <- gg$data %>%
+            pull(sameYLimits) %>%
+            max()
+        if (!is.null(useYLow)) {
+            ymin <- gg$data %>%
+                pull(useYLow) %>%
+                min()
+        }
+    }
+    
+    # Create the facetplots
+    for (ctr in 1:nPages) {
+        ggTemp <- gg
+        ggTemp$data <- ggTemp$data %>% 
+            filter(get(facetVar) %in% groups[[ctr]])
+        p1 <- ggTemp +
+            facet_wrap(as.formula(paste("~", facetVar)))
+        if (!is.null(sameYLimits)) { p1 <- p1 + ylim(ymin, ymax) }
+        print(p1)
+    }
+    
+}
+
+
+# The core EDA function is combinedEDA(), 
+# which is called by wrapCombinedEDA() for creating log and PDF files, 
+# and which is in turn called by logAndPDFCombinedEDA() so that it can be easily run for multiple locales
+# The core function for running combined EDA
+combinedEDA <- function(filename=NULL, 
+                        tbl=NULL,
+                        desc=NULL,
+                        mets=c("WindDir", "WindSpeed", "TempC", "DewC", "Altimeter", 
+                               "modSLP", "cType1", "cLevel1", "month", "day"
+                        ),
+                        corPairs=list(c("TempC", "TempF"), 
+                                      c("TempC", "DewC"), 
+                                      c("Altimeter", "modSLP"), 
+                                      c("Altimeter", "WindSpeed")
+                        ),
+                        fctPairs=list(c("month", "TempF"), 
+                                      c("month", "DewF"), 
+                                      c("month", "WindSpeed"), 
+                                      c("month", "Altimeter"), 
+                                      c("wType", "Visibility"), 
+                                      c("wType", "WindSpeed"), 
+                                      c("WindDir", "WindSpeed"), 
+                                      c("WindDir", "TempF")
+                        ),
+                        heatVars=c("TempC", "TempF", 
+                                   "DewC", "DewF", 
+                                   "Altimeter", "modSLP", 
+                                   "WindSpeed", "Visibility", 
+                                   "monthint", "day"
+                        ),
+                        lmVars=list(c("modSLP", "Altimeter"), 
+                                    c("modSLP", "Altimeter + TempF"), 
+                                    c("TempF", "DewF"), 
+                                    c("WindSpeed", "Altimeter + TempF + DewF + month")
+                        ),
+                        mapVariables=varMapper,
+                        mapFileNames=cityNameMapper,
+                        path="./RInputFiles/ProcessedMETAR/"
+                        ) {
+    
+    # Require that either filename OR tbl be passed
+    if (is.null(filename) & is.null(tbl)) {
+        cat("\nMust provide either a filename or an already-loaded tibble\n")
+        stop("\nfilename=NULL and tbl=NULL may not both be passed to combinedEDA()\n")
+    }
+    
+    # Require that either 1) filename and mapFileNames, OR 2) desc be passed
+    if ((is.null(filename) | is.null(mapFileNames)) & is.null(desc)) {
+        cat("\nMust provide either a filename with mapFileNames or a file description\n")
+        stop("\nWhen desc=NULL must have non-null entries for both filename= and mapFileNames=\n")
+    }
+    
+    # Find the description if it is NULL (default)
+    if (is.null(desc)) {
+        desc <- getLocaleDescription(filename, mapper=mapFileNames)
+    }
+    
+    # Warn if both filename and tbl are passed, since tbl will be used
+    if (!is.null(filename) & !is.null(tbl)) {
+        cat("\nA tibble has been passed and will be used as the dataset for this function\n")
+        warning("\nArgument filename=", filename, " is NOT loaded since a tibble was passed\n")
+    }
+    
+    # Read in the file unless tbl has already been passed to the routine
+    if (is.null(tbl)) {
+        tbl <- readRDS(paste0(path, filename))
+    }
+    
+    # Plot counts by metric
+    plotcountsByMetric(tbl, mets=mets, title=desc, diagnose=TRUE)
+    
+    # Plot relationships between two variables
+    for (ys in corPairs) {
+        plotNumCor(tbl, var1=ys[1], var2=ys[2], subT=desc, diagnose=TRUE)
+    }
+    
+    # plot numeric vs. factor
+    for (ys in fctPairs) {
+        plotFactorNumeric(tbl, fctVar=ys[1], numVar=ys[2], subT=desc, showXLabel=FALSE, diagnose=TRUE)
+    }
+    
+    # Heatmap for variable correlations
+    corMETAR(tbl, numVars=heatVars, subT=paste0(desc, " METAR"))
+    
+    # Run linear rergression
+    for (ys in lmVars) {
+        lmMETAR(tbl, y=ys[1], x=ys[2], yName=varMapper[ys[1]], subT=desc)
+    }
+    
+    # Run the basic wind plots
+    basicWindPlots(tbl, desc=desc, gran="")
+    
+    # Return the tibble
+    tbl
+    
+}
+
+
+# The core function for placing combined EDA outputs in log and PDF files
+wrapCombinedEDA <- function(readFile, 
+                            readPath="./RInputFiles/ProcessedMETAR/", 
+                            mapFileNames=cityNameMapper,
+                            desc=NULL,
+                            writeLogFile=NULL,
+                            writeLogPDF=NULL,
+                            writeLogPath=NULL,
+                            appendWriteFile=FALSE,
+                            ...
+                            ) {
+    
+    # Read in the requested file
+    tbl <- readRDS(paste0(readPath, readFile))
+    
+    # Find the description if it has not been passed
+    if (is.null(desc)) {
+        desc <- getLocaleDescription(readFile, mapper=mapFileNames)
+    }
+    
+    # Helper function that only runs the combinedEDA() routine
+    coreFunc <- function() { combinedEDA(tbl=tbl, desc=desc, mapFileNames=mapFileNames, ...) }
+    
+    # If writeLogPDF is not NULL, direct the graphs to a suitable PDF
+    if (!is.null(writeLogPDF)) {
+        
+        # Prepend the provided log path if it has not been made available
+        if (!is.null(writeLogPath)) {
+            writeLogPDF <- paste0(writeLogPath, writeLogPDF)
+        }
+        
+        # Provide the location of the EDA pdf file
+        cat("\nEDA PDF file is available at:", writeLogPDF, "\n")
+        
+        # Redirect the writing to writeLogPDF
+        pdf(writeLogPDF)
+    }
+    
+    # Run EDA on the tbl using capture.output to redirect to a log file if specified
+    if (!is.null(writeLogFile)) {
+        
+        # Prepend the provided log path if it has not been made available
+        if (!is.null(writeLogPath)) {
+            writeLogFile <- paste0(writeLogPath, writeLogFile)
+        }
+        
+        # Provide the location of the EDA log file
+        cat("\nEDA log file is available at:", writeLogFile, "\n")
+        
+        # Run EDA such that the output goes to the log file
+        capture.output(coreFunc(), 
+                       file=writeLogFile, 
+                       append=appendWriteFile
+        )
+        
+    } else {
+        # Run EDA such that output stays in stdout
+        coreFunc()
+    }
+    
+    # If writeLogPDF is not NULL, redirect to stdout
+    if (!is.null(writeLogPDF)) {
+        dev.off()
+    }
+    
+    # Return the tbl
+    tbl
+    
+}
+
+
+# The core function that calls wrapCombinedEDA
+logAndPDFCombinedEDA <- function(tblName, filePath="./RInputFiles/ProcessedMETAR/") {
+    
+    # Create the RDS file name
+    rdsName <- paste0("metar_", tblName, ".rds")
+    cat("\nRDS Name:", rdsName)
+    
+    # Create the log file name
+    logName <- paste0("metar_", tblName, "_EDA.log")
+    cat("\nLog Name:", logName)
+    
+    # Create the PDF file name
+    pdfName <- paste0("metar_", tblName, "_EDA.pdf")
+    cat("\nPDF Name:", pdfName)
+    
+    # Call wrapCombinedEDA()
+    tbl <- wrapCombinedEDA(rdsName, 
+                           readPath=filePath, 
+                           writeLogFile=logName, 
+                           writeLogPDF=pdfName,
+                           writeLogPath=filePath
+    )
+    
+    # Return the tbl
+    tbl
+    
+}
+
+
+# plotCountsByMetric() - bar plots for counts by variable
+plotcountsByMetric <- function(df, 
+                               mets, 
+                               title="", 
+                               rotateOn=20, 
+                               dropNA=TRUE, 
+                               diagnose=FALSE,
+                               mapper=varMapper,
+                               facetOn=NULL, 
+                               showCentral=FALSE, 
+                               multiPageWrap=FALSE, 
+                               maxPerPage=9,
+                               balancePages=FALSE
+                               ) {
+    
+    # Function arguments
+    # df: dataframe or tibble containing raw data
+    # mets: character vector of variables for plotting counts
+    # title: character vector for plot title
+    # rotateOn: integer, x-axis labels will be rotated by 90 degrees if # categories >= rotateOn
+    # dropNA: boolean for whether to drop all NA prior to plotting (recommended for avoiding warnings)
+    # diagnose: boolean for whether to note in the log the number of NA observations dropped
+    # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
+    # facetOn: a facetting variable for the supplied df (NULL for no faceting)
+    # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    # multiPageWrap: boolean, will call multiPageFacet() rather than facetWrap() if TRUE
+    # maxPerPage: integer, maximum facets per plot, passed to multiPageFacet()
+    # balancePages: boolean, whether to balance the number of facets per page across all pages 
+    #               or allow the final page to have as few as 1 facets
+    
+    # Function usage
+    # 1.  By default, the function plots overall counts by metric for a given input
+    # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
+    # 3.  If showCentral=TRUE, then the overall mean will be plotted as a point on the main plot 
+    #     (only makes sense if facetOn has been selected)
+    # 4.  If multiPageWrap=TRUE, then the faceting data will be paginated 
+    #     so that there is easier readability for the plots on any given page
+    
+    
+    # Plot of counts by key metric
+    for (x in mets) {
+        # If a facetting variable is provided, need to include this in the group_by
+        useVars <- x
+        if (!is.null(facetOn)) { useVars <- c(facetOn, useVars) }
+        dat <- df %>%
+            group_by_at(vars(all_of(useVars))) %>%
+            summarize(n=n())
+        
+        if (dropNA) {
+            nOrig <- nrow(dat)
+            sumOrig <- sum(dat$n)
+            dat <- dat %>%
+                filter_all(all_vars(!is.na(.)))
+            if (diagnose & (nOrig > nrow(dat))) { 
+                cat("\nDropping", 
+                    nOrig-nrow(dat), 
+                    "rows with", 
+                    sumOrig-sum(dat$n), 
+                    "observations due to NA\n"
+                )
+            }
+        }
+        
+        # Create the main plot
+        p <- dat %>%
+            ggplot(aes_string(x=x, y="n")) + 
+            geom_col() + 
+            labs(title=title,
+                 subtitle=paste0("Counts By: ", mapper[x]), 
+                 x=paste0(x, " - ", mapper[x]),
+                 y="Count"
+            )
+        # If the rotateOn criteria is exceeded, rotate the x-axis by 90 degrees
+        if (nrow(dat) >= rotateOn) {
+            p <- p + theme(axis.text.x=element_text(angle=90))
+        }
+        # If showCentral=TRUE, add a dot plot for the overall average
+        if (showCentral) {
+            # Get the median number of observations by facet, or the total if facetOn=NULL
+            if (is.null(facetOn)) {
+                useN <- sum(dat$n)
+            } else {
+                useN <- dat %>%
+                    group_by_at(vars(all_of(facetOn))) %>%
+                    summarize(n=sum(n)) %>%
+                    pull(n) %>%
+                    median()
+            }
+            # Get the overall percentages by x
+            centralData <- helperCountsByMetric(tbl=dat, ctVar=x, sumOn="n") %>%
+                mutate(centralValue=nPct*useN)
+            # Apply the median
+            p <- p + geom_point(data=centralData, aes(y=centralValue), color="red", size=2)
+        }
+        # If facetting has been requested, facet by the desired variable
+        # multiPageFacet will print by default, so use print(p) only if multiPageWrap=FALSE
+        if (!is.null(facetOn)) {
+            if (multiPageWrap) {
+                multiPageFacet(p, 
+                               facetVar=facetOn, 
+                               maxPerPage=maxPerPage, 
+                               balancePages=balancePages, 
+                               sameYLimits="n"
+                )
+            } else {
+                p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+                print(p)
+            }
+        } else {
+            # Print the plot
+            print(p)
+        }
+    }
+}
+
+
+# plotNumCor() - plot two numeric variables against each other  
+plotNumCor <- function(met, 
+                       var1, 
+                       var2, 
+                       alpha=0.5,
+                       maxSize=6,
+                       title=NULL, 
+                       subT="", 
+                       dropNA=TRUE, 
+                       diagnose=FALSE,
+                       mapper=varMapper, 
+                       facetOn=NULL, 
+                       showCentral=FALSE
+                       ) {
+    
+    # Function arguments
+    # met: dataframe or tibble containing raw data
+    # var1: character vector of variable to be used for the x-axis
+    # var2: character vector of variable to be used for the y-axis
+    # alpha: the alpha for the plotted points
+    # maxSize: the maximum size for the plotted points (ggplot default is 6)
+    # title: character vector for plot title
+    # subT: character vector for plot subtitle
+    # dropNA: boolean for whether to drop all NA prior to plotting (recommended for avoiding warnings)
+    # diagnose: boolean for whether to note in the log the number of NA observations dropped
+    # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
+    # facetOn: a facetting variable for the supplied met (NULL for no faceting)
+    # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    
+    # Function usage
+    # 1.  By default, the function plots overall counts by the provided x/y metrics, 
+    #     with each point sized based on the number of observations, and with an lm smooth overlaid
+    # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
+    # 3.  If showCentral=TRUE, then the lm smooth that best first to the overall data will be plotted 
+    #     (only makes sense if facetOn has been selected)
+    
+    # Create the title if not passed
+    if (is.null(title)) { 
+        title <- paste0("Hourly Observations of ", mapper[var1], " and ", mapper[var2]) 
+    }
+    
+    # If a facetting variable is provided, need to include this in the group_by
+    useVars <- c(var1, var2)
+    if (!is.null(facetOn)) { useVars <- c(facetOn, useVars) }
+    
+    # Pull the counts by useVars
+    dat <- met %>%
+        group_by_at(vars(all_of(useVars))) %>%
+        summarize(n=n()) 
+    
+    # If NA requested to be excluded, remove anything with NA
+    if (dropNA) {
+        nOrig <- nrow(dat)
+        sumOrig <- sum(dat$n)
+        dat <- dat %>%
+            filter_all(all_vars(!is.na(.)))
+        if (diagnose) { 
+            cat("\nDropping", 
+                nOrig-nrow(dat), 
+                "rows with", 
+                sumOrig-sum(dat$n), 
+                "observations due to NA\n"
+            )
+        }
+    }
+    
+    p <- dat %>%
+        ggplot(aes_string(x=var1, y=var2)) + 
+        geom_point(alpha=alpha, aes_string(size="n")) + 
+        geom_smooth(method="lm", aes_string(weight="n")) + 
+        labs(x=paste0(mapper[var1], " - ", var1), 
+             y=paste0(mapper[var2], " - ", var2), 
+             title=title, 
+             subtitle=subT
+        ) + 
+        scale_size_area(max_size=maxSize)
+    
+    # If showCentral=TRUE, add a dashed line for the overall data
+    if (showCentral) {
+        p <- p + helperNumCor(dat, xVar=var1, yVar=var2, sumOn="n")
+    }
+    
+    # If facetting has been requested, facet by the desired variable
+    if (!is.null(facetOn)) {
+        p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+    }
+    
+    print(p)
+}
+
+
+# plotFactorNumeric() - boxplot a numeric variable against a factor variable  
+plotFactorNumeric <- function(met, 
+                              fctVar, 
+                              numVar, 
+                              title=NULL, 
+                              subT="", 
+                              diagnose=TRUE,
+                              showXLabel=TRUE,
+                              mapper=varMapper,
+                              facetOn=NULL, 
+                              showCentral=FALSE, 
+                              multiPageWrap = FALSE, 
+                              maxPerPage = 9, 
+                              balancePages = FALSE, 
+                              sameYLimits=numVar, 
+                              useYLow=numVar
+                              ) {
+    
+    # Function arguments
+    # met: dataframe or tibble containing raw data
+    # fctVar: character vector of variable to be used for the x-axis (factor in the boxplot)
+    # numVar: character vector of variable to be used for the y-axis (numeric in the boxplot)
+    # title: character vector for plot title
+    # subT: character vector for plot subtitle
+    # diagnose: boolean for whether to note in the log the number of NA observations dropped
+    # showXLabel: boolean for whether to include the x-label (e.g., set to FALSE if using 'month')
+    # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
+    # facetOn: a facetting variable for the supplied met (NULL for no faceting)
+    # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    # multiPageWrap: boolean, will call multiPageFacet() rather than facetWrap() if TRUE
+    # maxPerPage: integer, maximum facets per plot, passed to multiPageFacet()
+    # balancePages: boolean, whether to balance the number of facets per page across all pages 
+    #               or allow the final page to have as few as 1 facets
+    # sameYLimits: variable for making all y-axes maxima the same across multiPageFacet; 
+    #              numVar is the numeric variable passed; 
+    #              will be set to NULL if ylimits has been passed (is not null)
+    # useYLow: variable for making all y-axes minima the same across multiPageFacet; 
+    #          numVar is the numeric variable passed; 
+    #          will be set to NULL if ylimits has been passed (is not null)
+    
+    # Function usage
+    # 1.  By default, the function creates the boxplot of numVar by fctVar
+    # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
+    # 3.  If showCentral=TRUE, then the overall median of numVar by fctVar will be plotted as a red dot
+    # 4.  If multiPageWrap=TRUE, then the faceting data will be paginated 
+    #     so that there is easier readability for the plots on any given page
+    
+    
+    # Create the title if not passed
+    if (is.null(title)) { 
+        title <- paste0("Hourly Observations of ", mapper[numVar], " by ", mapper[fctVar])
+    }
+    
+    # Remove the NA variables
+    nOrig <- nrow(met)
+    dat <- met %>%
+        filter(!is.na(get(fctVar)), !is.na(get(numVar)))
+    if (diagnose) { cat("\nRemoving", nOrig-nrow(dat), "records due to NA\n") }
+    
+    # Create the base plot
+    p <- dat %>%
+        ggplot(aes_string(x=fctVar, y=numVar)) + 
+        geom_boxplot(fill="lightblue") + 
+        labs(title=title, 
+             subtitle=subT, 
+             x=ifelse(showXLabel, paste0(mapper[fctVar], " - ", fctVar), ""), 
+             y=paste0(mapper[numVar], " - ", numVar)
+        )
+    
+    # If showCentral=TRUE, add a dot plot for the overall average
+    if (showCentral) {
+        centData <- helperFactorNumeric(dat, .f=median, byVar=fctVar, numVar=numVar)
+        p <- p + geom_point(data=centData, aes(y=helpFN), size=2, color="red")
+    }
+    
+    # If facetting has been requested, facet by the desired variable
+    # multiPageFacet will print by default, so use print(p) only if multiPageWrap=FALSE
+    if (!is.null(facetOn)) {
+        if (multiPageWrap) {
+            multiPageFacet(p, 
+                           facetVar=facetOn, 
+                           maxPerPage=maxPerPage, 
+                           balancePages=balancePages, 
+                           sameYLimits=sameYLimits, 
+                           useYLow=useYLow
+            )
+        } else {
+            p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+            print(p)
+        }
+    } else {
+        # Print the plot
+        print(p)
+    }
+    
+}
+
+
+# corMETAR() - correlations between METAR variables
+corMETAR <- function(met, numVars, subT="") {
+    
+    # Keep only complete cases and report on data kept
+    dfUse <- met %>%
+        select_at(vars(all_of(numVars))) %>%
+        filter(complete.cases(.))
+    
+    nU <- nrow(dfUse)
+    nM <- nrow(met)
+    myPct <- round(100*nU/nM, 1)
+    cat("\n *** Correlations use ", nU, " complete cases (", myPct, "% of ", nM, " total) ***\n", sep="")
+    
+    # Create the correlation matrix
+    mtxCorr <- dfUse %>%
+        cor()
+    
+    # Print the correlations
+    mtxCorr %>%
+        round(2) %>%
+        print()
+    
+    # Display a heat map
+    corrplot::corrplot(mtxCorr, 
+                       method="color", 
+                       title=paste0("Hourly Weather Correlations\n", subT), 
+                       mar=c(0, 0, 2, 0)
+    )
+}
+
+
+# lmMETAR() - linear regression modeling for METAR variables
+lmMETAR <- function(met, 
+                    y, 
+                    x, 
+                    yName, 
+                    subT=""
+                    ) {
+    
+    # Convert to formula
+    myChar <- paste0(y, " ~ ", x)
+    cat("\n *** Regression call is:", myChar, "***\n")
+    
+    # Run regression
+    regr <- lm(formula(myChar), data=met)
+    
+    # Summarize regression
+    print(summary(regr))
+    
+    # Predict the new values
+    pred <- predict(regr, newdata=met)
+    
+    # Plot the predictions
+    p <- met %>%
+        select_at(vars(all_of(y))) %>%
+        mutate(pred=pred) %>%
+        filter_all(all_vars(!is.na(.))) %>%
+        group_by_at(vars(all_of(c(y, "pred")))) %>%
+        summarize(n=n()) %>%
+        ggplot(aes_string(x=y, y="pred")) + 
+        geom_point(aes(size=n), alpha=0.25) + 
+        geom_smooth(aes(weight=n), method="lm") + 
+        labs(title=paste0("Predicted vs. Actual ", yName, " - ", x, " as Predictor"), 
+             subtitle=subT, 
+             x=paste0("Actual ", yName), 
+             y=paste0("Predicted ", yName)
+        )
+    print(p)
+    
+}
+
+
+# basicWindPlots() - plot wind speed and direction
+basicWindPlots <- function(met, 
+                           dirVar="WindDir", 
+                           spdVar="WindSpeed",
+                           desc="", 
+                           gran="", 
+                           mapper=varMapper
+                           ) {
+    
+    # Plot for the wind direction
+    wDir <- met %>%
+        ggplot(aes_string(x=dirVar)) + 
+        geom_bar() + 
+        labs(title=paste0(desc, " Wind Direction"), subtitle=gran, 
+             y="# Hourly Observations", x=mapper[dirVar]
+        ) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(wDir)
+    
+    # Plot for the minimum, average, and maximum wind speed by wind direction
+    # Wind direction 000 is reserved for 0 KT wind, while VRB is reserved for 3-6 KT variable winds
+    wSpeedByDir <- met %>%
+        filter(!is.na(get(dirVar))) %>%
+        group_by_at(vars(all_of(dirVar))) %>%
+        summarize(minWind=min(get(spdVar)), meanWind=mean(get(spdVar)), maxWind=max(get(spdVar))) %>%
+        ggplot(aes_string(x=dirVar)) +
+        geom_point(aes(y=meanWind), color="red", size=2) +
+        geom_errorbar(aes(ymin=minWind, ymax=maxWind)) +
+        labs(title=paste0(desc, " Wind Speed (Max, Mean, Min) By Wind Direction"), 
+             subtitle=gran,
+             y=mapper[spdVar], 
+             x=mapper[dirVar]
+        ) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(wSpeedByDir)
+    
+    # Plot for the wind speed
+    pctZero <- sum(pull(met, spdVar)==0, na.rm=TRUE) / nrow(met)
+    wSpeed <- met %>%
+        filter_at(vars(all_of(spdVar)), all_vars(!is.na(.))) %>%
+        ggplot(aes_string(x=spdVar)) +
+        geom_bar(aes(y=..count../sum(..count..))) +
+        labs(title=paste0(round(100*pctZero), "% of wind speeds in ", desc, " measure 0 Knots"),
+             subtitle=gran,
+             y="% Hourly Observations", 
+             x=mapper[spdVar]
+        )
+    print(wSpeed)
+    
+    # Polar plot for wind speed and wind direction
+    wData <- met %>%
+        filter_at(vars(all_of(dirVar)), all_vars(!is.na(.) & !(. %in% c("000", "VRB")))) %>%
+        filter_at(vars(all_of(spdVar)), all_vars(!is.na(.))) %>%
+        mutate_at(vars(all_of(dirVar)), as.numeric) %>%
+        group_by_at(vars(all_of(c(dirVar, spdVar)))) %>%
+        summarize(n=n())
+    
+    wPolarDirSpeed <- wData %>%
+        ggplot(aes_string(x=spdVar, y=dirVar)) +
+        geom_point(alpha=0.1, aes(size=n)) +
+        coord_polar(theta="y") +
+        labs(title=paste0(desc, " Direction vs. Wind Speed"), 
+             subtitle=gran, 
+             x=mapper[spdVar], 
+             y=mapper[dirVar]
+        ) +
+        scale_y_continuous(limits=c(0, 360), breaks=c(0, 90, 180, 270, 360)) +
+        scale_x_continuous(limits=c(0, 40), breaks=c(0, 5, 10, 15, 20, 25, 30, 35, 40)) +
+        geom_point(aes(x=0, y=0), color="red", size=2)
+    print(wPolarDirSpeed)
+    
+}
+
+
+# combinePrecipFunctions() - calls multiple functions to extract and align precipitations states 
+# and precipitation intervals for a specific locale and precipitation type (called by getPrecipTimes)  
+combinePrecipFunctions <- function(df, 
+                                   pType="(?<!FZ)RA", 
+                                   errorLengthInconsistency=TRUE
+                                   ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble containing processed METAR data, including dtime and origMETAR
+    # pType: regex code for the precipitation type of interest
+    # errorLengthInconsistency: boolean, whether to error out if beginTimes, endTimes, or precipInts 
+    #                           have different lengths or imply intervals of non-positive durection
+    
+    # Extract the current precipitation state, lagged precipitation state, and string of begin/end times
+    precip1 <- fnPrecip1(df, pType=pType)
+    
+    # Find and delete continuity (next before previous) and consistency (belongs to wrong METAR) errors
+    precip3 <- fnPrecip2(precip1) %>%
+        fnPrecip3()
+    
+    # Find issues with precipitation begin and end times compared to each other and precipitation states
+    precip4 <- fnPrecip4(precip3, precip1)
+    
+    # Correct for the issues with begin and end times and create a vector of begin times and end times
+    precip5 <- fnPrecip5(precip3, issueTimes=precip4, lagCurFrame=precip1)
+    
+    # Check intervals for consistency with precipitation states
+    precip6 <- fnPrecip6(precip5, precip1)
+    
+    # Extract beginTimes, endTimes, and precipInts
+    beginTimes <- precip6$beginTimes
+    endTimes <- precip6$endTimes
+    precipInts <- precip6$precipInts
+    
+    # Check that the intervals are all positive and with same number of begin times and end times
+    lenBT <- length(beginTimes)
+    lenET <- length(endTimes)
+    lenPI <- length(precipInts)
+    piNotPositive <- (lubridate::time_length(precipInts) <= 0)
+    
+    # Check for same lengths    
+    if (max(lenBT, lenET, lenPI) != min(lenBT, lenET, lenPI)) {
+        cat("Inconsistent lengths - beginTimes:", lenBT, ", endTimes:", lenET, "precipInts:", lenPI, "\n")
+        if (errorLengthInconsistency) { 
+            stop("Exiting due to inconsistent lengths") 
+        } else {
+            cat("\nContinuing to process, output frame will append NA where needed\n")
+            maxLen <- max(lenBT, lenET, lenPI)
+            beginTimes <- c(beginTimes, rep(NA, maxLen-lenBT))
+            endTimes <- c(endTimes, rep(NA, maxLen-lenET))
+            precipInts <- c(precipInts, rep(NA, maxLen-lenPI))
+        }
+    }
+    
+    # Check for positive intervals
+    if (sum(piNotPositive) > 0) {
+        cat("\nPrecipitation intervals are non-positive:", 
+            sum(piNotPositive), 
+            "at positions",
+            which(piNotPositive), 
+            "\n"
+        )
+        if (errorLengthInconsistency) { stop("Exiting due to inconsistency in interval lengths") } 
+    }
+    
+    
+    # Return the relevant information
+    list(pStateFrame=precip1, 
+         pIssueTimes=precip4,
+         mismatches=precip6$mismatches,
+         mismatchTimes=precip6$mismatchTimes,
+         beginEndInterval=tibble::tibble(beginTimes=beginTimes, endTime=endTimes, precipInts=precipInts)
+    )
+    
+}
+
+
+# getPrecipTimes() - function to run for multiple locales for a given precipitation type 
+#                    (called by wrapPrecipTimes)  
+getPrecipTimes <- function(files, pType="(?<!FZ)RA", pExt="_RA") {
+    
+    precipList <- vector("list", length(files))
+    names(precipList) <- paste0(files, pExt)
+    
+    for (city in files) {
+        
+        cat("\n\n*** Processing for:", cityNameMapper[city], "\n")
+        precipList[[paste0(city, pExt)]] <- combinePrecipFunctions(get(city), 
+                                                                   pType=pType, 
+                                                                   errorLengthInconsistency=TRUE
+        )
+        
+    }
+    
+    # Return precipList
+    precipList
+    
+}
+
+
+# makePrecipTimeGraph() - creates plots across locales for a specific precipitation type 
+#                         (called by wrapPrecipTimes)  
+makePrecipTimeGraph <- function(precipList, pTypeName="rain") {
+    
+    precipLength <- precipByLocale(precipList)
+    plotPrecipitation(precipLength, pTypeName=pTypeName)
+    
+    # Return precipLength
+    precipLength
+}
+
+
+
+# wrapPrecipTimes() - wrapper function to run for multiple locales for a given precipitation type 
+#                     and direct output to a pdf/log file  
+wrapPrecipTimes <- function(files, 
+                            pType, 
+                            pExt, 
+                            pTypeName,
+                            writeLogFile=NULL,
+                            writeLogPDF=NULL,
+                            writeLogPath=NULL,
+                            appendWriteFile=FALSE,
+                            ...
+                            ) {
+    
+    # Helper function that only runs the getPrecipTimes() routine
+    corePrecipTimes <- function() { getPrecipTimes(files, pType=pType, pExt=pExt) }
+    
+    
+    # Run getPrecipTimes, using capture.output to redirect to a log file if specified
+    if (!is.null(writeLogFile)) {
+        
+        # Prepend the provided log path if it has not been made available
+        if (!is.null(writeLogPath)) {
+            writeLogFile <- paste0(writeLogPath, writeLogFile)
+        }
+        
+        # Provide the location of the EDA log file
+        cat("\nPrecipitation times log file is available at:", writeLogFile, "\n")
+        
+        # Run EDA such that the output goes to the log file
+        capture.output(precipList <- corePrecipTimes(), 
+                       file=writeLogFile, 
+                       append=appendWriteFile
+        )
+        
+    } else {
+        # Run getPrecipTimes such that output stays in stdout
+        precipList <- corePrecipTimes()
+    }
+    
+    # Write a summary of the number of mismatches
+    cat("\nSummary of mismatch lengths after processing - see log file if needed\n")
+    sapply(precipList, FUN=function(x) { length(x[["mismatchTimes"]]) }) %>% 
+        t() %>% 
+        t() %>% 
+        print()
+    
+    # Run makePrecipTimeGraph(), sending PDF to file if requested
+    # If writeLogPDF is not NULL, direct the graphs to a suitable PDF
+    if (!is.null(writeLogPDF)) {
+        
+        # Prepend the provided log path if it has not been made available
+        if (!is.null(writeLogPath)) {
+            writeLogPDF <- paste0(writeLogPath, writeLogPDF)
+        }
+        
+        # Provide the location of the EDA pdf file
+        cat("\nPrecipitation times PDF file is available at:", writeLogPDF, "\n")
+        
+        # Redirect the writing to writeLogPDF
+        pdf(writeLogPDF)
+    }
+    
+    # Run the plotting routine
+    precipLength <- makePrecipTimeGraph(precipList, pTypeName=pTypeName)
+    
+    # If writeLogPDF is not NULL, redirect to stdout
+    if (!is.null(writeLogPDF)) {
+        dev.off()
+    }
+    
+    # Return precipList and precipLength
+    list(precipList=precipList, precipLength=precipLength)
+    
+}
+
+
+# fnPrecip1() - extracts precipitation state from METAR and precipitation ranges from remarks
+fnPrecip1 <- function(df, pType, showRegex=TRUE) {
+    
+    # The remarks pattern is created based on the precipitation type
+    keyPattern <- paste0("(", pType, "[B|E]\\d+[0-9BE]*)")
+    if (showRegex) { cat("\nRegex search code is:", keyPattern, "\n") }
+    
+    # Extract the current precipitation state, lagged precipitation state, and range data from METAR
+    df <- df %>% 
+        select(origMETAR, dtime) %>% 
+        mutate(strPrecip=str_extract(origMETAR, pattern=keyPattern), 
+               curPrecip=str_detect(origMETAR, pattern=paste0("\\d{6}Z.*", pType, ".*RMK")),
+               lagPrecip=lag(curPrecip, 1)
+        )
+    
+    # Confirm that df is unique by dtime (algorithm depends on this)
+    dups <- df %>%
+        select(dtime) %>%
+        duplicated() %>%
+        any()
+    if (dups) {
+        stop("\nThere are duplicate values of dtime - investigate and fix\n")
+    }
+    
+    # Returnt the file
+    df
+    
+}
+
+
+# fnPrecip2() - converts B/E times in remarks to date-times
+fnPrecip2 <- function(df) {
+    
+    # Create the begin and end times by splitting precipString, then format as tibble and reattach dtime
+    bEData <- df %>%
+        pull(strPrecip) %>%
+        str_extract_all(pattern="[BE]\\d+", simplify=TRUE) %>%
+        as.data.frame(stringsAsFactors=FALSE) %>%
+        tibble::as_tibble() %>%
+        bind_cols(select(df, dtime))
+    
+    # Pivot longer, create a dummy record where is.na(V1), and split in to time and state change
+    bEData <- bEData %>%
+        pivot_longer(-dtime) %>%
+        mutate(value=ifelse(name=="V1" & is.na(value), paste0("N", lubridate::minute(dtime)), value)) %>%
+        filter(value != "") %>%
+        mutate(chgType=str_sub(value, 1, 1), 
+               chgNum=str_sub(value, 2, -1), 
+               chgTime=helperBEDateTime(dt=dtime, mins=chgNum)
+        )
+    
+    # Return the data
+    bEData
+    
+}
+
+
+# fnPrecip3() - extract issues with continuity (time in remarks belongs to a different METAR 
+#               or comes at or after the next time listed)
+fnPrecip3 <- function(df) {
+    
+    # Issues that can exist with the data
+    # 1. Greater than or equal to 3600 seconds before the current dtime, or after the current time
+    # 2. At or prior to the previous time
+    # 3. First record starts with an end time (there would never be a begin time associated)
+    issueCheck <- df %>%
+        mutate(deltaMETAR=dtime-chgTime, 
+               deltaPrev=ifelse(row_number()==1, ifelse(chgType=="E", -1, 3600), chgTime-lag(chgTime, 1)), 
+               issueCons=(deltaMETAR < 0 | deltaMETAR > 3599 | deltaPrev <= 0)
+        )
+    
+    cat("\nContinuity or consistency error - record(s) will be deleted\n")
+    issueCheck %>%
+        filter(issueCons) %>%
+        print()
+    
+    issueCheck %>%
+        select(-deltaMETAR, -deltaPrev) %>%
+        filter(!issueCons)
+    
+}
+
+
+# fnPrecip4() - finds consistency issues such as precipitation begin time 
+#               when there is already precipitation, end time when there is no precipitation, 
+#               and lack of begin/end time when state changes
+fnPrecip4 <- function(dfTimes, dfOrig) {
+    
+    # Pivot dfTimes back to a single record, discarding any of the consistency issues
+    # OK if not all dtimes included; will get from dfOrig
+    dfCheck <- dfTimes %>%
+        filter(!issueCons) %>%
+        mutate(newValue=case_when(chgType=="N" ~ 0, chgType=="B" ~ 1, chgType=="E" ~ -1)) %>%
+        pivot_wider(dtime, names_from="name", values_from="newValue") %>%
+        right_join(select(dfOrig, dtime, curPrecip, lagPrecip), by="dtime") %>%
+        mutate_if(is.numeric, ~ifelse(is.na(.), 0, .))
+    
+    # Create the cumsum of state change
+    cs <- dfCheck %>%
+        select(-dtime, -curPrecip) %>%
+        mutate(lagPrecip=as.integer(lagPrecip)) %>%
+        select(lagPrecip, everything()) %>%
+        apply(1, FUN=cumsum) %>%
+        t()
+    
+    # Create the list of issues
+    # If cumsum is every anything other than 1 or 0 there is a problem
+    # If the last value of cumsum does not equal curPrecip there is a problem
+    issue01 <- which(apply(cs, 1, FUN=max) > 1 | apply(cs, 1, FUN=min) < 0)
+    issuelc <- which(dfCheck$curPrecip != cs[, ncol(cs)])
+    issueAll <- sort(unique(c(issue01, issuelc)))
+    
+    cat("\n\nIssues with begin when precipitation or end when no precipitation:", length(issue01))
+    cat("\nIssues where state change does not add to the total:", length(issuelc))
+    cat("\nTotal issues (may be less than sum due to same datetime in both):", length(issueAll), "\n\n")
+    # print(dfCheck[issueAll, ] %>% select(dtime, lagPrecip, everything()))
+    
+    dfCheck[sort(unique(c(issue01, issuelc))), "dtime"]
+    
+}
+
+
+# fnPrecip5() - works through any inconsistencies and automates a solution to regain consistency 
+#               (assumes that the states listed in the METAR are the source of truth)
+fnPrecip5 <- function(df, issueTimes, lagCurFrame) {
+    
+    # Create a dataframe for issueTimes
+    issues <- issueTimes %>%
+        mutate(issue=TRUE)
+    
+    # Split df in to issues and non-issue
+    df <- df %>%
+        left_join(issues, by="dtime") %>%
+        mutate(issue=ifelse(is.na(issue), FALSE, issue), 
+               lastRecord=(row_number()==n())
+        ) %>%
+        left_join(select(lagCurFrame, dtime, lagPrecip, curPrecip), by="dtime")
+    
+    dfIssues <- df %>%
+        filter(issue)
+    dfNoIssues <- df %>%
+        filter(!issue)
+    
+    # Note the records to be worked through
+    cat("\nRecords to be addressed include:\n")
+    dfIssues %>%
+        select(-issueCons, -issue) %>%
+        print()
+    
+    # Work through a record by starting with lagPrecip
+    # If first record inconsistent with lagPrecip, flag for deletion and keep state; update state otherwise
+    # if next record inconsistent with previous state, flag for deletion and keep state; update otherwise
+    # If final record inconsistent with curPrecip, add a record using dtime as the time
+    
+    # Get the unique times with issues
+    dtimeVec <- dfIssues %>% pull(dtime) %>% unique()
+    
+    # Create empty vectors for deletes and adds
+    delVec <- as.POSIXct(character(0))
+    addBegin <- as.POSIXct(character(0))
+    addEnd <- as.POSIXct(character(0))
+    
+    # Populate the delete and add vectors
+    for (dt in dtimeVec) {
+        
+        # Pull the records for this time
+        dtRecords <- dfIssues %>% filter(dtime==lubridate::as_datetime(dt))
+        
+        # Initialize the previous state to lagPrecip and the error vector to blank
+        preState <-dtRecords$lagPrecip[1]
+        
+        # Loop through and flag state change errors
+        for (ctr in 1:nrow(dtRecords)) {
+            
+            # Grow the deletions vector
+            if ((!preState & dtRecords$chgType[ctr]=="E") | (preState & dtRecords$chgType[ctr]=="B")) {
+                delVec <- c(delVec, dtRecords$chgTime[ctr])
+                # do not modify the state, it has not changed due to the deletion
+            } else {
+                # do not grow the deletion vector, the state change is OK here if chgType is not "N"
+                if (dtRecords$chgType[ctr] != "N") { preState <- !preState }
+            }
+            
+            # Create a single addition if needed
+            if (ctr==nrow(dtRecords) & preState != dtRecords$curPrecip[ctr]) {
+                if (dtRecords$curPrecip[ctr]) { addBegin <- c(addBegin, dt) }
+                if (!dtRecords$curPrecip[ctr]) { addEnd <- c(addEnd, dt) }
+            }
+        }
+        
+    }
+    
+    # If there is precipitation at the very end, addEnd for dTime+1
+    fixEnd <- dfNoIssues %>%
+        filter(lastRecord & curPrecip) %>%
+        mutate(timeUse=dtime+1) %>%
+        pull(timeUse)
+    if (length(fixEnd) > 0) {
+        addEnd <- c(addEnd, fixEnd)
+        cat("\nAdding final end time to cap interval at end of file:", as.character(fixEnd), "\n")
+    }
+    
+    # Print the key vectors
+    cat("\nStart/end times deleted:\n")
+    print(lubridate::as_datetime(delVec))
+    cat("\nBegin times added\n")
+    print(lubridate::as_datetime(addBegin))
+    cat("\nEnd times added:\n")
+    print(lubridate::as_datetime(addEnd))
+    
+    # Create the full list of issue start times
+    beginIssues <- dfIssues %>%
+        filter(chgType=="B") %>%
+        pull(chgTime)
+    endIssues <- dfIssues %>%
+        filter(chgType=="E") %>%
+        pull(chgTime)
+    
+    beginIssues <- c(beginIssues[!beginIssues %in% delVec], addBegin)
+    endIssues <- c(endIssues[!endIssues %in% delVec], addEnd)
+    
+    # cat("\nNew begin times list from issues:\n")
+    # print(beginIssues)
+    # cat("\nNew end times list from issues:\n")
+    # print(endIssues)
+    
+    # Create the full list of start and end times
+    beginOK <- dfNoIssues %>%
+        filter(chgType=="B") %>%
+        pull(chgTime)
+    endOK <- dfNoIssues %>%
+        filter(chgType=="E") %>%
+        pull(chgTime)
+    
+    # Return a list of beginTimes and endTimes
+    list(beginTimes=sort(c(beginOK, beginIssues)), 
+         endTimes=sort(c(endOK, endIssues))
+    )
+    
+}
+
+
+# fnPrecip6() - confirms consistency of the final intervals and output a list 
+#               containing the begin times, end times, intervals, and mismatches
+fnPrecip6 <- function(lst, df) {
+    
+    # Extract the beginning and interval times
+    begins <- lst[["beginTimes"]]
+    ends <- lst[["endTimes"]]
+    durs <- ends - begins
+    
+    # Create intervals from the raw list file
+    precipInts <- interval(begins, ends - 1) # make the interval stop the minute before the end time
+    
+    # Extract the METAR and date-time information and check for overlaps
+    dtime <- df %>% pull(dtime)
+    metar <- df %>% pull(origMETAR)
+    precipMETAR <- df %>% pull(curPrecip)
+    intMETAR <- sapply(dtime, FUN=function(x) {x %within% precipInts %>% any()})
+    
+    # Check for the consistency of the observations and print the mismatches
+    print(table(precipMETAR, intMETAR))
+    
+    mism <- which(precipMETAR != intMETAR)
+    if (length(mism) == 0) {
+        cat("\nFull matches between METAR observations and intervals\n")
+    } else {
+        for (x in mism) {
+            cat("\nMismatch at time", strftime(dtime[x], format="%Y-%m-%d %H:%M", tz="UTC"), "UTC\n")
+            print(metar[max(1, x-2):min(length(metar), x+2)])
+        }
+    }
+    
+    list(beginTimes=lst$beginTimes, endTimes=lst$endTimes, 
+         precipInts=precipInts, mismatches=mism, mismatchTimes=dtime[mism]
+    )
+    
+}
+
+
+# precipByLocale() - extracts precipitation hours and events from processed intervals data
+# Uses a single minTime and a single maxTime which means each batch of years must be processed separately
+precipByLocale <- function(lst, 
+                           listItem="beginEndInterval", 
+                           subName=-4, 
+                           intervalVar="precipInts", 
+                           minTime=NULL,
+                           maxTime=NULL, 
+                           mapper=cityNameMapper
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst - the list containing the output for the specified precipitation type
+    # listItem - the name of the item to extract from each element of the list
+    # subName - the second argument for str_sub() for converting list item name to original file name
+    # intervalVar - name of the interval variable in listItem
+    # minTime - ignore any interval with a start time before this date (guess from data if NULL)
+    # maxTime - ignore any interval with a start time after this date (guess from data if NULL)
+    # mapper - named vector for mapping source to descriptive locale
+    
+    # Get the names of the objects in the list
+    beNames <- names(lst) %>% str_sub(1, subName)
+    
+    # Get the interval data by locale and apply the original file names
+    beData <- sapply(lst, FUN="[", listItem)
+    names(beData) <- beNames
+    
+    # If minTime is NULL or maxTime is NULL, infer a best starting month from the data
+    if (is.null(minTime) | is.null(maxTime)) {
+        
+        # Grab total occurrences of dtime in "pStateFrame"
+        # Set minTime and maxTime to keep only year-month combos that average 27+ full days of data
+        metData <- sapply(lst, FUN="[", "pStateFrame") %>%
+            bind_rows() %>%
+            count(ym=paste0(lubridate::year(dtime), "-", zeroPad(lubridate::month(dtime)))) %>%
+            mutate(pct=n/max(n), okUse=(pct > 27/31)) %>%
+            group_by(okUse) %>%
+            mutate(ymMin=first(ym), ymMax=last(ym)) %>%
+            ungroup()
+        
+        # Grab the overall minimum and maximum times
+        ovrMin <- metData %>%
+            filter(okUse) %>%
+            pull(ymMin) %>%
+            first()
+        ovrMax <- metData %>%
+            filter(okUse) %>%
+            pull(ymMax) %>%
+            first()
+        
+        # Flag any issues
+        contIssues <- metData %>%
+            mutate(metProb1=okUse & (ym < ovrMin | ym > ovrMax), 
+                   metProb2=!okUse & ym >= ovrMin & ym <= ovrMax
+            )
+        if (contIssues %>% summarize(sum(metProb1 | metProb2)) %>% pull() > 0) {
+            cat("\nMinimum and maximum time alignment issue\n")
+            print(contIssues)
+        }
+        
+        # Set the minimum time based on day 1 of ovrMin and maximum time based on last day of ovrMax
+        if (is.null(minTime)) { minTime <- lubridate::ymd(paste0(ovrMin, "-01")) }
+        if (is.null(maxTime)) { maxTime <- lubridate::ymd(paste0(ovrMax, "-01")) + months(1) - days(1) }
+        cat("\nWill use minTime:", as.character(minTime), "and maxTime:", as.character(maxTime), "\n")
+        
+    }
+    
+    # Get the total precipitation length and total precipitation events by month
+    # Exclude any event that begins before beginDate or after afterDate
+    # Count the precipitation as being in the month when it begins
+    
+    # Helper function for extraction of total precipitation by month
+    getMonthly <- function(x, y=intervalVar, minT=minTime, maxT=maxTime) {
+        x %>%
+            mutate(intStart=lubridate::int_start(get(intervalVar)), 
+                   intHours=lubridate::time_length(get(intervalVar))/3600, 
+                   month=factor(month.abb[lubridate::month(intStart)], levels=month.abb)
+            ) %>%
+            filter(lubridate::as_date(intStart) >= minT, lubridate::as_date(intStart) <= maxT) %>%
+            group_by(month) %>%
+            summarize(hours=sum(intHours), events=n()) %>%
+            right_join(tibble::tibble(month=factor(month.abb, levels=month.abb)), by="month") %>%
+            mutate(hours=ifelse(is.na(hours), 0, hours), 
+                   events=ifelse(is.na(events), 0 , events)
+            ) %>%
+            select(month, hours, events) %>%
+            pivot_longer(-month, names_to="variable", values_to="value")
+    }
+    
+    # Extract total hours and events by month
+    monPrecip <- purrr::map_dfr(beData, .f=getMonthly, .id="source")
+    
+    # Pivot wider so that file is unique by source-month with hours and events are columns
+    # Add locale name from mapper
+    monPrecip %>%
+        pivot_wider(c(source, month), names_from="variable", values_from="value") %>%
+        mutate(locale=mapper[source]) %>%
+        select(source, locale, everything())
+    
+}
+
+
+# plotPrecipitation() - plots precipitation hours and events, facetted by month or locale
+plotPrecipitation <- function(tbl, 
+                              pTypeName=""
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # tbl: the tibble containing the processed data
+    # pTypeName: the type of precipitation as a character
+    
+    # Plot 1: Total precipitation length by locale
+    p1 <- tbl %>%
+        group_by(locale) %>%
+        summarize(hours=sum(hours)) %>%
+        ggplot(aes(x=fct_reorder(locale, hours), y=hours)) +
+        geom_col(fill="lightblue") +
+        geom_text(aes(label=round(hours), y=hours/2)) + 
+        coord_flip() + 
+        labs(x="", 
+             y="Hours", 
+             title=paste0("Total hours of ", stringr::str_to_lower(pTypeName), " by locale")
+        )
+    print(p1)
+    
+    
+    # Plot 2: Total precipitation events by locale
+    p2 <- tbl %>%
+        group_by(locale) %>%
+        summarize(events=sum(events)) %>%
+        ggplot(aes(x=fct_reorder(locale, events), y=events)) +
+        geom_col(fill="lightblue") +
+        geom_text(aes(label=round(events), y=events/2)) + 
+        coord_flip() + 
+        labs(x="", 
+             y="# Unique Events", 
+             title=paste0("Total unique events of ", stringr::str_to_lower(pTypeName), " by locale"), 
+             caption=paste0("An event is defined by a begin and end and may be as short as a minute\n", 
+                            "or with as little as a minute gap to the next event"
+                            )
+        )
+    print(p2)
+    
+    
+    # Plot 3: Precipitation length by month, facetted by locale
+    mm <- tbl %>%
+        group_by(month) %>%
+        summarize(hours=mean(hours))
+    p3 <- tbl %>%
+        ggplot(aes(x=month, y=hours)) +
+        geom_col(fill="lightblue") +
+        labs(y="Hours", 
+             x="", 
+             title=paste0("Total hours of ", stringr::str_to_lower(pTypeName), " by month"), 
+             subtitle="Red dots are the monthly average across locales in this plot"
+        ) + 
+        geom_point(data=mm, color="red") +
+        facet_wrap(~ locale) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p3)
+    
+    # Plot 4: Precipitation events by month, facetted by locale
+    mm <- tbl %>%
+        group_by(month) %>%
+        summarize(events=mean(events))
+    p4 <- tbl %>%
+        ggplot(aes(x=month, y=events)) +
+        geom_col(fill="lightblue") +
+        labs(y="# Unique Events", 
+             x="", 
+             title=paste0("Total unique events of ", stringr::str_to_lower(pTypeName), " by month"), 
+             subtitle="Red dots are the monthly average across locales in this plot", 
+             caption=paste0("An event is defined by a begin and end and may be as short as a minute\n", 
+                            "or with as little as a minute gap to the next event"
+                            )
+        ) + 
+        geom_point(data=mm, color="red") +
+        facet_wrap(~ locale) + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p4)
+    
+}
+
+
+# getDailyHighLow() - extract the daily high and low temperature (convert to rounded Fahrenheit)
+getDailyHighLow <- function(df) {
+    
+    # If a character has been passed, convert to the associated object
+    if (is.character(df)) {
+        df <- get(df)
+    }
+    
+    df %>%
+        select(dtime, origMETAR) %>%
+        mutate(tempData=str_extract(origMETAR, pattern="RMK.* 4\\d{8}"), 
+               tempFHi=convertTemp(str_sub(tempData, -8, -5)), 
+               tempFLo=convertTemp(str_sub(tempData, -4, -1))
+        ) %>%
+        select(-origMETAR)
+    
+}
+
+
+# plotDailyHiLo() - plot the daily high and low temperatures
+plotDailyHiLo <- function(df, 
+                          pdfName=NULL,
+                          pdfPath=filePath
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: the data frame or tibble containing the extracted high-low temperature data
+    # pdfName: the file name for saving the PDF plots (NULL means print to stdout)
+    # pdfPath: location to save PDF plots 
+    #          (only used if pdfName is not null; NULL means no pre-pended path)
+    
+    # Send to file if pdfName is provided
+    if (!is.null(pdfName)) {
+        
+        # Pre-pend pdfPath if provided
+        if (!is.null(pdfPath)) { pdfName <- paste0(pdfPath, pdfName) }
+        
+        # Provide the location of the EDA pdf file
+        cat("\nDaily High-Low Temperature PDF file is available at:", pdfName, "\n")
+        
+        # Redirect the writing to writeLogPDF
+        pdf(pdfName)
+    }
+    
+    
+    # Data with the hour and notNA status
+    dat <- df %>%
+        mutate(hour=lubridate::hour(lubridate::round_date(dtime, unit="hours")), 
+               month=lubridate::month(dtime),
+               notNA=!is.na(tempFHi)
+        )
+    
+    # Plot for counts of !is.na by hour
+    p1 <- dat %>%
+        ggplot(aes(x=hour, fill=notNA)) + 
+        geom_bar(position="stack") + 
+        scale_fill_discrete("Hi-Lo Data") + 
+        labs(y="Number of Daily Observations", x="METAR Hour", 
+             title="Daily High-Low temperatures are captured based on time zone"
+        )
+    multiPageFacet(p1, facetVar="locale", balancePages=TRUE, maxPerPage=6)
+    
+    # Summary of notNA times by locale
+    cat("\nZulu times for high-low temperatures by locale\n\n")
+    notNATimes <- dat %>%
+        mutate(hourZ=ifelse(notNA, paste0("Time_", zeroPad(hour), "Z"), "Time_NA")) %>%
+        group_by(locale, hourZ) %>%
+        summarize(n=n()) %>%
+        ungroup() 
+    notNANames <- notNATimes %>%
+        filter(hourZ != "Time_NA") %>%
+        pull(hourZ) %>%
+        unique() %>%
+        sort()
+    notNATimes %>%
+        pivot_wider(locale, names_from="hourZ", values_from="n") %>%
+        mutate_at(vars(all_of(notNANames)), ~ifelse(is.na(.), 0, .)) %>%
+        select_at(vars(all_of(c("locale", notNANames, "Time_NA")))) %>%
+        as.data.frame() %>%
+        print()
+    
+    # Box plots of high and low temperatures by locale by month
+    p2 <- dat %>%
+        filter(!is.na(tempData)) %>%
+        ggplot(aes(x=factor(month.abb[month], levels=month.abb))) + 
+        geom_boxplot(aes(y=tempFHi), fill="pink") + 
+        labs(y="Temperature (F)", x="", 
+             title="Daily High Temperatures by Month by Locale"
+        ) + 
+        theme(axis.text.x=element_text(angle=90))
+    multiPageFacet(p2, 
+                   facetVar="locale", 
+                   maxPerPage=12, 
+                   balancePages=TRUE, 
+                   sameYLimits="tempFHi",
+                   useYLow="tempFHi"
+    )
+    
+    p3 <- dat %>%
+        filter(!is.na(tempData)) %>%
+        ggplot(aes(x=factor(month.abb[month], levels=month.abb))) + 
+        geom_boxplot(aes(y=tempFLo), fill="lightblue") + 
+        labs(y="Temperature (F)", x="", 
+             title="Daily Low Temperatures by Month by Locale"
+        ) + 
+        theme(axis.text.x=element_text(angle=90))
+    multiPageFacet(p3, 
+                   facetVar="locale", 
+                   maxPerPage=12, 
+                   balancePages=TRUE, 
+                   sameYLimits="tempFLo",
+                   useYLow="tempFLo"
+    )
+    
+    # If pdfName is not NULL, redirect to stdout
+    if (!is.null(pdfName)) {
+        dev.off()
+    }
+    
+}
+
+
+# getPrecipAmount() - extracts the 1-hour, 3/6-hour, and 24-hour precipitation summaries
+# Extract precipitation amounts in inches
+getPrecipAmount <- function(df) {
+    
+    # If a character has been passed, convert to the associated object
+    if (is.character(df)) {
+        df <- get(df)
+    }
+    
+    # Helper function convertPrecip() contained in the helper functions section of this file    
+    df %>%
+        select(dtime, origMETAR) %>%
+        mutate(p1Inches=convertPrecip(str_extract(origMETAR, pattern="RMK.* P\\d{4}")), 
+               p36Inches=convertPrecip(str_extract(origMETAR, pattern="RMK.* 6\\d{4}")), 
+               p24Inches=convertPrecip(str_extract(origMETAR, pattern="RMK.* 7\\d{4}"))
+        ) %>%
+        select(-origMETAR)
+    
+}
+
+
+# plotPrecipNAHours() - plot the time periods in which precipitation summaries are captured
+plotPrecipNAHours <- function(df, 
+                              mapper, 
+                              pdfName=NULL, 
+                              pdfPath=filePath
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble containing the precipitation data
+    # mapper: file containing variables mapped to descriptive plotting names
+    # pdfName: name for PDF files (NULL means print to stdout)
+    # pdfPath: path for PDF files (only used if pdfName is not null; if pdfPath is null, no pre-pend)
+    
+    # Send to file if pdfName is provided
+    if (!is.null(pdfName)) {
+        
+        # Pre-pend pdfPath if provided
+        if (!is.null(pdfPath)) { pdfName <- paste0(pdfPath, pdfName) }
+        
+        # Provide the location of the EDA pdf file
+        cat("\nDaily High-Low Temperature PDF file is available at:", pdfName, "\n")
+        
+        # Redirect the writing to writeLogPDF
+        pdf(pdfName)
+    }
+    
+    # Plot the time periods provided in mapper
+    for (plotVar in names(mapper)) {
+        # Counts of !is.na by hour
+        p1 <- df %>%
+            mutate(hour=factor(lubridate::hour(lubridate::round_date(dtime, unit="hours"))), 
+                   notNA=!is.na(get(plotVar))
+            ) %>%
+            ggplot(aes(x=hour, fill=notNA)) + 
+            geom_bar(position="stack") + 
+            scale_fill_discrete(paste0(mapper[plotVar], " Data")) + 
+            labs(y="Number of Days with Observations at Hour", 
+                 x="METAR Hour", 
+                 title=paste0("Capture for ", mapper[plotVar])
+            ) + 
+            facet_wrap(~locale) + 
+            scale_x_discrete(breaks=seq(0, 23, by=3))
+        print(p1)
+    }
+    
+    # If pdfName is not NULL, redirect to stdout
+    if (!is.null(pdfName)) {
+        dev.off()
+    }
+    
+}
+
+
+# combineProcessedFiles() - Combine files from a character list
+combineProcessedFiles <- function(charList, mapper=cityNameMapper) {
+    
+    # Combine the objects represented by charList, and name the list items using charList
+    listFiles <- lapply(charList, FUN=function(x) { get(x) })
+    names(listFiles) <- charList
+    
+    # Bind rows, and add the descriptive locale name as sourceName
+    tblFiles <- bind_rows(listFiles, .id="source") %>%
+        mutate(sourceName=mapper[source])
+    
+    tblFiles
+    
+}
+
+
+# helperCountsByMetric() - get the overall percentage by metric for variable x
+helperCountsByMetric <- function(tbl, 
+                                 ctVar, 
+                                 sumOn="dummyVar"
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # tbl: the tibble or data frame
+    # ctVar: the variable for which overall percentage is desired
+    # sumOn: the variable to be summed (default is counts, and the program makes "dummyVar" for this)
+    
+    tbl %>%
+        mutate(dummyVar=1) %>%
+        select_at(vars(all_of(c(ctVar, sumOn)))) %>%
+        filter_all(all_vars(!is.na(.))) %>%
+        group_by_at(ctVar) %>%
+        summarize(n=sum(get(sumOn))) %>%
+        mutate(nPct=n/sum(n))
+    
+}
+
+
+# helperNumCor() - get an overall geom_smooth for variable y vs. variable x
+helperNumCor <- function(tbl, 
+                         xVar, 
+                         yVar, 
+                         sumOn="dummyVar",
+                         se=TRUE, 
+                         color="red", 
+                         method="lm", 
+                         lty=2
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # tbl: the tibble or data frame
+    # xVar: the x-axis variable
+    # yVar: the y-axis variable
+    # sumOn: the variable to be summed (default is counts, and the program makes "dummyVar" for this)
+    # se: whether to include the standard error in the overall geom_smooth()
+    # color: color for the main line in the overall geom_smooth()
+    # method: will be passed as geom_smooth(method=method)
+    # lty: the line-type for the main line in the geom_smooth (default, 2, is dashed)
+    
+    # Generate the overall totals for sumOn by xVar and yVar
+    plotData <- tbl %>%
+        mutate(dummyVar=1) %>%
+        select_at(vars(all_of(c(xVar, yVar, sumOn)))) %>%
+        filter_all(all_vars(!is.na(.))) %>%
+        group_by_at(vars(all_of(c(xVar, yVar)))) %>%
+        summarize(nTotal=sum(get(sumOn)))
+    
+    geom_smooth(data=plotData, 
+                aes_string(x=xVar, y=yVar, weight="nTotal"), 
+                se=se, 
+                color=color, 
+                method=method, 
+                lty=lty
+    )
+    
+}
+
+
+# helperFactorNumeric() - get the overall mean or median for numeric variable y by factor variable x
+helperFactorNumeric <- function(tbl, 
+                                .f, 
+                                byVar, 
+                                numVar, 
+                                ...
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # tbl: the tibble or data frame
+    # .f: the function to be applied
+    # byVar: the grouping variable for applying the function
+    # numVar: the numeric variable the function is applied to
+    # ...: other arguments passed to .f, such as na.rm=TRUE
+    
+    tbl %>%
+        select_at(vars(all_of(c(byVar, numVar)))) %>%
+        filter_all(all_vars(!is.na(.))) %>%
+        group_by_at(byVar) %>%
+        summarize(helpFN=.f(get(numVar), ...))
+    
+}
+
+
+# plotMedianIQR() - box plots without the whiskers and outliers (Q1-Median-Q3 only)
+plotMedianIQR <- function(met, 
+                          fctVar, 
+                          numVar, 
+                          title=NULL, 
+                          subT="", 
+                          mid=0.5,
+                          rng=c(0.25, 0.75),
+                          diagnose=TRUE,
+                          showXLabel=TRUE,
+                          mapper=varMapper,
+                          facetOn=NULL, 
+                          showCentral=FALSE, 
+                          ylimits=NULL, 
+                          multiPageWrap = FALSE, 
+                          maxPerPage = 9, 
+                          balancePages = FALSE, 
+                          sameYLimits="hiPoint", 
+                          useYLow="loPoint"
+                          ) {
+    
+    # Function arguments
+    # met: dataframe or tibble containing raw data
+    # fctVar: character vector of variable to be used for the x-axis (factor in the boxplot)
+    # numVar: character vector of variable to be used for the y-axis (numeric in the boxplot)
+    # title: character vector for plot title
+    # subT: character vector for plot subtitle
+    # mid: float between 0 and 1 for the quantile to be used as the midpoint
+    # rng: length-two float vector for (lo, hi) to be used as the dimensions of the box
+    # diagnose: boolean for whether to note in the log the number of NA observations dropped
+    # showXLabel: boolean for whether to include the x-label (e.g., set to FALSE if using 'month')
+    # mapper: named list containing mapping from variable name to well-formatted name for titles and axes
+    # facetOn: a facetting variable for the supplied met (NULL for no faceting)
+    # showCentral: boolean for whether to show the central tendency over-plotted on the main data
+    # ylimits: length-two numeric for the y-axis minimum and maximum (default NULL uses plot defaults)
+    # multiPageWrap: boolean, will call multiPageFacet() rather than facetWrap() if TRUE
+    # maxPerPage: integer, maximum facets per plot, passed to multiPageFacet()
+    # balancePages: boolean, whether to balance the number of facets per page across all pages 
+    #               or allow the final page to have as few as 1 facets
+    # sameYLimits: variable for making all y-axes maxima the same across multiPageFacet; 
+    #              "hiPoint" is created by this function as the ymax variable; 
+    #              will be set to NULL if ylimits has been passed (is not null)
+    # useYLow: variable for making all y-axes minima the same across multiPageFacet; 
+    #          "loPoint" is created by this function as the ymin variable; 
+    #          will be set to NULL if ylimits has been passed (is not null)
+    
+    # Function usage
+    # 1.  By default, the function creates a modified boxplot of numVar by fctVar - 
+    #     line at mid, box going from rng[1] to rng[2]
+    # 2.  If facetOn is passed as a non-NULL, then the data in #1 will be facetted by facetOn
+    # 3.  If showCentral=TRUE, then the overall median of numVar by fctVar will be plotted as a red dot
+    # 4.  If multiPageWrap=TRUE, then the faceting data will be paginated so that there is 
+    #     easier readability for the plots on any given page
+    
+    
+    # Check that the quantile variables are sensible
+    if (length(mid) != 1 | length(rng) != 2) {
+        stop("Must pass a single value as mid and a length-two vector as rng\n")    
+    }
+    if (min(c(mid, rng)) < 0 | max(c(mid, rng)) > 1) {
+        stop("All values of mid and rng must be between 0 and 1, inclusive\n")
+    }
+    if ((mid < rng[1]) | (mid > rng[2])) {
+        stop("mid must be at least as big as rng[1] and no greater than rng[2]\n")
+    }
+    quants <- paste0(round(100*c(rng[1], mid, rng[2]), 0), "%", collapse=" ")
+    
+    # Create the title if not passed
+    if (is.null(title)) { 
+        title <- paste0("Hourly Observations of ", mapper[numVar], " by ", mapper[fctVar])
+    }
+    
+    # Remove the NA variables
+    nOrig <- nrow(met)
+    dat <- met %>%
+        filter(!is.na(get(fctVar)), !is.na(get(numVar)))
+    if (diagnose) { cat("\nRemoving", nOrig-nrow(dat), "records due to NA\n") }
+    
+    # Create the quantile data by fctVar and (if passed) facetOn
+    groupVars <- fctVar 
+    if (!is.null(facetOn)) { groupVars <- c(groupVars, facetOn) }
+    plotData <- dat %>%
+        group_by_at(groupVars) %>%
+        summarize(midPoint=quantile(get(numVar), probs=mid), 
+                  loPoint=quantile(get(numVar), probs=rng[1]),
+                  hiPoint=quantile(get(numVar), probs=rng[2])
+        )
+    
+    # Create the base plot
+    p <- plotData %>%
+        ggplot(aes_string(x=fctVar, y="midPoint")) +
+        geom_crossbar(aes(ymin=loPoint, ymax=hiPoint), fill="lightblue") +
+        labs(title=title,
+             subtitle=subT,
+             x=ifelse(showXLabel, paste0(mapper[fctVar], " - ", fctVar), ""),
+             y=paste0(mapper[numVar], " - ", numVar), 
+             caption=paste0("Quantiles plotted: ", quants)
+        )
+    
+    # If showCentral=TRUE, add a dot plot for the overall value of 'mid'
+    if (showCentral) {
+        centData <- helperFactorNumeric(dat, .f=quantile, byVar=fctVar, numVar=numVar, probs=mid)
+        p <- p + geom_point(data=centData, aes(y=helpFN), size=2, color="red")
+    }
+    
+    # If ylim has been passed, use it
+    if (!is.null(ylimits)) {
+        p <- p + ylim(ylimits)
+        # Set sameYLimits and useYLow to NULL since adding ylim() guarantees this in a user-specified manner
+        sameYLimits <- NULL
+        useYLow <- NULL
+    }
+    
+    # If facetting has been requested, facet by the desired variable
+    # multiPageFacet will print by default, so use print(p) only if multiPageWrap=FALSE
+    if (!is.null(facetOn)) {
+        if (multiPageWrap) {
+            multiPageFacet(p, 
+                           facetVar=facetOn, 
+                           maxPerPage=maxPerPage, 
+                           balancePages=balancePages, 
+                           sameYLimits=sameYLimits, 
+                           useYLow=useYLow
+            )
+        } else {
+            p <- p + facet_wrap(as.formula(paste("~", facetOn)))
+            print(p)
+        }
+    } else {
+        # Print the plot
+        print(p)
+    }
+    
+}
+
+
+# cloudsLevel0 - filter to only clouds up to and including height
+cloudsLevel0 <- function(df, 
+                         maxHeight, 
+                         byVars,
+                         baseLevel=0,
+                         heightBase=-100,
+                         typeBase="CLR"
+                         ) {
+    
+    # Function assumptions
+    # Input data are unique by byVars-level and with columns 'height' and 'type'
+    # Clouds increase in height with level
+    # Clouds are non-decreasing in type (VV > OVC > BKN > SCT > FEW) with level
+    
+    # FUNCTION ARGUMENTS:
+    # df: tibble or dataframe contiaining the clouds data
+    # maxHeight: the maximum height to consider (delete all heights above this level)
+    # byVars: the variables that make up a unique observation (df should be unique by byVars-level)
+    # baseLevel: the level to be created as the base level (by default, level 0)
+    # heightBase: the height to be provided to the base level (by default, -100 feet)
+    # typeBase: the type of obscuration observed at the base level (by default, CLR)
+    
+    # Add a cloud level 0 that has height -100 (by default)
+    # Include only levels where the cloud height is not NA
+    # Include only levels where the cloud height is less than or equal to maxHeight
+    modData <- df %>% 
+        group_by_at(vars(all_of(byVars))) %>% 
+        summarize(level=baseLevel, height=heightBase, type=typeBase) %>% 
+        ungroup() %>% 
+        bind_rows(df) %>% 
+        arrange_at(vars(all_of(c(byVars, "level")))) %>% 
+        filter(!is.na(height)) %>% 
+        filter(height <= maxHeight)
+    
+    modData
+    
+}
+
+
+# getMinimumHeight() - helper function to pull out minimum cloud height, limited to certain obscurations
+getMinimumHeight <- function(df, 
+                             byVars, 
+                             types, 
+                             baseLevel=0
+                             ) {
+    
+    # Split the data in to the baseLevel and all other levels
+    baseData <- df %>%
+        filter(level==baseLevel)
+    layerData <- df %>%
+        filter(level!=baseLevel)
+    
+    # Take the layerData, limit to type in types, and find the minimum level
+    layerData <- layerData %>%
+        filter(type %in% types) %>%
+        group_by_at(vars(all_of(byVars))) %>%
+        filter(level==min(level)) %>%
+        ungroup()
+    
+    # Put the data back together
+    # Keep the maximum level for each set of byVars (will be 0 if no data for byVars in layerData)
+    cloudData <- baseData %>%
+        bind_rows(layerData) %>%
+        arrange_at(vars(all_of(c(byVars, "level")))) %>%
+        group_by_at(vars(all_of(byVars))) %>%
+        filter(level==max(level))
+    
+}
+
+# hgtCeilObsc() - extract the minimum cloud height, minimum ceiling height, and maximum obscuration
+hgtCeilObsc <- function(df, 
+                        byVars,
+                        baseLevel=0
+                        ) {
+    
+    # Function assumptions
+    # Input data are unique by byVars-level and with columns 'height' and 'type'
+    # For each byVars, a row with level=baseLevel, height=heightBase, type=typeBase has been created
+    # Clouds increase in height with level
+    # Clouds are non-decreasing in type (VV > OVC > BKN > SCT > FEW) with level
+    
+    # FUNCTION ARGUMENTS:
+    # df: tibble or dataframe contiaining the clouds data
+    # byVars: the variables that make up a unique observation (df should be unique by byVars-level)
+    # baseLevel: the base level in df (by default, level 0)
+    # heightBase: the height of the base level in df (by default, -100 feet)
+    # typeBase: the type of obscuration at the base level in df (by default, CLR)
+    
+    # Get the maximum obscuration
+    maxObsc <- df %>%
+        group_by_at(vars(all_of(byVars))) %>% 
+        filter(level==max(level)) %>%
+        ungroup()
+    
+    # Get the minimum height (any type)
+    minHeight <- getMinimumHeight(df, 
+                                  byVars=byVars, 
+                                  types=c("VV", "OVC", "BKN", "SCT", "FEW"), 
+                                  baseLevel=baseLevel
+    )
+    
+    # Get the minimum ceiling height (VV, OVC, BKN)
+    minCeiling <- getMinimumHeight(df, 
+                                   byVars=byVars, 
+                                   types=c("VV", "OVC", "BKN"), 
+                                   baseLevel=baseLevel
+    )
+    
+    # Put the file together
+    minCeiling <- minCeiling %>%
+        rename(ceilingHeight=height, ceilingType=type, ceilingLevel=level)
+    minHeight <- minHeight %>%
+        rename(cloudHeight=height, cloudType=type, cloudLevel=level)
+    maxObsc <- maxObsc %>%
+        rename(obscHeight=height, obscType=type, obscLevel=level)
+    
+    # Merge
+    cloudSummary <- maxObsc %>%
+        full_join(minHeight, by=byVars) %>%
+        full_join(minCeiling, by=byVars)
+    
+    cloudSummary
+    
+}
+
+
+# plotMaxObsc() - plot the maximum obscuration
+plotMaxObsc <- function(df, 
+                        xVar, 
+                        fillVar, 
+                        title, 
+                        subtitle="Up to and including 12,000 feet",
+                        orderByVariable=NULL,
+                        orderByValue=NULL,
+                        posnBar="stack",
+                        yLabel="# Hourly Observations",
+                        legendLabel="",
+                        facetOn=NULL
+                        ) {
+    
+    # Get the levels to be used
+    cLevels <- levels(df %>% pull(fillVar))
+    
+    # Create the main plot
+    p1 <- df %>%
+        ggplot(aes_string(fill=fillVar))
+    if (!is.null(orderByVariable)) {
+        p1 <- p1 + 
+            geom_bar(aes(x=fct_reorder(get(xVar), get(orderByVariable)==orderByValue, .fun=sum)),
+                     position=posnBar
+            )
+    } else {
+        p1 <- p1 + 
+            geom_bar(aes_string(x=xVar), position=posnBar)
+    }
+    p1 <- p1 + 
+        coord_flip() + 
+        labs(x="", 
+             y=yLabel, 
+             title=title, 
+             subtitle=subtitle
+        ) + 
+        theme(legend.position="bottom") + 
+        scale_fill_discrete(legendLabel, rev(cLevels)) + 
+        guides(fill=guide_legend(nrow=1))
+    if (!is.null(facetOn)) {
+        p1 <- p1 + facet_wrap(as.formula(paste("~", facetOn)))
+    }
+    print(p1)
+    
+}
+
+
+# findCloudDist() - find distance between locales based on cloud height buckets
+findCloudDist <- function(df, 
+                          byVar, 
+                          fctVar,
+                          pivotVar="monthfct", 
+                          scaleDistData=FALSE, 
+                          returnPivotOnly=FALSE
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: data frame or tibble containing one record per locale and time
+    # byVar: the variable(s) by which the final distance file should be unique
+    # fctVar: the factor variables to be counted up, with the sums being the distance inputs
+    # pivotVar: the variable(s) which should be pivoted in to columns to make the file unique by byVar
+    # scale: whether to scale the data prior to calculating distances
+    # returnDistMatrix: whether to just return the pivoted data frame 
+    #                   (default, FALSE, returns the distance matrix calculated from this 
+    #                   pivoted data frame rather than the data frame itself)
+    
+    # Create the counts data by byVar, pivoted by fctVar and pivotVar
+    baseData <- df %>%
+        group_by_at(vars(all_of(c(byVar, fctVar, pivotVar)))) %>%
+        summarize(n=n()) %>%
+        ungroup() %>%
+        pivot_wider(names_from=all_of(c(fctVar, pivotVar)), values_from="n") %>%
+        mutate_if(is.numeric, tidyr::replace_na, replace=0)
+    
+    # If the data are only yo be pivoted, return and exit the function
+    if (returnPivotOnly) {
+        return(baseData)
+    }
+    
+    # Split in to descriptors and data
+    descData <- baseData %>%
+        select_at(vars(all_of(byVar))) %>%
+        mutate(rowN=row_number())
+    distData <- baseData %>%
+        select_at(vars(-any_of(byVar))) %>%
+        as.matrix()
+    
+    # Scale distdata if requested
+    if (scaleDistData) {
+        distData <- scale(distData)
+    }
+    
+    # Create the distances, convert back to data frame, pivot_longer, and attach the labels
+    dist(distData) %>%
+        as.matrix() %>%
+        as_tibble() %>%
+        mutate(row1=row_number()) %>%
+        pivot_longer(-row1, names_to="row2", values_to="dist") %>%
+        mutate(row2=as.integer(row2)) %>%
+        inner_join(descData, by=c("row1"="rowN")) %>%
+        rename_at(vars(all_of(byVar)), ~paste0(., "_1")) %>%
+        inner_join(descData, by=c("row2"="rowN")) %>%
+        rename_at(vars(all_of(byVar)), ~paste0(., "_2"))
+    
+}
+
+
+# plotCloudDist() - dendrogram for cloud distances
+plotCloudDist <- function(df, 
+                          var1="sourceName_1", 
+                          var2="sourceName_2", 
+                          met="dist", 
+                          roundDist=0, 
+                          title="Distance Between Locales", 
+                          subT=""
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: tibble or data frame containing distance data
+    # var1: the variable containing the first locale
+    # var2: the variable containing the second locale
+    # dist: the variable containing the pre-calculated distance between var1 and var2
+    # roundDist: the rounding for the distance in the plot
+    
+    # Process the data frame and exclude any occurences of distance to self    
+    distData <- df %>%
+        select_at(vars(all_of(c(var1, var2, met)))) %>%
+        filter(get(var1) != get(var2))
+    
+    # Get the locales by minimum distance to any other locale
+    distHiLo <- distData %>%
+        group_by_at(vars(all_of(var1))) %>%
+        filter(dist==min(dist)) %>%
+        arrange(dist) %>%
+        pull(var1)
+    
+    # Create a heatmap of the distances
+    distData %>%
+        ggplot(aes(x=factor(get(var1), levels=distHiLo), y=factor(get(var2), levels=distHiLo))) + 
+        geom_tile(aes(fill=dist)) + 
+        geom_text(aes(label=round(dist, roundDist)), color="lightblue") +
+        labs(x="", y="", title=title, subtitle=subT) + 
+        scale_fill_gradient("Distance", low="black", high="white") + 
+        theme(axis.text.x=element_text(angle=90))
+    
+}
+
+
+# makeTibbleFromPrecip() - function to take a precipitation list and make a tibble
+makeTibbleFromPrecip <- function(lst, varName) {
+    
+    sapply(lst[["precipList"]], FUN="[", "pStateFrame") %>%
+        bind_rows(.id="source") %>%
+        mutate(source=str_sub(source, 1, 9)) %>%
+        select(source, dtime, curPrecip) %>%
+        rename_at(vars(all_of(c("curPrecip"))), ~varName)
+    
+}
+
+
