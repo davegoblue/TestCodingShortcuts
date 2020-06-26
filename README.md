@@ -1974,4 +1974,8 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v001 makes predictions for four climate archetypes  
 * WeatherModeling_202006_v001 explores prediction confidence  
 * WeatherModeling_202006_v001 explores impact of incremental variable addition and number of trees  
+* WeatherModeling_202006_v001 explores impact of incremental variable addition and number of trees  
+* WeatherDownloadFunctions_v001.R created as source file to hold weather download functions  
+* WeatherEDAFunctions_v001.R created as source file to hold weather EDA functions  
+* WeatherIntegrate_202006_v001 created to download and process weather data from additional stations  
   
