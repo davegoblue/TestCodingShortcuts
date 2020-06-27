@@ -112,7 +112,7 @@ cityNameMapper <- c(katl_2016="Atlanta, GA (2016)",
                     klas_2019="Las Vegas, NV (2019)",
                     klax_2016="Los Angeles, CA (2016)", 
                     klnk_2016="Lincoln, NE (2016)",
-                    kmia_2016="Miama, FL (2016)", 
+                    kmia_2016="Miami, FL (2016)", 
                     kmke_2016="Milwaukee, WI (2016)",
                     kmsn_2016="Madison, WI (2016)",
                     kmsp_2016="Minneapolis, MN (2016)",
@@ -143,7 +143,6 @@ mapChartVar <- c(p1Inches="1-hr Precip",
                  p36Inches="3-hr or 6-hr Precip", 
                  p24Inches="24-hr Precip"
                  )
-
 
 ```
   
@@ -320,68 +319,109 @@ thunder_List <- wrapPrecipTimes(fileNames,
 
 ```
   
-Daily high-low temperatures and precipitation summaries are extracted and an integrated file is produced:  
-```{r}
+Daily high-low temperatures and precipitation summaries are extracted, an integrated file is produced, and a predominant wind direction is added:  
+```{r cache=TRUE}
 
-# Extracted high-low temperatures
-all_hilo <- map_dfr(.x=fileNames, .f=getDailyHighLow, .id="source") %>%
-    mutate(source=fileNames[as.integer(source)], locale=cityNameMapper[source]) %>%
-    select(source, locale, everything())
-all_hilo
+# Function created to extract daily high-low temperatures
+extractDailyHighLow <- function(x, f=getDailyHighLow, mapper=cityNameMapper, makePDF=NULL) {
+    
+    # FUNCTION ARGUMENTS:
+    # x: a list of file names as a character string
+    # f: the function to be called (getDailyHighLow was written for this purpose)
+    # mapper: named vector for mapping file name to locale name
+    # makePDF: the desired name of the PDF output (NULL means no output)
 
-# Plot is not created; just need the high-low data for this
-# plotDailyHiLo(all_hilo, pdfName="DailyHighLow.pdf")
+    # Extract high-low temperatures
+    all_hilo <- map_dfr(.x=x, .f=f, .id="source") %>%
+        mutate(source=x[as.integer(source)], locale=mapper[source]) %>%
+        select(source, locale, everything())
 
+    # Create the plot if makePDF is provided
+    if (!is.null(makePDF)) {
+        plotDailyHiLo(all_hilo, pdfName=makePDF)
+    }
+    
+    # Return the high-low temperatures object
+    all_hilo
 
-# Extracted precipitation amounts
-all_pin <- map_dfr(.x=fileNames, .f=getPrecipAmount, .id="source") %>%
-    mutate(source=fileNames[as.integer(source)], locale=cityNameMapper[source]) %>%
-    select(source, locale, everything())
-all_pin
-
-# Plot is not created, just need the precipitation inches for this
-# Run the precipitation plots
-# plotPrecipNAHours(all_pin, mapper=mapChartVar, pdfName="Precipitation_NonNA_Hours.pdf")
-
-# Plot the time periods provided in mapper
-for (plotVar in names(mapChartVar)) {
-    # Counts of !is.na by hour
-    p1 <- all_pin %>%
-        mutate(hour=factor(lubridate::hour(lubridate::round_date(dtime, unit="hours"))), 
-               notNA=!is.na(get(plotVar))
-               ) %>%
-        group_by(source, hour) %>%
-        summarize(pct=mean(notNA)) %>%
-        ggplot(aes(x=hour, y=pct, group=source)) + 
-        geom_line(alpha=0.25) + 
-        labs(y="Percent of Days with Observations at Hour", 
-             x="METAR Hour (Z)", 
-             title=paste0("Capture for ", mapChartVar[plotVar]), 
-             caption="Each line is a single location/year"
-             ) +
-        scale_x_discrete(breaks=seq(0, 23, by=3))
-    print(p1)
 }
 
+# Get the high-low data for every file in fileNames
+all_hilo <- extractDailyHighLow(fileNames)
 
-# Sum precipitation by year for p1, p36 (using only 0Z-6Z-12Z-18Z), p24
-mod_pin <- all_pin %>%
-    mutate(p1Inches=ifelse(is.na(p1Inches), 0, p1Inches),
-           p36ok=lubridate::hour(lubridate::round_date(dtime, unit="hours")) %in% c(0, 6, 12, 18),
-           p36Inches=ifelse(is.na(p36Inches) | !p36ok, 0, p36Inches),
-           p24Inches=ifelse(is.na(p24Inches), 0, p24Inches)
-           )
 
-mod_pin %>%
-    group_by(locale) %>%
-    summarize_if(is.numeric, sum) %>%
-    rename(`1-Hour`=p1Inches, `6-Hour`=p36Inches, `24-Hour`=p24Inches) %>%
-    pivot_longer(-locale, names_to="Unit", values_to="Inches") %>%
-    ggplot(aes(x=Unit, y=Inches)) + 
-    geom_col(fill="lightblue") + 
-    geom_text(aes(label=round(Inches, 1), y=Inches+10)) +
-    labs(title="Annual precipitation when summing by various units", x="") +
-    facet_wrap(~locale)
+extractDailyPrecipitation <- function(x, 
+                                      f=getPrecipAmount, 
+                                      cityMapper=cityNameMapper, 
+                                      chartMapper=mapChartVar,
+                                      makePDF=NULL
+                                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # x: character vector of file names for getting daily precipitation
+    # f: function for getting daily precipitation (getPrecipAmount was written for this)
+    # cityMapper: mapping function for file name to locale name
+    # chartMapper: mapping function for chart category to readable name
+    # makePDF: file name for PDF output (NULL means do not create)
+    
+    # Extracted precipitation amounts
+    all_pin <- map_dfr(.x=x, .f=f, .id="source") %>%
+        mutate(source=x[as.integer(source)], locale=cityMapper[source]) %>%
+        select(source, locale, everything())
+
+    # Generate PDF for precipitation plots if requested
+    if (!is.null(makePDF)) {
+        plotPrecipNAHours(all_pin, mapper=chartMapper, pdfName=makePDF)
+    }
+
+    # Plot the time periods provided in chartNameMapper
+    for (plotVar in names(chartMapper)) {
+        # Counts of !is.na by hour
+        p1 <- all_pin %>%
+            mutate(hour=factor(lubridate::hour(lubridate::round_date(dtime, unit="hours"))), 
+                   notNA=!is.na(get(plotVar))
+                   ) %>%
+            group_by(source, hour) %>%
+            summarize(pct=mean(notNA)) %>%
+            ggplot(aes(x=hour, y=pct, group=source)) + 
+            geom_line(alpha=0.25) + 
+            labs(y="Percent of Days with Observations at Hour", 
+                 x="METAR Hour (Z)", 
+                 title=paste0("Capture for ", chartMapper[plotVar]), 
+                 caption="Each line is a single location/year"
+                 ) +
+            scale_x_discrete(breaks=seq(0, 23, by=3))
+        print(p1)
+    }
+
+    # Sum precipitation by year for p1, p36 (using only 0Z-6Z-12Z-18Z), p24
+    mod_pin <- all_pin %>%
+        mutate(p1Inches=ifelse(is.na(p1Inches), 0, p1Inches),
+               p36ok=lubridate::hour(lubridate::round_date(dtime, unit="hours")) %in% c(0, 6, 12, 18),
+               p36Inches=ifelse(is.na(p36Inches) | !p36ok, 0, p36Inches),
+               p24Inches=ifelse(is.na(p24Inches), 0, p24Inches)
+               )
+
+    # Create plot for annual precipitation sums by metric summed (1-hour, 6-hour, 24-hour)
+    p2 <- mod_pin %>%
+        group_by(locale) %>%
+        summarize_if(is.numeric, sum) %>%
+        rename(`1-Hour`=p1Inches, `6-Hour`=p36Inches, `24-Hour`=p24Inches) %>%
+        pivot_longer(-locale, names_to="Unit", values_to="Inches") %>%
+        ggplot(aes(x=Unit, y=Inches)) + 
+        geom_col(fill="lightblue") + 
+        geom_text(aes(label=round(Inches, 1), y=Inches+10)) +
+        labs(title="Annual precipitation when summing by various units", x="") +
+        facet_wrap(~locale)
+    print(p2)
+    
+    # Return the precipitation object
+    all_pin
+
+}
+
+# Get the daily precipitation data for every file in fileNames
+all_pin <- extractDailyPrecipitation(fileNames)
 
 
 # Combine the relevant data files
@@ -390,6 +430,7 @@ allData <- combineProcessedFiles(fileNames)
 # Show counts by sourceName
 allData %>%
     count(source, sourceName)
+
 
 # Modify windDir so that it is just N, NE, E, SE, S, SW, W, NW, 000, Variable
 modData <- allData %>%
@@ -417,155 +458,374 @@ glimpse(modData)
 
 ```
   
-```{r}
+Functions are then written to create cloud data (level, type, height by source and date-time) and relevant summaries (clouds of up to 12,000 feet, bucketed, with values for minimum height and minimum ceiling):  
+```{r cache=TRUE}
 
-# Select the source, sourceName, dtime and cLevel variables; pivot cLevel down
-cLevels <- modData %>%
-    select(source, sourceName, dtime, starts_with("cLevel")) %>%
-    pivot_longer(-c(source, sourceName, dtime), names_to="level", values_to="height") %>%
-    mutate(level=as.integer(str_replace(level, pattern="cLevel", replacement="")))
+createCloudData <- function(df, 
+                            fctLayers=c("VV", "OVC", "BKN", "SCT", "FEW"),
+                            maxHeight=12000
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble of integrated weather station data
+    # fctLayers: the factor levels for the cloud layers
+    # maxHeight: a common maximum cloud height since different stations have different max 
+    #            (NULL means do not create chart)
+    
+    # Select the source, sourceName, dtime and cLevel variables; pivot cLevel down
+    cLevels <- df %>%
+        select(source, sourceName, dtime, starts_with("cLevel")) %>%
+        pivot_longer(-c(source, sourceName, dtime), names_to="level", values_to="height") %>%
+        mutate(level=as.integer(str_replace(level, pattern="cLevel", replacement="")))
 
-# Select the source, sourceName, dtime and cType variables; pivot cType down
-cTypes <- modData %>%
-    select(source, sourceName, dtime, starts_with("cType")) %>%
-    pivot_longer(-c(source, sourceName, dtime), names_to="level", values_to="type") %>%
-    mutate(level=as.integer(str_replace(level, pattern="cType", replacement="")))
+    # Select the source, sourceName, dtime and cType variables; pivot cType down
+    cTypes <- df %>%
+        select(source, sourceName, dtime, starts_with("cType")) %>%
+        pivot_longer(-c(source, sourceName, dtime), names_to="level", values_to="type") %>%
+        mutate(level=as.integer(str_replace(level, pattern="cType", replacement="")))
 
-cData <- cLevels %>%
-    inner_join(cTypes, by=c("source", "sourceName", "dtime", "level"))
+    # Join the data
+    cData <- cLevels %>%
+        inner_join(cTypes, by=c("source", "sourceName", "dtime", "level"))
+    
+    # Confirm that no information was lost during the inner join
+    if (nrow(cData) < max(nrow(cLevels), nrow(cTypes))) {
+        cat("\ncLevels:", nrow(cLevels), "cTypes:", nrow(cTypes), "cData:", nrow(cData))
+        stop("\nLost rows during the inner join - diagnose and fix\n")
+    }
 
-# Plot cloud heights, using only non-NA
-cData %>%
-    filter(!is.na(height)) %>%
-    ggplot(aes(x=fct_reorder(sourceName, height, .fun=max, na.rm=TRUE), y=height)) + 
-    geom_violin(fill="lightblue") + 
-    coord_flip() + 
-    labs(x="", y="Cloud Height (feet)", title="Density of cloud heights by locale")
+    # Plot cloud heights, using only non-NA
+    p1 <- cData %>%
+        filter(!is.na(height)) %>%
+        ggplot(aes(x=fct_reorder(sourceName, height, .fun=max, na.rm=TRUE), y=height)) + 
+        geom_violin(fill="lightblue") + 
+        coord_flip() + 
+        labs(x="", y="Cloud Height (feet)", title="Density of cloud heights by locale")
+    print(p1)
 
+    # Plot cloud obscuration by locale
+    p2 <- cData %>%
+        filter(type!="") %>%
+        mutate(type=factor(type, levels=fctLayers)) %>%
+        ggplot(aes(x=fct_reorder(sourceName, height, .fun=max, na.rm=TRUE), fill=type)) + 
+        geom_bar(position="stack") + 
+        coord_flip() + 
+        labs(x="", y="Cloud Layer Obscuration", title="Cloud obscuration by locale") + 
+        scale_fill_discrete("", rev(fctLayers)) + 
+        theme(legend.position="bottom")
+    print(p2)
 
-# Plot cloud heights, using only non-""
-fctLayers <- c("VV", "OVC", "BKN", "SCT", "FEW")
+    # Plot cloud heights and obscurations, up to a specified maximum (provided that it is not null)
+    if (!is.null(maxHeight)) {
+        # Cloud height violin plot
+        p3 <- cData %>%
+            filter(!is.na(height)) %>%
+            filter(height <= maxHeight) %>%
+            ggplot(aes(x=sourceName, y=height)) + 
+            geom_violin(fill="lightblue") + 
+            coord_flip() + 
+            labs(x="", 
+                 y="Cloud Height (feet)", 
+                 title=paste0("Density of cloud heights by locale (up to ", maxHeight, " feet)")
+                 )
+        print(p3)
+        
+        # Cloud obscuration plot
+        p4 <- cData %>%
+            filter(type!="") %>%
+            filter(height <= maxHeight) %>%
+            mutate(type=factor(type, levels=fctLayers)) %>%
+            ggplot(aes(x=fct_reorder(sourceName, sourceName, .fun=length), fill=type)) + 
+            geom_bar(position="stack") + 
+            coord_flip() + 
+            labs(x="", 
+                 y="Cloud Layer Obscuration", 
+                 title=paste0("Cloud obscuration by locale (up to ", maxHeight, " feet)")
+                 ) + 
+            scale_fill_discrete("", rev(fctLayers)) + 
+            theme(legend.position="bottom")
+        print(p4)
+    }
+    
+    # Return the cData object
+    cData
+    
+}
 
-cData %>%
-    filter(type!="") %>%
-    mutate(type=factor(type, levels=fctLayers)) %>%
-    ggplot(aes(x=fct_reorder(sourceName, height, .fun=max, na.rm=TRUE), fill=type)) + 
-    geom_bar(position="stack") + 
-    coord_flip() + 
-    labs(x="", y="Cloud Layer Obscuration", title="Cloud obscuration by locale") + 
-    scale_fill_discrete("", rev(fctLayers)) + 
-    theme(legend.position="bottom")
+# Create the cloud data object
+cData <- createCloudData(modData)
 
-
-# Plot cloud heights, using only non-NA
-cData %>%
-    filter(!is.na(height)) %>%
-    filter(height <= 12000) %>%
-    ggplot(aes(x=sourceName, y=height)) + 
-    geom_violin(fill="lightblue") + 
-    coord_flip() + 
-    labs(x="", y="Cloud Height (feet)", title="Density of cloud heights by locale")
-
-cData %>%
-    filter(type!="") %>%
-    filter(height <= 12000) %>%
-    mutate(type=factor(type, levels=fctLayers)) %>%
-    ggplot(aes(x=fct_reorder(sourceName, sourceName, .fun=length), fill=type)) + 
-    geom_bar(position="stack") + 
-    coord_flip() + 
-    labs(x="", y="Cloud Layer Obscuration", title="Cloud obscuration by locale (up to 12,000 feet)") + 
-    scale_fill_discrete("", rev(fctLayers)) + 
-    theme(legend.position="bottom")
-
-
+# Create the modified cloud data object (add CLR level at -100 if no clouds)
 modCData <- cloudsLevel0(cData, maxHeight=12000, byVars=c("source", "sourceName", "dtime")) %>%
     mutate(type=factor(type, levels=c("VV", "OVC", "BKN", "SCT", "FEW", "CLR")))
 modCData
 
 
-# Get the key clouds data
-cloudSummary <- hgtCeilObsc(modCData, byVars=c("source", "sourceName", "dtime"))
-
-# Check for consistency
-cloudSummary %>%
-    count(ceilingType, obscType)
-cloudSummary %>%
-    count(cloudType, ceilingType)
-cloudSummary %>%
-    count(cloudType, obscType)
-
-
-# Cloud obscuration by source
-plotMaxObsc(cloudSummary, 
-            xVar="sourceName", 
-            fillVar="obscType", 
-            title="Maximum Cloud Obscuration", 
-            orderByVariable="obscType",
-            orderByValue="CLR"
-            )
-
-# Cloud obscuration by month
-cloudSummary <- cloudSummary %>%
-    mutate(month=lubridate::month(dtime), 
-           hour=lubridate::hour(dtime), 
-           monthfct=factor(month.abb[month], levels=month.abb[1:12])
+# Helper function to convert cloud heights to levels (leave in main program; like a function argument)
+helperHeightFactor <- function(x) {
+    
+    factor(case_when(x == -100 ~ "None", 
+                     x <= 1000 ~ "0-1000", 
+                     x <= 3000 ~ "1000-3000", 
+                     x <= 6000 ~ "3000-6000",
+                     x <= 12000 ~ "6000-12000"
+                     ), 
+           levels=c("None", "6000-12000", "3000-6000", "1000-3000", "0-1000")
            )
-plotMaxObsc(cloudSummary, 
-            xVar="monthfct", 
-            fillVar="obscType", 
-            title="Maximum Cloud Obscuration", 
-            posnBar="fill"
-            )
+    
+}
+
+
+# Function to modify the clouds data and create relevant plots
+plotAndModifyClouds <- function(df, helper=helperHeightFactor) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble holding the clouds data
+    # helper: helper function for converting cloud heights to categorical factors
+    
+    # Checks for consistency
+    df %>%
+        count(ceilingType, obscType) %>%
+        print()
+    df %>%
+        count(cloudType, ceilingType) %>%
+        print()
+    df %>%
+        count(cloudType, obscType) %>%
+        print()
+
+    # Cloud obscuration by source
+    plotMaxObsc(df, 
+                xVar="sourceName", 
+                fillVar="obscType", 
+                title="Maximum Cloud Obscuration", 
+                orderByVariable="obscType",
+                orderByValue="CLR"
+                )
+
+    # Add month as both an integer and factor, and hour as an integer
+    df <- df %>%
+        mutate(month=lubridate::month(dtime), 
+               hour=lubridate::hour(dtime), 
+               monthfct=factor(month.abb[month], levels=month.abb[1:12])
+               )
+    
+    # Cloud obscuration by month
+    plotMaxObsc(df, 
+                xVar="monthfct", 
+                fillVar="obscType", 
+                title="Maximum Cloud Obscuration", 
+                posnBar="fill"
+                )
+
+    # Create the factored heights for minimum and ceiling
+    df <- df %>%
+        mutate(ceilFactor=helper(ceilingHeight), 
+               minCFactor=helper(cloudHeight)
+               )
+
+    # Create plots for the minimum cloud height and ceiling height
+    plotMaxObsc(df, 
+                xVar="sourceName", 
+                fillVar="minCFactor", 
+                title="Minimum Cloud Height", 
+                orderByVariable="minCFactor",
+                orderByValue="None"
+                )
+    
+    plotMaxObsc(df, 
+                xVar="sourceName", 
+                fillVar="ceilFactor", 
+                title="Ceiling Height", 
+                orderByVariable="ceilFactor",
+                orderByValue="None"
+                )
+
+    # Return the modified clouds object with month and hour
+    df
+            
+}
+
+# Get the key clouds data (heights and ceilings)
+cloudSummary <- hgtCeilObsc(modCData, byVars=c("source", "sourceName", "dtime")) %>%
+    plotAndModifyClouds()
 
 ```
   
+A final file containing processed METAR, daily high/low and precipitation, hourly booleans by precipitation type, and cloud height buckets (minimum, minimum ceiling) is created and saved:  
 ```{r}
 
-cloudSummary <- cloudSummary %>%
-    mutate(ceilFactor=factor(case_when(ceilingHeight == -100 ~ "None", 
-                                       ceilingHeight <= 1000 ~ "0-1000", 
-                                       ceilingHeight <= 3000 ~ "1000-3000", 
-                                       ceilingHeight <= 6000 ~ "3000-6000",
-                                       ceilingHeight <= 12000 ~ "6000-12000"
-                                       ), 
-                             levels=c("None", "6000-12000", "3000-6000", "1000-3000", "0-1000")
-                             )
-           )
+# Function to add the boolean by type hourly precipitation data to finalData
+addCurrentPrecip <- function(df, f=makeTibbleFromPrecip) {
 
-plotMaxObsc(cloudSummary, 
-            xVar="sourceName", 
-            fillVar="ceilFactor", 
-            title="Ceiling Height", 
-            orderByVariable="ceilFactor",
-            orderByValue="None"
-            )
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble containing final, integrated data
+    # f: function for mapping precipitation lists
+    # CAVEAT: will use thunder_list, rain_list, and snow_list from global scope
+    
+    thunderData <- map_dfr(.x=list(thunder_List), 
+                           .f=f, 
+                           varName="isThunder"
+                           )
+
+    rainData <- map_dfr(.x=list(rain_List), 
+                        .f=f, 
+                        varName="isRain"
+                        )
+
+    snowData <- map_dfr(.x=list(snow_List), 
+                        .f=f,
+                        varName="isSnow"
+                        )
+
+    # Inner join the precipitation data
+    precipData <- rainData %>%
+        inner_join(snowData, by=c("source", "dtime")) %>%
+        inner_join(thunderData, by=c("source", "dtime"))
+
+    # Confirm that no rows have been lost
+    if (nrow(precipData) < max(nrow(rainData), nrow(snowData), nrow(thunderData))) {
+        stop("\nPrecipitation data have mislaignment issues")
+    }
 
 
+    # Merge in to finalData
+    if (nrow(df) != nrow(precipData)) {
+        stop("\nPrecipitation data are not aligned with final data")
+    }
 
-cloudSummary <- cloudSummary %>%
-    mutate(minCFactor=factor(case_when(cloudHeight == -100 ~ "None", 
-                                       cloudHeight <= 1000 ~ "0-1000", 
-                                       cloudHeight <= 3000 ~ "1000-3000", 
-                                       cloudHeight <= 6000 ~ "3000-6000",
-                                       cloudHeight <= 12000 ~ "6000-12000"
-                                       ), 
-                             levels=c("None", "6000-12000", "3000-6000", "1000-3000", "0-1000")
-                             )
-           )
+    df <- df %>%
+        inner_join(precipData, by=c("source", "dtime"))
 
-plotMaxObsc(cloudSummary, 
-            xVar="sourceName", 
-            fillVar="minCFactor", 
-            title="Minimum Cloud Height", 
-            orderByVariable="minCFactor",
-            orderByValue="None"
-            )
+    # Confirm that no rows have been lost
+    if (nrow(df) < nrow(precipData)) {
+        stop("\nPrecipitation data did not merge correctly with final data")
+    }
+    
+    # Return the frame with precipitation boolean added
+    df
+    
+}
 
-```
-  
-```{r}
+
+# Function to add the temperature and precipitation summary data
+addTempPrecipSummaries <- function(df, precipFile, tempFile) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the main data frame or tibble
+    # precipFile: the data frame or tibble containing the precipitation data
+    # tempFile: the data frame or tibble containing the temperature data
+
+    # Merge together the precipitation and temperature data
+    precipTempData <- precipFile %>%
+        select(source, dtime, p1Inches, p36Inches, p24Inches) %>%
+        inner_join(select(tempFile, source, dtime, tempFHi, tempFLo), 
+                   by=c("source", "dtime")
+                   )
+
+    # Confirm that no rows have been lost
+    if (nrow(precipTempData) < max(nrow(precipFile), nrow(tempFile))) {
+        stop("\nPrecipitation and temperature summaries have mislaignment issues")
+    }
+
+    # Merge in to df
+    if (nrow(df) != nrow(precipTempData)) {
+        stop("\nPrecipitation and temperature summaries are not aligned with final data")
+    }
+
+    df <- df %>%
+        inner_join(precipTempData, by=c("source", "dtime"))
+
+    # Confirm that no rows have been lost
+    if (nrow(df) < nrow(precipTempData)) {
+        stop("\nPrecipitation and temperature summaries did not merge correctly with final data")
+    }
+    
+    # Return the updated data frame
+    df
+    
+}
+
+
+# Function to add cloud summary
+addCloudSummary <- function(df, cloudFile) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the main data frame or tibble
+    # cloudFile: the data frame or tibble containing the cloud summary data
+
+    # Check for consistency in number of rows
+    if (nrow(df) != nrow(cloudFile)) {
+        stop("\nCloud summaries are not aligned with final data")
+    }
+
+    # Merge cloudFile in to df
+    df <- df %>%
+        inner_join(select(cloudFile, source, dtime, cloudHeight, cloudType, ceilingHeight, ceilingType), 
+                   by=c("source", "dtime")
+                   ) %>%
+        rename(minHeight=cloudHeight, minType=cloudType)
+
+    # Confirm that no rows have been lost
+    if (nrow(df) < nrow(cloudFile)) {
+        stop("\nCloud summaries did not merge correctly with final data")
+    }
+    
+    # Return the updated data frame
+    df
+    
+}
+
+
+# Function to check for duplicates and enforce a 'same-year' restriction
+enforceYearCheck <- function(df) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble to be checked
+    
+    stationTime <- df %>%
+        select(source, dtime) %>%
+        mutate(station=str_sub(source, 1, 4)) %>%
+        select(station, dtime)
+
+    finalDups <- stationTime %>%
+        duplicated()
+
+    # Duplicates are expected if the same station occurs in succeeding years
+    # This is driven by downloading/processing 1 day on either side of the year requested
+    if (sum(finalDups) > 0) {
+        cat("\nDuplicated records occur during:\n")
+        stationTime %>% 
+            filter(finalDups) %>% 
+            count(station, date=lubridate::date(dtime)) %>%
+            print()
+    } else {
+        cat("\nAll data are unique by station and dtime")
+    }
+
+    # Filter data to require that year in file name matches year in dtime
+    filteredData <- df %>%
+        filter(as.integer(str_sub(source, 6, -1))==year)
+    
+    # Report on summary statistics
+    cat("\nEnforcing year restriction reduces data rows from:", 
+        nrow(df), 
+        "to:", 
+        nrow(filteredData), 
+        "\n"
+        )
+    
+    # Return the filtered data file
+    filteredData
+
+}
+
 
 # Select the appropriate variables from modData
+# Add boolean precipitation by type and hour
+# Add summaries for high-low temperature and precipitation amount
+# Add summaries for clouds
+# Require that the year in the file source match the year of dtime
 finalData <- modData %>%
     select(source, 
            locale=sourceName, 
@@ -586,118 +846,80 @@ finalData <- modData %>%
            modSLP,
            starts_with("cType"),
            starts_with("cLevel")
-           )
+           ) %>%
+    addCurrentPrecip() %>%
+    addTempPrecipSummaries(precipFile=all_pin, tempFile=all_hilo) %>%
+    addCloudSummary(cloudFile=cloudSummary) %>%
+    enforceYearCheck()
 
-thunderData <- map_dfr(.x=list(thunder_List), 
-                       .f=makeTibbleFromPrecip, 
-                       varName="isThunder"
-                       )
 
-rainData <- map_dfr(.x=list(rain_List), 
-                    .f=makeTibbleFromPrecip, 
-                    varName="isRain"
-                    )
+# Report summary of the final file, and save as RDS
+summary(finalData)
+saveRDS(finalData, "./RInputFiles/ProcessedMETAR/metar_postEDA_extra_20200626.rds")
 
-snowData <- map_dfr(.x=list(snow_List), 
-                    .f=makeTibbleFromPrecip, 
-                    varName="isSnow"
-                    )
+```
+  
+The precipitation data is then integrated and saved:  
+```{r}
 
-# Inner join the precipitation data
-precipData <- rainData %>%
-    inner_join(snowData, by=c("source", "dtime")) %>%
-    inner_join(thunderData, by=c("source", "dtime"))
+# Integrate the rain, snow, and thunder lists
+allPrecipList <- list(rain=rain_List, 
+                      snow=snow_List, 
+                      thunder=thunder_List
+                      )
 
-# Confirm that no rows have been lost
-if (nrow(precipData) < max(nrow(rainData), nrow(snowData), nrow(thunderData))) {
-    stop("\nPrecipitation data have mislaignment issues")
+# Provide a structure summary, and save as RDS
+str(allPrecipList, max.level = 2)
+saveRDS(allPrecipList, "./RInputFiles/ProcessedMETAR/metar_precipLists_extra_20200626.rds")
+
+```
+  
+The clouds data are then integrated and saved:
+```{r}
+
+checkAndFilterClouds <- function(cloudFile, mainFile) {
+    
+    # FUNCTION ARGUMENTS:
+    # cloudFile: the data frame or tibble containing the clouds data
+    # mainFile: the data frame or tibble containing the final integrated data
+    
+    # Get the unique list 
+    modCDataTimes <- cloudFile %>%
+        count(source, dtime)
+    
+    # In final, integrated data but not in clouds data
+    mainFile %>%
+        select(source, dtime) %>%
+        anti_join(modCDataTimes, by=c("source", "dtime")) %>%
+        print()
+
+    # In modCDataTimes but not in main file
+    modCDataTimes %>%
+        select(source, dtime) %>%
+        anti_join(mainFile, by=c("source", "dtime")) %>%
+        count(source, date=lubridate::date(dtime)) %>%
+        pivot_wider(source, names_from="date", values_from="n") %>%
+        mutate_if(is.numeric, ~ifelse(is.na(.), 0, .)) %>%
+        as.data.frame() %>%
+        print()
+
+    # Filter modCData so that year aligns as with fileteredData (return by default)
+    modCData %>%
+        filter(as.integer(str_sub(source, 6, 9))==lubridate::year(dtime))
+    
 }
 
 
-# Merge in to finalData
-if (nrow(finalData) != nrow(precipData)) {
-    stop("\nPrecipitation data are not aligned with final data")
-}
+# Run the function to get the filtered clouds data, then save as RDS
+modCSaveData <- checkAndFilterClouds(cloudFile=modCData, mainFile=finalData)
+saveRDS(modCSaveData, "./RInputFiles/ProcessedMETAR/metar_modifiedClouds_extra_20200626.rds")
 
-finalData <- finalData %>%
-    inner_join(precipData, by=c("source", "dtime"))
+```
 
-# Confirm that no rows have been lost
-if (nrow(finalData) < nrow(precipData)) {
-    stop("\nPrecipitation data did not merge correctly with final data")
-}
+Functions and analyses not run:  
+```{r eval=FALSE}
 
-
-# Merge together the precipitation and temperature data
-precipTempData <- all_pin %>%
-    select(source, dtime, p1Inches, p36Inches, p24Inches) %>%
-    inner_join(select(all_hilo, source, dtime, tempFHi, tempFLo), 
-               by=c("source", "dtime")
-               )
-
-# Confirm that no rows have been lost
-if (nrow(precipTempData) < max(nrow(all_pin), nrow(all_hilo))) {
-    stop("\nPrecipitation and temperature summaries have mislaignment issues")
-}
-
-
-# Merge in to finalData
-if (nrow(finalData) != nrow(precipTempData)) {
-    stop("\nPrecipitation and temperature summaries are not aligned with final data")
-}
-
-finalData <- finalData %>%
-    inner_join(precipTempData, by=c("source", "dtime"))
-
-# Confirm that no rows have been lost
-if (nrow(finalData) < nrow(precipTempData)) {
-    stop("\nPrecipitation and temperature summaries did not merge correctly with final data")
-}
-
-
-# Merge in to finalData
-if (nrow(finalData) != nrow(cloudSummary)) {
-    stop("\nCloud summaries are not aligned with final data")
-}
-
-finalData <- finalData %>%
-    inner_join(select(cloudSummary, source, dtime, cloudHeight, cloudType, ceilingHeight, ceilingType), 
-               by=c("source", "dtime")
-               ) %>%
-    rename(minHeight=cloudHeight, minType=cloudType)
-
-# Confirm that no rows have been lost
-if (nrow(finalData) < nrow(cloudSummary)) {
-    stop("\nCloud summaries did not merge correctly with final data")
-}
-
-
-stationTime <- finalData %>%
-    select(source, dtime) %>%
-    mutate(station=str_sub(source, 1, 4)) %>%
-    select(station, dtime)
-
-finalDups <- stationTime %>%
-    duplicated()
-
-cat("\nDuplicated records occur during:\n")
-stationTime %>% 
-    filter(finalDups) %>% 
-    count(station, date=lubridate::date(dtime))
-
-
-filteredData <- finalData %>%
-    filter(as.integer(str_sub(source, 6, -1))==year)
-
-cat("\nEnforcing year restriction reduces data rows from:", nrow(finalData), "to:", nrow(filteredData), "\n")
-
-
-cat("\nVariables includes in the final file are:\n")
-names(filteredData)
-
-cat("\nSummary of the final file:\n")
-summary(filteredData)
-
+# Fix for visibility > 10
 cat("\nResetting Visibility > 10 to 10\n")
 filteredData %>% 
     filter(Visibility > 10)
@@ -707,51 +929,6 @@ filteredData <- filteredData %>%
     mutate(Visibility=ifelse(is.na(Visibility), NA, pmin(Visibility, 10)))
 summary(filteredData$Visibility)
 
-
-saveRDS(filteredData, "./RInputFiles/ProcessedMETAR/metar_postEDA_extra_20200625.rds")
-
-
-allPrecipList <- list(rain=rain_List, 
-                      snow=snow_List, 
-                      thunder=thunder_List
-                      )
-str(allPrecipList, max.level = 2)
-
-saveRDS(allPrecipList, "./RInputFiles/ProcessedMETAR/metar_precipLists_extra_20200625.rds")
-
-
-# Example of the modCData format
-modCData
-
-# Check that modCData includes every date-time in filteredData, and no others
-modCDataTimes <- modCData %>%
-    count(source, dtime)
-    
-# In filteredData but not in modCDataTimes
-filteredData %>%
-    select(source, dtime) %>%
-    anti_join(modCDataTimes, by=c("source", "dtime"))
-
-# In modCDataTimes but not in filteredData
-modCDataTimes %>%
-    select(source, dtime) %>%
-    anti_join(filteredData, by=c("source", "dtime")) %>%
-    count(source, date=lubridate::date(dtime)) %>%
-    pivot_wider(source, names_from="date", values_from="n") %>%
-    mutate_if(is.numeric, ~ifelse(is.na(.), 0, .)) %>%
-    as.data.frame()
-
-# Filter modCData so that year aligns as with fileteredData
-modCSaveData <- modCData %>%
-    filter(as.integer(str_sub(source, 6, 9))==lubridate::year(dtime))
-
-saveRDS(modCSaveData, "./RInputFiles/ProcessedMETAR/metar_modifiedClouds_extra_20200625.rds")
-
-
-```
-
-Functions and analyses not run:  
-```{r eval=FALSE}
 
 # Create rounded TempF and DewF in allData
 allData <- allData %>%
