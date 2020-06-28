@@ -1,0 +1,481 @@
+---
+title: "Integrate Download and EDA Functions"
+author: "davegoblue"
+date: "6/25/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background  
+[METAR](https://en.wikipedia.org/wiki/METAR) are hourly weather data collected at airports, including  visibility, wind, temperature, dew point, precipitation, clouds, barometric pressure, and other features that may impact safe aviation.
+
+Iowa State University has a great database of archived METAR data, stored in a manner that makes for easy, automated downloads in CSV format.
+
+The files 'WeatherDownload_202005_v002.Rmd' and 'WeatherEDA_202005_v002.Rmd' contain functions for downloading weather files from the Iowa State server, running EDA, applying a constant format, and saving for further analysis.
+
+The intent of this script is to take the key download and EDA functions, place them in a source file, and then run them as needed to output additional data.
+  
+#### _Sourcing Files_  
+Prior to sourcing functions, here are a few formatting helpers that are included here:  
+```{r}
+
+# The functions sourced from the scripts use tidyverse and lubridate frequently
+library(tidyverse)
+library(lubridate)
+
+
+# Create a regex search string for METAR (the hourly time such as 53Z is pre-pended)
+genMET <- ".*?(VRB|\\d{3})(\\d{2})(G\\d{2})?KT(.*?)(\\d{1,2}SM).*?\\s(M?\\d{2})/(M?\\d{2}).*?(A\\d{4}).*?RMK.*?(SLP\\d{3}).*?(T\\d{8})"
+
+# Create the variable names that the above regex parses in to
+labsMET <- c("METAR", "WindDir", "WindSpeed", "WindGust", "Dummy", "Visibility", 
+             "TempC", "DewC", "Altimeter", "SLP", "FahrC"
+             )
+
+# Expected columns for the downloaded METAR files
+metType <- readr::cols(station=readr::col_character(), 
+                       valid=readr::col_datetime(), 
+                       tmpf=readr::col_double(),
+                       dwpf=readr::col_double(),
+                       relh=readr::col_double(),
+                       drct=readr::col_double(),
+                       sknt=readr::col_double(),
+                       p01i=readr::col_character(),  # needs to handle 'T' for trace
+                       alti=readr::col_double(),
+                       mslp=readr::col_double(),
+                       vsby=readr::col_double(),
+                       gust=readr::col_double(),
+                       skyc1=readr::col_character(),
+                       skyc2=readr::col_character(), 
+                       skyc3=readr::col_character(), 
+                       skyc4=readr::col_character(),
+                       skyl1=readr::col_double(),
+                       skyl2=readr::col_double(),
+                       skyl3=readr::col_double(),
+                       skyl4=readr::col_double(),
+                       wxcodes=readr::col_character(),
+                       ice_accretion_1hr=readr::col_character(), # needs to handle 'T' for trace
+                       ice_accretion_3hr=readr::col_character(), # needs to handle 'T' for trace
+                       ice_accretion_6hr=readr::col_character(), # needs to handle 'T' for trace
+                       peak_wind_gust=readr::col_double(),
+                       peak_wind_drct=readr::col_double(),
+                       peak_wind_time=readr::col_datetime(),
+                       feel=readr::col_double(),
+                       metar=readr::col_character()
+                       )
+
+# The main path for the files
+filePath <- "./RInputFiles/ProcessedMETAR/"
+
+# Descriptive names for key variables
+varMapper <- c(WindDir="Wind Direction (degrees)", 
+               predomDir="General Prevailing Wind Direction",
+               WindSpeed="Wind Speed (kts)",
+               WindSpeed5="Wind Speed (kts), rounded to nearest 5 knots", 
+               Visibility="Visibility (SM)", 
+               TempC="Temperature (C)", 
+               DewC="Dew Point (C)", 
+               Altimeter="Altimeter (inches Hg)",
+               Altimeter10="Altimeter (inches Hg), rounded to nearest 0.1 inHg", 
+               modSLP="Sea-Level Pressure (hPa)", 
+               TempF="Temperature (F)",
+               DewF="Dew Point (F)", 
+               TempF5="Temperature (F), rounded to nearest 5 degrees",
+               DewF5="Dew Point (F), rounded to nearest 5 degrees", 
+               cType1="First Cloud Layer Type", 
+               cLevel1="First Cloud Layer Height (ft)",
+               month="Month", 
+               year="Year",
+               wType="Greatest Sky Obscuration", 
+               day="Day of Month"
+               )
+
+# File name to city name mapper
+cityNameMapper <- c(katl_2016="Atlanta, GA (2016)",
+                    kbos_2016="Boston, MA (2016)", 
+                    kdca_2016="Washington, DC (2016)", 
+                    kden_2016="Denver, CO (2016)", 
+                    kdfw_2016="Dallas, TX (2016)", 
+                    kdtw_2016="Detroit, MI (2016)", 
+                    kewr_2016="Newark, NJ (2016)",
+                    kgrb_2016="Green Bay, WI (2016)",
+                    kgrr_2016="Grand Rapids, MI (2016)",
+                    kiah_2016="Houston, TX (2016)",
+                    kind_2016="Indianapolis, IN (2016)",
+                    klas_2014="Las Vegas, NV (2014)",
+                    klas_2015="Las Vegas, NV (2015)",
+                    klas_2016="Las Vegas, NV (2016)", 
+                    klas_2017="Las Vegas, NV (2017)", 
+                    klas_2018="Las Vegas, NV (2018)",
+                    klas_2019="Las Vegas, NV (2019)",
+                    klax_2016="Los Angeles, CA (2016)", 
+                    klnk_2016="Lincoln, NE (2016)",
+                    kmia_2016="Miami, FL (2016)", 
+                    kmke_2016="Milwaukee, WI (2016)",
+                    kmsn_2016="Madison, WI (2016)",
+                    kmsp_2016="Minneapolis, MN (2016)",
+                    kmsy_2014="New Orleans, LA (2014)",
+                    kmsy_2015="New Orleans, LA (2015)",
+                    kmsy_2016="New Orleans, LA (2016)", 
+                    kmsy_2017="New Orleans, LA (2017)", 
+                    kmsy_2018="New Orleans, LA (2018)",
+                    kmsy_2019="New Orleans, LA (2019)",
+                    kord_2014="Chicago, IL (2014)",
+                    kord_2015="Chicago, IL (2015)",
+                    kord_2016="Chicago, IL (2016)", 
+                    kord_2017="Chicago, IL (2017)", 
+                    kord_2018="Chicago, IL (2018)",
+                    kord_2019="Chicago, IL (2019)",
+                    kphl_2016="Philadelphia, PA (2016)", 
+                    kphx_2016="Phoenix, AZ (2016)", 
+                    ksan_2014="San Diego, CA (2014)",
+                    ksan_2015="San Diego, CA (2015)",
+                    ksan_2016="San Diego, CA (2016)",
+                    ksan_2017="San Diego, CA (2017)",
+                    ksan_2018="San Diego, CA (2018)",
+                    ksan_2019="San Diego, CA (2019)",
+                    ksat_2016="San Antonio, TX (2016)", 
+                    ksea_2016="Seattle, WA (2016)", 
+                    ksfo_2016="San Francisco, CA (2016)", 
+                    ksjc_2016="San Jose, CA (2016)",
+                    kstl_2016="Saint Louis, MO (2016)", 
+                    ktpa_2016="Tampa Bay, FL (2016)", 
+                    ktvc_2016="Traverse City, MI (2016)"
+                    )
+
+# Map of variable to chart name
+mapChartVar <- c(p1Inches="1-hr Precip", 
+                 p36Inches="3-hr or 6-hr Precip", 
+                 p24Inches="24-hr Precip"
+                 )
+
+```
+  
+The relevant functions are stored in 'WeatherDownloadFunctions_v001.R' and 'WeatherEDAFunctions_v002.R'.  They are now sourced here:  
+```{r}
+
+# Functions for downloading and saving a weather file
+source("./WeatherDownloadFunctions_v001.R")
+source("./WeatherEDAFunctions_v002.R")
+
+```
+  
+Lists of files are developed for the following processes in this routine:  
+  
+* Download raw METAR from Iowa State  
+* Process downloaded files and convert to common format  
+* Run EDA and create log file  
+* Use in integration (for any file not in run EDA, it will just be loaded as-is)  
+  
+```{r}
+
+# Define the output file names
+metarFileName <- "metar_postEDA_extra_20200627.rds"
+precipFileName <- "metar_precipLists_extra_20200627.rds"
+cloudFileName <- "metar_modifiedClouds_extra_20200627.rds"
+
+# Define a named list of the stations and years for downloading
+downloadFiles <- list(san=c(2014, 2018, 2019), 
+                      msy=c(2014, 2018, 2019),
+                      ord=c(2019),
+                      las=c(2014)
+                      )
+
+# Define a named list of the stations and years for processing
+processFiles <- downloadFiles
+
+# Define a named list of the stations and years for running full EDA with PDF/log outputs
+EDAFiles <- downloadFiles
+
+# Define a named list of the stations and years for EDA and integraion
+integrateFiles <- list(las=c(2014, 2018, 2019), 
+                       ord=c(2014, 2018, 2019),
+                       msy=c(2014, 2018, 2019),
+                       san=c(2014, 2018, 2019),
+                       atl=c(2016),
+                       bos=c(2016),
+                       dca=c(2016),
+                       den=c(2016),
+                       dfw=c(2016),
+                       lax=c(2016),
+                       mia=c(2016),
+                       phl=c(2016),
+                       phx=c(2016),
+                       sat=c(2016),
+                       sea=c(2016),
+                       sfo=c(2016),
+                       sjc=c(2016),
+                       stl=c(2016),
+                       tpa=c(2016)
+                       )
+
+```
+  
+```{r cache=TRUE}
+
+cat("\nRunning downloads by station for:\n")
+sapply(downloadFiles, FUN=function(x) length(x))
+
+# STEP 1: Download the raw data files from Iowa State
+for (station in names(downloadFiles)) {
+    for (year in downloadFiles[[station]]) {
+        getASOSStationTime(stationID=str_to_upper(station), analysisYears=year, ovrWrite=TRUE)
+    }
+}
+
+```
+  
+```{r cache=TRUE}
+
+# Exception files with duplicates (potentially clean up to handle these better)
+filesNotUnique <- c("metar_ksan_2014", "metar_kmsy_2014", "metar_klas_2014")
+
+
+cat("\nRunning main EDA process on key files\n")
+
+# STEP 2: Process and format the raw data files, and save as .rds
+for (station in names(processFiles)) {
+    for (year in processFiles[[station]]) {
+    
+        coreString <- paste0("metar_k", station, "_", as.character(year))
+    
+        cat("\nProcessing Airport:", station, "for year:", year)
+        integrateProcessingMETAR(paste0("./RInputFiles/", coreString, ".txt"), 
+                                 startDay=paste0(as.character(year-1), "-12-31"), 
+                                 endDay=paste0(as.character(year+1), "-01-01"), 
+                                 genMET=genMET, 
+                                 labsMET=labsMET, 
+                                 saveLoc=paste0("./RInputFiles/ProcessedMETAR/", coreString, ".rds"), 
+                                 ovrWrite=TRUE,
+                                 colTypes=metType, 
+                                 logFile=paste0("./RInputFiles/ProcessedMETAR/", coreString, ".log"),
+                                 useNAforIncomplete=TRUE,
+                                 showSLPGraph=FALSE,
+                                 errNonUnique=(!(coreString %in% filesNotUnique))
+                                 )
+        cat("\nFinished Processing Airport:", station, "in year:", year,"\n")
+        
+    }
+}
+
+```
+  
+Only the components of the EDA that are essential to checking the data and creating an output file for analysis are included.
+
+The EDA is split such that the files in EDAFiles have a full EDA process run while the remaining files in integratedFiles are merely loaded with the appropriate name:    
+```{r cache=TRUE}
+
+# STEP 3a: Create the list of files to be run, process EDA, and output log files
+edaNames <- character(0)
+for (station in names(EDAFiles)) {
+    for (year in EDAFiles[[station]]) {
+        edaNames <- c(edaNames, paste0("k", station, "_", as.character(year)))
+    }
+}
+
+cat("\nEDA process will be run for all of:\n\n", paste0(edaNames, collapse="\n"), "\n", sep="")
+
+for (fName in edaNames) {
+    assign(fName, logAndPDFCombinedEDA(fName))
+}
+
+```
+  
+```{r cache=TRUE}
+
+# STEP 3b: Simply load all other files in integrateFiles
+loadOnlyNames <- character(0)
+for (station in names(integrateFiles)) {
+    for (year in integrateFiles[[station]]) {
+        loadOnlyNames <- c(loadOnlyNames, paste0("k", station, "_", as.character(year)))
+    }
+}
+
+# Restrict to loading only the files not already loaded through the EDA process
+loadOnlyNames <- setdiff(loadOnlyNames, edaNames)
+
+cat("\nLoad as-is without EDA will be run for all of:\n\n", 
+    paste0(loadOnlyNames, collapse="\n"), 
+    "\n", 
+    sep=""
+    )
+
+for (fName in loadOnlyNames) {
+    assign(fName, readRDS(paste0(filePath, "metar_", fName, ".rds")))
+}
+
+
+# STEP 3c: Ensure that integrateNames includes everything in edaNames and loadOnlyNames
+integrateNames <- union(edaNames, loadOnlyNames)
+
+```
+  
+```{r cache=TRUE}
+
+cat("\nRunning the rain data\n")
+
+# NEED TO FIX for Chicago 2014 rainfall - time recorded as 013 should be 0013
+# Should fix function fnPrecip1-fnPrecip6 to handle this better
+if (exists("kord_2014")) {
+    kord_2014 <- kord_2014 %>%
+        mutate(origMETAR=str_replace(origMETAR, pattern="RAB013 ", replacement="RAB0013 "))
+}
+
+# Run for rain, with logs and pdf sent to files
+rain_List <- wrapPrecipTimes(integrateNames, 
+                             pType="(?<!FZ)RA", 
+                             pExt="_RA", 
+                             pTypeName="rain", 
+                             writeLogFile="rain_extra0625_IntervalTimes.log",
+                             writeLogPDF="rain_extra0625_IntervalTimes.pdf",
+                             writeLogPath=filePath,
+                             appendWriteFile=FALSE
+                             )
+
+```
+  
+```{r cache=TRUE}
+
+cat("\nRunning the snow data\n")
+
+# Run for snow, with logs and pdf sent to files
+snow_List <- wrapPrecipTimes(integrateNames, 
+                             pType="(?<!BL)SN", 
+                             pExt="_SN", 
+                             pTypeName="snow", 
+                             writeLogFile="snow_extra0625_IntervalTimes.log",
+                             writeLogPDF="snow_extra0625_IntervalTimes.pdf",
+                             writeLogPath=filePath,
+                             appendWriteFile=FALSE
+                             )
+
+```
+  
+```{r cache=TRUE}
+
+cat("\nRunning the thunder data\n")
+
+# NEED TO FIX for Saint Louis 2016 thunder - time recorded as TSE57 should be TSE0757
+# Should fix function fnPrecip1-fnPrecip6 to handle this better
+if (exists("kstl_2016")) {
+    kstl_2016 <- kstl_2016 %>%
+        mutate(origMETAR=str_replace(origMETAR, pattern="TSE57 ", replacement="TSE0757 "))
+}
+
+# Run for thunder, with logs and pdf sent to files
+thunder_List <- wrapPrecipTimes(integrateNames, 
+                                pType="(?<!VC)TS", 
+                                pExt="_TS", 
+                                pTypeName="thunder", 
+                                writeLogFile="thunder_extra0625_IntervalTimes.log",
+                                writeLogPDF="thunder_extra0625_IntervalTimes.pdf",
+                                writeLogPath=filePath,
+                                appendWriteFile=FALSE
+                                )
+
+```
+  
+Daily high-low temperatures and precipitation summaries are extracted, an integrated file is produced, and a predominant wind direction is added:  
+```{r cache=TRUE}
+
+# Get the high-low data for every file in integrateNames
+# Get the daily precipitation data for every file in integrateNames
+# Combine the relevant data files
+# Create the predominant wind direction
+all_hilo <- extractDailyHighLow(integrateNames)
+all_pin <- extractDailyPrecipitation(integrateNames)
+allData <- combineProcessedFiles(integrateNames)
+modData <- makePredomDir(allData)
+
+
+# Show counts by sourceName
+modData %>%
+    count(source, sourceName)
+
+```
+  
+Functions are then written to create cloud data (level, type, height by source and date-time) and relevant summaries (clouds of up to 12,000 feet, bucketed, with values for minimum height and minimum ceiling):  
+```{r cache=TRUE}
+
+# Create the cloud data object
+cData <- createCloudData(modData)
+
+# Create the modified cloud data object (add CLR level at -100 if no clouds)
+modCData <- cloudsLevel0(cData, maxHeight=12000, byVars=c("source", "sourceName", "dtime")) %>%
+    mutate(type=factor(type, levels=c("VV", "OVC", "BKN", "SCT", "FEW", "CLR")))
+modCData
+
+# Get the key clouds data (heights and ceilings)
+cloudSummary <- hgtCeilObsc(modCData, byVars=c("source", "sourceName", "dtime")) %>%
+    plotAndModifyClouds()
+
+```
+  
+A final file containing processed METAR, daily high/low and precipitation, hourly booleans by precipitation type, and cloud height buckets (minimum, minimum ceiling) is created and saved:  
+```{r}
+
+# Select the appropriate variables from modData
+# Add boolean precipitation by type and hour
+# Add summaries for high-low temperature and precipitation amount
+# Add summaries for clouds
+# Require that the year in the file source match the year of dtime
+finalData <- modData %>%
+    select(source, 
+           locale=sourceName, 
+           dtime, 
+           origMETAR, 
+           year, 
+           monthint, 
+           month, 
+           day, 
+           WindDir,
+           WindSpeed,
+           WindGust,
+           predomDir,
+           Visibility,
+           Altimeter,
+           TempF,
+           DewF,
+           modSLP,
+           starts_with("cType"),
+           starts_with("cLevel")
+           ) %>%
+    addCurrentPrecip() %>%
+    addTempPrecipSummaries(precipFile=all_pin, tempFile=all_hilo) %>%
+    addCloudSummary(cloudFile=cloudSummary) %>%
+    enforceYearCheck()
+
+
+# Report summary of the final file, and save as RDS
+summary(finalData)
+saveRDS(finalData, paste0(filePath, metarFileName))
+
+```
+  
+The precipitation data is then integrated and saved:  
+```{r}
+
+# Integrate the rain, snow, and thunder lists
+allPrecipList <- list(rain=rain_List, 
+                      snow=snow_List, 
+                      thunder=thunder_List
+                      )
+
+# Provide a structure summary, and save as RDS
+str(allPrecipList, max.level = 2)
+saveRDS(allPrecipList, paste0(filePath, precipFileName))
+
+```
+  
+The clouds data are then integrated and saved:
+```{r}
+
+# Run the function to get the filtered clouds data, then save as RDS
+modCSaveData <- checkAndFilterClouds(cloudFile=modCData, mainFile=finalData)
+saveRDS(modCSaveData, paste0(filePath, cloudFileName))
+
+```
+  
