@@ -1979,4 +1979,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherEDAFunctions_v001.R created as source file to hold weather EDA functions  
 * WeatherIntegrate_202006_v001 created to download and process weather data from additional stations  
 * WeatherIntegrate_202006_v001 converted to functional form  
+* WeatherEDAFunctions_v002.R contains a more complete set of weather EDA functions  
+* WeatherIntegrate_202006_v002 created to leverage the functions in WeatherEDAFunctions_v002.R  
   
