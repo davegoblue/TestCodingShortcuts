@@ -1982,3 +1982,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherEDAFunctions_v002.R contains a more complete set of weather EDA functions  
 * WeatherIntegrate_202006_v002 created to leverage the functions in WeatherEDAFunctions_v002.R  
   
+### Expansions week of 29-JUN-2020  
+* WeatherModelingFunctions_v001.R created as source file to hold weather modeling functions  
+* WeatherModeling_202006_v002 created for conversion to functional form  
+  
