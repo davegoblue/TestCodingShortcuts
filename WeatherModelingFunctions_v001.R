@@ -722,3 +722,97 @@ getAccuracy <- function(x, keyVar="locale") {
         filter(locale==predicted) 
 
 }
+
+
+# Function to plot the accuracy by locale of two test datasets
+deltaAccuracy <- function(prevObject, currObject, listItem="testData") {
+    
+    # FUNCTION ARGUMENTS:
+    # prevObject: the previous object, either the test data frame, or a list
+    # currObject: the current object, either the test data frame, or a list
+    # listItem: the item to extract from the list if passed
+    
+    # Extract the data from the list if the object passed is a list
+    if ("list" %in% class(prevObject)) { prevObject <- prevObject[[listItem]] }
+    if ("list" %in% class(currObject)) { currObject <- currObject[[listItem]] }
+    
+    # Get the change in prediction accuracy
+    p1 <- list(prev=prevObject, curr=currObject) %>% 
+        map_dfr(.f=getAccuracy, .id="source") %>% 
+        group_by(locale) %>% 
+        mutate(maxPct=max(pct)) %>% 
+        ungroup() %>% 
+        ggplot(aes(x=fct_reorder(locale, maxPct), y=pct)) + 
+        geom_point(aes(color=source)) + 
+        geom_text(aes(y=pct+0.05*(2*(pct==maxPct)-1), label=paste0(round(100*pct), "%"))) +
+        coord_flip() + 
+        ylim(c(0, 1)) + 
+        labs(x="", 
+             y="Correctly Predicted", 
+             title="Accuracy of Locale Predictions", 
+             subtitle="(positive detection rate by locale)"
+        ) + 
+        scale_color_manual("Model", 
+                           values=c("prev"="red", "curr"="darkgreen"), 
+                           labels=c("prev"="previous", "curr"="current")
+        )
+    print(p1)
+    
+}
+
+
+localeByArchetype <- function(rfList, 
+                              fullData, 
+                              archeCities, 
+                              targetYear=c(2016), 
+                              keyVar="locale",
+                              sortDescMatch=FALSE
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # rfList: the list containing the random forest model and test data
+    # fullData: the full data prior to filtering by archetype
+    # archeCities: the list of cities/years included in the random forest modeling
+    # targetYear: the years that fullData should be filtered for
+    # keyVar: the key variable of interest in fullData
+    # sortDescMatch: boolean, whether to sort by descending highest match percentage
+    
+    # Get the test dataset from the rf model
+    archeTestData <- rfList[["testData"]] %>%
+        select(-predicted, -correct)
+    
+    # Get the data that are not the archetypes, but are still in targetYear
+    archeNotData <- fullData %>%
+        filter(!(source %in% archeCities), year %in% targetYear) %>%
+        mutate(hr=lubridate::hour(dtime)) %>%
+        select_at(vars(all_of(names(archeTestData)))) %>%
+        filter_all(all_vars(!is.na(.)))
+    
+    # Combine the data and make prediction using random forest
+    fullTestData <- archeTestData %>%
+        bind_rows(archeNotData) %>%
+        mutate(actual=get(keyVar), 
+               predicted=predict(rfList$rfModel, newdata=.)
+        )
+    
+    # Plot the predictions by archetype
+    p1 <- fullTestData %>%
+        count(actual, predicted) %>%
+        group_by(actual) %>%
+        mutate(pct=n/sum(n), predicted=str_replace(predicted, ",.*", ""), maxPct=max(pct)) %>%
+        ungroup() %>%
+        ggplot(aes(x=predicted, y=if(sortDescMatch) fct_reorder(actual, maxPct) else actual)) + 
+        geom_tile(aes(fill=pct)) +
+        geom_text(aes(label=paste0(round(100*pct), "%"))) + 
+        labs(x="", 
+             y="", 
+             title="Predicted Archetype by Locale", 
+             subtitle=if(sortDescMatch) "Sorted by maximum match percentage" else "",
+             caption=""
+        ) + 
+        theme(axis.text.x=element_text(angle=90)) + 
+        scale_x_discrete(position="top") + 
+        scale_fill_continuous(low="white", high="green")
+    print(p1)
+    
+}
