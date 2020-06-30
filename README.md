@@ -1985,4 +1985,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 29-JUN-2020  
 * WeatherModelingFunctions_v001.R created as source file to hold weather modeling functions  
 * WeatherModeling_202006_v002 created for conversion to functional form  
+* WeatherModelingFunctions_v001.R holds updated weather modeling functions  
+* WeatherModeling_202006_v002 explores archetype cities for weather modeling  
   
