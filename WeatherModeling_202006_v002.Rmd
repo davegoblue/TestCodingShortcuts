@@ -72,10 +72,11 @@ _metar_precipLists_20200617.rds and metar_precipLists_extra_20200627.rds_
 Several mapping files are defined for use in plotting; tidyverse, lubridate, and caret are loaded; and the relevant functions are sourced:  
 ```{r}
 
-# The process frequently uses tidyverse, lubridate, and caret
+# The process frequently uses tidyverse, lubridate, caret, and randomForest
 library(tidyverse)
 library(lubridate)
 library(caret)
+library(randomForest)
 
 
 # The main path for the files
@@ -384,26 +385,8 @@ The evaluation process is converted to a function:
 
 evalPredictions(rf_all_2016_TDmc, plotCaption = "Temp, Dew Point, Month, Cloud/Ceiling Height")
 
-# Get the change in prediction accuracy
-list(prev=rf_all_2016_TDm$testData, curr=rf_all_2016_TDmc$testData) %>% 
-    map_dfr(.f=getAccuracy, .id="source") %>% 
-    group_by(locale) %>% 
-    mutate(maxPct=max(pct)) %>% 
-    ungroup() %>% 
-    ggplot(aes(x=fct_reorder(locale, maxPct), y=pct)) + 
-    geom_point(aes(color=source)) + 
-    geom_text(aes(y=pct+0.05*(2*(pct==maxPct)-1), label=paste0(round(100*pct), "%"))) +
-    coord_flip() + 
-    ylim(c(0, 1)) + 
-    labs(x="", 
-         y="Correctly Predicted", 
-         title="Accuracy of Locale Predictions", 
-         subtitle="(positive detection rate by locale)"
-         ) + 
-    scale_color_manual("Model", 
-                       values=c("prev"="red", "curr"="darkgreen"), 
-                       labels=c("prev"="previous", "curr"="current")
-                       )
+# Get the comparison to previous accuracy
+deltaAccuracy(prevObject=rf_all_2016_TDm, currObject=rf_all_2016_TDmc)
 
 ```
   
@@ -434,26 +417,8 @@ evalPredictions(rf_all_2016_TDmcw,
                 plotCaption = "Temp, Dew Point, Month, Cloud/Ceiling Height, Wind Speed/Direction"
                 )
 
-# Get the change in prediction accuracy
-list(prev=rf_all_2016_TDmc$testData, curr=rf_all_2016_TDmcw$testData) %>% 
-    map_dfr(.f=getAccuracy, .id="source") %>% 
-    group_by(locale) %>% 
-    mutate(maxPct=max(pct)) %>% 
-    ungroup() %>% 
-    ggplot(aes(x=fct_reorder(locale, maxPct), y=pct)) + 
-    geom_point(aes(color=source)) + 
-    geom_text(aes(y=pct+0.05*(2*(pct==maxPct)-1), label=paste0(round(100*pct), "%"))) +
-    coord_flip() + 
-    ylim(c(0, 1)) + 
-    labs(x="", 
-         y="Correctly Predicted", 
-         title="Accuracy of Locale Predictions", 
-         subtitle="(positive detection rate by locale)"
-         ) + 
-    scale_color_manual("Model", 
-                       values=c("prev"="red", "curr"="darkgreen"), 
-                       labels=c("prev"="previous", "curr"="current")
-                       )
+# Get the comparison to previous accuracy
+deltaAccuracy(prevObject=rf_all_2016_TDmc, currObject=rf_all_2016_TDmcw)
 
 ```
   
@@ -486,40 +451,207 @@ evalPredictions(rf_all_2016_TDmcwa,
                 plotCaption = "Temp, Dew Point, Month, Cloud/Ceiling Height, Wind Speed/Direction, SLP"
                 )
 
-# Get the change in prediction accuracy
-list(prev=rf_all_2016_TDmcw$testData, curr=rf_all_2016_TDmcwa$testData) %>% 
-    map_dfr(.f=getAccuracy, .id="source") %>% 
-    group_by(locale) %>% 
-    mutate(maxPct=max(pct)) %>% 
-    ungroup() %>% 
-    ggplot(aes(x=fct_reorder(locale, maxPct), y=pct)) + 
-    geom_point(aes(color=source)) + 
-    geom_text(aes(y=pct+0.05*(2*(pct==maxPct)-1), label=paste0(round(100*pct), "%"))) +
-    coord_flip() + 
-    ylim(c(0, 1)) + 
-    labs(x="", 
-         y="Correctly Predicted", 
-         title="Accuracy of Locale Predictions", 
-         subtitle="(positive detection rate by locale)"
-         ) + 
-    scale_color_manual("Model", 
-                       values=c("prev"="red", "curr"="darkgreen"), 
-                       labels=c("prev"="previous", "curr"="current")
-                       )
+# Get the comparison to previous accuracy
+deltaAccuracy(prevObject=rf_all_2016_TDmcw, currObject=rf_all_2016_TDmcwa)
 
 ```
   
 Adding sea-level pressure again significantly improves prediction ability.  The cold weather cities are in the roughly 40%-60% accuracy range, and the other cities are in the roughly 60%-80% accuracy range.
 
-Next, a smaller subset of the weather data is explored, with the cities grouped as:  
+Based on the hierarchical clustering and results of the initial random forest models, a few archetype cities are defined in an attempt to pull out distinctions:  
   
-* Las Vegas  
-* San Diego  
-* New Orleans / Houston  
-* Newark  
-* Lincoln  
-* Traverse City / Grand Rapids / Detroit  
-* Chicago / Milwaukee / Madison / Green Bay / Minneapolis / Indianapolis  
+* Miami (likely to match with Tampa, New Orleans, and Houston)  
+* Las Vegas (likely to match with Phoenix)  
+* Los Angeles (likely to match with San Diego and San Jose)  
+* Denver (seems potentially isolated)  
+* Seattle (seems potentially isolated)  
+* Dallas (likely to match to San Antonio)  
+* Minneapolis (surrogate for the cold side of cold weather cities)  
+* Atlanta (possible to match with DC, St Louis, Indianapolis, but may be too similar to Cold/Miami)  
+  
+A data subset is created, with "hr" added for the Zulu hour of the observation (as integer rather than as factor):  
+```{r}
+
+archeCities <- c("kmia_2016", "klas_2016", "klax_2016", "kden_2016", 
+                 "ksea_2016", "kdfw_2016", "kmsp_2016", "katl_2016"
+                 )
+
+archeData <- metarData %>%
+    filter(source %in% archeCities) %>%
+    mutate(hr=lubridate::hour(dtime))
+
+```
+  
+A random forest, with mtry=4, is then run using all variables from previous, as well as hour:  
+```{r cache=TRUE}
+
+# Run random forest for all 2016 locales
+rf_arche_2016_TDmcwa <- rfMultiLocale(archeData, 
+                                      vrbls=c("TempF", "DewF", 
+                                              "month", "hr",
+                                              "minHeight", "ceilingHeight", 
+                                              "WindSpeed", "predomDir",
+                                              "modSLP"
+                                              ),
+                                      locs=NULL, # defaults to running for all locales
+                                      ntree=100, 
+                                      mtry=4,
+                                      seed=2006291353
+                                      )
+
+```
+  
+The evaluation process can again be run:  
+```{r}
+
+# Get the graphs of the prediction accuracy
+evalPredictions(rf_arche_2016_TDmcwa, 
+                plotCaption = "Temp, Dew Point, Month/Hour, Cloud/Ceiling Height, Wind Speed/Direction, SLP"
+                )
+
+```
+  
+The model is reasonably successful in pulling apart the archetypes.  Denver and Dallas seem potentially less distinct, though all archetypes cities are predicted at 80%+ accuracy.
+
+The remaining cities can be classified against the archetype data, to explore any patterns that emerge:  
+```{r}
+
+localeByArchetype(rf_arche_2016_TDmcwa, 
+                  fullData=metarData, 
+                  archeCities=archeCities, 
+                  sortDescMatch=TRUE
+                  )
+
+```
+  
+There appear to be several issues:  
+  
+* Atlanta and Dallas are not particularly distinct and do not make for good archetypes (potentially, Miami, Atlanta, and Dallas can all be replaced by Houston); Denver and Seattle are shaky but may be OK  
+* Minneapolis may be too cold, driving the midwestern cities to instead classify partially as Denver  
+* The model is potentially learning too much about the specific city rather than about archetypes  
+  
+The first issue is addressed by collapsing Atlanta, Dallas, and Miami and instead using Houston as the archetype; and replacing Minneapolis with Chicago:  
+```{r}
+
+archeCities_v02 <- c("kiah_2016", "klas_2016", "klax_2016", 
+                     "kden_2016", "ksea_2016", "kord_2016"
+                     )
+
+archeData_v02 <- metarData %>%
+    filter(source %in% archeCities_v02) %>%
+    mutate(hr=lubridate::hour(dtime))
+
+```
+
+A random forest, with mtry=4, is then run using all variables from previous, as well as hour:  
+```{r cache=TRUE}
+
+# Run random forest for all 2016 locales in archeData_v02
+rf_arche_2016_TDmcwa_v02 <- rfMultiLocale(archeData_v02, 
+                                          vrbls=c("TempF", "DewF", 
+                                                  "month", "hr",
+                                                  "minHeight", "ceilingHeight", 
+                                                  "WindSpeed", "predomDir",
+                                                  "modSLP"
+                                                  ),
+                                          locs=NULL, # defaults to running for all locales
+                                          ntree=100, 
+                                          mtry=4,
+                                          seed=2006291448
+                                          )
+
+```
+  
+The evaluation process can again be run:  
+```{r}
+
+# Get the graphs of the prediction accuracy
+evalPredictions(rf_arche_2016_TDmcwa_v02, 
+                plotCaption = "Temp, Dew Point, Month/Hour, Cloud/Ceiling Height, Wind Speed/Direction, SLP"
+                )
+
+```
+  
+The model is reasonably successful in pulling apart the archetypes.  Houston appears the most distinct (as had Miami previously), and there is less overlap going to/from Denver or Seattle.
+
+The remaining cities can be classified against the archetype data, to explore any patterns that emerge:  
+```{r}
+
+localeByArchetype(rf_arche_2016_TDmcwa_v02, 
+                  fullData=metarData, 
+                  archeCities=archeCities_v02, 
+                  sortDescMatch = TRUE
+                  )
+
+```
+  
+At a glance, the archetypes are more sensible.  There is a bit of Denver and a bit of Seattle in most of the cold weather cities, and a bit of Houston in some of the warmer cold weather cities.  This is suggestive that there are either more then one type of cold-weather cities, or that cold-weather cities tend to be like other archetypes are certain times.
+
+The model is run again, deleting Denver and Seattle, and converting Los Angeles to San Diego:  
+```{r}
+
+archeCities_v03 <- c("kiah_2016", "klas_2016", "ksan_2016", "kord_2016")
+
+archeData_v03 <- metarData %>%
+    filter(source %in% archeCities_v03) %>%
+    mutate(hr=lubridate::hour(dtime))
+
+```
+
+A random forest, with mtry=4, is then run using all variables from previous, as well as hour:  
+```{r cache=TRUE}
+
+# Run random forest for all 2016 locales in archeData_v03
+rf_arche_2016_TDmcwa_v03 <- rfMultiLocale(archeData_v03, 
+                                          vrbls=c("TempF", "DewF", 
+                                                  "month", "hr",
+                                                  "minHeight", "ceilingHeight", 
+                                                  "WindSpeed", "predomDir",
+                                                  "modSLP"
+                                                  ),
+                                          locs=NULL, # defaults to running for all locales
+                                          ntree=100, 
+                                          mtry=4,
+                                          seed=2006291459
+                                          )
+
+```
+  
+The evaluation process can again be run:  
+```{r}
+
+# Get the graphs of the prediction accuracy
+evalPredictions(rf_arche_2016_TDmcwa_v03, 
+                plotCaption = "Temp, Dew Point, Month/Hour, Cloud/Ceiling Height, Wind Speed/Direction, SLP"
+                )
+
+```
+  
+These archetypes are distinct, with accuracies all in the 95% range.  The remaining cities can be classified against the archetype data, to explore any patterns that emerge:  
+```{r}
+
+localeByArchetype(rf_arche_2016_TDmcwa_v03,
+                  fullData=metarData,
+                  archeCities=archeCities_v03,
+                  sortDescMatch=TRUE
+                  )
+
+```
+  
+Quite a few cities show as blends of the archetype cities, which is likely correct if archetypes are considered to be Cold, Humid, Marine, Desert.  An open question is whether to expand that list with another 1-2 archetypes that attempt to better capture Atlanta, Dallas, Denver, St Louis, and DC.  
+
+The Marine archetype may need to be converted to Pacific and to better identify the California entities.  
+
+A decision about Seattle is needed, as it is a little like everything and everything is a little like it.
+  
+To address the issue of the model learning from specific cities rather than archetypes, user-defined clusters will be created, and data from these clusters will be used in modeling:  
+  
+* Marine - San Diego (100%), Los Angeles (100%), San Francisco (50%), San Jose (50%) in an attempt to train the model to recognize that Marine cities differ meaningfully from Cold cities and Humid cities  
+* Desert - Las Vegas, Phoenix in an attempt to train the model on differences in Desert and Marine  
+* Humid - Houston, Miami, New Orleans, Tampa, reflecting that the model is already largely pulling out the humid cities correctly  
+* Cold - Chicago, Milwaukee, Grand Rapids, Green Bay, Traverse City, Madison, Detroit, Minneapolis, Boston to reflect that the model is largely already pulling out cold cities correctly  
+* Mixed - St Louis, DC, Dallas, Atlanta in an attempt to reflect that these cities are sometimes classified as Cold and sometimes classified as Humid  
+* Excluded for now - Denver (mix of Cold/Desert, see how evolves), Seattle (mix of everything, see how evolves), Philadelphia/Newark/Lincoln/Indianapolis (see how evolves with split of Cold and Mixed), San Antonio (see how evolves with split of Humid, Cold, and Mixed)  
   
 Further, a variable will be created for "hr", the Zulu hour of the observation:  
 ```{r eval=FALSE}
