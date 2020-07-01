@@ -646,344 +646,301 @@ A decision about Seattle is needed, as it is a little like everything and everyt
   
 To address the issue of the model learning from specific cities rather than archetypes, user-defined clusters will be created, and data from these clusters will be used in modeling:  
   
-* Marine - San Diego (100%), Los Angeles (100%), San Francisco (50%), San Jose (50%) in an attempt to train the model to recognize that Marine cities differ meaningfully from Cold cities and Humid cities  
+* Marine - San Diego, Los Angeles in an attempt to train the model to recognize that Marine cities differ meaningfully from Cold cities and Humid cities (San Jose, San Francicso and Seattle are somewhat different climates)  
 * Desert - Las Vegas, Phoenix in an attempt to train the model on differences in Desert and Marine  
 * Humid - Houston, Miami, New Orleans, Tampa, reflecting that the model is already largely pulling out the humid cities correctly  
-* Cold - Chicago, Milwaukee, Grand Rapids, Green Bay, Traverse City, Madison, Detroit, Minneapolis, Boston to reflect that the model is largely already pulling out cold cities correctly  
-* Mixed - St Louis, DC, Dallas, Atlanta in an attempt to reflect that these cities are sometimes classified as Cold and sometimes classified as Humid  
-* Excluded for now - Denver (mix of Cold/Desert, see how evolves), Seattle (mix of everything, see how evolves), Philadelphia/Newark/Lincoln/Indianapolis (see how evolves with split of Cold and Mixed), San Antonio (see how evolves with split of Humid, Cold, and Mixed)  
+* Cold - Chicago, Milwaukee, Grand Rapids, Green Bay, Traverse City, Madison, Detroit, Minneapolis to reflect that the model is largely already pulling out cold cities correctly (Boston excluded for now)  
+* South - Atlanta, Dallas, San Antonio in an attempt to pull out southern cities that are not as humid as those along the Gulf Coast  
+* Mixed - Indianapolis, Lincoln, St Louis, to reflect cities that have milder winters than Cold but colder winters than South  
+* Excluded for now - Denver, Seattle, Boston/Newark/Phialdelphia/DC, San Francisco/San Jose  
   
 Further, a variable will be created for "hr", the Zulu hour of the observation:  
-```{r eval=FALSE}
+```{r}
 
-locale2016Mapper <- c('Cold-MI', 'Newark', 'Cold', 'Cold-MI', 'Humid', 'Cold', 'Desert', 'Lincoln', 'Cold', 'Cold', 'Cold', 'Humid', 'Cold', 'Marine', 'Cold-MI')
-names(locale2016Mapper) <- c('Detroit, MI (2016)', 'Newark, NJ (2016)', 'Green Bay, WI (2016)', 'Grand Rapids, MI (2016)', 'Houston, TX (2016)', 'Indianapolis, IN (2016)', 'Las Vegas, NV (2016)', 'Lincoln, NE (2016)', 'Milwaukee, WI (2016)', 'Madison, WI (2016)', 'Minneapolis, MN (2016)', 'New Orleans, LA (2016)', 'Chicago, IL (2016)', 'San Diego, CA (2016)', 'Traverse City, MI (2016)')
+# Create the locale mapper
+locMapperTibble <- tibble::tribble(
+    ~source, ~locType,
+    'katl_2016', 'South',
+    'kbos_2016', 'Exclude',
+    'kdca_2016', 'Exclude',
+    'kden_2016', 'Exclude',
+    'kdfw_2016', 'South',
+    'kdtw_2016', 'Cold',
+    'kewr_2016', 'Exclude',
+    'kgrb_2016', 'Cold',
+    'kgrr_2016', 'Cold',
+    'kiah_2016', 'Humid',
+    'kind_2016', 'Mixed',
+    'klas_2016', 'Desert',
+    'klax_2016', 'Marine',
+    'klnk_2016', 'Mixed',
+    'kmia_2016', 'Humid',
+    'kmke_2016', 'Cold',
+    'kmsn_2016', 'Cold',
+    'kmsp_2016', 'Cold',
+    'kmsy_2016', 'Humid',
+    'kord_2016', 'Cold',
+    'kphl_2016', 'Exclude',
+    'kphx_2016', 'Desert',
+    'ksan_2016', 'Marine',
+    'ksat_2016', 'South',
+    'ksea_2016', 'Exclude',
+    'ksfo_2016', 'Exclude',
+    'ksjc_2016', 'Exclude',
+    'kstl_2016', 'Mixed',
+    'ktpa_2016', 'Humid',
+    'ktvc_2016', 'Cold'
+)
 
-tibble::tibble(locale=names(locale2016Mapper), mapping=locale2016Mapper) %>%
-    arrange(mapping, locale)
+# Create locMapper
+locMapper <- locMapperTibble %>% pull(locType)
+names(locMapper) <- locMapperTibble %>% pull(source)
+locMapper
 
-modData <- modData %>%
-    mutate(hr=lubridate::hour(dtime), 
-           locType=locale2016Mapper[locale]
-           )
+# Create the data file with locType
+locData_v04 <- metarData %>% 
+    mutate(locType=locMapper[source], hr=lubridate::hour(dtime)) %>% 
+    filter(year==2016, locType !="Exclude")
 
-modData %>%
-    count(locType, year) %>%
-    pivot_wider(locType, names_from="year", values_from="n")
+# Counts by locType
+locData_v04 %>%
+    count(locType)
 
 ```
   
+There is a risk that the model will predict neutral cities as 'Cold' given the 4:1 ratio of Cold cities to Marine/Desert cities.  The random forest model is first run on the data 'as is':    
+```{r cache=TRUE}
+
+rf_arche_small_TDmcwa_v04 <- rfMultiLocale(locData_v04, 
+                                           vrbls=c("TempF", "DewF", 
+                                                   "month", "hr",
+                                                   "minHeight", "ceilingHeight", 
+                                                   "WindSpeed", "predomDir",
+                                                   "modSLP"
+                                                   ),
+                                           locs=NULL, # defaults to running for all locales
+                                           ntree=100, 
+                                           locVar="locType", 
+                                           pred="locType",
+                                           mtry=4, 
+                                           otherVar=c("dtime", "source", "locale"),
+                                           seed=2006301313
+                                           )
+
+```
+  
+Prediction accuracy is then assessed:  
+```{r}
+
+# Get the graphs of the prediction accuracy
+evalPredictions(rf_arche_small_TDmcwa_v04,
+                plotCaption = "Temp, Dew Point, Month/Hour, Cloud/Ceiling Height, Wind Speed/Direction, SLP",
+                keyVar="locType"
+                )
+
+```
+  
+The designation of Cold, Desert, Humid, and Marine seems successful.  The attempt to split South from Humid resulted in good, if incomplete, separation.  The attempt to separate a group of 'warmer' cold-weather cities from 'colder' cold-weather cities was not particularly successful.  This could partially be an artifact of 'Cold' having double the data volume as 'Mixed'.
+
+Classifications by city can also be examined:  
+```{r}
+
+archeCities_v04 <- locMapperTibble %>%
+    filter(locType != "Exclude") %>%
+    pull(source)
+
+localeByArchetype(rf_arche_small_TDmcwa_v04, 
+                  fullData=mutate(metarData, locType=locMapper[source]), 
+                  archeCities=archeCities_v04, 
+                  sortDescMatch=TRUE
+                  )
+
+```
+  
+Many of the cities are nicely classified in to their assigned archetypes, as desired.  Among the cities used in the classifications, concerns include:  
+  
+* The cities pre-assigned as South do not seem to cluster so strongly together.  This may not be a good archetype  
+* The cities pre-assigned as Mixed do not clutser well, possibly driven by a data volume discrepancy where Cold has more than double the data  
+* Remaining cities frequently assign to 2+ archetypes, as expected since weather in the mid-latitudes would not necessarily follow any archetypal pattern on a year-long basis  
+  
+Classifications are changed somewhat, and data are then filtered so that an equal number of observations from each locale type are applied in the modeling:  
+  
+* Mixed - deleted, entries will be moved to 'Exclude' to see how they map  
+* South - deleted, entries will be moved to 'Exclude' to see how they map  
+  
+```{r}
+
+# Create the locale mapper
+locMapperTibble_v05 <- tibble::tribble(
+    ~source, ~locType,
+    'katl_2016', 'Exclude',
+    'kbos_2016', 'Exclude',
+    'kdca_2016', 'Exclude',
+    'kden_2016', 'Exclude',
+    'kdfw_2016', 'Exclude',
+    'kdtw_2016', 'Cold',
+    'kewr_2016', 'Exclude',
+    'kgrb_2016', 'Cold',
+    'kgrr_2016', 'Cold',
+    'kiah_2016', 'Humid',
+    'kind_2016', 'Exclude',
+    'klas_2016', 'Desert',
+    'klax_2016', 'Marine',
+    'klnk_2016', 'Exclude',
+    'kmia_2016', 'Humid',
+    'kmke_2016', 'Cold',
+    'kmsn_2016', 'Cold',
+    'kmsp_2016', 'Cold',
+    'kmsy_2016', 'Humid',
+    'kord_2016', 'Cold',
+    'kphl_2016', 'Exclude',
+    'kphx_2016', 'Desert',
+    'ksan_2016', 'Marine',
+    'ksat_2016', 'Exclude',
+    'ksea_2016', 'Exclude',
+    'ksfo_2016', 'Exclude',
+    'ksjc_2016', 'Exclude',
+    'kstl_2016', 'Exclude',
+    'ktpa_2016', 'Humid',
+    'ktvc_2016', 'Cold'
+)
+
+# Create locMapper
+locMapper_v05 <- locMapperTibble_v05 %>% pull(locType)
+names(locMapper_v05) <- locMapperTibble_v05 %>% pull(source)
+locMapper_v05
+
+# Create the data file with locType
+locData_v05 <- metarData %>% 
+    mutate(locType=locMapper_v05[source], hr=lubridate::hour(dtime)) %>% 
+    filter(year==2016, locType !="Exclude")
+
+# Counts by locType
+locData_v05 %>%
+    count(locType)
+
+```
+
 The data are the filtered so that there are an equal number of observations from each locale type.  The model can later be predicted against the remaining items:  
-```{r eval=FALSE}
+```{r}
 
 # Set a seed for reporducibility
-set.seed(2006211352)
+set.seed(2006301356)
 
 # Find the smallest locale type
-nSmall <- modData %>%
+nSmall <- locData_v05 %>%
     filter(!is.na(locType)) %>%
     count(locType) %>%
     pull(n) %>%
     min()
 
 # Create the relevant data subset
-subData <- modData %>%
+subData_v05 <- locData_v05 %>%
     filter(!is.na(locType)) %>%
     group_by(locType) %>%
     sample_n(size=nSmall, replace=FALSE) %>%
     ungroup()
 
 # Sumarize the data subset
-subData %>% 
-    count(locale) %>% 
+subData_v05 %>% 
+    count(locType, locale) %>% 
     arrange(-n)
 
 ```
   
 The previous model can then be run on the data subset:  
-```{r eval=FALSE}
+```{r cache=TRUE}
 
-# Run random forest for all 2016 locale types
-rf_types_2016_TDmcw <- rfMultiLocale(subData, 
-                                     vrbls=c("TempF", "DewF", 
-                                             "month", 
-                                             "minHeight", "ceilingHeight", 
-                                             "WindSpeed", "predomDir"
-                                             ),
-                                     locs=NULL, 
-                                     locVar="locType",
-                                     pred="locType",
-                                     ntree=50, 
-                                     seed=2006211401
-                                     )
-
-```
-  
-The evaluation process can again be run:  
-```{r eval=FALSE}
-
-evalPredictions(rf_types_2016_TDmcw, 
-                plotCaption = "Temp, Dew Point, Month, Cloud/Ceiling Height, Wind Speed/Direction", 
-                keyVar="locType"
-                )
-
-```
-  
-Predictive ability is strongest for the well-differentiated types, and weakest for the more poorly differentiated types.  The model is about 50% accurate in classifying cold climates; 25% of the time they are classified as they other type of cold climate, and 25% of the time they are classified as something else (typically Lincoln or Newark).
-  
-The modeling is run again using a much smaller training dataset (testSize set to 0.9) to see the implication of a much smaller data volume:  
-```{r eval=FALSE}
-
-# Run random forest for all 2016 locale types
-rf_types_2016_small_TDmcw <- rfMultiLocale(subData, 
+rf_arche_small_TDmcwa_v05 <- rfMultiLocale(subData_v05, 
                                            vrbls=c("TempF", "DewF", 
-                                                   "month", 
+                                                   "month", "hr",
                                                    "minHeight", "ceilingHeight", 
-                                                   "WindSpeed", "predomDir"
+                                                   "WindSpeed", "predomDir",
+                                                   "modSLP"
                                                    ),
-                                           locs=NULL, 
-                                           locVar="locType",
+                                           locs=NULL, # defaults to running for all locales
+                                           ntree=100, 
+                                           locVar="locType", 
                                            pred="locType",
-                                           ntree=50, 
-                                           seed=2006211419,
-                                           testSize=0.9
+                                           mtry=4, 
+                                           otherVar=c("dtime", "source", "locale"),
+                                           seed=2006301358
                                            )
 
 ```
   
 The evaluation process can again be run:  
-```{r eval=FALSE}
+```{r}
 
-evalPredictions(rf_types_2016_small_TDmcw, 
-                plotCaption = "Temp, Dew Point, Month, Cloud/Ceiling Height, Wind Speed/Direction", 
+# Get the graphs of the prediction accuracy
+evalPredictions(rf_arche_small_TDmcwa_v05,
+                plotCaption = "Temp, Dew Point, Month/Hour, Cloud/Ceiling Height, Wind Speed/Direction, SLP",
                 keyVar="locType"
                 )
 
 ```
   
-As expected, predictions are less accurate with a smaller training dataset.  Overall acuuracy falls from ~70% to ~60% with the much smaller training data volumes.  This suggests the model is continuing to learn from the data, and may benefit from an expanded sample.
-  
-Next, the model is adapted to include the hour (as an integer, which may need to be rethought, though this will generally capture whether it is daytime or nighttime even without factoring) and the sea-level pressure variable:  
-```{r eval=FALSE}
+The archetypes are well-separated, with roughly 95% accuracy in every case.  Predictions can then also be made for all cities, including those not in the modeling:  
+```{r}
 
-# Run random forest for all 2016 locale types - add hour and modSLP, limit mtry to 4
-rf_types_2016_TDmcwha <- rfMultiLocale(subData, 
-                                       vrbls=c("TempF", "DewF", 
-                                               "month", "hr",
-                                               "minHeight", "ceilingHeight", 
-                                               "WindSpeed", "predomDir", 
-                                               "modSLP"
-                                               ),
-                                       locs=NULL, 
-                                       locVar="locType",
-                                       pred="locType",
-                                       ntree=50, 
-                                       seed=2006211423, 
-                                       mtry=4
-                                       )
+archeCities_v05 <- locMapperTibble_v05 %>%
+    filter(locType != "Exclude") %>%
+    pull(source)
 
-```
-  
-The evaluation process can again be run:  
-```{r eval=FALSE}
-
-evalPredictions(rf_types_2016_TDmcwha, 
-                plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind, SLP", 
-                keyVar="locType"
-                )
-
-```
-  
-Accuracy increases to 75%.  In particular, the model is better able to distinguish Lincoln and Newark from the remaining locations, which has a follow-on effect of improving cold weather classifications.
-  
-Exploration is then run on distinguishing two locales from each other, to see the implications of parameters like data volume (controlled through testSize) and the number of trees.
-  
-Comparisons will be run as follows:  
-  
-* Desert vs. Humid (should be easiest to pull apart)  
-* Cold vs. Cold-MI (should be hardest to pull apart)  
-  
-```{r eval=FALSE}
-
-ntrees <- c(10, 25, 50, 100, 250, 500)
-testSizes <- c(0.9, 0.7, 0.3)
-
-desertHumid <- vector("list", length(ntrees) * length(testSizes))
-n <- 1
-
-for (ntree in ntrees) {
-    for (testSize in testSizes) {
-
-        desertHumid[[n]] <- rfTwoLocales(subData, 
-                                         loc1="Desert", 
-                                         loc2="Humid", 
-                                         locVar="locType", 
-                                         vrbls=c("TempF", "DewF", "month", "hr", 
-                                                 "minHeight", "ceilingHeight", 
-                                                 "WindSpeed", "predomDir", "modSLP"
-                                                 ),
-                                         pred="locType", 
-                                         seed=2006211432,
-                                         ntree=ntree, 
-                                         mtry=4,
-                                         testSize=testSize
-                                         )
-        desertHumid[[n]]$ntree <- ntree
-        desertHumid[[n]]$testSize <- testSize
-        
-        n <- n+1
-        
-    }
-}
-
-```
-  
-An assessment of accuracy can then be performed:  
-```{r eval=FALSE}
-
-df <- sapply(desertHumid, 
-             FUN=function(x) { c(x[["errorRate"]]["OOB"], ntree=x$ntree, testSize=x$testSize) }
-             ) %>%
-    t() %>%
-    tibble::as_tibble()
-
-df %>%
-    mutate(accuracy=1-OOB, trainSize=1-testSize) %>%
-    ggplot(aes(x=ntree, y=trainSize)) +
-    geom_text(aes(label=paste0(round(100*accuracy), "%"))) + 
-    scale_x_log10()
-
-```
-  
-As expected, accuracy is very high for distinguishing Desert and Humid climates, even with small data volumes (training size 10% of the data) and a small number of trees.
-  
-The approach is then run for the cold weather cities:  
-```{r eval=FALSE}
-
-ntrees <- c(10, 25, 50, 100, 250, 500)
-testSizes <- c(0.9, 0.7, 0.3)
-
-coldColdMI <- vector("list", length(ntrees) * length(testSizes))
-n <- 1
-
-for (ntree in ntrees) {
-    for (testSize in testSizes) {
-
-        coldColdMI[[n]] <- rfTwoLocales(subData, 
-                                        loc1="Cold", 
-                                        loc2="Cold-MI", 
-                                        locVar="locType", 
-                                        vrbls=c("TempF", "DewF", "month", "hr", 
-                                                "minHeight", "ceilingHeight", 
-                                                "WindSpeed", "predomDir", "modSLP"
-                                                ),
-                                        pred="locType", 
-                                        seed=2006211501,
-                                        ntree=ntree, 
-                                        mtry=4,
-                                        testSize=testSize
-                                        )
-        coldColdMI[[n]]$ntree <- ntree
-        coldColdMI[[n]]$testSize <- testSize
-        
-        n <- n+1
-        
-    }
-}
-
-```
-  
-An assessment of accuracy can then be performed:  
-```{r eval=FALSE}
-
-dfColdColdMI <- sapply(coldColdMI, 
-                       FUN=function(x) { c(x[["errorRate"]]["OOB"], ntree=x$ntree, testSize=x$testSize) }
-                       ) %>%
-    t() %>%
-    tibble::as_tibble()
-
-dfColdColdMI %>%
-    mutate(accuracy=1-OOB, trainSize=1-testSize) %>%
-    ggplot(aes(x=ntree, y=trainSize)) +
-    geom_text(aes(label=paste0(round(100*accuracy), "%"))) + 
-    scale_x_log10()
-
-```
-  
-Greater data volumes and greater tree depths are more helpful for distinguishing cold weather city types from each other.  The smallest forest has a 56% accuracy (null 50%) while the largest has a 68% accuracy.  This suggests some potential upside to continuing the cold weather modeling process with more cities added for greater data volumes.
-  
-Data from years other than 2016 can be fed in to the model, with predictions made to see whether the model is learning general differences in climate or specific features about 2016.
-
-Data that were not included in the modeling can be predicted, with the results assessed:  
-  
-* 2016 data that was not chosen for modeling - serves as an additional test frame  
-* 2015 and 2017 data - can show the extent to which the model is learning general climate differences as opposed to specific 2016 weather features  
-  
-Example code includes:  
-```{r eval=FALSE}
-
-nonUsedData <- modData %>%
-    anti_join(select(subData, source, dtime))
-
-nonUsedData %>%
-    mutate(localeName=str_replace(locale, pattern=" .{1}\\d{4}.*", replacement="")) %>%
-    count(localeName, year) %>%
-    pivot_wider(localeName, names_from="year", values_from="n")
-
-```
-  
-The function can then be applied to the 2016 data:  
-```{r eval=FALSE}
-
-# Modify the file for mapping locale to type
-localeMapper <- locale2016Mapper
-names(localeMapper) <- str_replace(names(localeMapper), pattern=" .\\d{4}.", replacement="")
-
-# Predictions on 2016 data
-helperPredictPlot(rf_types_2016_TDmcwha$rfModel, 
-                  df=filter(nonUsedData, year==2016), 
-                  predOrder=c("Cold", "Cold-MI", "Lincoln", "Newark", "Marine", "Humid", "Desert"), 
-                  locMapper=localeMapper
+localeByArchetype(rf_arche_small_TDmcwa_v05, 
+                  fullData=mutate(metarData, locType=locMapper_v05[source]), 
+                  archeCities=archeCities_v05, 
+                  sortDescMatch=TRUE
                   )
 
 ```
   
-The predictions seem in-line with the test dataset conclusions, as would be expected given that the "unused" 2016 data are randomly sampled and should be no different than that "test" 2016 dataset.  
+Broadly speaking, cities used in modeling appear to classify in to the appropriate archetypes.  For the cities not included in the modeling:  
   
-The function can then be applied to the 2015 and 2017 data:  
-```{r eval=FALSE}
+* Boston, Lincoln, Indianapolis, Newark, Philadelphia, and Seattle are most closely matched to 'Cold'  
+* San Antonio is most closely matched to 'Humid'  
+* Denver is a split of Cold/Desert  
+* DC and St Louis are a split of Cold/Humid  
+* San Francisco and San Jose are most closely matched to 'Marine' with meaningful 'Cold' and 'Humid' also  
+* Atlanta and Dallas are roughly split between 'Humid' and 'Cold', with a bit of 'Desert' also  
+  
+The model can be applied to data from years other than 2016, to see how the classifications are impacted by use in out-of-sample years:  
+```{r}
 
-# Predictions on 2015/2017 data
-helperPredictPlot(rf_types_2016_TDmcwha$rfModel, 
-                  df=filter(nonUsedData, year!=2016), 
-                  predOrder=c("Cold", "Cold-MI", "Lincoln", "Newark", "Marine", "Humid", "Desert"), 
-                  locMapper=localeMapper
+# Predictions on non-2016 data
+helperPredictPlot(rf_arche_small_TDmcwa_v05$rfModel, 
+                  df=filter(mutate(metarData, hr=lubridate::hour(dtime)), year!=2016), 
+                  predOrder=c("Marine", "Humid", "Desert", "Cold"), 
+                  locMapper=locMapper_v05
                   )
 
 ```
   
-Model performance on 2015 and 2017 data is not as strong, with roughly a 10%-20% loss of accuracy.  Predictions are still much better than null accuracy, and the model (mostly) continues to separate the three well-differentiated types (Desert, Humid, Marine).
+Model performance on non-2016 data is not as strong, with roughly a 10%-20% loss of accuracy.  Predictions are still much better than null accuracy, and the model (mostly) continues to separate the archetypes.
 
-However, the model struggles to classify Chicago, placing it roughly equally as Cold (correct), Cold-MI, Lincoln, and Newark.  This suggests cold-weather cities may be predicted on specific anomalies of 2016 (e.g., where the cold snaps hit).  More data may help the model generalize better, specifcally to separate recurring and generalizable climate features of Chicago from weather anomalies that happened to hit Chicago in 2016.
-  
-Suppose that models are run on all 2015-2017 data for Chicago, Las Vegas, New Orleans, and San Diego:  
-```{r eval=FALSE}
+Suppose that models are run on all 2015-2018 data for Chicago, Las Vegas, New Orleans, and San Diego:  
+```{r}
 
-# Create the subset for Chicago, Las Vegas, New Orleans, San Diego (should have 2015, 2016, 2017)
-sub_2015_2017_data <- modData %>%
-    filter(str_sub(source, 1, 4) %in% c("kord", "klas", "kmsy", "ksan")) %>%
-    mutate(city=str_replace(locale, pattern=" .\\d{4}.", replacement=""))
+# Create the subset for Chicago, Las Vegas, New Orleans, San Diego
+sub_2015_2018_data <- metarData %>%
+    filter(str_sub(source, 1, 4) %in% c("kord", "klas", "kmsy", "ksan"), 
+           year %in% c(2015, 2016, 2017, 2018)
+           ) %>%
+    mutate(city=str_replace(locale, pattern=" .\\d{4}.", replacement=""), 
+           hr=lubridate::hour(dtime)
+           )
 
 # Check that proper locales are included
-sub_2015_2017_data %>% 
+sub_2015_2018_data %>% 
     count(city, locale)
 
 ```
   
-```{r eval=FALSE}
+The random forest model is run and cached:  
+```{r cache=TRUE}
 
-# Run random forest for 2015-2017 data
-rf_types_2015_2017_TDmcwha <- rfMultiLocale(sub_2015_2017_data, 
+# Run random forest for 2015-2018 data
+rf_types_2015_2018_TDmcwha <- rfMultiLocale(sub_2015_2018_data, 
                                             vrbls=c("TempF", "DewF", 
                                                     "month", "hr",
                                                     "minHeight", "ceilingHeight", 
@@ -993,130 +950,85 @@ rf_types_2015_2017_TDmcwha <- rfMultiLocale(sub_2015_2017_data,
                                             locs=NULL, 
                                             locVar="city",
                                             pred="city",
-                                            ntree=25, 
-                                            seed=2006221334, 
+                                            ntree=50, 
+                                            seed=2006301420, 
                                             mtry=4
                                             )
 
 ```
   
-```{r eval=FALSE}
+```{r}
 
-evalPredictions(rf_types_2015_2017_TDmcwha, 
+evalPredictions(rf_types_2015_2018_TDmcwha, 
                 plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind, SLP", 
                 keyVar="city"
                 )
 
 ```
   
-Even with a very small forest (25 trees), the model is almost always separating Las Vegas, Chicago, San Diego, and New Orleans.  While the climates are very different in these cities, it is striking that the model has so few misclassifications.
+Even with a small forest (50 trees), the model is almost always separating Las Vegas, Chicago, San Diego, and New Orleans.  While the climates are very different in these cities, it is striking that the model has so few misclassifications.
 
 How do other cities map against these classifications?  
-```{r eval=FALSE}
+```{r}
 
-# Predictions on 2015/2017 data
-helperPredictPlot(rf_types_2015_2017_TDmcwha$rfModel, 
-                  df=filter(modData, !(str_sub(source, 1, 4) %in% c("kord", "klas", "kmsy", "ksan"))), 
+# Predictions on 2015/2018 data
+helperPredictPlot(rf_types_2015_2018_TDmcwha$rfModel, 
+                  df=filter(mutate(metarData, hr=lubridate::hour(dtime)), 
+                            !(str_sub(source, 1, 4) %in% c("kord", "klas", "kmsy", "ksan"))
+                            ), 
                   predOrder=c("Chicago, IL", "San Diego, CA", "New Orleans, LA", "Las Vegas, NV")
                   )
 
 ```
   
-* Houston is most similar to New Orleans as expected  
-* Milwaukee, Green Bay, and Grand Rapids are all classified 90%+ as Chicago  
-* Madison, Traverse City, Minneapolis, and Detroit are all classified 85%+ as Chicago  
-* Lincoln, Indianapolis, and Newark are all "closest" to Chicago, but all show meaningful prediction volumes to New Orleans (these are the three "least cold" of the cold-weather cities in the modeling)  
-  
-The prediction process is re-run excluding the altimeter (modSLP) data:  
-```{r eval=FALSE}
+Classifications are broadly as expected based on the previous archetype analysis.  Variable importances are plotted:  
+```{r}
 
-# Run random forest for 2015-2017 data (exclude modSLP)
-rf_types_2015_2017_TDmcwh <- rfMultiLocale(sub_2015_2017_data, 
-                                           vrbls=c("TempF", "DewF", 
-                                                   "month", "hr",
-                                                   "minHeight", "ceilingHeight", 
-                                                   "WindSpeed", "predomDir"
-                                                   ),
-                                            locs=NULL, 
-                                            locVar="city",
-                                            pred="city",
-                                            ntree=25, 
-                                            seed=2006221334, 
-                                            mtry=4
-                                            )
-
-```
-  
-```{r eval=FALSE}
-
-evalPredictions(rf_types_2015_2017_TDmcwh, 
-                plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind", 
-                keyVar="city"
-                )
-
-```
-  
-Performance drops, since altimeters are meaningfully different in high altitude (Las Vegas) and sea-level (New Orleans and San Diego) locations.
-
-Variable importances are plotted:  
-```{r eval=FALSE}
-
-helperPlotVarImp(rf_types_2015_2017_TDmcwha$rfModel)
-helperPlotVarImp(rf_types_2015_2017_TDmcwh$rfModel, titleAdd=" (Excludes SLP)")
+helperPlotVarImp(rf_types_2015_2018_TDmcwha$rfModel)
 
 ```
   
 Dew point and temperature by month continue to be strong factors for separating the four cities in this analysis.  SLP, minimum cloud height, and prevailing wind direction are also meaningful.
   
-The assessment can be run for the two main 2015-2017 models:  
-```{r eval=FALSE}
+An assessment can be run for the 2015-2018 model:  
+```{r}
 
 # Run for the full model including SLP
-probs_2015_2017_TDmcwha <- 
-    assessPredictionCertainty(rf_types_2015_2017_TDmcwha, 
+probs_2015_2018_TDmcwha <- 
+    assessPredictionCertainty(rf_types_2015_2018_TDmcwha, 
                               keyVar="city", 
                               plotCaption="Temp, Dew Point, Month/Hour, Clouds, Wind, SLP", 
                               showAcc=TRUE
                               )
 
-# Run for the model excluding SLP
-probs_2015_2017_TDmcwh <- 
-    assessPredictionCertainty(rf_types_2015_2017_TDmcwh, 
-                              keyVar="city", 
-                              plotCaption="Temp, Dew Point, Month/Hour, Clouds, Wind", 
-                              showAcc=TRUE
-                              )
-
 ```
   
-Predictions with 80%+ of the votes are made ~80% of the time, and these predictions are ~99% accurate.  Predictions with <80% of the votes are made ~20% of the times, and these predictions are ~75% accurate.  The percentage of votes received appears to be a reasonable proxy for the confidence of the prediction.
+* Predictions with 80%+ of the votes are made ~75% of the time, and these predictions are ~99% accurate  
+* Predictions with <80% of the votes are made ~25% of the times, and these predictions are ~80% accurate  
+* The percentage of votes received appears to be a reasonable proxy for the confidence of the prediction  
   
 A similar process can be run for assessing the classification of the other cities against the 2015-2017 data for Chicago, Las Vegas, New Orleans, and San Diego:  
-```{r eval=FALSE}
+```{r}
 
-useData <- modData %>%
-    filter(!(str_sub(source, 1, 4) %in% c("kord", "klas", "kmsy", "ksan")))
+useData <- metarData %>%
+    filter(!(str_sub(source, 1, 4) %in% c("kord", "klas", "kmsy", "ksan"))) %>%
+    mutate(hr=lubridate::hour(dtime))
     
 # Run for the model excluding SLP
-probs_allcities_2015_2017_TDmcwh <- 
-    assessPredictionCertainty(rf_types_2015_2017_TDmcwh, 
+probs_allcities_2015_2018_TDmcwh <- 
+    assessPredictionCertainty(rf_types_2015_2018_TDmcwha, 
                               testData=useData,
                               keyVar="locale", 
-                              plotCaption="Temp, Dew Point, Month/Hour, Clouds, Wind", 
+                              plotCaption="Temp, Dew Point, Month/Hour, Clouds, Wind, modSLP", 
                               showHists=TRUE
                               )
 
 ```
   
-Patterns in the predictions stand out:  
-  
-* Houston is almost always classified as New Orleans when the model is confident (~65% of the time)  
-* The cities that are at least as cold as Chicago are almost always classified as Chicago when the model is confident (~70% of the time)  
-* Newark, Lincoln, and Indianapolis are generally not classified with confidence (~50% of predictions are to 'Too Low'), suggesting these cities may fall in between the four archetypes  
-* There are a meaningful number of 'Too Low' predictions for every locale, suggesting that many locales "loo like" at least two of these archetypes at certain times of the year  
-  
-The actual run is cached since it takes a meaningful amount of time:  
-```{r eval=FALSE}
+The model is frequently not so confident in assigning an archetype to related cities, though it frequently gets the most sensible assignment.
+
+An assessment is run to look at the evolution of the model as it take in the 'next best' variable for building out the random forest:  
+```{r cache=TRUE}
 
 # Define the variables to be considered
 possVars <- c("TempF", "DewF", "month", "hr", "minHeight", 
@@ -1138,7 +1050,7 @@ for (ctr in 1:length(possVars)) {
     }
     
     # Run each of them through the combinations
-    tmpList <- helperRFCombinations(possVars, df=sub_2015_2017_data, prevVars=prevVars)
+    tmpList <- helperRFCombinations(possVars, df=sub_2015_2018_data, prevVars=prevVars)
 
     # Assess the performance
     tmpAccuracy <- helperVariableAccuracy(tmpList, possVars=possVars, prevVars=prevVars)
@@ -1159,7 +1071,7 @@ for (ctr in 1:length(possVars)) {
 ```
   
 The evolution of accuracy can then be plotted:  
-```{r eval=FALSE}
+```{r}
 
 # Pull the accuracy data from the variables selected
 tblAccuracy <- map_dfr(rfContainer, .f=helperExtractAccuracy, .id="vrblNum") %>%
@@ -1187,12 +1099,8 @@ As seen previously, dew point, temperature, and month are significant differenti
 
 Adding altimeter (SLP) bumps the accuracy by another ~10%, while adding minimum cloud height and prevailing wind direction bump the accuracy by another ~5%.
 
-This shows some of the power of the random forest algorithm as it is given additional variables to explore.
-
-Further, the OOB estimates provided by the modeling are pessimistic relative to performance on the hold-out sample (which has 94%-96% accuracy rather than the estimated 89%-93% accuracy).  This is driven partly by rfTwoLocales() pulling the average error rate rather than the final error rate, an oversight that carries throughout the analysis.  The next version of this modeling should fix the approach to classifying errors.
-
-Evolution of error can be plotted to see the impact:  
-```{r eval=FALSE}
+This shows some of the power of the random forest algorithm as it is given additional variables to explore.  Evolution of error can be plotted to see the impact:  
+```{r}
 
 oobError <- c()
 for (ctr in 1:9) {
@@ -1213,4 +1121,4 @@ tibble::tibble(nVars=rep(1:9, each=25),
 
 ```
   
-It will be interesting to see how the four archetypes models perform on other large US cities.  A separate routine is written to source the key download and EDA functions and to run them for these key data.
+With a greate number of variables, there is a greater lift in accuracy as the forest grows larger.
