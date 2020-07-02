@@ -1988,4 +1988,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModelingFunctions_v001.R holds updated weather modeling functions  
 * WeatherModeling_202006_v002 explores archetype cities for weather modeling  
 * WeatherModeling_202006_v002 extends archetype city exploration  
+* WeatherModeling_202006_v002 explores predicting year for a city  
   
