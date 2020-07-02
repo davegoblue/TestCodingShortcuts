@@ -59,13 +59,15 @@ createTestTrain <- function(df,
 # Evaluate model predictions
 evalPredictions <- function(lst, 
                             plotCaption, 
-                            keyVar="locale"
+                            keyVar="locale", 
+                            locOrder=NULL
                             ) {
     
     # FUNCTION ARGUMENTS:
     # lst: the list containing outputs of the modeling
     # plotCaption: description of predictors used
     # keyVar: the variable that represents truth when assessing predictions
+    # locOrder: desired sort for x/y axes for p2 (NULL means ordered by accuracy, TRUE means order by keyVar)
     
     # Create summary of accuracy
     all2016Accuracy <- lst$testData %>%
@@ -100,11 +102,19 @@ evalPredictions <- function(lst,
         )
     print(p1)
     
-    # Order locales sensibly
-    locOrder <- all2016Accuracy %>%
-        filter(correct) %>%
-        arrange(pct) %>%
-        pull(locale)
+    # Order locales sensibly if locOrder has been passed as TRUE or NULL
+    if (isTRUE(locOrder)) {
+        locOrder <- all2016Accuracy %>%
+            pull(locale) %>%
+            unique() %>%
+            sort(decreasing=TRUE)
+    }
+    if (is.null(locOrder)) {
+        locOrder <- all2016Accuracy %>%
+            filter(correct) %>%
+            arrange(pct) %>%
+            pull(locale)
+    }
     
     # Create plot for which locales are classified as each other
     p2 <- all2016Accuracy %>%
@@ -259,82 +269,6 @@ rfMultiLocale <- function(tbl,
     
     # Return the list object
     rfOut
-    
-}
-
-
-# Evaluate model predictions
-evalPredictions <- function(lst, 
-                            plotCaption, 
-                            keyVar="locale"
-                            ) {
-    
-    # FUNCTION ARGUMENTS:
-    # lst: the list containing outputs of the modeling
-    # plotCaption: description of predictors used
-    # keyVar: the variable that represents truth when assessing predictions
-    
-    # Create summary of accuracy
-    all2016Accuracy <- lst$testData %>%
-        mutate(locale=factor(get(keyVar), levels=levels(predicted))) %>%
-        count(locale, predicted, correct) %>%
-        group_by(locale) %>%
-        mutate(pct=n/sum(n)) %>%
-        ungroup()
-    
-    # Calculate the number of levels
-    nLevels <- length(levels(factor(all2016Accuracy$locale)))
-    nullAcc <- 1 / nLevels
-    
-    # Create plot for overall accuracy
-    p1 <- all2016Accuracy %>%
-        filter(locale==predicted) %>%
-        ggplot(aes(x=fct_reorder(locale, pct))) + 
-        geom_point(aes(y=pct), size=2) + 
-        geom_text(aes(y=pct+0.04, label=paste0(round(100*pct), "%"))) +
-        geom_hline(aes(yintercept=nullAcc), lty=2) +
-        coord_flip() + 
-        ylim(0, 1) + 
-        labs(x="", 
-             y="Correctly Predicted", 
-             title="Accuracy of Locale Predictions", 
-             subtitle="(positive detection rate by locale)", 
-             caption=paste0(plotCaption, 
-                            " as predictors\n(", 
-                            round(100*nullAcc), 
-                            "% is baseline null accuracy)"
-             )
-        )
-    print(p1)
-    
-    # Order locales sensibly
-    locOrder <- all2016Accuracy %>%
-        filter(correct) %>%
-        arrange(pct) %>%
-        pull(locale)
-    
-    # Create plot for which locales are classified as each other
-    p2 <- all2016Accuracy %>%
-        mutate(locale=factor(locale, levels=locOrder), 
-               predPretty=factor(str_replace(predicted, pattern=", ", replacement="\n"), 
-                                 levels=str_replace(locOrder, pattern=", ", replacement="\n")
-               )
-        ) %>%
-        ggplot(aes(y=locale, x=predPretty)) + 
-        geom_tile(aes(fill=pct)) + 
-        geom_text(aes(label=paste0(round(100*pct), "%"))) + 
-        scale_fill_continuous("% Predicted As", low="white", high="green") + 
-        scale_x_discrete(position="top") +
-        theme(axis.text.x=element_text(angle=90)) + 
-        labs(x="",
-             y="Actual Locale", 
-             title="Predicted Locale vs. Actual Locale", 
-             caption=paste0(plotCaption, " as predictors")
-        )
-    print(p2)
-    
-    # Return the accuracy object
-    all2016Accuracy
     
 }
 
@@ -814,5 +748,62 @@ localeByArchetype <- function(rfList,
         scale_x_discrete(position="top") + 
         scale_fill_continuous(low="white", high="green")
     print(p1)
+    
+}
+
+
+# Function for plotting error evolution by number of iterations
+errorEvolution <- function(mdl, 
+                           modelName="rfModel", 
+                           errData="err.rate",
+                           useCategory=NULL, 
+                           oobEvery=50, 
+                           subT=""
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # mdl: the model, either as a list with a sub-element, or directly
+    # modelName: if mdl is a list, the name of the element containing the model
+    # errData: the location of the error data in the model
+    # useCategory: the categories for error plotting (NULL means all)
+    # oobEvery: show OOB error for every increment of this amount
+    # subT: the subtitle for the plot
+    
+    # If the model has been passed as a list, extract the model element
+    if ("list" %in% class(mdl)) { mdl <- mdl[[modelName]] }
+    
+    # Extract the error rate data
+    errRate <- mdl[[errData]]
+    
+    # Convert to data.frame and then to tibble
+    tblError <- as.data.frame(errRate) %>%
+        setNames(colnames(errRate)) %>%
+        tibble::as_tibble() %>%
+        mutate(ntree=1:n()) %>%
+        pivot_longer(-ntree, names_to="Category", values_to="Error")
+    
+    # Filter if useCateogry has been passed
+    if (!is.null(useCategory)) {
+        tblError <- tblError %>%
+            filter(as.character(Category) %in% as.character(useCategory))
+    }
+    
+    # Create a plot of the error evolution
+    p1 <- tblError %>%
+        ggplot(aes(x=ntree, y=Error)) + 
+        geom_line(aes(color=Category)) + 
+        labs(x="# Trees", 
+             y="Error Rate", 
+             title="Error Rate vs. Number of Trees", 
+             subtitle=subT
+        ) + 
+        ylim(c(0, NA)) + 
+        geom_text(data=~filter(., Category=="OOB", (ntree==1 | (ntree %% oobEvery)==0)), 
+                  aes(x=ntree, y=1.1*max(Error), label=paste0("OOB\n", round(100*Error, 1), "%"))
+        )
+    print(p1)
+    
+    # Return the error object
+    tblError
     
 }
