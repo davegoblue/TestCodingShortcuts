@@ -1121,4 +1121,274 @@ tibble::tibble(nVars=rep(1:9, each=25),
 
 ```
   
-With a greate number of variables, there is a greater lift in accuracy as the forest grows larger.
+With a greater number of variables, there is a greater lift in accuracy as the forest grows larger.
+
+Suppose that an attempt is made to classify the year for a single city.  Example code includes:  
+```{r cache=TRUE}
+
+# Create a subset of the data for only Chicago (2014-2019)
+sub_kord_data <- metarData %>%
+    mutate(hr=lubridate::hour(dtime)) %>%
+    filter(str_sub(source, 1 ,4) %in% "kord")
+
+# Run random forest for Chicago 2014-2019 data
+rf_kord_TDmcwha <- rfMultiLocale(sub_kord_data, 
+                                 vrbls=c("TempF", "DewF", 
+                                         "month", "hr",
+                                         "minHeight", "ceilingHeight", 
+                                         "WindSpeed", "predomDir", 
+                                         "modSLP"
+                                         ),
+                                 locs=NULL, 
+                                 locVar="year",
+                                 pred="year",
+                                 ntree=200, 
+                                 seed=2007011309, 
+                                 mtry=4
+                                 )
+
+```
+  
+Prediction accuracy and variable importance can then be assessed:  
+```{r}
+
+# Evaluate prediction accuracy
+evalPredictions(rf_kord_TDmcwha, 
+                plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind, SLP", 
+                keyVar="year", 
+                locOrder=TRUE
+                )
+
+# Evaluate variable importance
+helperPlotVarImp(rf_kord_TDmcwha$rfModel)
+
+# Evaluate error evolution
+errorEvolution(rf_kord_TDmcwha, useCategory="OOB", subT="Chicago (2014-2019)")
+
+```
+  
+Interestingly, the model predicts the year with 75%-80% accuracy (null accuracy 17%), suggesting there is significant annual variation in Chicago climate.  Sea-level-pressure has the largest variable importance (SLP is a mix of altitude, temperature, dew point, and high/low pressure systems).  The first 50 trees significantly reduce the OOB error, with more modest, but still continuing, error reduction afterwards.
+  
+The process is run for Las Vegas:  
+```{r cache=TRUE}
+
+# Create a subset of the data for only Las Vegas (2014-2019)
+sub_klas_data <- metarData %>%
+    mutate(hr=lubridate::hour(dtime)) %>%
+    filter(str_sub(source, 1 ,4) %in% "klas")
+
+# Run random forest for Las Vegas 2014-2019 data
+rf_klas_TDmcwha <- rfMultiLocale(sub_klas_data, 
+                                 vrbls=c("TempF", "DewF", 
+                                         "month", "hr",
+                                         "minHeight", "ceilingHeight", 
+                                         "WindSpeed", "predomDir", 
+                                         "modSLP"
+                                         ),
+                                 locs=NULL, 
+                                 locVar="year",
+                                 pred="year",
+                                 ntree=200, 
+                                 seed=2007011405, 
+                                 mtry=4
+                                 )
+
+```
+  
+Prediction accuracy and variable importance can then be assessed:  
+```{r}
+
+# Evaluate prediction accuracy
+evalPredictions(rf_klas_TDmcwha, 
+                plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind, SLP", 
+                keyVar="year", 
+                locOrder=TRUE
+                )
+
+# Evaluate variable importance
+helperPlotVarImp(rf_klas_TDmcwha$rfModel)
+
+# Evaluate error evolution
+errorEvolution(rf_klas_TDmcwha, useCategory="OOB", subT="Las Vegas (2014-2019)")
+
+```
+  
+Prediction accuracies are lower for Las Vegas, averaging 60%-75% (2014 appears to be much more differentiated than the other years).  This is suggestive that there is less annual variation in the Las Vegas climate than there is in the Chicago climate, though still enough to meaningfully pull apart the years.
+
+Modified seal-level pressure is the top predictor, and the majority of the OOB error reduction occurs in the first 50 trees.
+
+Suppose that modSLP is eliminated as a predictor variable, and the process is scaled down to 50 trees and repeated for Chicago:  
+```{r cache=TRUE}
+
+# Run random forest for Chicago 2014-2019 data
+rf_kord_TDmcwh_50 <- rfMultiLocale(sub_kord_data, 
+                                   vrbls=c("TempF", "DewF", 
+                                           "month", "hr",
+                                           "minHeight", "ceilingHeight", 
+                                           "WindSpeed", "predomDir"
+                                           ),
+                                   locs=NULL, 
+                                   locVar="year",
+                                   pred="year",
+                                   ntree=50, 
+                                   seed=2007011410, 
+                                   mtry=4
+                                   )
+
+```
+  
+Prediction accuracy and variable importance can then be assessed:  
+```{r}
+
+# Evaluate prediction accuracy
+evalPredictions(rf_kord_TDmcwh_50, 
+                plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind", 
+                keyVar="year", 
+                locOrder=TRUE
+                )
+
+# Evaluate variable importance
+helperPlotVarImp(rf_kord_TDmcwh_50$rfModel)
+
+# Compare error evolution through the first 50 trees
+tibble::tibble(ntree=1:50, 
+               withSLP=rf_kord_TDmcwha$rfModel$err.rate[1:50, "OOB"], 
+               noSLP=rf_kord_TDmcwh_50$rfModel$err.rate[1:50, "OOB"]
+               ) %>%
+    pivot_longer(-ntree, names_to="Model", values_to="Error") %>%
+    ggplot(aes(x=ntree, y=Error, color=Model)) + 
+    geom_line() + 
+    geom_text(data=~filter(., ntree %in% c(1, 50)), 
+              aes(y=Error+0.02, label=paste0(round(100*Error, 1), "%"))
+              ) +
+    labs(x="# Trees", 
+         y="OOB Error Rate", 
+         title="OOB Error Evolution for SLP Included/Excluded"
+         ) + 
+    ylim(c(0, NA))
+
+```
+  
+Modified sea-level pressure is revealed to be a significant driver of prediction accuracy for Chicago, confirming findings of the previous variable importance analysis.  This suggests different patterns of high and low pressure being in control by year may meaningfully improve the ability to predict Chicago by year.
+  
+The process can also be run for Las Vegas:  
+```{r cache=TRUE}
+
+# Run random forest for Las Vegas 2014-2019 data
+rf_klas_TDmcwh_50 <- rfMultiLocale(sub_klas_data, 
+                                   vrbls=c("TempF", "DewF", 
+                                           "month", "hr",
+                                           "minHeight", "ceilingHeight", 
+                                           "WindSpeed", "predomDir"
+                                           ),
+                                   locs=NULL, 
+                                   locVar="year",
+                                   pred="year",
+                                   ntree=50, 
+                                   seed=2007011420, 
+                                   mtry=4
+                                   )
+
+```
+  
+Prediction accuracy and variable importance can then be assessed:  
+```{r}
+
+# Evaluate prediction accuracy
+evalPredictions(rf_klas_TDmcwh_50, 
+                plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind", 
+                keyVar="year", 
+                locOrder=TRUE
+                )
+
+# Evaluate variable importance
+helperPlotVarImp(rf_klas_TDmcwh_50$rfModel)
+
+# Compare error evolution through the first 50 trees
+tibble::tibble(ntree=1:50, 
+               withSLP=rf_klas_TDmcwha$rfModel$err.rate[1:50, "OOB"], 
+               noSLP=rf_klas_TDmcwh_50$rfModel$err.rate[1:50, "OOB"]
+               ) %>%
+    pivot_longer(-ntree, names_to="Model", values_to="Error") %>%
+    ggplot(aes(x=ntree, y=Error, color=Model)) + 
+    geom_line() + 
+    geom_text(data=~filter(., ntree %in% c(1, 50)), 
+              aes(y=Error+0.02, label=paste0(round(100*Error, 1), "%"))
+              ) +
+    labs(x="# Trees", 
+         y="OOB Error Rate", 
+         title="OOB Error Evolution for SLP Included/Excluded"
+         ) + 
+    ylim(c(0, NA))
+
+```
+  
+Modified sea-level pressure is revealed as a meaningful driver of prediction accuracy for Las Vegas also, though with a lesser effect than seen in Chicago.  This potentially suggests less variability by year in SLP for Las Vegas.  
+  
+Since SLP is so meaningful, are there any patterns by year?  
+```{r}
+
+sub_kord_data %>%
+    bind_rows(sub_klas_data, .id="cityFile") %>%
+    select(cityFile, year, month, modSLP) %>%
+    mutate(city=case_when(cityFile==1 ~ "Chicago", cityFile==2 ~ "Las Vegas", TRUE ~ "Error")) %>%
+    filter(!is.na(modSLP)) %>%
+    ggplot(aes(x=factor(year), y=modSLP)) + 
+    geom_boxplot(fill="lightblue") + 
+    facet_wrap(~city) +
+    labs(x="", y="modSLP", title="Modified Sea-Level Pressure by Year (Chicago and Las Vegas)")
+
+```
+  
+Chicago has a higher sea-level pressure than Las Vegas (as expected), though neither city shows much variation on average from year to year.  The Chicago data are explored further by month:  
+```{r}
+
+sub_kord_data %>%
+    select(year, month, modSLP) %>%
+    filter(!is.na(modSLP)) %>%
+    ggplot(aes(x=month, y=modSLP)) + 
+    geom_boxplot(fill="lightblue") + 
+    facet_wrap(~year) +
+    labs(x="", y="modSLP", title="Modified Sea-Level Pressure by Month and Year (Chicago)")
+
+sub_kord_data %>%
+    select(year, month, modSLP) %>%
+    filter(!is.na(modSLP)) %>%
+    group_by(year, month) %>%
+    summarize(medSLP=median(modSLP)) %>%
+    ggplot(aes(x=month, y=medSLP, color=factor(year), group=year)) + 
+    geom_line(lwd=1) + 
+    labs(x="", y="Median modSLP", title="Median modified Sea-Level Pressure by Month and Year (Chicago)")
+
+sub_kord_data %>%
+    select(year, month, modSLP) %>%
+    filter(!is.na(modSLP)) %>%
+    group_by(year, month) %>%
+    summarize(medSLP=median(modSLP)) %>%
+    group_by(month) %>%
+    summarize(sdSLP=sd(medSLP)) %>%
+    ggplot(aes(x=month, y=sdSLP)) + 
+    geom_point() + 
+    labs(x="", 
+         y="Standard Deviation of Median modSLP by Year", 
+         title="Variability by year of modified Sea-Level Pressure by Month (Chicago)"
+         )
+
+```
+  
+There are meaningful differences in median modified sea-level pressure by month by year.  This is suggestive that several year of data are needed to define an archetype, as there is risk that otherwise the archetype will be an anomalous "high pressure was in contol in June" when that is not generally applicable.  And, since high vs. low pressure are often related to temperature, dew point, coludiness, wind speed, and the like, the need for multiple years of data to define an archetype likely extends to all the other variables as well.
+
+With greater variability in SLP by year in the cold-weather months, predictive ability in the cold-weather months is expected to be higher:  
+```{r}
+
+rf_kord_TDmcwha$testData %>% 
+    group_by(month) %>% 
+    summarize(pctError=1-mean(correct)) %>%
+    ggplot(aes(x=month, y=pctError)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=pctError/2, label=paste0(round(100*pctError, 1), "%"))) +
+    labs(x="", y="Error Rate", title="Prediction Error Rate by Month (Chicago)")
+
+```
+  
+As expected, the model takes advantage of greater annual variation in modSLP during the cold season to make better prediction of which year it is during the cold season.
