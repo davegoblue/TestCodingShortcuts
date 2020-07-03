@@ -248,7 +248,15 @@ rfMultiLocale <- function(tbl,
     
     # Create locs if it has not been passed
     if (is.null(locs)) {
-        locs <- tbl %>% pull(locVar) %>% unique() %>% sort()
+        
+        # Pull all values of locVar
+        locs <- tbl %>% pull(locVar)
+        
+        # If locVar is a factor, then use the levels of the factor, otherwise use the unique values
+        if ("factor" %in% class(locs)) { locs <- levels(locs) }
+        else { locs <- locs %>% unique() %>% sort() }
+        
+        # Print the levels that it will run for
         cat("\nRunning for locations:\n")
         print(locs)
     }
