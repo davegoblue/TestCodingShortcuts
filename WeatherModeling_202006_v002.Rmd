@@ -1716,3 +1716,253 @@ tibble::tibble(ntree=1:50,
 Interestingly, the inclusion of both Altimeter and modSLP appears to drive a 2%-3% decrease in classification error.  The main difference between the variables is that modSLP contains a hint about the previous 12-hour temperature.
 
 Importantly, including a dummy variable with modSLP has either no impact or a slight negative impact on model performance.  So, the addition of Altimeter to modSLP is likely a real impact, not merely the inclusion of two highly correlated variables that are both valuable to driving model performance.
+  
+Next, an attempt is made to compare every grouping of two cities, using all variables, mtry of 4, and a very small forest of 15 trees:  
+```{r cache=TRUE}
+
+# Create a container list to hold the output
+list_varimp_2016 <- vector("list", 0.5*length(names_2016)*(length(names_2016)-1))
+
+# Set a random seed
+set.seed(2007031342)
+
+# Loop through all possible combinations
+n <- 1
+for (ctr in 1:(length(names_2016)-1)) {
+    for (ctr2 in (ctr+1):length(names_2016)) {
+        list_varimp_2016[[n]] <- rfTwoLocales(mutate(metarData, hr=lubridate::hour(dtime)), 
+                                              loc1=names_2016[ctr], 
+                                              loc2=names_2016[ctr2], 
+                                              vrbls=c("TempF", "DewF", 
+                                                      "month", "hr",
+                                                      "minHeight", "ceilingHeight", 
+                                                      "WindSpeed", "predomDir", 
+                                                      "modSLP", "Altimeter"
+                                                      ),
+                                              ntree=15, 
+                                              mtry=4
+                                              )
+        n <- n + 1
+        if ((n %% 40) == 0) { cat("Through number:", n, "\n")}
+    }
+}
+
+```
+  
+```{r}
+
+# Create a tibble from the underlying accuracy data
+acc_varimp_2016 <- map_dfr(list_varimp_2016, .f=helperAccuracyLocale)
+
+# Assess the top 20 classification accuracies
+acc_varimp_2016 %>%
+    arrange(-accOverall) %>%
+    head(20)
+
+# Assess the bottom 20 classification accuracies
+acc_varimp_2016 %>%
+    arrange(accOverall) %>%
+    head(20)
+
+```
+  
+As pre previous, the best accuracies are obtained when comparing cities in very different climates (e.g., Denver vs. Humid/Marine or Miami vs. Desert/Cold), while the worst accuracies are obtained when comparing very similar cities (e.g., Chicago and Milwaukee or Newar and Philadelphia).
+
+Variable importance can then be assessed across all 1:1 classifications:  
+```{r cache=TRUE}
+
+# Create a tibble of all the variable importance data
+val_varimp_2016 <- map_dfr(list_varimp_2016, 
+                           .f=function(x) { x$rfModel %>% 
+                                   caret::varImp() %>% 
+                                   t() %>% 
+                                   as.data.frame()
+                               }
+                           ) %>% 
+    tibble::as_tibble()
+
+```
+  
+```{r}
+
+# Create boxplot of overall variable importance
+val_varimp_2016 %>% 
+    mutate(num=1:nrow(val_varimp_2016)) %>% 
+    pivot_longer(-num, names_to="variable", values_to="varImp") %>% 
+    ggplot(aes(x=fct_reorder(variable, varImp), y=varImp)) + 
+    geom_boxplot(fill="lightblue") + 
+    labs(x="", 
+         y="Variable Importance", 
+         title="Variable Importance for 1:1 Random Forest Classifications"
+         )
+
+# Attach the city names and OOB error rate
+tbl_varimp_2016 <- sapply(list_varimp_2016, 
+                          FUN=function(x) { c(names(x$errorRate[2:3]), x$errorRate["OOB"]) }
+                          ) %>%
+    t() %>% 
+    as.data.frame() %>% 
+    bind_cols(val_varimp_2016) %>% 
+    tibble::as_tibble() %>% 
+    mutate(OOB=as.numeric(as.character(OOB))) %>%
+    rename(locale1=V1, 
+           locale2=V2
+           )
+
+# Plot accuracy vs. spikiness of variable importance
+tbl_varimp_2016 %>%
+    pivot_longer(-c(locale1, locale2, OOB), names_to="var", values_to="varImp") %>% 
+    group_by(locale1, locale2, OOB) %>% 
+    summarize(mean=mean(varImp), max=max(varImp)) %>% 
+    mutate(maxMean=max/mean) %>%
+    ggplot(aes(x=maxMean, y=1-OOB)) + 
+    geom_point() + 
+    geom_smooth(method="loess") +
+    labs(x="Ratio of Maximum Variable Importance to Mean Variable Importance", 
+         y="OOB Accuracy", 
+         title="Accuracy vs. Spikiness of Variable Importance"
+         )
+
+```
+  
+Broadly speaking, the same variables that drive overall classification are important in driving 1:1 classifications.  There is meaningful spikiness, suggesting that different 1:1 classifications rely on different variables.
+
+There is a strong trend where the best accuracies are obtained where there is a single spiky dimension that drives the classifications.  This suggests that while the model can take advantage of all 10 variables, it has the easiest tome when there is a single, well-differentiated variable.  No surprise.
+
+An attempt is made to define archetype cities as cities that are either 1) very different from other cities, or 2) very similar to other cities.  An archetype should always meet criteria for some meaningful examples, and criteria 2 allows for an archetype to be similar to several other cities of the same archetype:  
+```{r}
+
+oobData <- tibble::tibble(City=character(0), OOBLow=numeric(0), OOBHigh=numeric(0))
+
+for (city in cityNameMapper[names_2016]) {
+    
+    cityData <- tbl_varimp_2016 %>%
+        filter(locale1 == city | locale2 == city)
+    
+    lowOOB <- cityData %>%
+        top_n(n=10, wt=-OOB) %>%
+        pull(OOB) %>%
+        mean()
+    
+    highOOB <- cityData %>%
+        top_n(n=5, wt=OOB) %>%
+        pull(OOB) %>%
+        mean()
+    
+    cat("\nCity:", city, 
+        "\tOOB (Low 10 Average):", round(lowOOB, 4), 
+        "\tOOB (High 5 Average):", round(highOOB, 4)
+        )
+    
+    oobData <- bind_rows(oobData, tibble::tibble(City=city, OOBLow=lowOOB, OOBHigh=highOOB))
+    
+}
+
+# Plot OOB data summary
+oobData %>%
+    ggplot(aes(x=OOBLow, y=OOBHigh)) + 
+    geom_text(aes(label=City)) + 
+    labs(x="Average OOB Error of Best 10 1:1 Predictions", 
+         y="Average OOB Error of Worst 5 1:1 Predictions"
+         )
+
+```
+  
+At a glance, Miami, Denver and Phoenix/Las Vegas make for great archetypes in this data.  They are broadly dissimilar from a large number of cities and not all that similar to many other cities.  New Orleans or Tampa may also make for good archetypes (somewhat surprisingly in that these should be similar to Miami).
+  
+Suppose that hierarchical clustering is attempted, using 1-OOB as the main 'distance' variable:  
+```{r}
+
+# Create both halves of what will become the distance matric
+upperHalf <- tbl_varimp_2016 %>%
+    mutate(locale1=as.character(locale1), locale2=as.character(locale2))
+
+lowerHalf <- upperHalf %>%
+    rename(locale2=locale1, locale1=locale2) %>%
+    select(locale1, locale2, everything())
+
+bothHalf <- upperHalf %>%
+    bind_rows(lowerHalf)
+
+# Select only locale1, locale2, OOB and create a record for each locale to itself
+mtxData <- bothHalf %>%
+    select(locale1, locale2, OOB) %>%
+    bind_rows(tibble::tibble(locale1=unique(bothHalf$locale1), locale2=locale1, OOB=NA)) %>%
+    arrange(locale1, locale2) %>%
+    mutate(accuracy=1-OOB)
+
+# Create the matrix and add row/column names
+mtxOOB <- matrix(data=mtxData$accuracy, nrow=sqrt(nrow(mtxData)), ncol=sqrt(nrow(mtxData)), byrow=TRUE)
+dimnames(mtxOOB) <- list(unique(mtxData$locale1), unique(mtxData$locale1))
+
+# Convert to distance matrix
+distOOB <- as.dist(mtxOOB)
+
+# Run hierarchical clustering
+distOOB %>%
+    hclust(method="complete") %>%
+    plot()
+
+```
+  
+Seattle and Denver appear to be good stand-alone cities.  They are not particularly close to any other cities.
+
+Suppose that an attempt is made to classify cities as Seattle, Denver, or Other:  
+```{r}
+
+# Create data for Denver/Seattle/Other
+sub_densea_data <- metarData %>%
+    mutate(place=case_when(source=="kden_2016" ~ "Denver", 
+                           source=="ksea_2016" ~ "Seattle", 
+                           TRUE ~ "Other"
+                           )
+           ) %>%
+    filter(year==2016)
+
+# Down-sample all to smallest 'place'
+nSmallPlace <- sub_densea_data %>%
+    count(place) %>%
+    pull(n) %>%
+    min()
+
+# Group the data and sample to only this minimum size
+set.seed(2007031504)
+
+sub_densea_data <- sub_densea_data %>%
+    group_by(place) %>%
+    sample_n(size=nSmallPlace) %>%
+    ungroup() %>%
+    mutate(hr=lubridate::hour(dtime))
+
+# Run random forest for subset data
+rf_densea_TDmcwhsa <- rfMultiLocale(sub_densea_data, 
+                                    vrbls=c("TempF", "DewF", 
+                                            "month", "hr",
+                                            "minHeight", "ceilingHeight", 
+                                            "WindSpeed", "predomDir",
+                                            "modSLP", "Altimeter"
+                                            ),
+                                    locs=NULL, 
+                                    locVar="place",
+                                    pred="place",
+                                    ntree=100, 
+                                    seed=2007031510, 
+                                    mtry=4
+                                    )
+
+# Evaluate prediction accuracy
+evalPredictions(rf_densea_TDmcwhsa, 
+                plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind, Altimeter, and SLP", 
+                keyVar="place", 
+                locOrder=NULL
+                )
+
+# Evaluate variable importance
+helperPlotVarImp(rf_densea_TDmcwhsa$rfModel)
+
+# Evaluate error evolution
+errorEvolution(rf_densea_TDmcwhsa, subT="Denver, Seattle, Other")
+
+```
+  
+The model is very good at picking out Seattle and Denver, but not so good at picking out that Other is not Seattle or Denver.  A different approach may be needed to find stand-alone cities and archetypes.
