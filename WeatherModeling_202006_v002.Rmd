@@ -1966,3 +1966,315 @@ errorEvolution(rf_densea_TDmcwhsa, subT="Denver, Seattle, Other")
 ```
   
 The model is very good at picking out Seattle and Denver, but not so good at picking out that Other is not Seattle or Denver.  A different approach may be needed to find stand-alone cities and archetypes.
+  
+An initial attempt is made to classify all of the 2016 cities, using a small forest of 25 trees, with the objective of finding cities that are frequently classified as each other:  
+```{r cache=TRUE}
+
+# Run random forest for subset data
+rf_all_nt25_TDmcwhsa <- rfMultiLocale(filter(mutate(metarData, hr=lubridate::hour(dtime)), year==2016), 
+                                      vrbls=c("TempF", "DewF", 
+                                              "month", "hr",
+                                              "minHeight", "ceilingHeight", 
+                                              "WindSpeed", "predomDir",
+                                              "modSLP", "Altimeter"
+                                              ),
+                                      locs=NULL, 
+                                      locVar="locale",
+                                      pred="locale",
+                                      ntree=25, 
+                                      seed=2007041352, 
+                                      mtry=4
+                                      )
+
+```
+  
+Accuracy can then be assessed:  
+```{r}
+
+# Evaluate prediction accuracy
+evalPredictions(rf_all_nt25_TDmcwhsa, 
+                plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind, Altimeter, and SLP", 
+                keyVar="locale", 
+                locOrder=NULL
+                )
+
+# Evaluate variable importance
+helperPlotVarImp(rf_all_nt25_TDmcwhsa$rfModel)
+
+# Evaluate error evolution
+errorEvolution(rf_all_nt25_TDmcwhsa, useCategory="OOB", subT="All 30 cities individually")
+
+```
+  
+There are frequently misclassified cities that might benefit from being grouped and classified as such:  
+  
+* Las Vegas and Phoenix  
+* Miami and Tampa  
+* San Diego and Los Angeles  
+* San Francisco and San Jose  
+* New Orleans and Houston (may also match well with Miami and Tampa)  
+* DC, Philadelphia, and Newark  
+* Chicago and Milwaukee  
+* Detroit and Grand Rapids  
+  
+Encouragingly, this is broadly the same as the findings from the hierarchical clustering.  The model is still learning at a decent rate, so the 25-tree forest is, as expected, too small.
+  
+A mapping file is created to map relevant cities together:  
+```{r}
+
+# Create the locale mapper
+locMapperTibble_ss01 <- tibble::tribble(
+    ~source, ~locType,
+    'katl_2016', 'Same',
+    'kbos_2016', 'Same',
+    'kdca_2016', 'DC-PHL-EWR (2016)',
+    'kden_2016', 'Same',
+    'kdfw_2016', 'Same',
+    'kdtw_2016', 'Detroit-Grand Rapids (2016)',
+    'kewr_2016', 'DC-PHL-EWR (2016)',
+    'kgrb_2016', 'Same',
+    'kgrr_2016', 'Detroit-Grand Rapids (2016)',
+    'kiah_2016', 'Houston-New Orleans (2016)',
+    'kind_2016', 'Same',
+    'klas_2016', 'Las Vegas-Phoenix (2016)',
+    'klax_2016', 'Los Angeles-San Diego (2016)',
+    'klnk_2016', 'Same',
+    'kmia_2016', 'Miami-Tampa Bay (2016)',
+    'kmke_2016', 'Chicago-Milwaukee (2016)',
+    'kmsn_2016', 'Same',
+    'kmsp_2016', 'Same',
+    'kmsy_2016', 'Houston-New Orleans (2016)',
+    'kord_2016', 'Chicago-Milwaukee (2016)',
+    'kphl_2016', 'DC-PHL-EWR (2016)',
+    'kphx_2016', 'Las Vegas-Phoenix (2016)',
+    'ksan_2016', 'Los Angeles-San Diego (2016)',
+    'ksat_2016', 'Same',
+    'ksea_2016', 'Same',
+    'ksfo_2016', 'Bay Area (2016)',
+    'ksjc_2016', 'Bay Area (2016)',
+    'kstl_2016', 'Same',
+    'ktpa_2016', 'Miami-Tampa Bay (2016)',
+    'ktvc_2016', 'Same'
+)
+
+# Create locMapper
+locMapper_ss01 <- locMapperTibble_ss01 %>% pull(locType)
+names(locMapper_ss01) <- locMapperTibble_ss01 %>% pull(source)
+locMapper_ss01
+
+# Create the data file with locType
+locData_ss01 <- metarData %>% 
+    mutate(locType=ifelse(locMapper_ss01[source]=="Same", locale, locMapper_ss01[source]), 
+           hr=lubridate::hour(dtime)) %>% 
+    filter(year==2016, locType !="Exclude")
+
+# Counts by locType
+locData_ss01 %>%
+    count(locType) %>%
+    arrange(-n) %>%
+    as.data.frame()
+
+```
+  
+The data are then sampled such that each locType is equally prevalent:  
+```{r}
+
+# Set a seed for reporducibility
+set.seed(2007041419)
+
+# Find the smallest locale type
+nSmall <- locData_ss01 %>%
+    filter(!is.na(locType)) %>%
+    count(locType) %>%
+    pull(n) %>%
+    min()
+
+# Create the relevant data subset
+ss01_data <- locData_ss01 %>%
+    filter(!is.na(locType)) %>%
+    group_by(locType) %>%
+    sample_n(size=nSmall, replace=FALSE) %>%
+    ungroup()
+
+# Sumarize the data subset
+ss01_data %>% 
+    count(locale) %>% 
+    arrange(-n) %>%
+    as.data.frame()
+
+```
+  
+A random forest can then be run to predict locType (using a slightly bigger forest of 50 trees:  
+```{r cache=TRUE}
+
+# Run random forest for subset data
+rf_s01_nt50_TDmcwhsa <- rfMultiLocale(ss01_data, 
+                                      vrbls=c("TempF", "DewF", 
+                                              "month", "hr",
+                                              "minHeight", "ceilingHeight", 
+                                              "WindSpeed", "predomDir",
+                                              "modSLP", "Altimeter"
+                                              ),
+                                      locs=NULL, 
+                                      locVar="locType",
+                                      pred="locType",
+                                      otherVar=c("dtime", "locale", "source"),
+                                      ntree=50, 
+                                      seed=2007041423, 
+                                      mtry=4
+                                      )
+
+```
+  
+Accuracy can then be assessed:  
+```{r}
+
+# Evaluate prediction accuracy
+evalPredictions(rf_s01_nt50_TDmcwhsa, 
+                plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind, Altimeter, and SLP", 
+                keyVar="locType", 
+                locOrder=NULL
+                )
+
+# Evaluate variable importance
+helperPlotVarImp(rf_s01_nt50_TDmcwhsa$rfModel)
+
+# Evaluate error evolution
+errorEvolution(rf_s01_nt50_TDmcwhsa, useCategory="OOB", subT="Subset 01: 21 Groups of 1-3 Locales")
+
+```
+  
+A few other consolidations appear merited:  
+  
+* Miami-Tampa and Houston-New Orleans  
+* Boston with DC-PHL-EWR  
+* Chicago-Milwaukee and Detroit-Grand Rapids with Madison and Green Bay  
+* Saint Louis and Indianapolis  
+* Dallas and San Antonio  
+  
+Example code includes:  
+```{r}
+
+# Create the locale mapper
+locMapperTibble_ss02 <- tibble::tribble(
+    ~source, ~locType,
+    'katl_2016', 'Same',
+    'kbos_2016', 'DC-PHL-EWR-BOS (2016)',
+    'kdca_2016', 'DC-PHL-EWR-BOS (2016)',
+    'kden_2016', 'Same',
+    'kdfw_2016', 'Dallas-San Antonio (2016)',
+    'kdtw_2016', 'Cold Midwest (2016)',
+    'kewr_2016', 'DC-PHL-EWR-BOS (2016)',
+    'kgrb_2016', 'Cold Midwest (2016)',
+    'kgrr_2016', 'Cold Midwest (2016)',
+    'kiah_2016', 'Gulf Coast (2016)',
+    'kind_2016', 'St Louis-Indianapolis (2016)',
+    'klas_2016', 'Las Vegas-Phoenix (2016)',
+    'klax_2016', 'Los Angeles-San Diego (2016)',
+    'klnk_2016', 'Same',
+    'kmia_2016', 'Gulf Coast (2016)',
+    'kmke_2016', 'Cold Midwest (2016)',
+    'kmsn_2016', 'Cold Midwest (2016)',
+    'kmsp_2016', 'Same',
+    'kmsy_2016', 'Gulf Coast (2016)',
+    'kord_2016', 'Cold Midwest (2016)',
+    'kphl_2016', 'DC-PHL-EWR-BOS (2016)',
+    'kphx_2016', 'Las Vegas-Phoenix (2016)',
+    'ksan_2016', 'Los Angeles-San Diego (2016)',
+    'ksat_2016', 'Dallas-San Antonio (2016)',
+    'ksea_2016', 'Same',
+    'ksfo_2016', 'Bay Area (2016)',
+    'ksjc_2016', 'Bay Area (2016)',
+    'kstl_2016', 'St Louis-Indianapolis (2016)',
+    'ktpa_2016', 'Gulf Coast (2016)',
+    'ktvc_2016', 'Same'
+)
+
+# Create locMapper
+locMapper_ss02 <- locMapperTibble_ss02 %>% pull(locType)
+names(locMapper_ss02) <- locMapperTibble_ss02 %>% pull(source)
+locMapper_ss02
+
+# Create the data file with locType
+locData_ss02 <- metarData %>% 
+    mutate(locType=ifelse(locMapper_ss02[source]=="Same", locale, locMapper_ss02[source]), 
+           hr=lubridate::hour(dtime)) %>% 
+    filter(year==2016, locType !="Exclude")
+
+# Counts by locType
+locData_ss02 %>%
+    count(locType) %>%
+    arrange(-n) %>%
+    as.data.frame()
+
+```
+  
+The data are then sampled such that each locType is equally prevalent:  
+```{r}
+
+# Set a seed for reporducibility
+set.seed(2007041447)
+
+# Find the smallest locale type
+nSmall <- locData_ss02 %>%
+    filter(!is.na(locType)) %>%
+    count(locType) %>%
+    pull(n) %>%
+    min()
+
+# Create the relevant data subset
+ss02_data <- locData_ss02 %>%
+    filter(!is.na(locType)) %>%
+    group_by(locType) %>%
+    sample_n(size=nSmall, replace=FALSE) %>%
+    ungroup()
+
+# Sumarize the data subset
+ss02_data %>% 
+    count(locale) %>% 
+    arrange(-n) %>%
+    as.data.frame()
+
+```
+  
+A random forest can then be run to predict locType (using a forest of 50 trees):  
+```{r cache=TRUE}
+
+# Run random forest for subset data
+rf_s02_nt50_TDmcwhsa <- rfMultiLocale(ss02_data, 
+                                      vrbls=c("TempF", "DewF", 
+                                              "month", "hr",
+                                              "minHeight", "ceilingHeight", 
+                                              "WindSpeed", "predomDir",
+                                              "modSLP", "Altimeter"
+                                              ),
+                                      locs=NULL, 
+                                      locVar="locType",
+                                      pred="locType",
+                                      otherVar=c("dtime", "locale", "source"),
+                                      ntree=50, 
+                                      seed=2007041449, 
+                                      mtry=4
+                                      )
+
+```
+  
+Accuracy can then be assessed:  
+```{r}
+
+# Evaluate prediction accuracy
+evalPredictions(rf_s02_nt50_TDmcwhsa, 
+                plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind, Altimeter, and SLP", 
+                keyVar="locType", 
+                locOrder=NULL
+                )
+
+# Evaluate variable importance
+helperPlotVarImp(rf_s02_nt50_TDmcwhsa$rfModel)
+
+# Evaluate error evolution
+errorEvolution(rf_s02_nt50_TDmcwhsa, useCategory="OOB", subT="Subset 02: 14 Groups of 1-6 Locales")
+
+```
+  
+Overall accuracy continues to improve.  Further exploration may allow for continued evolution of the archetypes, particularly as related to the colder cities where accuracy is not improving with consolidation to archetypes.
