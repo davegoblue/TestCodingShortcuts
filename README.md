@@ -1993,3 +1993,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 continues arechetype city exploration  
 * WeatherModeling_202006_v002 continues arechetype consolidation  
   
+### Expansions week of 06-JUL-2020  
+* WeatherModeling_202006_v002 explores warmer weather locales  
+  
