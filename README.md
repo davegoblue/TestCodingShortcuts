@@ -1996,4 +1996,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 06-JUL-2020  
 * WeatherModeling_202006_v002 explores warmer weather locales  
 * DataCamp_Insights_v003_d captures Reporting with R Markdown - Chapter 1 (Getting Started with R Markdown) - notes  
+* DataCamp_Insights_v003_d captures Reporting with R Markdown - Chapter 2 (Adding Analyses and Visualizations) - notes  
   
