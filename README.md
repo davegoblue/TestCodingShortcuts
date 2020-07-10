@@ -1998,4 +1998,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_d captures Reporting with R Markdown - Chapter 1 (Getting Started with R Markdown) - notes  
 * DataCamp_Insights_v003_d captures Reporting with R Markdown - Chapter 2 (Adding Analyses and Visualizations) - notes  
 * DataCamp_Insights_v003_d captures Reporting with R Markdown - Chapter 3 (Improving Reports) - notes  
+* DataCamp_Insights_v003_d captures Reporting with R Markdown - Chapter 4 (Customizing Reports) - notes  
   
