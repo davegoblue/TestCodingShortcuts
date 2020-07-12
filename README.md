@@ -2000,4 +2000,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_d captures Reporting with R Markdown - Chapter 3 (Improving Reports) - notes  
 * DataCamp_Insights_v003_d captures Reporting with R Markdown - Chapter 4 (Customizing Reports) - notes  
 * DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 1 (Simple Linear Regression) - notes  
+* DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 2 (Predictions and Model Objects) - notes  
   
