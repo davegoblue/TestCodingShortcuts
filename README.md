@@ -2002,3 +2002,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 1 (Simple Linear Regression) - notes  
 * DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 2 (Predictions and Model Objects) - notes  
   
+### Expansions week of 13-JUL-2020  
+* DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 3 (Assessing Model Fit) - notes  
+  
