@@ -2004,4 +2004,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 13-JUL-2020  
 * DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 3 (Assessing Model Fit) - notes  
+* DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 4 (Simple Logistic Regression) - notes  
   
