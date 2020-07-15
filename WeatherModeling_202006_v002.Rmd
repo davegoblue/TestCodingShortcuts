@@ -2418,3 +2418,108 @@ errorEvolution(rf_l03_nt100_TDmcwhsa,
 ```
   
 At a glance, the combinations chosen from the individual cities seem sensible given how the individual cities tend to (mis)classify.
+
+Random forests can also be used to run regressions, such as on variables like temperature or dew point.  Suppose that a few data elements are available, and the goal is to predict the temmperature based on those:  
+```{r}
+
+# Build a regression dataset with factored variables for locale and source
+regrData <- metarData %>%
+    mutate(hr=lubridate::hour(lubridate::round_date(dtime, unit="1 hour")),
+           hrfct=factor(hr), 
+           localefct=factor(locale), 
+           locName=str_replace(locale, pattern=" \\(\\d{4}\\)", replacement=""), 
+           locNamefct=factor(locName)
+           )
+
+# Define a dependent variable and predictor variables and filtering criteria
+depVar <- "TempF"
+predVars <- c("DewF", "month", "hrfct", "locNamefct")
+critFilter <- list("year"=c(2016), 
+                   "locNamefct"=c("Chicago, IL", "Las Vegas, NV", "San Diego, CA", "New Orleans, LA")
+                   )
+
+# Filter such that only non-NA data across all of depVar and predVars are included
+subRegData <- regrData %>%
+    filter_at(vars(all_of(c(depVar, predVars, names(critFilter)))), all_vars(!is.na(.)))
+
+# Filter such that only matches to critFilter are included
+for (xNum in seq_len(length(critFilter))) {
+    subRegData <- subRegData %>%
+        filter_at(vars(all_of(names(critFilter)[xNum])), ~. %in% critFilter[[xNum]])
+}
+
+# Split in to a test set and a train set
+testSize <- 0.3
+set.seed(2007151232)
+idxTrain <- sample(1:nrow(subRegData), size=round((1-testSize)*nrow(subRegData)), replace=FALSE)
+trainRegData <- subRegData[idxTrain, ]  # will be in random order
+testRegData <- subRegData[-idxTrain, ]  # will be in sorted order
+
+# Run random forest regression
+rfRegrData <- randomForest::randomForest(x=trainRegData[, predVars, drop=FALSE], 
+                                         y=trainRegData[, depVar, drop=TRUE], 
+                                         ntree=25, 
+                                         mtry=2
+                                         )
+
+# Assess variable importance
+rfRegrData %>% 
+    caret::varImp()
+
+# Assess evolution of OOB r-squared and RMSE
+tibble::tibble(ntree=1:25, rmse=rfRegrData$mse**0.5) %>%
+    ggplot(aes(x=ntree, y=rmse)) + 
+    geom_point() + 
+    ylim(c(0, NA)) + 
+    labs(x="# Trees", y="RMSE", title="Evolution of RMSE")
+tibble::tibble(ntree=1:25, rmse=rfRegrData$rsq) %>%
+    ggplot(aes(x=ntree, y=rmse)) + 
+    geom_point() + 
+    ylim(c(NA, 1)) + 
+    labs(x="# Trees", y="R-squared", title="Evolution of R-squared")
+
+# Apply to test-set data and report metrics
+rfPreds <- testRegData %>%
+    mutate(pred=predict(rfRegrData, newdata=testRegData[, predVars, drop=FALSE]), 
+           globMean=mean(get(depVar))
+           ) %>%
+    group_by(locale) %>%
+    mutate(locMean=mean(get(depVar))) %>%
+    ungroup() %>%
+    mutate(errActualGlob=(get(depVar)-globMean)**2,
+           errActualLoc=(get(depVar)-locMean)**2, 
+           errPredict=(get(depVar)-pred)**2
+           )
+
+# Calculate the errors by locale
+rfError <- rfPreds %>%
+    select(locale, starts_with("err")) %>%
+    group_by(locale) %>%
+    summarize_all(~mean(.)**0.5)
+
+# Plot errors by locale
+rfError %>%
+    pivot_longer(-locale, names_to="errorType", values_to="rmse") %>%
+    ggplot(aes(x=locale, y=rmse, fill=errorType)) + 
+        geom_col(position="dodge") + 
+    labs(x="", y="Average Error", title="Prediction Accuracy by Locale") + 
+    scale_fill_discrete("Actual vs.", 
+                        c("errActualGlob", "errActualLoc", "errPredict"), 
+                        c("Global Mean", "Locale Mean", "Predicted")
+                        )
+
+# Print errors by locale, including percentage changes
+rfError %>%
+    mutate(pctLocGlob=errActualLoc/errActualGlob, 
+           pctPredLoc=errPredict/errActualLoc, 
+           pctPredGlob=errPredict/errActualGlob
+           )
+
+```
+  
+A simple random forest significantly reduces null error in predicting temperatures, particularly for Chicago, Las Vegas, and New Orleans.  This suggests knowing the dew point and the month enhance predictions for seasonal locales, while being of less use in a marine climate with modest seasonal variation.
+
+Note that San Diego has more accurate predictions than any other locale, it is just that San Diego does not need much more than locale to be accurate.  In contrast, Chicago averages ~25 degree error if using global mean, ~20 degrees error if using local mean, and ~5 degrees error if using dew point, month, and hour.
+  
+Notably, it appears that running with just a single tree explains nearly 90% of the variance and drives average prediction errors down to under 6 degrees.  While there is evolution with additional trees, it appears modest.  Potentially, large forests may not be less necessary for this regression analysis phase.
+  
