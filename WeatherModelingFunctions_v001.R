@@ -153,7 +153,8 @@ rfTwoLocales <- function(df,
                          seed=NULL,
                          ntree=100,
                          mtry=NULL, 
-                         testSize=0.3
+                         testSize=0.3, 
+                         classify=TRUE
                          ) {
     
     # FUNCTION ARGUMENTS:
@@ -168,6 +169,7 @@ rfTwoLocales <- function(df,
     # ntree: the number of trees to grow in the random forest
     # mtry: the splitting parameter for the random forest (NULL means use all variables)
     # testSize: proportion of data to use as test dataset
+    # classify: boolean, whether this is a classification (FALSE will run regression)
     
     # Filter df such that it includes only observations in loc1 or loc2
     # Select only the predictor and variables of interest
@@ -184,9 +186,13 @@ rfTwoLocales <- function(df,
     # Set mtry to be the length of the variables if not provided
     if (is.null(mtry)) { mtry <- length(vrbls) }
     
+    # Find the y-variable (factor for classification, as-is for regression)
+    yVar <- ttLists$trainData[, pred, drop=TRUE]
+    if (classify) yVar <- factor(yVar)
+    
     # Run the random forest on the training data
     rfModel <- randomForest::randomForest(x=ttLists$trainData[, vrbls], 
-                                          y=factor(ttLists$trainData[, pred, drop=TRUE]), 
+                                          y=yVar, 
                                           mtry=mtry, 
                                           ntree=ntree
     )
@@ -813,5 +819,168 @@ errorEvolution <- function(mdl,
     
     # Return the error object
     tblError
+    
+}
+
+
+# Create mapping file of sources to archetypes
+createLocMapper <- function(x, valVar="locType", nameVar="source") {
+    
+    # FUNCTION ARGUMENTS - creates named vector where 'nameVar' elements will be 1:1 to valVar elements
+    # x: the tibble or data frame containing the data
+    # valVar: the variable that will be mapped to
+    # nameVar: the variable that will be mapped from
+    
+    # Create locMapper
+    mapper <- x %>% pull(valVar)
+    names(mapper) <- x %>% pull(nameVar)
+    
+    # Return the mapper
+    mapper
+    
+}
+
+
+# Apply the mapper to a tibble
+applyLocMapper <- function(tbl, 
+                           mapper, 
+                           keepAsIs="Same", 
+                           excludeAll="Exclude", 
+                           yearsUse=2016, 
+                           sourceVar="source", 
+                           localeVar="locale"
+) {
+    
+    # FUNCTION ARGUMENTS
+    # tbl: the input tibble or data frame
+    # mapper: the mapping file
+    # keepAsIs: the mapping file item(s) that should not be mapped
+    # excludeAll: the mapping file item(s) that should be discarded
+    # yearsUse: the years to be used for the analysis
+    # sourceVar: the source variable in tbl that mapper will be applied to
+    # localeVar: the locale variable in tbl that should be used when mapper results is "Same"
+    
+    # Create the data file with locType
+    locData <- tbl %>% 
+        mutate(locType=ifelse(mapper[get(sourceVar)] %in% keepAsIs, get(localeVar), mapper[get(sourceVar)]), 
+               hr=lubridate::hour(dtime)
+        ) %>% 
+        filter(year %in% yearsUse, !(locType %in% excludeAll))
+    
+    # Counts by locType
+    locData %>%
+        count(locType) %>%
+        arrange(-n) %>%
+        as.data.frame() %>%
+        print()
+    
+    # Return the data file
+    locData
+    
+}
+
+
+# Create a file with the same number of observations per 'locVar'
+createBalancedSample <- function(tbl, seed=NULL, locVar="locType", summaryVar="locale") {
+    
+    # FUNCTION ARGUMENTS:
+    # tbl: the tibble or data frame
+    # seed: the random seed to be used (NULL means no seed)
+    # locVar: the variable that will have equal counts across the resulting sample
+    # summaryVar: the variable for showing counts in the final small data
+    
+    # Set the seed unless it has been passed as NULL
+    if (!is.null(seed)) {
+        set.seed(seed)
+    }
+    
+    # Find the smallest locale type
+    nSmall <- tbl %>%
+        group_by_at(vars(all_of(locVar))) %>%
+        summarize(n=n()) %>%
+        pull(n) %>%
+        min()
+    
+    # Create the relevant data subset
+    smallData <- tbl %>%
+        group_by_at(vars(all_of(locVar))) %>%
+        sample_n(size=nSmall, replace=FALSE) %>%
+        ungroup()
+    
+    # Sumarize the data subset
+    smallData %>% 
+        group_by_at(vars(all_of(summaryVar))) %>%
+        summarize(n=n()) %>%
+        arrange(-n) %>%
+        as.data.frame() %>%
+        print()
+    
+    # Return the data
+    smallData
+    
+}
+
+
+# Function for running random forest regressions
+rfRegression <- function(df, 
+                         depVar, 
+                         predVars, 
+                         critFilter=vector("list", 0),
+                         locVar="locale",
+                         otherVar=c("source", "dtime"),
+                         seed=NULL, 
+                         ntree=100, 
+                         mtry=NULL, 
+                         testSize=0.3
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble
+    # depVar: the dependent variable for the modeling
+    # predVars: explanatory variables for modeling
+    # critFilter: named list, of format name=values, where filtering will be (get(name) %in% values)
+    # locVar: locale variable (for consistency with rfTwoLocales)
+    # otherVar: other variables to be kept, but not used in modeling
+    # seed: the random seed (NULL means no seed)
+    # ntree: the number of trees to grow in the random forest
+    # mtry: the splitting parameter for the random forest (NULL means use all variables)
+    # testSize: the fractional portion of data that should be used as the test dataset
+    
+    # Filter df appropriately
+    # Filter for only non-NA data across all of depVar, predVars, otherVar, names(critFilter) are included
+    subDF <- df %>%
+        filter_at(vars(all_of(c(depVar, predVars, otherVar, names(critFilter)))), all_vars(!is.na(.)))
+    
+    # Filter such that only matches to critFilter are included
+    for (xNum in seq_len(length(critFilter))) {
+        subDF <- subDF %>%
+            filter_at(vars(all_of(names(critFilter)[xNum])), ~. %in% critFilter[[xNum]])
+    }
+    
+    # All locales should be used since the filtering is run above
+    locs <- subDF %>% 
+        pull(locVar) %>% 
+        unique() %>% 
+        sort()
+    
+    # Pass to rfTwoLocales
+    rfOut <- rfTwoLocales(subDF, 
+                          loc1=locs, 
+                          loc2=c(), 
+                          locVar=locVar,
+                          otherVar=otherVar, 
+                          vrbls=predVars, 
+                          pred=depVar, 
+                          seed=seed, 
+                          ntree=ntree, 
+                          mtry=mtry, 
+                          testSize=testSize, 
+                          classify=FALSE
+    )
+    
+    # Return the list object with rsq and mse attached
+    # Note that err.rate is returned by rfTwoLocales as NULL since it does not exist for regression
+    rfOut %>%
+        append(list(rsq=rfOut$rfModel$rsq, mse=rfOut$rfModel$mse))
     
 }
