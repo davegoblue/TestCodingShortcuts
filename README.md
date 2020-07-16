@@ -2006,4 +2006,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 3 (Assessing Model Fit) - notes  
 * DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 4 (Simple Logistic Regression) - notes  
 * WeatherModeling_202006_v002 makes an initial exploration of random forest regression for temperature  
+* WeatherModeling_202006_v002 converts random forest regression to functional form  
+* WeatherEDAFunctions_v002.R contains rfRegression() for running random forest regressions on weather data  
   
