@@ -2008,4 +2008,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 makes an initial exploration of random forest regression for temperature  
 * WeatherModeling_202006_v002 converts random forest regression to functional form  
 * WeatherEDAFunctions_v002.R contains rfRegression() for running random forest regressions on weather data  
+* WeatherModeling_202006_v002 creates random forest regression evaluation in functional form  
   
