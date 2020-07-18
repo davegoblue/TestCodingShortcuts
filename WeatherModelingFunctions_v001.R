@@ -984,3 +984,333 @@ rfRegression <- function(df,
         append(list(rsq=rfOut$rfModel$rsq, mse=rfOut$rfModel$mse))
     
 }
+
+
+# Random Forest Regression Evaluation Function #1: Variable Importance
+plotVariableImportance <- function(model, 
+                                   titleAdd="",
+                                   mapper=varMapper,
+                                   subT=NULL,
+                                   caption=NULL, 
+                                   listSub="rfModel",
+                                   returnData=FALSE
+                                   ) {
+    
+    # FUNCTION ARGUMENTS:
+    # model: a model that can be used in caret::varImp()
+    # titleAdd: anything to be added to the default "Variable Importance" title
+    # mapper: mapping file to convert variables in to readable names
+    # subT: plot subtitle (NULL means none)
+    # caption: plot caption (NULL means none)
+    # listSub: if model is passed as a list rather than an rf, the element to extract (NULL means skip)
+    # returnData: whether to return the calculated variable importance data
+    
+    # Extract the sub-item from the list if a list has been passed
+    if (!is.null(listSub) & ("list" %in% class(model))) {
+        model <- model[[listSub]]
+    }
+    
+    # Extract the variable importance, convert the rowname to column, and convert to tibble
+    imp <- model %>%
+        caret::varImp() %>%
+        rownames_to_column("predictor") %>%
+        tibble::as_tibble()
+    
+    # Plot the variable importance
+    p1 <- imp %>%
+        ggplot(aes(x=fct_reorder(paste0(predictor, "\n", varMapper[predictor]), Overall), 
+                   y=Overall
+        )
+        ) + 
+        geom_col(fill="lightblue") + 
+        labs(x="", y="", title=paste0("Variable Importance", titleAdd)) + 
+        coord_flip()
+    
+    # Add the subtitle and caption, each respectively if not NULL
+    if (!is.null(subT)) p1 <- p1 + labs(subtitle=subT)
+    if (!is.null(caption)) p1 <- p1 + labs(caption=caption)
+    
+    # Display the plot
+    print(p1)
+    
+    # Return the variable importance data if requested in function arguments
+    if (returnData) return(imp)
+    
+}
+
+
+# Random Forest Regression Evaluation Function #2: Plot R-squared and MSE by number of trees
+plotMSERSQ <- function(model, 
+                       returnData=FALSE, 
+                       mseName="mse", 
+                       rsqName="rsq",
+                       listSub="rfModel",
+                       printEvery=50, 
+                       caption=NULL
+                       ) {
+    
+    # FUNCTION ARGUMENTS:
+    # model: a model object or list that has named elements "mse" and "rsq"
+    # returnData: boolean for whether to return the created tibble
+    # mseName: name of the item that contains the MSE data
+    # rsqName: name of the item that contains the RSQ data
+    # listSub: if the object passed does not contain named items 'mse' and 'rsq', try this sub-item instead
+    # printEvery: print values at least every this amount (first and last always printed)
+    # caption: the caption to be included on the plot (NULL means none)
+    
+    # Extract the mse and rsq items
+    mse <- if(mseName %in% names(model)) model[[mseName]] else model[[listSub]][[mseName]]
+    rsq <- if(rsqName %in% names(model)) model[[rsqName]] else model[[listSub]][[rsqName]]
+    
+    # Calculate the lengths and ensure equality
+    if (length(mse) != length(rsq)) {
+        stop("\nInconsistent lengths for MSE and R2, investigate and fix\n")
+    }
+    
+    # If lengths are equal, use to set nTreeMax
+    nTreeMax <- length(mse)
+    
+    # Create tibble with rsq and rmse (take the square root of MSE) data
+    tbl <- tibble::tibble(ntree=1:nTreeMax, rmse=mse**0.5, rsq=rsq)
+    
+    # Create the first plot (evolution of RMSE)
+    p1 <- tbl %>%
+        ggplot(aes(x=ntree, y=rmse)) + 
+        geom_point() + 
+        geom_text(data=~filter(., (ntree==1) | (ntree==nTreeMax) | (ntree %% printEvery == 0)), 
+                  aes(y=0.9*rmse, label=round(rmse, 1))
+        ) +
+        ylim(c(0, NA)) + 
+        labs(x="# Trees", y="RMSE", title="Evolution of RMSE")
+    
+    # Create the second plot (evolution of R-squared)
+    p2 <- tbl %>%
+        ggplot(aes(x=ntree, y=rsq)) + 
+        geom_point() + 
+        geom_text(data=~filter(., (ntree==1) | (ntree==nTreeMax) | (ntree %% printEvery == 0)), 
+                  aes(y=rsq-0.01, label=round(rsq, 3))
+        ) +
+        ylim(c(NA, 1)) + 
+        labs(x="# Trees", y="R-squared", title="Evolution of R-squared")
+    
+    # Add the caption to each plot if not NULL
+    if (!is.null(caption)) { 
+        p1 <- p1 + labs(caption=caption)
+        p2 <- p2 + labs(caption=caption)
+    }
+    
+    gridExtra::grid.arrange(p1, p2, nrow=1)
+    
+    if (returnData) return(tbl)
+    
+}
+
+
+# Random Forest Regression Evaluation Function #3: RMSE and R-squared by key variable
+plotErrorByVar <- function(model, 
+                           depVar, 
+                           keyVar, 
+                           critFilter=NULL,
+                           mapper=varMapper,
+                           caption=NULL,
+                           returnData=FALSE
+                           ) {
+    
+    # FUNCTION ARGUMENTS
+    # model: A model object that contains "testData", a frame with get(depVar), get(keyVar), and predicted
+    # depVar: the name of the dependent variable predicted by the algorithm
+    # keyVar: RMSE and R-squared will be calculated for each keyVar
+    # critFilter: a named list consisting of the variable and then the subset of values it can include
+    #             NULL means do not apply this
+    # mapper: mapping file for variable names
+    # caption: the caption to be shown on the plot (NULL means none)
+    # returnData: boolean, whether to return the calculated data
+    
+    # Extract the model data
+    plotData <- model[["testData"]]
+    
+    # If critFilter has been passed, apply the arguments
+    if (!is.null(critFilter)) {
+        for (xNum in seq_len(length(critFilter))) {
+            plotData <- plotData %>%
+                filter_at(vars(all_of(names(critFilter)[xNum])), ~. %in% critFilter[[xNum]])
+        }
+    }
+    
+    # Create the RMSE and RSQ data by keyVar
+    plotData <- plotData %>%
+        group_by_at(keyVar) %>%
+        summarize(varTot=mean((get(depVar)-mean(get(depVar)))**2), 
+                  varMod=mean((get(depVar)-predicted)**2)
+        ) %>%
+        mutate(rmse=varMod**0.5, rsq=1-varMod/varTot) %>%
+        ungroup()
+    
+    # Create side-by-side plots of RMSE and R-squared
+    p1 <- plotData %>%
+        select_at(vars(all_of(c(keyVar, "rmse", "rsq")))) %>%
+        pivot_longer(c("rmse", "rsq"), names_to="metric", values_to="value") %>%
+        ggplot(aes(x=fct_reorder(get(keyVar), value), y=value)) + 
+        geom_col(fill="lightblue") + 
+        geom_text(aes(y=value/2, label=round(value, ifelse(metric=="rmse", 1, 3)))) +
+        coord_flip() + 
+        labs(x="", 
+             y="", 
+             title=paste0("Accuracy in predicting ", mapper[depVar], " by ", mapper[keyVar])) + 
+        ylim(c(0, NA)) +
+        facet_wrap(~metric, scales="free_x")
+    
+    # Add the caption if not NULL
+    if (!is.null(caption)) p1 <- p1 + labs(caption=caption)
+    
+    # Print the plot
+    print(p1)
+    
+    # Return the data if requested
+    if (returnData) return(plotData)
+    
+}
+
+
+# Random Forest Regression Evaluation Function #4: Actual vs. predicted
+plotActualVsPredicted <- function(model, 
+                                  depVar, 
+                                  predVar="predicted",
+                                  facetVar=NULL, 
+                                  critFilter=NULL,
+                                  mapper=varMapper,
+                                  caption=NULL,
+                                  returnData=FALSE
+                                  ) {
+    
+    # FUNCTION ARGUMENTS:
+    # model: an object containing "testData" with depVar, facetVar, and anything in critFilter
+    # depVar: the actual value that matches to predVar
+    # predVar: the name of the prediction
+    # facetVar: the variable to facet on (NULL means no facets)
+    # critFilter: a named list consisting of the variable and then the subset of values it can include
+    # mapper: the variable mapping file
+    # caption: the caption for the plot (NULL means none)
+    # returnData: boolean, whether to return the processed data
+    
+    # Ensure that predVar and depVar are each of length 1
+    if (length(depVar) != 1 | length(predVar) != 1) {
+        stop("\nArguments depVar and predvar must each be of length 1; fix and re-run\n")
+    }
+    # Extract "testData" from model
+    plotData <- model[["testData"]] %>%
+        rename(actual=all_of(depVar), predicted=all_of(predVar))
+    
+    # If critFilter has been passed, apply the arguments
+    if (!is.null(critFilter)) {
+        for (xNum in seq_len(length(critFilter))) {
+            plotData <- plotData %>%
+                filter_at(vars(all_of(names(critFilter)[xNum])), ~. %in% critFilter[[xNum]])
+        }
+    }
+    
+    # Create the base plot
+    p1 <- plotData %>%
+        ggplot(aes(x=actual, y=predicted)) + 
+        geom_point(alpha=0.1) + 
+        geom_smooth(method="lm") + 
+        geom_abline(lty=2, color="red", slope=1, intercept=0) + 
+        labs(x=paste0("Actual Value for: ", depVar, " (", mapper[depVar], ")"), 
+             y="Predicted Value", 
+             title="Actual vs. Predicted Values"
+        )
+    
+    # Add facets if requested
+    if (!is.null(facetVar)) {
+        p1 <- p1 + facet_wrap(as.formula(paste("~", facetVar)))
+    }
+    
+    # Add the caption if not NULL
+    if (!is.null(caption)) p1 <- p1 + labs(caption=caption)
+    
+    # Print the graph
+    print(p1)
+    
+    # Return plotData if requested
+    if (returnData) return(plotData)
+    
+}
+
+
+# Random Forest Regression Evaluation: Combine Functions 1-4
+evalRFRegression <- function(model, 
+                             depVar, 
+                             keyVar,
+                             titleAdd="",
+                             mapper=varMapper,
+                             subT=NULL,
+                             caption=NULL,
+                             listSub="rfModel",
+                             returnData=FALSE,
+                             printEvery=50,
+                             critFilter=NULL,
+                             predVar="predicted",
+                             facetVar=NULL
+                             ) {
+    
+    # FUNCTION ARGUMENTS
+    # model: object containing the random forest regression model and 'testData' data
+    # depVar: the dependent variable in the regression
+    # keyVar: the by-variable to plot RMSE/RSQ against
+    # titleAdd: addition text to add to the plot title in plotVariableImportance
+    # mapper: mapping file from variable name to description
+    # subT: plot subtitle for plotVariableImportance()
+    # caption: caption to be used for plotVariableImportance - suggest y ~ f(x1, 2, ...)
+    # listSub: the named item of 'model' that contains the random forest regression data
+    # returnData: whether to have each function return key data
+    # printEvery: how frequently yo label the RMSE/RSQ points in plot from plotMSERSQ()
+    # critFilter: named list of items to include (default NULL includes everything) in functions 3 and 4
+    # predVar: name of the prediction variable in the 'testData' element of model
+    # facetVar: the facetting variable for predicted vs. actual (default NULL means run all together)
+    
+    
+    # Run the function to assess variable importance
+    impData <- plotVariableImportance(model, 
+                                      titleAdd=titleAdd,
+                                      mapper=mapper,
+                                      subT=subT,
+                                      caption=caption,
+                                      listSub=listSub, 
+                                      returnData=returnData
+    )
+    
+    # Run the function to assess RMSE and RSQ
+    msersqData <- plotMSERSQ(model, 
+                             returnData=returnData, 
+                             listSub=listSub, 
+                             printEvery=printEvery, 
+                             caption=caption
+    )
+    
+    # Run the function to assess MSE and RSQ by a key variable
+    errorByData <- plotErrorByVar(model, 
+                                  depVar=depVar, 
+                                  keyVar=keyVar,
+                                  critFilter=critFilter,
+                                  mapper=mapper,
+                                  caption=caption,
+                                  returnData=returnData
+    )
+    
+    # Run the function to plot actual vs. predicted
+    actualPredictedData <- plotActualVsPredicted(model, 
+                                                 depVar=depVar, 
+                                                 predVar=predVar,
+                                                 facetVar=facetVar, 
+                                                 critFilter=critFilter,
+                                                 mapper=mapper,
+                                                 caption=caption,
+                                                 returnData=returnData
+    )
+    
+    # Return the data if requested
+    if (returnData) {
+        return(list(f1=impData, f2=msersqData, f3=errorByData, f4=actualPredictedData))
+    }
+    
+}
