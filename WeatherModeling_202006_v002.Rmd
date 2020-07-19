@@ -2675,3 +2675,239 @@ rfOut_003a <- evalRFRegression(rfRegrData3a,
   
 Run time is significantly faster with the elimination of the 24-category factor, hour.  Interestingly, there is no longer mush change in RMSE or R-squared with more trees, suggestive that the main work being done in the previous model is to incorporate the impact of hour.  Removing hour meaningfullky degrades both RMSE (~1.5 degrees more delta) and R-squared (~5% less variance explained).  Several locales no longer have prediction smooths that follow the 45-degree line, suggesting that hour may be especially helpful in specific locales.  Next steps are to explore this further.
   
+Single-variable regressions are run to assess performance, using 1) only dew point, 2) only month, 3) only locale, 4) only hour, 5) only sea-level pressure, and 6) only altimeter:  
+```{r}
+
+# Set up the eplanatory variables and other variables to keep from 'testData
+varSingles <- c("DewF", "month", "locNamefct", "hrfct", "modSLP", "Altimeter")
+otherVars <- c("source", "dtime", "DewF", "month", "locNamefct", "hrfct", "modSLP", "Altimeter")
+
+# Set up listContainerRFReg to hold results
+listContainerRFReg <- vector("list", 6)
+names(listContainerRFReg) <- varSingles
+
+n <- 1
+for (thisVar in varSingles) {
+    
+    # Run a single-variable regression for TempF vs. thisVar (should not evolve with number of trees)
+    listContainerRFReg[[n]] <- rfRegression(regrData, 
+                                            depVar="TempF", 
+                                            predVars=thisVar, 
+                                            otherVar=otherVars,
+                                            critFilter=list(year=2016, locNamefct=keyLocs3a), 
+                                            seed=2007181302+n, 
+                                            ntree=5, 
+                                            mtry=1, 
+                                            testSize=0.3
+                                            )
+    
+    # Increment n
+    n <- n + 1
+    
+}
+
+# R-squared of overall model by model type
+rsq <- sapply(listContainerRFReg, FUN=function(x) x$rsq) %>%
+    tibble::as_tibble() %>%
+    mutate(ntree=row_number())
+
+# Plot of final R-squared
+rsq %>%
+    filter(ntree==max(ntree)) %>%
+    pivot_longer(-ntree, names_to="var", values_to="rsq") %>%
+    ggplot(aes(x=fct_reorder(paste0(var, "\n", varMapper[var]), rsq), y=rsq)) +
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=rsq/2, label=round(rsq, 3))) + 
+    coord_flip() +
+    labs(x="", 
+         y="Overall R-squared", 
+         title="Predicting temperature using only a single variable"
+         )
+
+```
+  
+At an overall level, month and dew point are the most helpful in differentiating temperatures, followed by locale.  Hour is the least helpful, and appears to add value only when other variables have already been included.
+
+How is accuracy in the varying locales impacted by the variable used?
+```{r}
+
+# Impact for just using month
+plotErrorByVar(listContainerRFReg$month, 
+               depVar="TempF", 
+               keyVar="locNamefct", 
+               caption="Temperature ~ f(month)"
+               )
+
+# Impact for just using dew point
+plotErrorByVar(listContainerRFReg$DewF, 
+               depVar="TempF", 
+               keyVar="locNamefct", 
+               caption="Temperature ~ f(dewpoint)"
+               )
+
+# Impact for just using locale
+plotErrorByVar(listContainerRFReg$locNamefct, 
+               depVar="TempF", 
+               keyVar="month", 
+               caption="Temperature ~ f(locale)"
+               )
+
+```
+  
+The issues with using a single predictor are obvious, as many of R-squared by dimension become negative.  Specifically:  
+  
+* Using month-only as a predictor works best for Atlanta, Dallas, and Las Vegas, while driving worse than null performance for Miami, San Francisco, and San Diego  
+* Using dewpoint-only as a predictor works best for New Orleans, Atlanta, and Dallas, while driving worse than null performance for the desert and marine locales  
+* Using locale-only as a predictor works best in March-May and October-November, while driving worse than null performance for summer and winter months  
+  
+The month-only result is explored in more detail:  
+```{r}
+
+# Predictions based solely on month
+listContainerRFReg$month$testData %>%
+    group_by(locNamefct, month) %>%
+    summarize(meanTemp=mean(TempF)) %>%
+    group_by(month) %>%
+    mutate(meanMonth=mean(meanTemp)) %>%
+    ungroup() %>%
+    filter(locNamefct %in% c("Atlanta, GA", "Dallas, TX", "Las Vegas, NV", 
+                             "Miami, FL", "San Francisco, CA", "San Diego, CA"
+                             )
+           ) %>%
+    ggplot(aes(x=month, y=meanTemp)) + 
+    geom_line(aes(group=locNamefct, color=locNamefct)) + 
+    geom_line(data=~filter(., locNamefct=="Atlanta, GA"), aes(y=meanMonth, group=1, lwd=2)) + 
+    labs(x="", 
+         y="Average Temperature", 
+         title="Average Temperature by Month", 
+         subtitle="Overall and by locale"
+         ) + 
+    scale_color_discrete("Locale") + 
+    scale_size_continuous("Overall Average", labels=NULL)
+
+```
+  
+The findings are as expected.  Atlanta, Dallas, and Las Vegas have seasonal variations that broadly follow the overall average.  In contrast, San Francisco and San Diego tend to be warmer than overall average in winter and colder than overall average in summer.  Miami tends to be warmer than overall average in all months, and with not much montly variation.
+  
+Clearly, at least two variables are needed.  Suppose that for simplification, only the two best factor variable predictors are used:  
+```{r}
+
+# Run a regression for TempF vs. month and locale
+rfTempvMonthLocale <- rfRegression(regrData, 
+                                   depVar="TempF", 
+                                   predVars=c("month", "locNamefct"), 
+                                   otherVar=otherVars,
+                                   critFilter=list(year=2016, locNamefct=keyLocs3a), 
+                                   seed=2007181357, 
+                                   ntree=5, 
+                                   mtry=2, 
+                                   testSize=0.3
+                                   )
+
+# Evaluate simple regression using only locale and month
+rfOut_tvml <- evalRFRegression(rfTempvMonthLocale, 
+                               depVar="TempF", 
+                               keyVar="locNamefct", 
+                               facetVar="locNamefct", 
+                               caption="Temp ~ f(locale, month)",
+                               returnData=TRUE
+                               )
+
+# Impact on predictions by month
+plotErrorByVar(rfTempvMonthLocale, 
+               depVar="TempF", 
+               keyVar="month", 
+               caption="Temp ~ f(locale, month)"
+               )
+
+# Impact on predictions by hour
+plotErrorByVar(rfTempvMonthLocale, 
+               depVar="TempF", 
+               keyVar="hrfct", 
+               caption="Temp ~ f(locale, month)"
+               )
+
+```
+  
+As expected, R-squared is now positive for all elements on the locale and month dimensions.  Predictions appear to be less accurate for the 19-24Z range, reflecting roughly the afternoon in the US, and to be most accurate in the 2-8 (early nighttime) and 14-17 (morning) hours.  There is no evolution in RMSE or R-squared with number of trees since the model is (essentially) just finding the average temperature by locale and month.
+
+Hour is added to the model for an additional attempt to improve accuracy:  
+```{r cache=TRUE}
+
+# Run a regression for TempF vs. month and locale and hour
+rfTempvMonthLocaleHour <- rfRegression(regrData, 
+                                       depVar="TempF", 
+                                       predVars=c("month", "locNamefct", "hrfct"), 
+                                       otherVar=otherVars,
+                                       critFilter=list(year=2016, locNamefct=keyLocs3a), 
+                                       seed=2007181421, 
+                                       ntree=5, 
+                                       mtry=3, 
+                                       testSize=0.3
+                                       )
+
+```
+  
+Evaluations are then performed:  
+```{r}
+
+# Evaluate simple regression using only locale and month and hour
+rfOut_tvmlh <- evalRFRegression(rfTempvMonthLocaleHour, 
+                                depVar="TempF", 
+                                keyVar="locNamefct", 
+                                facetVar="locNamefct", 
+                                caption="Temp ~ f(locale, month, hour)",
+                                returnData=TRUE
+                                )
+
+# Impact on predictions by month
+plotErrorByVar(rfTempvMonthLocaleHour, 
+               depVar="TempF", 
+               keyVar="month", 
+               caption="Temp ~ f(locale, month, hour)"
+               )
+
+# Impact on predictions by hour
+plotErrorByVar(rfTempvMonthLocaleHour, 
+               depVar="TempF", 
+               keyVar="hrfct", 
+               caption="Temp ~ f(locale, month, hour)"
+               )
+
+```
+  
+Accuracy by hour is more uniform, and the overall predictive power has increased.
+
+Run times show the drawback of using random forest regression on such a simple problem:  
+```{r}
+
+# Extract the key data
+lmData <- regrData %>%
+    filter(year==2016, locNamefct %in% keyLocs3a)
+
+# Extract the relevant testData
+testData <- rfTempvMonthLocaleHour$testData
+
+# Create trainData as lmData anti-joined to testData
+trainData <- lmData %>%
+    anti_join(select(testData, source, dtime))
+
+# Get the averages from train data
+trainAvg <- 
+    trainData %>%
+    group_by(locNamefct, month, hrfct) %>%
+    summarize(predMean=mean(TempF, na.rm=TRUE))
+
+# Merge back to testData
+testData <- testData %>%
+    left_join(trainAvg)
+
+# Report on RMSE and R-squared
+testData %>%
+    summarize(varTot=var(TempF), varPred=var(predMean-TempF, na.rm=TRUE), 
+              rsq=1-varPred/varTot, rmse=varPred**0.5
+              )
+
+```
+  
+The identical RMSE and R-squared are obtained in under a second.  Note that running lm(TempF ~ locNamefct * month * hrfct, ...) takes much longer than the random forest regression due to complexities related to using solve() and storing diagnostic statistics.  Model selection should be driven by many factors.  In this specific example, they all converge to predicting temperature as the mean for each grouping of factors.
