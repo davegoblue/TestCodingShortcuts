@@ -2011,4 +2011,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 creates random forest regression evaluation in functional form  
 * WeatherEDAFunctions_v002.R contains functions for random forest regression evaluation  
 * WeatherModeling_202006_v002 expands random forest regression evaluation  
+* WeatherModeling_202006_v002 runs random forest regression with only categorical variables  
   
