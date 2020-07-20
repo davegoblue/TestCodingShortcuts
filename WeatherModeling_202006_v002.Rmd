@@ -2911,3 +2911,146 @@ testData %>%
 ```
   
 The identical RMSE and R-squared are obtained in under a second.  Note that running lm(TempF ~ locNamefct * month * hrfct, ...) takes much longer than the random forest regression due to complexities related to using solve() and storing diagnostic statistics.  Model selection should be driven by many factors.  In this specific example, they all converge to predicting temperature as the mean for each grouping of factors.
+  
+A run of the random forest regression is then made using only a few numeric variables - dew point, sea-level pressure, and altimeter:  
+```{r cache=TRUE}
+
+# Run a regression for TempF vs. dewpoint and sea-lvele pressure and altimeter
+rfTempvDewSLPAltimeter <- rfRegression(regrData, 
+                                       depVar="TempF", 
+                                       predVars=c("DewF", "modSLP", "Altimeter"), 
+                                       otherVar=otherVars,
+                                       critFilter=list(year=2016, locNamefct=keyLocs3a), 
+                                       seed=2007191311, 
+                                       ntree=5, 
+                                       mtry=3, 
+                                       testSize=0.3
+                                       )
+
+```
+  
+```{r}
+
+# Evaluate simple regression using only dewpoint and sea-lvele pressure and altimeter
+rfOut_tvdsa <- evalRFRegression(rfTempvDewSLPAltimeter, 
+                                depVar="TempF", 
+                                keyVar="locNamefct", 
+                                facetVar="locNamefct", 
+                                caption="Temp ~ f(dew point, SLP, altimeter)",
+                                returnData=TRUE
+                                )
+
+# Impact on predictions by month
+plotErrorByVar(rfTempvDewSLPAltimeter, 
+               depVar="TempF", 
+               keyVar="month", 
+               caption="Temp ~ f(dew point, SLP, altimeter)"
+               )
+
+# Impact on predictions by hour
+plotErrorByVar(rfTempvDewSLPAltimeter, 
+               depVar="TempF", 
+               keyVar="hrfct", 
+               caption="Temp ~ f(dew point, SLP, altimeter)"
+               )
+
+```
+  
+Dew point and sea-level pressure stand out as more important then altimeter.  Notably, unlike the categorical regression, the model continues to learn with more trees suggesting that 5 is too few.  Additionally, predictions are "worse than null" for San Diego and San Francsico, suggesting that the locale variable is vital for establishing differing relationships of temperature to dew point in different locales.
+
+An additional version of the model is run taking the two highest importance variables from each of the previous regressions - locale, month, dew point, and sea-level pressure:  
+```{r cache=TRUE}
+
+# Run a regression for TempF vs. month, locale, dew point, sea-level pressure
+rfTempvDewSLPMonthLocale <- rfRegression(regrData, 
+                                         depVar="TempF", 
+                                         predVars=c("DewF", "modSLP", "month", "locNamefct"), 
+                                         otherVar=otherVars,
+                                         critFilter=list(year=2016, locNamefct=keyLocs3a), 
+                                         seed=2007191321, 
+                                         ntree=20, 
+                                         mtry=2, 
+                                         testSize=0.3
+                                         )
+
+```
+  
+```{r}
+
+# Evaluate regression using dew point, sea-level pressure, month, locale
+rfOut_tvdsml <- evalRFRegression(rfTempvDewSLPMonthLocale, 
+                                 depVar="TempF", 
+                                 keyVar="locNamefct", 
+                                 facetVar="locNamefct", 
+                                 caption="Temp ~ f(dew point, SLP, month, locale)",
+                                 returnData=TRUE
+                                 )
+
+# Impact on predictions by month
+plotErrorByVar(rfTempvDewSLPMonthLocale, 
+               depVar="TempF", 
+               keyVar="month", 
+               caption="Temp ~ f(dew point, SLP, month, locale)"
+               )
+
+# Impact on predictions by hour
+plotErrorByVar(rfTempvDewSLPMonthLocale, 
+               depVar="TempF", 
+               keyVar="hrfct", 
+               caption="Temp ~ f(dew point, SLP, month, locale)"
+               )
+
+```
+  
+Month is the most important variable, followed by locale and dew point.  Sea-level pressure appears to have less influence.  RMSE is down slightly and R-squared is up slightly, with predictions continuing to be hardest in Denver (high RMSE) and San Diego/San Francisco (low r-squared).
+
+There continues to be a pattern where times in 18Z-24Z (roughly late afternoon) are predicted much worse then times in 2-8Z (roughly the first half of nighttime), potentially suggesting that including hour as an explanatory variable could help.
+
+A version of the random forest regression is then run that adds hour and altimeter to the mix.  The mtry variable is held at 2:  
+```{r cache=TRUE}
+
+# Run a regression for TempF vs. six key variables
+rfTempvBig6 <- rfRegression(regrData, 
+                            depVar="TempF", 
+                            predVars=c("DewF", "modSLP", "Altimeter", "month", "locNamefct", "hrfct"), 
+                            otherVar=otherVars,
+                            critFilter=list(year=2016, locNamefct=keyLocs3a), 
+                            seed=2007191338, 
+                            ntree=20, 
+                            mtry=2, 
+                            testSize=0.3
+                            )
+
+```
+  
+```{r}
+
+# Evaluate regression using six key variables
+rfOut_tvbig6 <- evalRFRegression(rfTempvBig6, 
+                                 depVar="TempF", 
+                                 keyVar="locNamefct", 
+                                 facetVar="locNamefct", 
+                                 caption="Temp ~ f(dew point, SLP, altimeter, month, locale, hour)",
+                                 returnData=TRUE
+                                 )
+
+# Impact on predictions by month
+plotErrorByVar(rfTempvBig6, 
+               depVar="TempF", 
+               keyVar="month", 
+               caption="Temp ~ f(dew point, SLP, altimeter, month, locale, hour)"
+               )
+
+# Impact on predictions by hour
+plotErrorByVar(rfTempvBig6, 
+               depVar="TempF", 
+               keyVar="hrfct", 
+               caption="Temp ~ f(dew point, SLP, altimeter, month, locale, hour)"
+               )
+
+```
+  
+While hour and altimeter show as lower on variable importance, overall model performance is significantly improved.  Specifically, RMSE is down to ~4.5 and still falling with more trees, while r-squared is up to ~0.93 and still rising with more trees.  Notably, many of the locales are now at 90%+ r-squared, with even San Diego and San Francisco now being accurately classified.
+  
+Next steps are to focus specifically on some of the tougher locales (Denver, San Francisco, San Diego) and times (20Z for example) to explore what is driving those challenges.
+  
