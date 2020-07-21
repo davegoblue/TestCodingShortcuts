@@ -3054,3 +3054,202 @@ While hour and altimeter show as lower on variable importance, overall model per
   
 Next steps are to focus specifically on some of the tougher locales (Denver, San Francisco, San Diego) and times (20Z for example) to explore what is driving those challenges.
   
+Since locale and month are both known to be important, do the forests run more quickly if they are run for subsets of the data?  
+```{r}
+
+regrSubData <- regrData %>%
+    filter(year==2016, locNamefct %in% keyLocs3a)
+
+locsRegSub <- regrSubData %>%
+    pull(locNamefct) %>%
+    as.character() %>%
+    unique() %>%
+    sort()
+
+```
+  
+Forests are then run for each locale:  
+```{r cache=TRUE}
+
+startTime <- Sys.time()
+
+# Create a container to hold the output
+lstRegSub <- vector("list", length(locsRegSub))
+names(lstRegSub) <- locsRegSub
+
+n <- 1
+for (loc in locsRegSub) {
+
+    # Run a regression for TempF vs. month, hour, dew point, sea-level pressure, altitude
+    lstRegSub[[n]] <- rfRegression(regrSubData, 
+                                   depVar="TempF", 
+                                   predVars=c("DewF", "modSLP", "Altimeter", "month", "hrfct"), 
+                                   otherVar=otherVars,
+                                   critFilter=list(year=2016, locNamefct=loc), 
+                                   seed=2007201355+n, 
+                                   ntree=20, 
+                                   mtry=2, 
+                                   testSize=0.3
+                                   )
+    
+    # Incerement counter
+    n <- n + 1
+    
+    # Update progress
+    cat("\nFinished processing:", loc)
+    
+}
+
+endTime <- Sys.time()
+cat("\nTotal run time:", round(endTime - startTime, 1), "seconds\n")
+
+```
+  
+This process runs in around 20 seconds, roughly 100x faster than running the random forest with all the data together.  In this case, locale is known to be strongly predictive, so splitting it out may make sense.  Does the timing change if month is also split out?  
+```{r cache=TRUE}
+
+startTime <- Sys.time()
+
+# Create a container to hold the output
+lstRegSub_002 <- vector("list", length(locsRegSub)*length(month.abb))
+
+n <- 1
+for (loc in locsRegSub) {
+    for (mon in month.abb) {
+        # Run a regression for TempF vs. hour, dew point, sea-level pressure, altitude
+        lstRegSub_002[[n]] <- rfRegression(regrSubData, 
+                                           depVar="TempF", 
+                                           predVars=c("DewF", "modSLP", "Altimeter", "hrfct"), 
+                                           otherVar=otherVars,
+                                           critFilter=list(year=2016, locNamefct=loc, month=mon), 
+                                           seed=2007201405+n, 
+                                           ntree=20, 
+                                           mtry=2, 
+                                           testSize=0.3
+                                           )
+    
+        # Incerement counter
+        n <- n + 1
+    }
+    
+    # Update progress
+    cat("\nFinished processing:", loc)
+    
+}
+
+endTime <- Sys.time()
+cat("\nTotal run time:", round(endTime - startTime, 1), "seconds\n")
+
+```
+  
+There is no obvious improvement in run time, suggesting that the increased overhead of the for loops may be offsetting any efficiency gains from growing much simpler trees on smaller datasets.
+
+The data from the locale regressions is combined, for purposes of running diagnostics:  
+```{r}
+
+# Integrate the test data
+subTestData <- map_dfr(lstRegSub, .f=function(x) { x$testData} )
+
+# Integrate the r-squared data
+subRSQ <- map_dfr(lstRegSub, 
+                  .f=function(x) { tibble::tibble(ntree=1:length(x$rsq), rsq=x$rsq) }, 
+                  .id="source"
+                  )
+
+# Integrate the RMSE data
+subRMSE <- map_dfr(lstRegSub, 
+                   .f=function(x) { tibble::tibble(ntree=1:length(x$mse), rmse=x$mse**0.5) }, 
+                   .id="source"
+                   )
+
+# Plot integrated evolution of RSQ
+helperPlotEvolution <- function(df, plotVar) {
+    
+    p1 <- df %>%
+        ggplot(aes_string(x="ntree", y=plotVar)) + 
+        geom_line(aes(group=source, color=source)) + 
+        labs(x="Number of trees", 
+             title=paste0("Evolution of ", str_to_upper(plotVar), " by locale")
+             )
+    if (plotVar=="rsq") { p1 <- p1 + ylim(c(NA, 1)) }
+    if (plotVar=="rmse") { p1 <- p1 + ylim(c(0, NA)) }
+    print(p1)
+    
+}
+
+# Plot final R-squared and RMSE by locale
+ebvRFSub_loc <- plotErrorByVar(list(testData=subTestData), 
+                               depVar="TempF", 
+                               keyVar="locNamefct", 
+                               returnData=TRUE
+                               )
+
+# Plot final R-squared and RMSE by month
+ebvRFSub_mon <- plotErrorByVar(list(testData=subTestData), 
+                               depVar="TempF", 
+                               keyVar="month", 
+                               returnData=TRUE
+                               )
+
+# Plot final R-squared and RMSE by hour
+ebvRFSub_hr <- plotErrorByVar(list(testData=subTestData), 
+                              depVar="TempF", 
+                              keyVar="hrfct", 
+                              returnData=TRUE
+                              )
+
+# Show differences by model run
+ebvData <- bind_rows(ebvRFSub_loc, rfOut_tvbig6$f3, .id="source") %>%
+    mutate(source=ifelse(source==1, "Run by locale", "Run overall"))
+
+# Plot differences in R-squared
+ebvData %>%
+    ggplot(aes(x=fct_reorder(locNamefct, rsq), y=rsq)) + 
+    geom_point(aes(color=source)) + 
+    coord_flip() + 
+    ylim(c(NA, 1)) + 
+    labs(x="", y="R-squared", title="R-squared by modeling approach") + 
+    scale_color_discrete("Model")
+
+# Plot differences in RMSE
+ebvData %>%
+    ggplot(aes(x=fct_reorder(locNamefct, rmse), y=rmse)) + 
+    geom_point(aes(color=source)) + 
+    coord_flip() + 
+    ylim(c(0, NA)) + 
+    labs(x="", y="RMSE", title="RMSE by modeling approach") + 
+    scale_color_discrete("Model")
+
+```
+  
+If anything, the models run by locale appear to be slightly more accurate than the models run overall.  The differences in variable importance can also be assessed:  
+```{r}
+
+# Grab the variable importance for each locale
+impLstRegSub <- map_dfr(lstRegSub, 
+                        .f=function(x) { x$rfModel$importance %>% t() %>% tibble::as_tibble() }, 
+                        .id="locNamefct"
+                        )
+
+# Get the percentage by variable, then plot
+impLstRegSub %>%
+    pivot_longer(-locNamefct, names_to="variable", values_to="importance") %>%
+    group_by(locNamefct) %>%
+    mutate(pct=importance/sum(importance)) %>%
+    ungroup() %>%
+    ggplot(aes(x=locNamefct, y=variable)) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=round(pct, 3))) + 
+    coord_flip() + 
+    labs(x="", y="", title="Variable importance by locale (scaled to add to 100% in each locale)") + 
+    scale_fill_continuous("Percent", low="white", high="green")
+
+```
+  
+There are some interesting differences in variable importance by locale:  
+  
+* Las Vegas and Phoenix make very little use of dewpoint, while Denver, San Diego, and San Francisco also show far less importance for this attribute  
+* Las Vegas, Phoenix, and Denver use primarily month with some weight on sea-level pressure, and hour  
+* San Diego and San Francisco use a rather balanced weighting of month, hour, and dew point  
+  
+Portions of the difference are driven by seasonal extremes.  For example, Chicago has four distinct seasons with dew point correlated to temperature in each.  Thus, there is a lot of variance in Chicago temperature data, and much of that variance can be explained by dewpoint.  In contrast, Las Vegas tends to have low dew points all year and the marine locales tend to have moderate dew points all year.  As such, there is little explanatory power of dew point in these locales.
