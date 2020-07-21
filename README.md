@@ -2015,4 +2015,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 20-JUL-2020  
 * WeatherModeling_202006_v002 runs random forest regression with mix of categorical and numerical variables  
+* WeatherModeling_202006_v002 runs random forest regression separately by locale  
   
