@@ -118,6 +118,7 @@ varMapper <- c(source="Original source file name",
                ceilingType="Obscuration Level at Minimum Ceiling Height", 
                hr="Hour of Day (Zulu time)",
                hrfct="Hour of Day (Zulu time)",
+               hrBucket="Hour of Day (Zulu time) - rounded to nearest 3",
                locNamefct="Locale Name"
                )
 
@@ -3253,3 +3254,165 @@ There are some interesting differences in variable importance by locale:
 * San Diego and San Francisco use a rather balanced weighting of month, hour, and dew point  
   
 Portions of the difference are driven by seasonal extremes.  For example, Chicago has four distinct seasons with dew point correlated to temperature in each.  Thus, there is a lot of variance in Chicago temperature data, and much of that variance can be explained by dewpoint.  In contrast, Las Vegas tends to have low dew points all year and the marine locales tend to have moderate dew points all year.  As such, there is little explanatory power of dew point in these locales.
+
+Another area to examine is the explanatory power for random forest regressions by a mix of two factor variables.  A helper function is written to explore this - helperAccuracyByFactors() is available in file WeatherModelingFunctions_v001.R:  
+```{r}
+
+helperAccuracyByFactors(subTestData, xVar="locNamefct", yVar="month", depVar="TempF", metric="rsq")
+helperAccuracyByFactors(subTestData, xVar="locNamefct", yVar="month", depVar="TempF", metric="rmse")
+
+```
+  
+There are some rather low explanatory powers for some of these intersections.  A chunk of the model's overall explanatory power by locale is in finding differences in average temperature by month, and a few of the R-squared suggest there is not much more being learned about the within month differences.  Boston in July stands out - what does the explanatory power by hour look like?  Hours are grouped by three to minimize buckets with very small data:  
+```{r}
+
+subJuly <- subTestData %>%
+    filter(month=="Jul") %>%
+    mutate(hrBucket=factor(3 * (((as.integer(hrfct)-1) %% 24) %/% 3) + 1))
+
+helperAccuracyByFactors(subJuly, xVar="locNamefct", yVar="hrBucket", depVar="TempF", metric="rsq")
+
+```
+  
+There is clearly significant room for improvement, as several of the R-squared values are negative.  Suppose that random forest regressions are run for each locale, using only July data:  
+```{r cache=TRUE}
+
+startTime <- Sys.time()
+
+# Create a container to hold the output
+lstRegSub_jul <- vector("list", length(locsRegSub))
+
+n <- 1
+for (loc in locsRegSub) {
+    for (mon in month.abb[7]) {
+        # Run a regression for TempF vs. hour, dew point, sea-level pressure, altitude
+        lstRegSub_jul[[n]] <- rfRegression(regrSubData, 
+                                           depVar="TempF", 
+                                           predVars=c("DewF", "modSLP", "Altimeter", "hrfct"), 
+                                           otherVar=otherVars,
+                                           critFilter=list(year=2016, locNamefct=loc, month=mon), 
+                                           seed=2007211342+n, 
+                                           ntree=100, 
+                                           mtry=3, 
+                                           testSize=0.3
+                                           )
+    
+        # Incerement counter
+        n <- n + 1
+    }
+    
+    # Update progress
+    cat("\nFinished processing:", loc)
+    
+}
+
+endTime <- Sys.time()
+cat("\nTotal run time:", round(endTime - startTime, 1), "seconds\n")
+
+```
+  
+The evaluation process can then be run again:  
+```{r}
+
+# Integrate the test data
+subTestData_jul <- map_dfr(lstRegSub_jul, .f=function(x) { x$testData} )
+
+# Plot final R-squared and RMSE by locale
+ebvRFSub_loc_jul <- plotErrorByVar(list(testData=subTestData_jul), 
+                                   depVar="TempF", 
+                                   keyVar="locNamefct", 
+                                   returnData=TRUE
+                                   )
+
+# Plot final R-squared and RMSE by hour
+ebvRFSub_hr_jul <- plotErrorByVar(list(testData=subTestData_jul), 
+                                  depVar="TempF", 
+                                  keyVar="hrfct", 
+                                  returnData=TRUE
+                                  )
+
+subJuly_002 <- subTestData_jul %>%
+    filter(month=="Jul") %>%
+    mutate(hrBucket=factor(3 * (((as.integer(hrfct)-1) %% 24) %/% 3) + 1))
+
+helperAccuracyByFactors(subJuly_002, xVar="locNamefct", yVar="hrBucket", depVar="TempF", metric="rsq")
+
+```
+  
+Boston remains the hardest to predict in July, and there has been only a little imporvement in RMSE or R-squared.  Why is the Dallas data still showing negative R-squared?  
+```{r}
+
+subPlotJuly <- subJuly_002 %>%
+    filter(locNamefct=="Dallas, TX", hrBucket==7)
+
+subPlotJuly
+
+subPlotJuly %>%
+    ggplot(aes(x=TempF, y=predicted)) + 
+    geom_point() + 
+    geom_abline(lty=2, color="red") + 
+    labs(x="Actual Temperature", y="Predicted Temperature") + 
+    geom_text(data=~filter(., TempF < 78), aes(x=TempF+0.25, label=dtime), hjust=0, color="red") +
+    coord_equal()
+
+```
+  
+The model appears to be reasonable in this case.  There is an anomalously low temperature of 75 degrees at 6Z on July 10.  The model is predicts a value that is roughly in-line with what would typically be expected for Dallas in July at midnight.  A plot of Dallas Temperatures and Dew Points in July suggests that while low temperatures in the mid-70s are rare, they occur several times:  
+```{r}
+
+regrData %>% 
+    filter(source=="kdfw_2016", month=="Jul", !is.na(TempF), !is.na(DewF)) %>% 
+    ggplot(aes(x=dtime, y=TempF)) + 
+    geom_line(color="red") + 
+    geom_line(aes(y=DewF), color="blue") + 
+    labs(x="", y="Temp/Dew (F)", title="Dallas, TX in July 2016")
+
+```
+  
+The dew point does not help predict these low temperature evenings.  Suppose 76 degrees is used as the cutoff for a "cold" July occurrence in Dallas.  Does anything stand out about these times?  
+```{r}
+
+dfw_jul <- regrData %>% 
+    filter(source=="kdfw_2016", month=="Jul", !is.na(TempF), !is.na(DewF)) %>% 
+    mutate(isCold=TempF <= 76.5) 
+
+dfw_jul%>% 
+    select(-year, -monthint, -day, -starts_with("cL"), -starts_with("orig"), -hr) %>%
+    group_by(isCold) %>%
+    summarize_if(is.numeric, .funs=mean, na.rm=TRUE)
+
+dfw_jul%>% 
+    select(-year, -monthint, -day, -starts_with("cL"), -starts_with("orig"), -hr) %>%
+    group_by(isCold) %>%
+    summarize_if(is.logical, .funs=mean, na.rm=TRUE)
+
+dfw_jul%>% 
+    count(isCold, predomDir) %>%
+    group_by(isCold) %>%
+    mutate(pct=n/sum(n)) %>%
+    pivot_wider(predomDir, names_from="isCold", values_from="pct")
+
+dfw_jul%>% 
+    count(isCold, minHeight) %>%
+    group_by(isCold) %>%
+    mutate(pct=n/sum(n)) %>%
+    pivot_wider(minHeight, names_from="isCold", values_from="pct")
+
+dfw_jul%>% 
+    count(isCold, ceilingHeight) %>%
+    group_by(isCold) %>%
+    mutate(pct=n/sum(n)) %>%
+    pivot_wider(ceilingHeight, names_from="isCold", values_from="pct")
+
+```
+  
+It appears that a "cold" July evening in Dallas is associated with precipitation, clouds, and winds from the east.  Does this match up with data from July 10?
+```{r}
+
+metarData %>%
+    filter(source=="kdfw_2016", month=="Jul", lubridate::day(dtime)==10, lubridate::hour(dtime) < 12) %>%
+    pull(origMETAR)
+
+```
+  
+To a degree, yes.  There were clouds and rain earlier in the evening, though these had cleared out by the time of the anomaly.  Potentially, an area for further exploration.
