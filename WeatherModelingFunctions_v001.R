@@ -1146,19 +1146,33 @@ plotErrorByVar <- function(model,
         mutate(rmse=varMod**0.5, rsq=1-varMod/varTot) %>%
         ungroup()
     
+    # Is anything negative?
+    isNeg <- min(c(plotData$rsq, plotData$rmse)) < 0
+    
     # Create side-by-side plots of RMSE and R-squared
     p1 <- plotData %>%
         select_at(vars(all_of(c(keyVar, "rmse", "rsq")))) %>%
         pivot_longer(c("rmse", "rsq"), names_to="metric", values_to="value") %>%
         ggplot(aes(x=fct_reorder(get(keyVar), value), y=value)) + 
         geom_col(fill="lightblue") + 
-        geom_text(aes(y=value/2, label=round(value, ifelse(metric=="rmse", 1, 3)))) +
+        # Center text for non-negative values, left-align at 0 for negative values
+        geom_text(data=~filter(., value >= 0), 
+                  aes(y=value/2, label=round(value, ifelse(metric=="rmse", 1, 3)))
+                  ) +
         coord_flip() + 
         labs(x="", 
              y="", 
              title=paste0("Accuracy in predicting ", mapper[depVar], " by ", mapper[keyVar])) + 
         ylim(c(0, NA)) +
-        facet_wrap(~metric, scales="free_x")
+        facet_wrap(~metric, scales="free_x") + 
+        # If any negative values, add them as text-only in red
+        if (isNeg) {
+            geom_text(data=~filter(., value < 0), 
+                      aes(y=0, label=round(value, ifelse(metric=="rmse", 1, 3))), 
+                      hjust=0, color="red", fontface="bold"
+            )
+        }
+        
     
     # Add the caption if not NULL
     if (!is.null(caption)) p1 <- p1 + labs(caption=caption)
@@ -1312,5 +1326,62 @@ evalRFRegression <- function(model,
     if (returnData) {
         return(list(f1=impData, f2=msersqData, f3=errorByData, f4=actualPredictedData))
     }
+    
+}
+
+
+# Plot accuracy using tiles and text
+helperAccuracyByFactors <- function(df, 
+                                    xVar, 
+                                    yVar, 
+                                    depVar,
+                                    metric,
+                                    prediction="predicted",
+                                    mapper=varMapper,
+                                    flip=TRUE
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble containing the data
+    # xVar: the first of the two factor variables
+    # yVar the second of the two factor variables
+    # depVar: the dependent variable that was being predicted
+    # metric: 'rmse' or 'rsq'
+    # prediction: the name of the prediction variable
+    # mapper: mapping file for variable to descriptive name
+    # flip: boolean, whether to flip the axes so the xVar shows on the y-axis
+    
+    # Set up rounding as 2 for r-squared, 1 for RMSE; prepare RMSE to sort smallest at top
+    if (metric=="rsq") {
+        rounder <- 2
+        mult <- 1
+    } else {
+        rounder <- 1
+        mult <- -1
+    }
+    
+    # Create the plot
+    p1 <- df %>% 
+        rename("depVar"=all_of(depVar), "predicted"=all_of(prediction)) %>%
+        group_by_at(vars(all_of(c(xVar, yVar)))) %>% 
+        summarize(varTot=var(depVar), varErr=var(depVar-predicted)) %>% 
+        mutate(rsq=1-varErr/varTot, rmse=varErr**0.5) %>% 
+        ggplot(aes(x=fct_reorder(get(xVar), mult * get(metric)), y=get(yVar))) + 
+        geom_tile(aes_string(fill=metric)) + 
+        geom_text(aes(label=round(get(metric), rounder)))
+    if (metric=="rsq") {
+        p1 <- p1 + 
+            labs(x="", y="", title=paste0("R-squared by ", mapper[xVar], " and ", mapper[yVar])) +
+            scale_fill_continuous(low="white", high="green")
+    }
+    if (metric=="rmse") {
+        p1 <- p1 + 
+            labs(x="", y="", title=paste0("RMSE by ", mapper[xVar], " and ", mapper[yVar])) +
+            scale_fill_continuous(low="green", high="white")
+    }
+    if (flip) p1 <- p1 + coord_flip()
+    
+    # Print the plot
+    print(p1)
     
 }
