@@ -2017,4 +2017,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 runs random forest regression with mix of categorical and numerical variables  
 * WeatherModeling_202006_v002 runs random forest regression separately by locale  
 * WeatherModeling_202006_v002 evaluates random forest regression accuracy on two dimensions  
+* WeatherModeling_202006_v002 evaluates evolution of RMSE using only categorical means  
   
