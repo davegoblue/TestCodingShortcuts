@@ -3416,3 +3416,145 @@ metarData %>%
 ```
   
 To a degree, yes.  There were clouds and rain earlier in the evening, though these had cleared out by the time of the anomaly.  Potentially, an area for further exploration.
+  
+Next, the evolution of RMSE as variables are added is plotted.  The main categorical variables - locale, month, and hour - are added first, as these are largely just the average for the intersection of variables:  
+```{r}
+
+# Sample test/train dataset
+set.seed(2007221340)
+nullData <- regrData %>%
+    filter(!is.na(TempF), year==2016) %>%
+    mutate(isTest=runif(nrow(.))<=0.3)
+
+# Null estimates for temperature based on locale; locale-month; and locale-month-hour
+nullMeans <- nullData %>%
+    filter(!isTest) %>%
+    group_by(locNamefct) %>%
+    mutate(meanLoc=mean(TempF)) %>%
+    group_by(locNamefct, month) %>%
+    mutate(meanLocMonth=mean(TempF)) %>%
+    group_by(locNamefct, month, hrfct) %>%
+    summarize(meanLoc=mean(meanLoc), meanLocMonth=mean(meanLocMonth), meanLocMonthHour=mean(TempF), n=n()) %>%
+    ungroup()
+
+# Assessment of accuracies for temperature by locale
+nullTest <- nullData %>%
+    filter(isTest) %>%
+    right_join(nullMeans, by=c("locNamefct", "month", "hrfct")) %>%
+    mutate(eLoc=meanLoc-TempF, 
+           eLocMonth=meanLocMonth-TempF, 
+           eLocMonthHour=meanLocMonthHour-TempF
+           )
+
+# Create overall metrics
+nullOverall <- nullTest %>%
+    mutate(locNamefct="Overall") %>%
+    group_by(locNamefct) %>%
+    summarize(varTot=var(TempF), 
+              eLoc2=mean(eLoc**2), 
+              eLocMonth=mean(eLocMonth**2), 
+              eLocMonthHour=mean(eLocMonthHour**2)
+              )
+
+# Create locale metrics, and bind overall metrics
+nullByLocale <- nullTest %>%
+    mutate(locNamefct=as.character(locNamefct)) %>%
+    group_by(locNamefct) %>%
+    summarize(varTot=var(TempF), 
+              eLoc2=mean(eLoc**2), 
+              eLocMonth=mean(eLocMonth**2), 
+              eLocMonthHour=mean(eLocMonthHour**2)
+              ) %>%
+    bind_rows(nullOverall)
+
+# Create plot for RMSE
+nullByLocale %>%
+    pivot_longer(-locNamefct, names_to="byNull", values_to="MSE") %>%
+    mutate(RMSE=MSE**0.5, 
+           byNull=factor(byNull, levels=c("varTot", "eLoc2", "eLocMonth", "eLocMonthHour"))
+           )%>%
+    group_by(locNamefct) %>% 
+    mutate(dRMSE=ifelse(row_number()==n(), RMSE, RMSE-lead(RMSE))) %>%
+    ungroup() %>%
+    ggplot(aes(x=fct_reorder(locNamefct, RMSE), y=dRMSE, fill=byNull)) + 
+    geom_col(position="stack") + 
+    coord_flip() + 
+    scale_fill_discrete("Technique", 
+                        breaks=c("varTot", "eLoc2", "eLocMonth", "eLocMonthHour"), 
+                        labels=c("Overall", "Locale", "Locale-Month", "Locale-Month-Hour"), 
+                        guide=guide_legend(reverse=TRUE)
+                        ) + 
+    labs(x="", y="RMSE", title="RMSE by Locale by Technique (averages only)") + 
+    theme(legend.position="bottom")
+
+```
+  
+For predicting overall accuracy, improvements in RMSE are most rapid when moving from locale-only to a combination of locale-month.  This pattern appears to be generally repeated for most locales.
+
+How much expalantory power do dewpoint and sea-level pressure have after controlling for locale-month-hour?  
+```{r}
+
+# Addition of dew point to training data
+nullTrain <- nullData %>%
+    filter(!isTest) %>%
+    right_join(nullMeans, by=c("locNamefct", "month", "hrfct")) %>%
+    mutate(err=meanLocMonthHour-TempF)
+
+# Simple linear regression for dew point vs. error
+lm(err ~ DewF, data=nullTrain) %>% 
+    summary()
+
+# Simple linear regression for modSLP vs. error
+lm(err ~ modSLP, data=nullTrain) %>% 
+    summary()
+
+# Simple linear regression for dew point and modSLP vs. error
+lm(err ~ DewF + modSLP, data=nullTrain) %>% 
+    summary()
+
+```
+  
+At a glance, dew point and sea-level pressure both have meaningful explanatory power.  In combination, they explain 17% of the variance in error when predictions are made solely based on locale-month-hour.
+
+Does this change when regressions are run on smaller slices of the data (locale-month)?
+```{r}
+
+nullLM <- nullTrain %>%
+    nest(data=-c(locNamefct, month)) %>%
+    mutate(lmResult=map(data, ~lm(err ~ DewF + modSLP, data=.x)), 
+           tidied=map(lmResult, broom::glance)
+           ) %>%
+    unnest(tidied)
+
+nullLM %>%
+    ggplot(aes(x=r.squared)) +
+    geom_histogram(bins=10) + 
+    labs(x="R-squared", 
+         y="# Combinations of Locale-Month", 
+         title="R-squared for error ~ dewpoint + sea-level pressure", 
+         subtitle="Error based on null model of temperature ~ locale + month + hour"
+         )
+
+nullLM %>%
+    ggplot(aes(x=fct_reorder(locNamefct, r.squared), y=r.squared)) + 
+    geom_boxplot(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", 
+         y="R-squared", 
+         title="R-squared for error ~ dewpoint + sea-level pressure", 
+         subtitle="Error based on null model of temperature ~ locale + month + hour"
+         )
+
+nullLM %>%
+    ggplot(aes(x=month, y=r.squared)) + 
+    geom_boxplot(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", 
+         y="R-squared", 
+         title="R-squared for error ~ dewpoint + sea-level pressure", 
+         subtitle="Error based on null model of temperature ~ locale + month + hour"
+         )
+
+```
+  
+Addiing dewpoint and sea-level pressure appears to have better explanatory power in cold-weather locales and in cold-weather months.  Explanatory power appears to be lowest in marine and desert locales, and in warm-weather months.  In part, this is because there is less overall variation of temperature in these locales, and thus knowing the locale, month, and hour will already drive a very low RMSE.  In contrast, RMSE tended to be higher for the cold-weather locales.
