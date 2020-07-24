@@ -3423,7 +3423,7 @@ Next, the evolution of RMSE as variables are added is plotted.  The main categor
 # Sample test/train dataset
 set.seed(2007221340)
 nullData <- regrData %>%
-    filter(!is.na(TempF), year==2016) %>%
+    filter(!is.na(TempF), year==2016, TempF <= 120, DewF <= 100, TempF >= DewF) %>%
     mutate(isTest=runif(nrow(.))<=0.3)
 
 # Null estimates for temperature based on locale; locale-month; and locale-month-hour
@@ -3541,7 +3541,7 @@ nullLM %>%
     coord_flip() + 
     labs(x="", 
          y="R-squared", 
-         title="R-squared for error ~ dewpoint + sea-level pressure", 
+         title="R-squared for error ~ dewpoint + sea-level pressure (by locale/month)", 
          subtitle="Error based on null model of temperature ~ locale + month + hour"
          )
 
@@ -3551,10 +3551,284 @@ nullLM %>%
     coord_flip() + 
     labs(x="", 
          y="R-squared", 
-         title="R-squared for error ~ dewpoint + sea-level pressure", 
+         title="R-squared for error ~ dewpoint + sea-level pressure (by locale/month)", 
          subtitle="Error based on null model of temperature ~ locale + month + hour"
          )
 
 ```
   
 Addiing dewpoint and sea-level pressure appears to have better explanatory power in cold-weather locales and in cold-weather months.  Explanatory power appears to be lowest in marine and desert locales, and in warm-weather months.  In part, this is because there is less overall variation of temperature in these locales, and thus knowing the locale, month, and hour will already drive a very low RMSE.  In contrast, RMSE tended to be higher for the cold-weather locales.
+
+The results of the linear regression can then be used to make a new prediction for temperature as follows:  
+  
+* There is an original, true temperature, To  
+* There is a predicted temperature, Tp, based on locale-month-hour  
+* There is a prediction error, Ep, calculated as Tp-To  
+* There is an lm model calculating Ep ~ DewF + modSLP  
+* Use the lm model to predict a new error, En, for each data element  
+* Predict a new temperature, Tn, as Tn=Tp-En  
+  
+```{r}
+
+# Merge the lm column to the testing data
+nullTestLM <- nullTest %>%
+    group_by(locNamefct, month) %>%
+    nest(data=-c(locNamefct, month)) %>%
+    ungroup() %>%
+    left_join(select(nullLM, month, locNamefct, lmResult), by=c("month", "locNamefct"))
+
+# Create new predictions in the nested frame
+nullTestLM <- nullTestLM %>%
+    mutate(data=map2(.x=data, 
+                     .y=lmResult, 
+                     ~mutate(.x, errPred=predict(.y, newdata=.x), tempPred=meanLocMonthHour-errPred)
+                     )
+           )
+
+# Unnest for the actual data
+lmNullDewSLP <- nullTestLM %>%
+    unnest(data)
+
+```
+  
+Calculate and plot the improvements in RMSE:  
+```{r}
+
+newOverall <- lmNullDewSLP %>% 
+    mutate(locNamefct="Overall") %>% 
+    group_by(locNamefct) %>% 
+    summarize(eDewSLP=mean((TempF-tempPred)**2))
+
+newByLocale <- lmNullDewSLP %>% 
+    mutate(locNamefct=as.character(locNamefct)) %>% 
+    group_by(locNamefct) %>% 
+    summarize(eDewSLP=mean((TempF-tempPred)**2)) %>%
+    bind_rows(newOverall) %>%
+    right_join(nullByLocale, by=c("locNamefct"))
+
+# Create plot for RMSE
+newByLocale %>%
+    select(-eDewSLP, eDewSLP) %>%
+    pivot_longer(-locNamefct, names_to="byNull", values_to="MSE") %>%
+    mutate(RMSE=MSE**0.5, 
+           byNull=factor(byNull, levels=c("varTot", "eLoc2", "eLocMonth", "eLocMonthHour", "eDewSLP"))
+           ) %>%
+    group_by(locNamefct) %>% 
+    mutate(dRMSE=ifelse(row_number()==n(), RMSE, RMSE-lead(RMSE))) %>%
+    ungroup() %>%
+    ggplot(aes(x=fct_reorder(locNamefct, RMSE, .fun=max), 
+               y=dRMSE, 
+               fill=byNull
+               )
+           ) + 
+    geom_col(position="stack") + 
+    coord_flip() + 
+    scale_fill_discrete("Technique", 
+                        breaks=c("varTot", "eLoc2", "eLocMonth", "eLocMonthHour", "eDewSLP"), 
+                        labels=c("Impact of Locale", "Impact of Month", "Impact of Hour", 
+                                 "Impact of Dew and SLP", "Final"
+                                 ), 
+                        guide=guide_legend(reverse=TRUE)
+                        ) + 
+    labs(x="", y="RMSE", title="RMSE by Locale by Technique (averages, then lm for Dew/SLP)") + 
+    theme(legend.position="bottom")
+
+```
+  
+The final RMSE by locale are much more even than the original RMSE by locale, driven by the significant impact of (especially) month and dewpoint/SLP in many of the more tricky locales.  Is there a similar finding when running random forests by locale?  
+```{r cache=TRUE}
+
+startTime <- Sys.time()
+
+# Create a container to hold the output
+locsFull2016 <- newByLocale %>% 
+    filter(locNamefct != "Overall") %>%
+    pull(locNamefct)
+lstFull2016mhxx <- vector("list", length(locsFull2016))
+names(lstFull2016mhxx) <- locsFull2016
+
+# Filter so that TempF exists and that bizarre outliers cannot occur
+regrUse2016 <- regrData %>%
+    filter(!is.na(TempF), year==2016, TempF <= 120, DewF <= 100, TempF >= DewF)
+
+n <- 1
+for (loc in locsFull2016) {
+
+    # Run a regression for TempF vs. month, hour
+    lstFull2016mhxx[[n]] <- rfRegression(regrUse2016, 
+                                         depVar="TempF", 
+                                         predVars=c("month", "hrfct"), 
+                                         otherVar=otherVars,
+                                         critFilter=list(year=2016, locNamefct=loc), 
+                                         seed=2007231345+n, 
+                                         ntree=20, 
+                                         mtry=2, 
+                                         testSize=0.3
+                                         )
+    
+    # Incerement counter
+    n <- n + 1
+    
+    # Update progress
+    cat("\nFinished processing:", loc)
+    
+}
+
+endTime <- Sys.time()
+cat("\nTotal run time:", round(as.numeric(difftime(endTime, startTime, units="secs")), 1), "seconds\n")
+
+```
+  
+The MSE can then be calculated off each of the testData files, with comparisons made to the null data:  
+```{r}
+
+mseFull2016mhxx <- tibble::tibble(locNamefct=names(lstFull2016mhxx), 
+                                  mse=sapply(lstFull2016mhxx, 
+                                             FUN=function(x) {
+                                                 mean((x$testData$TempF-x$testData$predicted)**2)
+                                                 }
+                                             )
+                                  )
+
+newByLocale %>% 
+    inner_join(mseFull2016mhxx, by="locNamefct") %>% 
+    mutate(delta=mse**0.5-eLocMonthHour**0.5) %>% 
+    ggplot(aes(x=fct_reorder(locNamefct, -delta), y=delta)) +
+    geom_col(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", 
+         y="Change in RMSE (random forest RMSE minus null RMSE)", 
+         title="Impact on RMSE of random forest vs. null model"
+         )
+
+```
+  
+Broadly speaking, then random forest regression and the null regression achieve very similar RMSE.  Some locales are predicted ~0.25 degrees better while others are predicted ~0.25 degrees worse.  Does this pattern hold when adding dewpoint and sea-level-pressure to the random forest regression?  
+```{r cache=TRUE}
+
+startTime <- Sys.time()
+
+# Create a container to hold the output
+locsFull2016 <- newByLocale %>% 
+    filter(locNamefct != "Overall") %>%
+    pull(locNamefct)
+lstFull2016mhds <- vector("list", length(locsFull2016))
+names(lstFull2016mhds) <- locsFull2016
+
+# Filter so that TempF exists and that bizarre outliers cannot occur
+regrUse2016 <- regrData %>%
+    filter(!is.na(TempF), year==2016, TempF <= 120, DewF <= 100, TempF >= DewF)
+
+n <- 1
+for (loc in locsFull2016) {
+
+    # Run a regression for TempF vs. month, hour
+    lstFull2016mhds[[n]] <- rfRegression(regrUse2016, 
+                                         depVar="TempF", 
+                                         predVars=c("month", "hrfct", "DewF", "modSLP"), 
+                                         otherVar=otherVars,
+                                         critFilter=list(year=2016, locNamefct=loc), 
+                                         seed=2007231345+n, 
+                                         ntree=20, 
+                                         mtry=3, 
+                                         testSize=0.3
+                                         )
+    
+    # Incerement counter
+    n <- n + 1
+    
+    # Update progress
+    cat("\nFinished processing:", loc)
+    
+}
+
+endTime <- Sys.time()
+cat("\nTotal run time:", round(as.numeric(difftime(endTime, startTime, units="secs")), 1), "seconds\n")
+
+```
+
+The MSE can then be calculated off each of the testData files, with comparisons made to the original data that combined null means with a linear model of dewpoint and SLP on the residuals:  
+```{r}
+
+mseFull2016mhds <- tibble::tibble(locNamefct=names(lstFull2016mhds), 
+                                  mse=sapply(lstFull2016mhds, 
+                                             FUN=function(x) {
+                                                 mean((x$testData$TempF-x$testData$predicted)**2)
+                                                 }
+                                             )
+                                  )
+
+newByLocale %>% 
+    inner_join(mseFull2016mhds, by="locNamefct") %>% 
+    mutate(delta=mse**0.5-eDewSLP**0.5) %>% 
+    ggplot(aes(x=fct_reorder(locNamefct, -delta), y=delta)) +
+    geom_col(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", 
+         y="Change in RMSE (random forest RMSE minus null+linear RMSE)", 
+         title="Impact on RMSE of random forest vs. null+linear model"
+         )
+
+sapply(lstFull2016mhds, FUN=function(x) { x$rsq }) %>% 
+    as.data.frame() %>% 
+    mutate(ntree=1:n()) %>% 
+    tibble::as_tibble() %>% 
+    pivot_longer(-ntree, names_to="locale", values_to="rsq") %>%
+    group_by(ntree) %>%
+    summarize(meanrsq=mean(rsq)) %>%
+    ggplot(aes(x=ntree, y=meanrsq)) + 
+    geom_point() + 
+    geom_text(aes(y=meanrsq+0.005, label=round(meanrsq, 3))) +
+    ylim(c(NA, 1)) + 
+    labs(x="# Trees", y="Mean R-squared by locale", title="Impact on R-squared of forest size")
+
+```
+  
+The power of the random forest begins to appear, as RMSE is consistently lower by roughly ~0.5 degrees using the random forest regressions rather than the null means with a basic linear model.  Importantly, the random forest regression is able to consider hour, dewpoint, and SLP together for a given locale-month, while the null model used a constant impact of dewpoint and SLP for every hour in the locale-month.  Further, the random forest regression can potentially tease out non-linear patterns in the data.  
+
+Further, the random forest regression model, while already performing better, is continuing to learn slightly even at around 20 trees.  This suggests that a larger forest might potentially drive slightly more prediction improvements.
+
+The progression of RMSE by locale is plotted again:  
+```{r}
+
+mseFull2016Overall <- map_dfr(lstFull2016mhds, .f=function(x) { x$testData }) %>%
+    summarize(err2=mean((TempF-predicted)**2)) %>%
+    pull(err2)
+
+mseFull2016mhds <- mseFull2016mhds %>%
+    bind_rows(tibble::tibble(locNamefct="Overall", mse=mseFull2016Overall))
+
+mseByLocale <- newByLocale %>% 
+    inner_join(mseFull2016mhds, by=c("locNamefct")) %>%
+    rename(rf=mse)
+
+# Create plot for RMSE
+mseByLocale %>%
+    select(-eDewSLP, -rf, eDewSLP, rf) %>%
+    pivot_longer(-locNamefct, names_to="byNull", values_to="MSE") %>%
+    mutate(RMSE=MSE**0.5, 
+           byNull=factor(byNull, levels=c("varTot", "eLoc2", "eLocMonth", "eLocMonthHour", "eDewSLP", "rf"))
+           ) %>%
+    group_by(locNamefct) %>% 
+    mutate(dRMSE=ifelse(row_number()==n(), RMSE, RMSE-lead(RMSE))) %>%
+    ungroup() %>%
+    ggplot(aes(x=fct_reorder(locNamefct, RMSE, .fun=max), 
+               y=dRMSE, 
+               fill=byNull
+               )
+           ) + 
+    geom_col(position="stack") + 
+    coord_flip() + 
+    scale_fill_discrete("Technique", 
+                        breaks=c("varTot", "eLoc2", "eLocMonth", "eLocMonthHour", "eDewSLP", "rf"), 
+                        labels=c("Impact of Locale", "Impact of Month", "Impact of Hour", 
+                                 "Impact of Dew and SLP", "Impact of Forest", "Final"
+                                 ), 
+                        guide=guide_legend(reverse=TRUE)
+                        ) + 
+    labs(x="", y="RMSE", title="RMSE by Locale by Technique (averages, then lm for Dew/SLP, then forest)") + 
+    theme(legend.position="bottom")
+
+```
+  
+The modest but meaningful impact of moving to the random forest regression is apparent.
