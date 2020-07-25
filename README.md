@@ -2019,4 +2019,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 evaluates random forest regression accuracy on two dimensions  
 * WeatherModeling_202006_v002 evaluates evolution of RMSE using only categorical means  
 * WeatherModeling_202006_v002 evaluates RMSE for random forest vs. categorical means  
+* WeatherModeling_202006_v002 uses functional form to evaluate RMSE changes by model  
   
