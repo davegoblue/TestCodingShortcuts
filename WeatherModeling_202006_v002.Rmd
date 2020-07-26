@@ -3833,159 +3833,10 @@ mseByLocale %>%
   
 The modest but meaningful impact of moving to the random forest regression is apparent.
 
-A function is written to integrate testData files from multiple regressions, categorize them, and plot the resulting RMSE:  
+A function is written to integrate testData files from multiple regressions, categorize them, and plot the resulting RMSE.  Functions helperGetRMSE() and plotRMSEEvolution() are in WeatherModelingFunctions_v001.R.  The functions are then run to compare the categorical-only forest and the categorical-plus-numerical forest:  
 ```{r}
 
-# Function to extract RMSE by byVar from a named lst
-helperGetRMSE <- function(lst, 
-                          depVar,
-                          predVar="predicted",
-                          byVar="locNamefct",
-                          subElement="testData",
-                          addOverall=TRUE, 
-                          convChar=addOverall
-                          ) {
-
-    # FUNCTION ARGUMENTS:
-    # lst: a named list of lists, with each sub-list containing random forest results including 'testData'
-    # depVar: the dependent variable of 'testData' that has been predicted
-    # predVar: the name of the variable predicted; comparison to depVar drives RMSE
-    # byVar: the variable for RMSE to be plotted against
-    # subElement: the named element of the sub-lists containing the test data
-    # addOverall: whether to have an overall RMSE in addition to RMSE by byVar
-    # convChar: boolean, whether to convert the results of byVar to character
-    
-    # Create an overall test data file, and calculate err2 for each element as (predVar-depVar)**2
-    testOverall <- map_dfr(lst, .f=function(x) { x[[subElement]] }, .id="listName") %>%
-        mutate(err=get(predVar)-get(depVar), err2=err**2)
-    
-    # Calculate RMSE by byVar
-    rmseByVar <- testOverall %>%
-        group_by_at(vars(all_of(byVar))) %>%
-        summarize(rmse=mean(err2)**0.5)
-
-    # Convert byVar to character if requeated
-    if (convChar) {
-        rmseByVar <- rmseByVar %>%
-            mutate_at(vars(all_of(byVar)), as.character)
-    }
-    
-    # Add overall if requested
-    if (addOverall) {
-        rmseOverall <- testOverall %>%
-            summarize(rmse=mean(err2)**0.5) %>%
-            mutate(desc="Overall") %>%
-            rename_at(vars(all_of("desc")), ~byVar)
-        rmseByVar <- rmseByVar %>%
-            bind_rows(rmseOverall)
-    }
-    
-    # Return the RMSE data
-    rmseByVar
-    
-}
-    
-
-# Combine RMSE data from multiple approaches, and plot by byVar    
-plotRMSEEvolution <- function(lst, 
-                              mapper, 
-                              depVar,
-                              predVar="predicted",
-                              byVar="locNamefct",
-                              subElement="testData",
-                              addOverall=TRUE, 
-                              convChar=addOverall, 
-                              makePlot=TRUE
-                              ) {
-
-    # FUNCTION ARGUMENTS:
-    # lst: a named list of lists, with each sub-list containing random forest results including 'testData'
-    # mapper: a mapping file for the list name to the plotting description (order of mapper drives plot order)
-    # depVar: the dependent variable of 'testData' that has been predicted
-    # predVar: the name of the variable predicted; comparison to depVar drives RMSE
-    # byVar: the variable for RMSE to be plotted against
-    # subElement: the named element of the sub-lists containing the test data
-    # addOverall: whether to have an overall RMSE in addition to RMSE by byVar
-    # convChar: boolean, whether to convert the results of byVar to character
-    # makePlot: boolean, whether to plot the resulting data
-    
-    # Function to pass all arguments to helperGetRMSE
-    helperCallRMSE <- function(x) {
-        helperGetRMSE(x, 
-                      depVar=depVar, 
-                      predVar=predVar, 
-                      byVar=byVar, 
-                      subElement=subElement, 
-                      addOverall=addOverall, 
-                      convChar=convChar
-                      )
-    }
-    
-    # Function to pull all byVar-depVar from a list
-    helperCombineData <- function(lst) {
-        map_dfr(lst, .f=function(x) x[[subElement]][, c(byVar, depVar)])
-    }
-    
-    # Take each element of lst and run it through helperGetRMSE
-    rmseData <- map_dfr(lst, .f=function(x) { helperCallRMSE(x) }, .id="mainList")
-    
-    # Get all data from all testData that includes byVar and depVar
-    rmseCombine <- map_dfr(lst, .f=function(x) { helperCombineData(x) }, .id="origList")
-    if (convChar) rmseCombine <- rmseCombine %>% mutate_at(vars(all_of(byVar)), as.character)
-    if (addOverall) {
-        rmseCombine <- rmseCombine %>%
-            bind_rows(mutate_at(rmseCombine, vars(all_of(byVar)), ~"Overall"))
-    }
-    rmseCombine <- rmseCombine %>%
-        group_by_at(vars(all_of(byVar))) %>%
-        summarize(rmse=sd(get(depVar))) %>%
-        mutate(mainList="totVar") %>%
-        select(mainList, everything())
-    
-    # Update mapper so that "totVar" comes first and a final element called 'Final'
-    origNames <- names(mapper)
-    mapper <- c(mapper, "Final")
-    names(mapper) <- c("totVar", origNames)
-    
-    # Incorporate rmseCombine, group by byVar and order by names(mapper)
-    rmseData <- rmseData %>%
-        bind_rows(rmseCombine) %>%
-        mutate(itemOrder=match(mainList, names(mapper))) %>%
-        arrange(get(byVar), itemOrder) %>%
-        group_by_at(vars(all_of(byVar))) %>% 
-        mutate(dRMSE=ifelse(row_number()==n(), rmse, rmse-lead(rmse))) %>%
-        ungroup()
-
-    # Create a plot if requested
-    if (makePlot) {
-        p1 <- rmseData %>%
-            ggplot(aes(x=fct_reorder(get(byVar), rmse, .fun=max), 
-                       y=dRMSE, 
-                       fill=factor(mapper[mainList], levels=mapper)
-                       )
-                   ) + 
-            geom_col(position="stack") + 
-            coord_flip() + 
-            scale_fill_discrete("Technique", 
-                                breaks=mapper, 
-                                labels=mapper, 
-                                guide=guide_legend(reverse=TRUE)
-                                ) + 
-            labs(x="", y="RMSE", title="RMSE by Technique") + 
-            theme(legend.position="bottom")
-        print(p1)
-    }
-    
-    # Return the data file        
-    rmseData
-    
-}
-
-```
-  
-The function is then run to compare the categorical-only forest and the categorical-plus-numerical forest:  
-```{r}
-
+# Impact of adding dewpoint and SLP to the model
 rmseCatvNum <- plotRMSEEvolution(list(catOnly=lstFull2016mhxx, catNum=lstFull2016mhds), 
                                  depVar="TempF", 
                                  mapper=c("catOnly"="Impact of Loc-Month-Hour", 
@@ -4010,8 +3861,149 @@ rmseCatvNum %>%
                          labels=c("No Model", "Categorical Only", "Categorical and Numerical")
                          ) + 
     ylim(c(0, 1)) +
-    theme(legend.position="bottom")
+    theme(legend.position="bottom") + 
+    geom_text(data=~filter(., mainList=="catNum"), 
+              aes(y=rsq+0.01, label=round(rsq, 3)), 
+              hjust=0, size=3.5, fontface="bold"
+              )
 
 ```
   
 Final predictions are less accurate (higher RMSE) in cold-weather locales, but the amount of variance explained (R-squared) is higher in cold weather locales due to the very high starting variance that is significantly reduced by the modeling.
+  
+Next, random forest models, run separately by locale, are created for:  
+  
+* Locale-only  
+* Locale, month  
+* Locale, month, hour  
+* Locale, month, hour, dewpoint  
+* Locale, month, hour, dewpoint, SLP  
+* Locale, month, hour, dewpoint, SLP, Altimeter  
+* Locale, month, hour, dewpoint, SLP, Altimeter, wind speed, predominant wind direction, cloud heights  
+  
+```{r cache=TRUE}
+
+startTime <- Sys.time()
+
+# Variable combinations for running random forests
+varCombos <- list(cmb1=c("locNamefct"),
+                  cmb2=c("locNamefct", "month"), 
+                  cmb3=c("locNamefct", "month", "hrfct"), 
+                  cmb4=c("locNamefct", "month", "hrfct", "DewF"), 
+                  cmb5=c("locNamefct", "month", "hrfct", "DewF", "modSLP"), 
+                  cmb6=c("locNamefct", "month", "hrfct", "DewF", "modSLP", "Altimeter"), 
+                  cmb7=c("locNamefct", "month", "hrfct", "DewF", "modSLP", "Altimeter", 
+                         "WindSpeed", "predomDir", "minHeight", "ceilingHeight"
+                         ) 
+                  )
+
+# Variables to be included in all final testData sets
+keepVars <- c("source", "dtime", "locNamefct", "month", "hrfct", "DewF", 
+              "modSLP", "Altimeter", "WindSpeed", "predomDir", "minHeight", "ceilingHeight"
+              )
+
+# Create an overall container to hold the output
+lstRFRegCombos <- vector("list", length(varCombos))
+
+# Run through every combination of variables, and run every locale once inside that
+nCombo <- 1
+for (varCombo in varCombos) {
+    
+    cat("\nBeginning to process for variables:", varCombo)
+    
+    # Initialize a list container to be used inside this element of the main list
+    lstRFRegCombos[[nCombo]] <- vector("list", length(locsFull2016))
+    
+    # Create mtry based on length(varCombo)
+    mtry <- min(3, length(varCombo)) + max(0, ceiling((length(varCombo)-4)/3))
+    cat("\nmtry will be set to:", mtry)
+    
+    # Create ntree based on length(varCombo)
+    ntree <- max(5, min(50, ceiling(0.8 * length(varCombo)**2)))
+    cat("\nntree will be set to:", ntree)
+    
+    # Run once for each locale
+    nLoc <- 1
+    for (loc in locsFull2016) {
+        # Run a regression for TempF vs. varCombo
+        lstRFRegCombos[[nCombo]][[nLoc]] <- rfRegression(regrUse2016, 
+                                                         depVar="TempF", 
+                                                         predVars=varCombo, 
+                                                         otherVar=keepVars,
+                                                         critFilter=list(year=2016, locNamefct=loc), 
+                                                         seed=2007251330, 
+                                                         ntree=ntree, 
+                                                         mtry=mtry, 
+                                                         testSize=0.3
+                                                         )
+    
+        # Incerement counter
+        nLoc <- nLoc + 1
+        
+        # Announce progress
+        if ((nLoc %% 5) == 0) cat("\nFinished procesing for:", loc)
+    }
+    
+    # Incerement counter
+    nCombo <- nCombo + 1
+        
+    # Update progress
+    cat("\nFinished processing:", varCombo)
+    
+}
+
+endTime <- Sys.time()
+cat("\nTotal run time:", round(as.numeric(difftime(endTime, startTime, units="secs")), 1), "seconds\n")
+
+```
+  
+Results can then be plotted by picking elements of the main list:  
+```{r}
+
+# Key list to run through
+# Locale (1)
+# Locale-Month-Hour (3)
+# Locale-Month-Hour-Dew-SLP (5)
+# Everything (7)
+
+keyListPlot <- list(locOnly=lstRFRegCombos[[1]], 
+                    locmh=lstRFRegCombos[[3]], 
+                    locmhds=lstRFRegCombos[[5]], 
+                    locevery=lstRFRegCombos[[7]]
+                    )
+
+# Impact of evolving the model
+rmseCombos <- plotRMSEEvolution(keyListPlot, 
+                                depVar="TempF", 
+                                mapper=c("locOnly"="Impact of Locale", 
+                                         "locmh"="Impact of Month-Hour", 
+                                         "locmhds"="Impact of Dew-SLP",
+                                         "locevery"="Impact of all other"
+                                         )
+                                )
+
+
+# Plot the evolution of R-squared based on the RMSE data
+rmseCombos %>%
+    group_by(locNamefct) %>%
+    mutate(rsq=1-rmse**2/max(rmse)**2) %>%
+    ggplot(aes(x=fct_reorder(locNamefct, rsq, .fun=max), y=rsq, color=mainList, group=mainList)) + 
+    geom_point() + 
+    coord_flip() + 
+    labs(x="", y="R-squared", title="Evolution of R-squared by locale") + 
+    scale_color_discrete("", 
+                         breaks=c("totVar", "locOnly", "locmh", "locmhds", "locevery"), 
+                         labels=c("No Model", "Locale Only", "Locale-Month-Hour", 
+                                  "Locale-Month-Hour-Dew-SLP", "Everything"
+                                  )
+                         ) + 
+    ylim(c(0, 1)) +
+    theme(legend.position="bottom") + 
+    geom_text(data=~filter(., mainList=="locevery"), 
+              aes(y=rsq+0.01, label=round(rsq, 3)), 
+              hjust=0, size=3.5, fontface="bold"
+              )
+
+```
+  
+R-squared is generally in the 95%+ regime, with the exceptions of the Pacific coast, deserts, Denver, and Florida.  Denver and the deserts stand out as interesting since they also have among the highest remaining RMSE.  In contrast, the low R-squared for the Pacific coast and Florida is based in part on the low underlying temperature variations for these locales.
