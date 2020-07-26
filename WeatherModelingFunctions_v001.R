@@ -1385,3 +1385,151 @@ helperAccuracyByFactors <- function(df,
     print(p1)
     
 }
+
+
+# Function to extract RMSE by byVar from a named lst
+helperGetRMSE <- function(lst, 
+                          depVar,
+                          predVar="predicted",
+                          byVar="locNamefct",
+                          subElement="testData",
+                          addOverall=TRUE, 
+                          convChar=addOverall
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a named list of lists, with each sub-list containing random forest results including 'testData'
+    # depVar: the dependent variable of 'testData' that has been predicted
+    # predVar: the name of the variable predicted; comparison to depVar drives RMSE
+    # byVar: the variable for RMSE to be plotted against
+    # subElement: the named element of the sub-lists containing the test data
+    # addOverall: whether to have an overall RMSE in addition to RMSE by byVar
+    # convChar: boolean, whether to convert the results of byVar to character
+    
+    # Create an overall test data file, and calculate err2 for each element as (predVar-depVar)**2
+    testOverall <- map_dfr(lst, .f=function(x) { x[[subElement]] }, .id="listName") %>%
+        mutate(err=get(predVar)-get(depVar), err2=err**2)
+    
+    # Calculate RMSE by byVar
+    rmseByVar <- testOverall %>%
+        group_by_at(vars(all_of(byVar))) %>%
+        summarize(rmse=mean(err2)**0.5)
+    
+    # Convert byVar to character if requeated
+    if (convChar) {
+        rmseByVar <- rmseByVar %>%
+            mutate_at(vars(all_of(byVar)), as.character)
+    }
+    
+    # Add overall if requested
+    if (addOverall) {
+        rmseOverall <- testOverall %>%
+            summarize(rmse=mean(err2)**0.5) %>%
+            mutate(desc="Overall") %>%
+            rename_at(vars(all_of("desc")), ~byVar)
+        rmseByVar <- rmseByVar %>%
+            bind_rows(rmseOverall)
+    }
+    
+    # Return the RMSE data
+    rmseByVar
+    
+}
+
+
+# Combine RMSE data from multiple approaches, and plot by byVar    
+plotRMSEEvolution <- function(lst, 
+                              mapper, 
+                              depVar,
+                              predVar="predicted",
+                              byVar="locNamefct",
+                              subElement="testData",
+                              addOverall=TRUE, 
+                              convChar=addOverall, 
+                              makePlot=TRUE
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a named list of lists, with each sub-list containing random forest results including 'testData'
+    # mapper: a mapping file for the list name to the plotting description (order of mapper drives plot order)
+    # depVar: the dependent variable of 'testData' that has been predicted
+    # predVar: the name of the variable predicted; comparison to depVar drives RMSE
+    # byVar: the variable for RMSE to be plotted against
+    # subElement: the named element of the sub-lists containing the test data
+    # addOverall: whether to have an overall RMSE in addition to RMSE by byVar
+    # convChar: boolean, whether to convert the results of byVar to character
+    # makePlot: boolean, whether to plot the resulting data
+    
+    # Function to pass all arguments to helperGetRMSE
+    helperCallRMSE <- function(x) {
+        helperGetRMSE(x, 
+                      depVar=depVar, 
+                      predVar=predVar, 
+                      byVar=byVar, 
+                      subElement=subElement, 
+                      addOverall=addOverall, 
+                      convChar=convChar
+        )
+    }
+    
+    # Function to pull all byVar-depVar from a list
+    helperCombineData <- function(lst) {
+        map_dfr(lst, .f=function(x) x[[subElement]][, c(byVar, depVar)])
+    }
+    
+    # Take each element of lst and run it through helperGetRMSE
+    rmseData <- map_dfr(lst, .f=function(x) { helperCallRMSE(x) }, .id="mainList")
+    
+    # Get all data from all testData that includes byVar and depVar
+    rmseCombine <- map_dfr(lst, .f=function(x) { helperCombineData(x) }, .id="origList")
+    if (convChar) rmseCombine <- rmseCombine %>% mutate_at(vars(all_of(byVar)), as.character)
+    if (addOverall) {
+        rmseCombine <- rmseCombine %>%
+            bind_rows(mutate_at(rmseCombine, vars(all_of(byVar)), ~"Overall"))
+    }
+    
+    # Calculate the overall variance by the by-variable across all raw testData
+    rmseCombine <- rmseCombine %>%
+        group_by_at(vars(all_of(byVar))) %>%
+        summarize(rmse=sd(get(depVar))) %>%
+        mutate(mainList="totVar") %>%
+        select(mainList, everything())
+    
+    # Update mapper so that "totVar" comes first and a final element called 'Final'
+    origNames <- names(mapper)
+    mapper <- c(mapper, "Final")
+    names(mapper) <- c("totVar", origNames)
+    
+    # Incorporate rmseCombine, group by byVar and order by names(mapper)
+    rmseData <- rmseData %>%
+        bind_rows(rmseCombine) %>%
+        mutate(itemOrder=match(mainList, names(mapper))) %>%
+        arrange(get(byVar), itemOrder) %>%
+        group_by_at(vars(all_of(byVar))) %>% 
+        mutate(dRMSE=ifelse(row_number()==n(), rmse, rmse-lead(rmse))) %>%
+        ungroup()
+    
+    # Create a plot if requested
+    if (makePlot) {
+        p1 <- rmseData %>%
+            ggplot(aes(x=fct_reorder(get(byVar), rmse, .fun=max), 
+                       y=dRMSE, 
+                       fill=factor(mapper[mainList], levels=mapper)
+            )
+            ) + 
+            geom_col(position="stack") + 
+            coord_flip() + 
+            scale_fill_discrete("Technique", 
+                                breaks=mapper, 
+                                labels=mapper, 
+                                guide=guide_legend(reverse=TRUE)
+            ) + 
+            labs(x="", y="RMSE", title="RMSE by Technique") + 
+            theme(legend.position="bottom")
+        print(p1)
+    }
+    
+    # Return the data file        
+    rmseData
+    
+}
