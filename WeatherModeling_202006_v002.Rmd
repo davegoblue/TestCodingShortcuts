@@ -4007,3 +4007,110 @@ rmseCombos %>%
 ```
   
 R-squared is generally in the 95%+ regime, with the exceptions of the Pacific coast, deserts, Denver, and Florida.  Denver and the deserts stand out as interesting since they also have among the highest remaining RMSE.  In contrast, the low R-squared for the Pacific coast and Florida is based in part on the low underlying temperature variations for these locales.
+
+Next, the models are used to make predictions on data from the same locales but different years:  
+```{r}
+
+# Create the list of locales that have data in multiple years
+oosLocs <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA")
+
+# Pull a dataset that has relevant data
+oosData <- regrData %>%
+    filter(locNamefct %in% oosLocs, 
+           !is.na(TempF)
+           )
+
+# Create a container to hold results by locale
+oosList <- vector("list", length(oosLocs))
+names(oosList) <- oosLocs
+
+# Run for each locale
+nLoc <- 1
+for (loc in oosLocs) {
+    
+    # Filter to only data for this locale
+    oosHere <- oosData %>%
+        filter(locNamefct==loc)
+    
+    # Get the position for the locale variable
+    locPosn <- match(loc, locsFull2016)
+    cat("\nMaking predictions for:", loc, "which is in position:", locPosn)
+    
+    # Make an appropriate sized list for holding all the predictions
+    preds <- vector("list", length(lstRFRegCombos))
+    
+    # Make predictions for each model
+    nModel <- 1
+    for (mdl in lstRFRegCombos) {
+        depVars <- mdl[[locPosn]]$rfModel$importance %>% row.names()
+        preds[[nModel]] <- predict(mdl[[locPosn]]$rfModel, newdata=oosHere[, depVars])
+        nModel <- nModel + 1
+    }
+
+    # Output the model data file with predictions
+    oosList[[nLoc]] <- oosHere %>%
+        bind_cols(map_dfc(preds, .f=function(x) x))
+    
+    nLoc <- nLoc + 1
+    
+}
+
+```
+  
+Performance by year and model can be assessed:  
+```{r}
+
+# Hard code for the number of models
+nModels <- 7
+
+# Combine the datasets in oosList
+tblPreds <- map_dfr(oosList, .f=function(x) x, .id="listName")
+
+# Create the error for each scenario
+for (intCtr in 1:nModels) {
+
+    tblPreds <- tblPreds %>%
+        mutate(err=get(paste0("V", intCtr))-TempF) %>%
+        rename_at("err", ~paste0("err", intCtr))
+    
+}
+
+# Create RMSE by locale and year
+oosRMSE <- tblPreds %>%
+    group_by(locNamefct, year) %>%
+    summarize_at(vars(starts_with("err")), .f=function(x) mean(x**2)**0.5) %>%
+    pivot_longer(-c(locNamefct, year), names_to="model", values_to="rmse") %>%
+    filter(model %in% c("err1", "err3", "err5", "err7")) %>%
+    mutate(model=case_when(model=="err1" ~ "loc only", model=="err3" ~ "add mon/hr", 
+                           model=="err5" ~ "add dew/SLP", model=="err7" ~ "add all other", 
+                           TRUE~model
+                           )
+           ) 
+
+# Create plot of RMSE by locale by year
+oosRMSE %>%
+    ggplot(aes(x=fct_reorder(model, -rmse), y=rmse, fill=factor(year))) + 
+    geom_col(position="dodge") + 
+    facet_wrap(~locNamefct) + 
+    labs(title="RMSE evolution for models built using 2016 data", x="", y="RMSE") + 
+    scale_fill_discrete("")
+
+# Create base R-squared by locale and year
+baseRMSE <- oosData %>% 
+    group_by(locNamefct, year) %>% 
+    summarize(basermse=sd(TempF))
+
+# Combine with base RMSE data
+oosRMSE %>%
+    left_join(baseRMSE, by=c("locNamefct", "year")) %>%
+    mutate(rsq=1-rmse**2/basermse**2) %>%
+    ggplot(aes(x=factor(year), y=rsq, fill=fct_reorder(model, rsq))) + 
+    geom_col(position="dodge") + 
+    facet_wrap(~locNamefct) + 
+    labs(title="R-squared evolution for models built using 2016 data", x="", y="R-squared") + 
+    scale_fill_discrete("") + 
+    coord_flip()
+
+```
+  
+The 2016 models perform better on the 2016 data, though there continues to be reduction in RMSE with more complex models in every year (with the exception of Las Vegas).  This suggests the model is partially learning features specific to the year 2016 and partially learning features specific to the locale.  Creating models based on a larger sample of data (more years) might help generalize the findings.
