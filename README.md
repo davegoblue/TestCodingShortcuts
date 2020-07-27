@@ -2022,3 +2022,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 uses functional form to evaluate RMSE changes by model  
 * WeatherModeling_202006_v002 evaluates RMSE volution by locale by explanatory variable  
   
+### Expansions week of 27-JUL-2020  
+* WeatherModeling_202006_v002 uses 2016 model to assess predictions on 2014-2019 data  
+  
