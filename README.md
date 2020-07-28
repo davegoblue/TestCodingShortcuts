@@ -2024,4 +2024,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 27-JUL-2020  
 * WeatherModeling_202006_v002 uses 2016 model to assess predictions on 2014-2019 data  
+* WeatherModeling_202006_v002 creates model using 2014-2019 data  
   
