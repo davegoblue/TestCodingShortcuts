@@ -4114,3 +4114,160 @@ oosRMSE %>%
 ```
   
 The 2016 models perform better on the 2016 data, though there continues to be reduction in RMSE with more complex models in every year (with the exception of Las Vegas).  This suggests the model is partially learning features specific to the year 2016 and partially learning features specific to the locale.  Creating models based on a larger sample of data (more years) might help generalize the findings.
+  
+Next, models are run for the 2014-2019 data for the locales that have data availability (Chicago, IL; Las Vegas, NV; New Orleans, LA; San Diego, CA):  
+```{r cache=TRUE}
+
+# Create list of locations
+fullDataLocs <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA")
+
+# Create a main list, one per locale
+lstFullData <- vector("list", length(fullDataLocs))
+
+
+# Create a list of relevant dependent variables and variables to keep
+depVarFull <- c('hrfct', 'DewF', 'modSLP', 'Altimeter', 'WindSpeed', 
+                'predomDir', 'minHeight', 'ceilingHeight'
+                )
+keepVarFull <- c('source', 'dtime', 'locNamefct', 'year', 'month', 'hrfct', 'DewF', 'modSLP', 
+                 'Altimeter', 'WindSpeed', 'predomDir', 'minHeight', 'ceilingHeight'
+                 )
+
+
+# Run the regressions by locale and month
+nLoc <- 1
+for (loc in fullDataLocs) {
+    
+    # Pull data for only this locale, and where TempF is not missing
+    pullData <- regrData %>%
+        filter(locNamefct==loc, !is.na(TempF))
+    
+    # Create the months to be run
+    fullDataMonths <- pullData %>%
+        count(month) %>%
+        pull(month)
+    
+    # Create containers for each run
+    lstFullData[[nLoc]] <- vector("list", length(fullDataMonths))
+    
+    # Run random forest regression for each month for the locale
+    cat("\nBeginning to process:", loc)
+    nMonth <- 1
+    for (mon in fullDataMonths) {
+        
+        # Run the regression
+        lstFullData[[nLoc]][[nMonth]] <- rfRegression(pullData, 
+                                                      depVar="TempF", 
+                                                      predVars=depVarFull, 
+                                                      otherVar=keepVarFull,
+                                                      critFilter=list(locNamefct=loc, month=mon), 
+                                                      seed=2007271252, 
+                                                      ntree=100, 
+                                                      mtry=4, 
+                                                      testSize=0.3
+                                                      )
+        
+        # Increment the counter
+        nMonth <- nMonth + 1
+        cat("\nFinished month:", mon)
+    }
+    
+    # Incerement the counter
+    nLoc <- nLoc + 1
+    
+}
+
+```
+  
+The relevant 'testData' files can then be combined for an assessment of overall prediction accuracy:  
+```{r}
+
+# Helper function to extract testData from inner list
+combineTestData <- function(lst, elem="testData") {
+    map_dfr(lst, .f=function(x) x[[elem]])
+}
+
+# Combine all of the test data files
+fullTestData <- map_dfr(lstFullData, .f=combineTestData) %>%
+    mutate(err=predicted-TempF, 
+           year=factor(year)
+           )
+
+# Helper function to create RMSE data
+helperCreateRMSE <- function(df, byVar, depVar, errVar="err") {
+    
+    df %>%
+        group_by_at(vars(all_of(byVar))) %>%
+        summarize(varTot=var(get(depVar)), varModel=mean(get(errVar)**2)) %>%
+        mutate(rmseTot=varTot**0.5, rmseModel=varModel**0.5, rsq=1-varModel/varTot)
+    
+}
+
+# Create plot for a given by-variable and facet-variable
+helperRMSEPlot <- function(df, byVar, depVar, facetVar=NULL) {
+
+    # Create a copy of the original by variable
+    byVarOrig <- byVar
+    
+    # Expand byVar to include facetVar if facetVar is not null
+    if (!is.null(facetVar)) {
+        byVar <- unique(c(byVar, facetVar))
+    }
+    
+    # Create 
+    p1 <- df %>%
+        helperCreateRMSE(byVar=byVar, depVar=depVar) %>%
+        select_at(vars(all_of(c(byVar, "rmseTot", "rmseModel")))) %>%
+        pivot_longer(c(rmseTot, rmseModel), names_to="model", values_to="rmse") %>%
+        group_by_at(vars(all_of(byVar))) %>%
+        mutate(dRMSE=ifelse(row_number()==n(), rmse, rmse-lead(rmse)), 
+               model=factor(model, levels=c("rmseTot", "rmseModel"))
+               ) %>%
+        ggplot(aes_string(x=byVarOrig, y="dRMSE", fill="model")) + 
+        geom_col() + 
+        geom_text(data=~filter(., model=="rmseModel"), aes(y=dRMSE/2, label=round(dRMSE, 1))) +
+        coord_flip() + 
+        labs(x="", y="RMSE", title="RMSE before and after modelling") + 
+        scale_fill_discrete("", 
+                            breaks=c("rmseModel", "rmseTot"), 
+                            labels=c("Final", "Explained by Model")
+                            ) + 
+        theme(legend.position="bottom")
+    # Add facetting if the argument was passed
+    if (!is.null(facetVar)) { p1 <- p1 + facet_wrap(as.formula(paste("~", facetVar))) }
+    print(p1)
+    
+}
+
+# Stand-alone on three main dimensions
+helperRMSEPlot(fullTestData, byVar="locNamefct", depVar="TempF")
+helperRMSEPlot(fullTestData, byVar="year", depVar="TempF")
+helperRMSEPlot(fullTestData, byVar="month", depVar="TempF")
+
+# Facetted by locale
+helperRMSEPlot(fullTestData, byVar="year", depVar="TempF", facetVar="locNamefct")
+helperRMSEPlot(fullTestData, byVar="month", depVar="TempF", facetVar="locNamefct")
+
+```
+  
+Further, an overall decline in MSE can be estimated as the average of the MSE declines in each locale-month:  
+```{r}
+
+# Function to extract MSE data from inner lists
+helperMSETibble <- function(x) { 
+    map_dfr(x, .f=function(y) tibble::tibble(ntree=1:length(y$mse), mse=y$mse)) 
+}
+
+map_dfr(lstFullData, .f=function(x) { helperMSETibble(x) }, .id="source") %>%
+    group_by(source, ntree) %>%
+    summarize(meanmse=mean(mse)) %>%
+    ungroup() %>%
+    mutate(source=fullDataLocs[as.integer(source)]) %>%
+    ggplot(aes(x=ntree, y=meanmse, group=source, color=source)) + 
+    geom_line() + 
+    ylim(c(0, NA)) + 
+    labs(x="# Trees", y="MSE", title="Evolution of Average MSE by Number of Trees")
+
+```
+  
+At 100 trees, the model appears to have largely completed learning, with no more material declines in MSE.  Overall, model predictions average 3-4 degrees different from actual temperatures.  Deviations are greater in Las Vegas (4-5 degrees), and in the spring in Chicago (4-5 degrees).  Deviations are lesser in San Diego (2-3 degrees) and winter in Chicago (2-3 degrees).
