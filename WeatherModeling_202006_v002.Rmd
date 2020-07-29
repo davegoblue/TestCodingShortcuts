@@ -4271,3 +4271,133 @@ map_dfr(lstFullData, .f=function(x) { helperMSETibble(x) }, .id="source") %>%
 ```
   
 At 100 trees, the model appears to have largely completed learning, with no more material declines in MSE.  Overall, model predictions average 3-4 degrees different from actual temperatures.  Deviations are greater in Las Vegas (4-5 degrees), and in the spring in Chicago (4-5 degrees).  Deviations are lesser in San Diego (2-3 degrees) and winter in Chicago (2-3 degrees).
+  
+The model is then run for all months combined for a single locale, to compare results when month is a trained explanatory variable rather than a segment modelled separately:  
+```{r cache=TRUE}
+
+# Create list of locations
+fullDataLocs <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA")
+
+# Create a main list, one per locale
+lstFullData_002 <- vector("list", length(fullDataLocs))
+
+
+# Create a list of relevant dependent variables and variables to keep
+depVarFull_002 <- c('month', 'hrfct', 'DewF', 'modSLP', 
+                    'Altimeter', 'WindSpeed', 'predomDir', 
+                    'minHeight', 'ceilingHeight'
+                    )
+keepVarFull_002 <- c('source', 'dtime', 'locNamefct', 'year', 'month', 'hrfct', 
+                     'DewF', 'modSLP', 'Altimeter', 'WindSpeed', 'predomDir', 
+                     'minHeight', 'ceilingHeight'
+                     )
+
+
+# Run the regressions by locale and month
+nLoc <- 1
+for (loc in fullDataLocs) {
+    
+    # Pull data for only this locale, and where TempF is not missing
+    pullData <- regrData %>%
+        filter(locNamefct==loc, !is.na(TempF))
+    
+    # To be parallel with previous runs, make a length-one list inside locale
+    lstFullData_002[[nLoc]] <- vector("list", 1)
+    
+    # Run random forest regression for each locale
+    cat("\nBeginning to process:", loc)
+    lstFullData_002[[nLoc]][[1]] <- rfRegression(pullData, 
+                                                 depVar="TempF", 
+                                                 predVars=depVarFull_002, 
+                                                 otherVar=keepVarFull_002,
+                                                 critFilter=list(locNamefct=loc), 
+                                                 seed=2007281307, 
+                                                 ntree=25, 
+                                                 mtry=4, 
+                                                 testSize=0.3
+                                                 )
+    
+    # Incerement the counter
+    nLoc <- nLoc + 1
+    
+}
+
+```
+  
+The results can then be compared to the results of the regressions run using month as a segment:  
+```{r}
+
+# Combine all of the test data files
+fullTestData_002 <- map_dfr(lstFullData_002, .f=combineTestData) %>%
+    mutate(err=predicted-TempF, 
+           year=factor(year)
+           )
+
+# Stand-alone on three main dimensions
+helperRMSEPlot(fullTestData_002, byVar="locNamefct", depVar="TempF")
+helperRMSEPlot(fullTestData_002, byVar="year", depVar="TempF")
+helperRMSEPlot(fullTestData_002, byVar="month", depVar="TempF")
+
+# Facetted by locale
+helperRMSEPlot(fullTestData_002, byVar="year", depVar="TempF", facetVar="locNamefct")
+helperRMSEPlot(fullTestData_002, byVar="month", depVar="TempF", facetVar="locNamefct")
+
+# Evolution of RMSE
+map_dfr(lstFullData_002, .f=function(x) { helperMSETibble(x) }, .id="source") %>%
+    group_by(source, ntree) %>%
+    summarize(meanmse=mean(mse)) %>%
+    ungroup() %>%
+    mutate(source=fullDataLocs[as.integer(source)]) %>%
+    ggplot(aes(x=ntree, y=meanmse, group=source, color=source)) + 
+    geom_line() + 
+    ylim(c(0, NA)) + 
+    labs(x="# Trees", y="MSE", title="Evolution of Average MSE by Number of Trees")
+
+```
+  
+The prediction qualities and evolution of MSE by number of trees look broadly similar to the results run by locale-month.  Notably, month scores high on variable importance:  
+```{r}
+
+impList <- lapply(lstFullData_002, FUN=function(x) { 
+    locName <- x[[1]]$testData$locNamefct %>% as.character() %>% unique()
+    x[[1]]$rfModel$importance %>% 
+        as.data.frame() %>%
+        rownames_to_column("variable") %>%
+        rename_at(vars(all_of("IncNodePurity")), ~locName) %>%
+        tibble::as_tibble()
+    }
+    )
+
+impDF <- Reduce(function(x, y) merge(x, y, all=TRUE), impList)
+
+# Overall variable importance
+impDF %>%
+    pivot_longer(-variable, names_to="locale", values_to="incPurity") %>%
+    ggplot(aes(x=fct_reorder(varMapper[variable], incPurity), y=incPurity)) + 
+    geom_col() + 
+    coord_flip() + 
+    facet_wrap(~locale) + 
+    labs(x="", y="Importance", title="Variable Importance by Locale")
+
+# Relative variable importance
+impDF %>%
+    pivot_longer(-variable, names_to="locale", values_to="incPurity") %>%
+    group_by(locale) %>%
+    mutate(incPurity=incPurity/sum(incPurity)) %>%
+    ggplot(aes(x=fct_reorder(varMapper[variable], incPurity), y=incPurity)) + 
+    geom_col() + 
+    coord_flip() + 
+    facet_wrap(~locale) + 
+    labs(x="", y="Relative Importance", title="Relative Variable Importance by Locale")
+
+```
+  
+There is much more underlying variance in the Chicago data, thus greater overall variable importance in Chicago.  On a relative basis, locale predictions are driven by:  
+  
+* Chicago - Dew Point, Month  
+* Las Vegas - Month, Sea-Level Pressure, Hour, Altimeter  
+* New Orleans - Dew Point, Month  
+* San Diego - Month, Hour, Dew Point  
+  
+It is interesting to see the similarities in Chicago and New Orleans, with both having strong explanatory power from the combination of dew point and month, despite meaningfully different climates.  As in previous analyses, Las Vegas and San Diego look different from each other and also different from Chicago/New Orleans.
+  
