@@ -2026,4 +2026,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 uses 2016 model to assess predictions on 2014-2019 data  
 * WeatherModeling_202006_v002 creates model using 2014-2019 data  
 * WeatherModeling_202006_v002 models using month as an explanatory variable rather separate models by month  
+* WeatherModeling_202006_v002 models using locale as an explanatory variable rather separate models by locale  
   
