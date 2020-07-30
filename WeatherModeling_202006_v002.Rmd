@@ -4400,4 +4400,248 @@ There is much more underlying variance in the Chicago data, thus greater overall
 * San Diego - Month, Hour, Dew Point  
   
 It is interesting to see the similarities in Chicago and New Orleans, with both having strong explanatory power from the combination of dew point and month, despite meaningfully different climates.  As in previous analyses, Las Vegas and San Diego look different from each other and also different from Chicago/New Orleans.
+
+Finally, an attempt is made to model temperature using locale as an explanatory variable:  
+```{r cache=TRUE}
+
+# Create list of locations
+fullDataLocs <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA")
+
+# Create a main list, one for overall
+lstFullData_003 <- vector("list", 1)
+
+
+# Create a list of relevant dependent variables and variables to keep
+depVarFull_003 <- c('locNamefct', 'month', 'hrfct', 
+                    'DewF', 'modSLP', 'Altimeter', 
+                    'WindSpeed', 'predomDir', 'minHeight', 'ceilingHeight'
+                    )
+keepVarFull_003 <- c('source', 'dtime', 'locNamefct', 'year', 'month', 'hrfct', 
+                     'DewF', 'modSLP', 'Altimeter', 'WindSpeed', 'predomDir', 
+                     'minHeight', 'ceilingHeight'
+                     )
+
+
+# Run the overall regressions
+# Pull data for only the specified locales, and where TempF is not missing
+pullData <- regrData %>%
+    filter(locNamefct %in% fullDataLocs, !is.na(TempF))
+    
+# To be parallel with previous runs, make a length-one list inside locale
+lstFullData_003[[1]] <- vector("list", 1)
+
+startTime <- Sys.time()
+
+# Run random forest regression (overall only)
+lstFullData_003[[1]][[1]] <- rfRegression(pullData, 
+                                          depVar="TempF", 
+                                          predVars=depVarFull_003, 
+                                          otherVar=keepVarFull_003,
+                                          critFilter=list(locNamefct=fullDataLocs), 
+                                          seed=2007291317, 
+                                          ntree=2, 
+                                          mtry=4, 
+                                          testSize=0.3
+                                          )
+
+endTime <- Sys.time()
+cat("\nTotal run time:", round(as.numeric(difftime(endTime, startTime, units="secs")), 1), "seconds\n")
+    
+```
   
+The results can then be compared to the results of the regressions run using locale as a segment:  
+```{r}
+
+# Combine all of the test data files
+fullTestData_003 <- map_dfr(lstFullData_003, .f=combineTestData) %>%
+    mutate(err=predicted-TempF, 
+           year=factor(year)
+           )
+
+# Stand-alone on three main dimensions
+helperRMSEPlot(fullTestData_003, byVar="locNamefct", depVar="TempF")
+helperRMSEPlot(fullTestData_003, byVar="year", depVar="TempF")
+helperRMSEPlot(fullTestData_003, byVar="month", depVar="TempF")
+
+# Facetted by locale
+helperRMSEPlot(fullTestData_003, byVar="year", depVar="TempF", facetVar="locNamefct")
+helperRMSEPlot(fullTestData_003, byVar="month", depVar="TempF", facetVar="locNamefct")
+
+# Evolution of RMSE
+map_dfr(lstFullData_003, .f=function(x) { helperMSETibble(x) }, .id="source") %>%
+    group_by(source, ntree) %>%
+    summarize(meanmse=mean(mse)) %>%
+    ungroup() %>%
+    mutate(source="Overall") %>%
+    ggplot(aes(x=ntree, y=meanmse, group=source, color=source)) + 
+    geom_line() + 
+    ylim(c(0, NA)) + 
+    labs(x="# Trees", y="MSE", title="Evolution of Average MSE by Number of Trees")
+
+```
+  
+Run time is very significantly longer when using locale as an explanatory variable rather than running separate models by locale.  Splitting the models by locale and/or month may create some complexities for summary statistics and some risks of over-fitting.  But, the risks may be more than offset by the much lower run times.
+
+What if the model is run on a very small subset of the data (e.g., switch test data from 30% of the sample to 90% of the sample)?  
+```{r cache=TRUE}
+
+# Create list of locations
+fullDataLocs <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA")
+
+# Create a main list, one for overall
+lstFullData_004 <- vector("list", 1)
+
+
+# Create a list of relevant dependent variables and variables to keep
+depVarFull_004 <- c('locNamefct', 'month', 'hrfct', 
+                    'DewF', 'modSLP', 'Altimeter', 
+                    'WindSpeed', 'predomDir', 'minHeight', 'ceilingHeight'
+                    )
+keepVarFull_004 <- c('source', 'dtime', 'locNamefct', 'year', 'month', 'hrfct', 
+                     'DewF', 'modSLP', 'Altimeter', 'WindSpeed', 'predomDir', 
+                     'minHeight', 'ceilingHeight'
+                     )
+
+
+# Run the overall regressions
+# Pull data for only the specified locales, and where TempF is not missing
+pullData <- regrData %>%
+    filter(locNamefct %in% fullDataLocs, !is.na(TempF))
+    
+# To be parallel with previous runs, make a length-one list inside locale
+lstFullData_004[[1]] <- vector("list", 1)
+
+startTime <- Sys.time()
+
+# Run random forest regression (overall only)
+lstFullData_004[[1]][[1]] <- rfRegression(pullData, 
+                                          depVar="TempF", 
+                                          predVars=depVarFull_004, 
+                                          otherVar=keepVarFull_004,
+                                          critFilter=list(locNamefct=fullDataLocs), 
+                                          seed=2007291412, 
+                                          ntree=100, 
+                                          mtry=4, 
+                                          testSize=0.9
+                                          )
+
+endTime <- Sys.time()
+cat("\nTotal run time:", round(as.numeric(difftime(endTime, startTime, units="secs")), 1), "seconds\n")
+
+```
+
+The results can then be compared to the results of the regressions run using locale as a segment:  
+```{r}
+
+# Combine all of the test data files
+fullTestData_004 <- map_dfr(lstFullData_004, .f=combineTestData) %>%
+    mutate(err=predicted-TempF, 
+           year=factor(year)
+           )
+
+# Stand-alone on three main dimensions
+helperRMSEPlot(fullTestData_004, byVar="locNamefct", depVar="TempF")
+helperRMSEPlot(fullTestData_004, byVar="year", depVar="TempF")
+helperRMSEPlot(fullTestData_004, byVar="month", depVar="TempF")
+
+# Facetted by locale
+helperRMSEPlot(fullTestData_004, byVar="year", depVar="TempF", facetVar="locNamefct")
+helperRMSEPlot(fullTestData_004, byVar="month", depVar="TempF", facetVar="locNamefct")
+
+# Evolution of RMSE
+map_dfr(lstFullData_004, .f=function(x) { helperMSETibble(x) }, .id="source") %>%
+    group_by(source, ntree) %>%
+    summarize(meanmse=mean(mse)) %>%
+    ungroup() %>%
+    mutate(source="Overall") %>%
+    ggplot(aes(x=ntree, y=meanmse, group=source, color=source)) + 
+    geom_line() + 
+    ylim(c(0, NA)) + 
+    labs(x="# Trees", y="MSE", title="Evolution of Average MSE by Number of Trees")
+
+```
+  
+Run time is dramatically faster, with 100 trees on the 10% sample growing in less time than needed for 2 trees to be grown on 70% of the sample.  The size of the dataset may be driving run-time challenges more than the complexity of the model.  
+  
+There is evidence that the smaller training dataset is hurting model predictions.  In contrast to previous models using 70% of the data, the model using only 10% of the data appears to be 1 degree less accurate in making predictions on unseen data.
+
+The test data size is decreased to 80% to check the impact:  
+```{r cache=TRUE}
+
+# Create list of locations
+fullDataLocs <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA")
+
+# Create a main list, one for overall
+lstFullData_005 <- vector("list", 1)
+
+
+# Create a list of relevant dependent variables and variables to keep
+depVarFull_005 <- c('locNamefct', 'month', 'hrfct', 
+                    'DewF', 'modSLP', 'Altimeter', 
+                    'WindSpeed', 'predomDir', 'minHeight', 'ceilingHeight'
+                    )
+keepVarFull_005 <- c('source', 'dtime', 'locNamefct', 'year', 'month', 'hrfct', 
+                     'DewF', 'modSLP', 'Altimeter', 'WindSpeed', 'predomDir', 
+                     'minHeight', 'ceilingHeight'
+                     )
+
+
+# Run the overall regressions
+# Pull data for only the specified locales, and where TempF is not missing
+pullData <- regrData %>%
+    filter(locNamefct %in% fullDataLocs, !is.na(TempF))
+    
+# To be parallel with previous runs, make a length-one list inside locale
+lstFullData_005[[1]] <- vector("list", 1)
+
+startTime <- Sys.time()
+
+# Run random forest regression (overall only)
+lstFullData_005[[1]][[1]] <- rfRegression(pullData, 
+                                          depVar="TempF", 
+                                          predVars=depVarFull_005, 
+                                          otherVar=keepVarFull_005,
+                                          critFilter=list(locNamefct=fullDataLocs), 
+                                          seed=2007291425, 
+                                          ntree=25, 
+                                          mtry=4, 
+                                          testSize=0.8
+                                          )
+
+endTime <- Sys.time()
+cat("\nTotal run time:", round(as.numeric(difftime(endTime, startTime, units="secs")), 1), "seconds\n")
+
+```
+
+The results can then be compared to the results of the regressions run using locale as a segment:  
+```{r}
+
+# Combine all of the test data files
+fullTestData_005 <- map_dfr(lstFullData_005, .f=combineTestData) %>%
+    mutate(err=predicted-TempF, 
+           year=factor(year)
+           )
+
+# Stand-alone on three main dimensions
+helperRMSEPlot(fullTestData_005, byVar="locNamefct", depVar="TempF")
+helperRMSEPlot(fullTestData_005, byVar="year", depVar="TempF")
+helperRMSEPlot(fullTestData_005, byVar="month", depVar="TempF")
+
+# Facetted by locale
+helperRMSEPlot(fullTestData_005, byVar="year", depVar="TempF", facetVar="locNamefct")
+helperRMSEPlot(fullTestData_005, byVar="month", depVar="TempF", facetVar="locNamefct")
+
+# Evolution of RMSE
+map_dfr(lstFullData_005, .f=function(x) { helperMSETibble(x) }, .id="source") %>%
+    group_by(source, ntree) %>%
+    summarize(meanmse=mean(mse)) %>%
+    ungroup() %>%
+    mutate(source="Overall") %>%
+    ggplot(aes(x=ntree, y=meanmse, group=source, color=source)) + 
+    geom_line() + 
+    ylim(c(0, NA)) + 
+    labs(x="# Trees", y="MSE", title="Evolution of Average MSE by Number of Trees")
+
+```
+  
+This model splits the differences, being about 0.5 degrees worse than the 70% train data model run by locale and about 0.5 degrees better than the 10% train data model run overall.  This supports the blend of art and science necessary for successfully running random forest models.
