@@ -4645,3 +4645,396 @@ map_dfr(lstFullData_005, .f=function(x) { helperMSETibble(x) }, .id="source") %>
 ```
   
 This model splits the differences, being about 0.5 degrees worse than the 70% train data model run by locale and about 0.5 degrees better than the 10% train data model run overall.  This supports the blend of art and science necessary for successfully running random forest models.
+
+Next, some simulated data is prepared for investigating the impact of random forest hyperparameters on the quality of the output.  In this case, a simple formula will be used where y = x1*x2 + x3.  Variables x1 and x2 will be from a Poisson distribution while variable x3 will be from a normal distribution.  Variables x4 (normal, correlated to -x1), x5 (random normal variable), and x6 (random factor variable) are also added:  
+```{r}
+
+nObs <- 5000
+set.seed(2007301252)
+
+rfRnd <- tibble::tibble(x1=rpois(nObs, lambda=4), 
+                        x2=rpois(nObs, lambda=6), 
+                        x3=rnorm(nObs), 
+                        x4=rnorm(nObs, mean=-x1), 
+                        x5=rnorm(nObs, sd=3), 
+                        x6=factor(sample(letters[1:3], nObs, replace=TRUE), levels=letters[1:3]), 
+                        y=x1*x2 + x3
+                        )
+
+# Summary statistics
+summary(rfRnd)
+
+# Correlations
+rfRnd %>%
+    select(-x6) %>%
+    cor() %>%
+    round(2)
+
+# Plot of y vs x1/x2
+rfRnd %>%
+    group_by(x1, x2) %>%
+    summarize(n=n(), y=mean(y)) %>%
+    ggplot(aes(x=x1, y=x2)) + 
+    geom_tile(aes(fill=y)) + 
+    geom_text(aes(label=paste0("n=", n))) + 
+    scale_fill_continuous(low="white", high="blue") + 
+    labs(title="Randomly generated data where y=x1*x2 + x3")
+
+```
+  
+The simulated data appears to be as expected.  Train and test datasets are created using a 70/30 split:  
+```{r}
+
+trnIdx <- sample(1:nrow(rfRnd), replace=FALSE, size=round(0.7*nrow(rfRnd)))
+rfRndTrain <- rfRnd[trnIdx, ]
+rfRndTest <- rfRnd[-trnIdx, ]
+
+```
+  
+First, a linear model is run using the 'known' formula:  
+```{r}
+
+lmRnd <- lm(y ~ x1 + x2 + x3 + x4 + x5 + x6 + x1:x2, data=rfRndTrain)
+summary(lmRnd)
+
+rfRndOut <- rfRndTest %>%
+    mutate(predLM=predict(lmRnd, newdata=.), 
+           errLM=predLM-y
+           )
+
+# Show RMSE for rfRndOut
+rfRndOut %>%
+    group_by(x6) %>%
+    summarize(baseVar=var(y), lmVar=mean(errLM**2)) %>%
+    mutate(lmR2=1-lmVar/baseVar)
+
+```
+  
+As expected, the linear model using the known formula has 100% explanatory power on both the test and the training datasets.
+
+Next, a random forest regression is run using all the default settings:  
+```{r}
+
+# Run the random forest model
+rfRndModel <- randomForest::randomForest(y=rfRndTrain$y, 
+                                         x=rfRndTrain[, c("x1", "x2", "x3", "x4", "x5", "x6")]
+                                         )
+
+# Assess accuracy on training dataset
+rfRndModel
+
+# Plot evolution of R-squared
+tibble::tibble(rsq=rfRndModel$rsq, ntree=1:length(rsq)) %>%
+    ggplot(aes(x=ntree, y=rsq)) + 
+    geom_point() + 
+    ylim(c(NA, 1)) + 
+    labs(x="# trees", y="R-squared", title="Default parameters, all variables included")
+
+# Plot variable importance
+rfRndModel$importance %>% 
+    as.data.frame() %>% 
+    rownames_to_column("variable") %>% 
+    ggplot(aes(x=fct_reorder(variable, IncNodePurity), y=IncNodePurity)) + 
+    geom_col(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", title="Default parameters, all variables included")
+
+# Assess performance on training data
+rfRndOut <- rfRndOut %>%
+    mutate(predRF=predict(rfRndModel, newdata=.), 
+           errRF=predRF-y
+           )
+
+# Show RMSE for rfRndOut
+rfRndOut %>%
+    group_by(x6) %>%
+    summarize(baseVar=var(y), rfVar=mean(errRF**2)) %>%
+    mutate(rfR2=1-rfVar/baseVar)
+
+```
+  
+The random forest performs well, though a few limitations stand out:  
+  
+* Despite the formula being y=x1*x2 + x3, the model importance returns x1, x2, x4 as the top variables, potentially causing misleading interpretations even as predictions are generally accurate  
+* The model never gets to 100% r-squared even on a fairly simple deterministic formula  
+  
+Part of the issue is that there are 3 unnecessary variables while mtry is set to 2.  So, there are meaningful splits where no relevant variable is included, and meaningful splits where the negative correlation random variable is used in place of the positive correlation variable due to availability.
+
+Suppose mtry is increased to 4:  
+```{r}
+
+# Run the random forest model
+rfRndModel <- randomForest::randomForest(y=rfRndTrain$y, 
+                                         x=rfRndTrain[, c("x1", "x2", "x3", "x4", "x5", "x6")], 
+                                         mtry=4
+                                         )
+
+# Assess accuracy on training dataset
+rfRndModel
+
+# Plot evolution of R-squared
+tibble::tibble(rsq=rfRndModel$rsq, ntree=1:length(rsq)) %>%
+    ggplot(aes(x=ntree, y=rsq)) + 
+    geom_point() + 
+    ylim(c(NA, 1)) + 
+    labs(x="# trees", y="R-squared", title="mtry=4, all variables included")
+
+# Plot variable importance
+rfRndModel$importance %>% 
+    as.data.frame() %>% 
+    rownames_to_column("variable") %>% 
+    ggplot(aes(x=fct_reorder(variable, IncNodePurity), y=IncNodePurity)) + 
+    geom_col(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", title="mtry=4, all variables included")
+
+# Assess performance on training data
+rfRndOut <- rfRndOut %>%
+    mutate(predRF=predict(rfRndModel, newdata=.), 
+           errRF=predRF-y
+           )
+
+# Show RMSE for rfRndOut
+rfRndOut %>%
+    group_by(x6) %>%
+    summarize(baseVar=var(y), rfVar=mean(errRF**2)) %>%
+    mutate(rfR2=1-rfVar/baseVar)
+
+```
+  
+R-squared improves significantly yo ~99.5%.  The model correctly puts no importance on x5 and x6 but still puts a high importance on x4 which is known to be unnecessary.
+
+Suppose that the random forest trains only on the three variables known to be important, and is allowed to use all features at every split while drilling down to a nodesize of 1:  
+```{r}
+
+# Run the random forest model
+rfRndModel <- randomForest::randomForest(y=rfRndTrain$y, 
+                                         x=rfRndTrain[, c("x1", "x2", "x3")], 
+                                         mtry=3, 
+                                         nodesize=1
+                                         )
+
+# Assess accuracy on training dataset
+rfRndModel
+
+# Plot evolution of R-squared
+tibble::tibble(rsq=rfRndModel$rsq, ntree=1:length(rsq)) %>%
+    ggplot(aes(x=ntree, y=rsq)) + 
+    geom_point() + 
+    ylim(c(NA, 1)) + 
+    labs(x="# trees", y="R-squared", title="mtry=3, nodesize=1, only includes x1, x2, x3")
+
+# Plot variable importance
+rfRndModel$importance %>% 
+    as.data.frame() %>% 
+    rownames_to_column("variable") %>% 
+    ggplot(aes(x=fct_reorder(variable, IncNodePurity), y=IncNodePurity)) + 
+    geom_col(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", title="mtry=3, nodesize=1, only includes x1, x2, x3")
+
+# Assess performance on training data
+rfRndOut <- rfRndOut %>%
+    mutate(predRF=predict(rfRndModel, newdata=.), 
+           errRF=predRF-y
+           )
+
+# Show RMSE for rfRndOut
+rfRndOut %>%
+    group_by(x6) %>%
+    summarize(baseVar=var(y), rfVar=mean(errRF**2)) %>%
+    mutate(rfR2=1-rfVar/baseVar)
+
+```
+  
+Performance remains roughly the same, with R-squared of ~99.5% and the overwhelming majority of the importance placed on x1 and x2.
+
+The process is converted to functional form so that it is easier to run:  
+```{r}
+
+# Helper function for running and reporting on random forest models
+helperRFRandom <- function(dfData=rfRndTrain, 
+                           yVar="y", 
+                           xVar=c("x1", "x2", "x3", "x4", "x5", "x6"), 
+                           ntree=500, 
+                           mtry=max(1, floor(length(xVar)/3)), 
+                           nodesize=5, 
+                           dfErr=rfRndOut, 
+                           title=NULL
+                           ) {
+
+    # FUNCTION ARGUMENTS    
+    # dfData: tibble or data frame containing inpuut data for model
+    # yVar: y variable for modeling
+    # xVar: x variable(s) for modeling
+    # ntree: number of trees to run
+    # mtry: Number of variables to consider at each split
+    # nodesize: size of terminal nodes
+    # dfErr: tibble or data frame containing test data and error estimated
+    # title: title for the plots
+    
+    # Run the random forest model
+    rfRndModel <- randomForest::randomForest(y=dfData[, yVar, drop=TRUE], 
+                                             x=dfData[, xVar], 
+                                             ntree=ntree,
+                                             mtry=mtry, 
+                                             nodesize=nodesize
+                                             )
+
+    # Assess accuracy on training dataset
+    print(rfRndModel)
+
+    # Plot evolution of R-squared
+    p1 <- tibble::tibble(rsq=rfRndModel$rsq, ntree=1:length(rsq)) %>%
+        ggplot(aes(x=ntree, y=rsq)) + 
+        geom_point() + 
+        ylim(c(NA, 1)) + 
+        labs(x="# trees", y="R-squared", title=title)
+    print(p1)
+
+    # Plot variable importance
+    p2 <- rfRndModel$importance %>% 
+        as.data.frame() %>% 
+        rownames_to_column("variable") %>% 
+        ggplot(aes(x=fct_reorder(variable, IncNodePurity), y=IncNodePurity)) + 
+        geom_col(fill="lightblue") + 
+        coord_flip() + 
+        labs(x="", title=title)
+    print(p2)
+
+    # Assess performance on training data
+    dfErr <- dfErr %>%
+        mutate(predRF=predict(rfRndModel, newdata=.), 
+               errRF=predRF-y
+               )
+
+    # Show RMSE for rfRndOut
+    dfErr %>%
+        group_by(x6) %>%
+        summarize(baseVar=var(y), rfVar=mean(errRF**2)) %>%
+        mutate(rfR2=1-rfVar/baseVar) %>%
+        print()
+    
+}
+
+
+helperRFRandom(rfRndTrain, yVar="y", xVar=c("x1", "x2", "x3"), 
+               mtry=3, nodesize=1, ntree=100, title="y ~ f(x1, x2, x3); mtry=3, nodesize=1; ntree=100"
+               )
+helperRFRandom(rfRndTrain, yVar="y", xVar=c("x1", "x2", "x3", "x4", "x5", "x6"), 
+               mtry=6, nodesize=1, ntree=100, 
+               title="y ~ f(x1, x2, x3, x4, x5, x6); mtry=6, nodesize=1; ntree=100"
+               )
+
+```
+  
+Allowing for all variables to be used at every split reduces x4 to near-zero explanatory power, as expected given that x1 should always be a better choice when both are available at a given split.
+
+Suppose that the model is run once excluding each of the variables:  
+```{r cache=TRUE}
+
+# Exclude x1
+helperRFRandom(rfRndTrain, yVar="y", xVar=c("x2", "x3", "x4", "x5", "x6"), 
+               mtry=5, nodesize=1, ntree=250, 
+               title="y ~ f(exclude x1); mtry=5, nodesize=1; ntree=250"
+               )
+
+# Exclude x2
+helperRFRandom(rfRndTrain, yVar="y", xVar=c("x1", "x3", "x4", "x5", "x6"), 
+               mtry=5, nodesize=1, ntree=250, 
+               title="y ~ f(exclude x2); mtry=5, nodesize=1; ntree=250"
+               )
+
+# Exclude x3
+helperRFRandom(rfRndTrain, yVar="y", xVar=c("x1", "x2", "x4", "x5", "x6"), 
+               mtry=5, nodesize=1, ntree=250, 
+               title="y ~ f(exclude x3); mtry=5, nodesize=1; ntree=250"
+               )
+
+# Exclude x4
+helperRFRandom(rfRndTrain, yVar="y", xVar=c("x1", "x2", "x3", "x5", "x6"), 
+               mtry=5, nodesize=1, ntree=250, 
+               title="y ~ f(exclude x4); mtry=5, nodesize=1; ntree=250"
+               )
+
+# Exclude x5
+helperRFRandom(rfRndTrain, yVar="y", xVar=c("x1", "x2", "x3", "x4", "x6"), 
+               mtry=5, nodesize=1, ntree=250,
+               title="y ~ f(exclude x5); mtry=5, nodesize=1; ntree=250"
+               )
+
+# Exclude x6
+helperRFRandom(rfRndTrain, yVar="y", xVar=c("x1", "x2", "x3", "x4", "x5"), 
+               mtry=5, nodesize=1, ntree=250, 
+               title="y ~ f(exclude x6); mtry=5, nodesize=1; ntree=250"
+               )
+
+```
+  
+Broadly, results are as expected:  
+  
+* Excluding x2 has the highest impact since there is no other explanatory variable correlated to x2  
+* Excluding x1 has a lesser but still significant impact since x4 is correlated to x1 but with meaningful dissimilarity also  
+* Excluding x3 has a modest impact since it is a small piece (variance wise) of the formula  
+* Excluding x4/x5/x6 provide materially the same result as including them, as expected since they are not needed to fully explain y  
+  
+A look at extrapolation can also be informative.  Suppose the formulae remain the same but there has been a 40% expansion of all data in rfTest:  
+```{r}
+
+rfRndExtrap <- rfRndTest %>%
+    mutate(x1=round(1.4*x1), x2=round(1.4*x2), x3=1.4*x3, x4=1.4*x4, x5=1.4*x5, y=x1*x2+x3)
+
+rfRndExtrap %>%
+    mutate(pred=predict(rfRndModel, newdata=.)) %>%
+    ggplot(aes(x=y, y=pred)) + 
+    geom_point(alpha=0.2) + 
+    geom_smooth() + 
+    geom_abline(color="red", lty=2) + 
+    labs(x="Actual y", y="Predicted y", title="Random forest extrapolation when all variables scaled by 40%")
+
+```
+  
+As the random forest model starts encountering x1 and x2 that are "out of bounds" from the training set, the predictions become significantly worse.  The random forest model has not learned anything mathematical that can be extrapolated; instead, it has learned the relationships of the features specific to the training data bounds that were provided.
+
+Contrast these findings with an extrapolated linear model:  
+```{r}
+
+rfRndExtrap %>%
+    mutate(pred=predict(lmRnd, newdata=.)) %>%
+    ggplot(aes(x=y, y=pred)) + 
+    geom_point(alpha=0.2) + 
+    geom_smooth() + 
+    geom_abline(color="red", lty=2) + 
+    labs(x="Actual y", y="Predicted y", title="Linear model extrapolation when all variables scaled by 40%")
+
+```
+  
+The linear model has learned the mathematical relationship and can extrapolate outside the bounds of the training data.  There is always risk to extrapolation, but the linear model is not subject to an artifical hard ceiling and floor as is the case for the random forest model.
+
+Further, suppose that x3 were to become a more important variable, with sd=20 rather than the baseline sd=1:  
+```{r}
+
+rfRndExtrap <- rfRndTest %>%
+    mutate(x3=20*x3, y=x1*x2+x3)
+
+rfRndExtrap %>%
+    mutate(pred=predict(rfRndModel, newdata=.)) %>%
+    ggplot(aes(x=y, y=pred)) + 
+    geom_point(alpha=0.2) + 
+    geom_smooth() + 
+    geom_abline(color="red", lty=2) + 
+    labs(x="Actual y", y="Predicted y", title="Random forest model extrapolation when x3 scaled by 20")
+
+rfRndExtrap %>%
+    mutate(pred=predict(lmRnd, newdata=.)) %>%
+    ggplot(aes(x=y, y=pred)) + 
+    geom_point(alpha=0.2) + 
+    geom_smooth() + 
+    geom_abline(color="red", lty=2) + 
+    labs(x="Actual y", y="Predicted y", title="Linear model extrapolation when x3 scaled by 20")
+
+```
+  
+The random forest becomes quite inaccurate since it never needed to learn much about x3 to make good predictions.  The linear model having learned that the coefficient for x3 is 1.00 handles a significant change in x3 while still making accurate predictions.
+
+While the random forest model performs outstanding on the bias/variance tradeoff for a given dataset, it can become highly biased when extrapolated for input values that are not congruent with the training data bounds.  This is driven in large part by the forced ceiling and floor; a random forest will never predict a category that it has not seen, nor can it predict a value above/below the range of values it has seen.
