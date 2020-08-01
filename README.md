@@ -2028,4 +2028,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 models using month as an explanatory variable rather separate models by month  
 * WeatherModeling_202006_v002 models using locale as an explanatory variable rather separate models by locale  
 * WeatherModeling_202006_v002 explores random forest performance using a dummy dataset  
+* WeatherModeling_202006_v002 explores random forest performance using a dummy dataset  
+* WeatherModeling_202006_v002 explores extreme gradient boosting (XGB)  
   
