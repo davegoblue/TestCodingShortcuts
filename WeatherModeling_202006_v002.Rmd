@@ -5038,3 +5038,214 @@ rfRndExtrap %>%
 The random forest becomes quite inaccurate since it never needed to learn much about x3 to make good predictions.  The linear model having learned that the coefficient for x3 is 1.00 handles a significant change in x3 while still making accurate predictions.
 
 While the random forest model performs outstanding on the bias/variance tradeoff for a given dataset, it can become highly biased when extrapolated for input values that are not congruent with the training data bounds.  This is driven in large part by the forced ceiling and floor; a random forest will never predict a category that it has not seen, nor can it predict a value above/below the range of values it has seen.
+  
+Next, the xgboost (extreme gradient boosting) algorithm is attempted on the same dummy dataset.  The general recipe from [CRAN](https://cran.r-project.org/web/packages/xgboost/vignettes/discoverYourData.html) is followed, which includes several processing steps:  
+  
+1.  Convert factor variable(s) to binary variables using one-hot-encoding (delete the intercept variable)  
+2.  Capture the target output variable as a vector  
+3.  Train the model using xgboost::xgboost (can handle regression or classification)  
+  
+```{r}
+
+# Step 1: Create the modeling dataset using one-hot-encoding for the factor variable (delete intercept)
+rfRndTrainSparse <- Matrix::sparse.model.matrix(y ~ ., data=rfRndTrain)[, -1]
+str(rfRndTrainSparse)
+rfRndTrainSparse[1:6, ]
+
+# Step 2: Create the target output variable as a vector
+rfRndTrainOutput <- rfRndTrain$y
+str(rfRndTrainOutput)
+
+# Step 3: Train the model using xgboost::xgboost, as regression
+xgbModel <- xgboost::xgboost(data=rfRndTrainSparse, label=rfRndTrainOutput, 
+                             nrounds=20, objective="reg:squarederror"
+                             )
+
+```
+  
+Next, the model can be evaluated in several manners:  
+  
+4.  Check the feature importances  
+5.  Plot the evolution in training RMSE  
+6.  Assess accuracy on test dataset  
+7.  Assess accuracy on extrapolated test dataset
+  
+```{r}
+
+# Step 4: Assess feature importances
+xgbImportance <- xgboost::xgb.importance(feature_names=colnames(rfRndTrainSparse), model=xgbModel)
+xgbImportance %>% 
+    column_to_rownames("Feature") %>% 
+    round(3)
+xgbImportance %>%
+    ggplot(aes(x=fct_reorder(Feature, Gain), y=Gain)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=Gain+0.02, label=round(Gain, 3))) + 
+    coord_flip() + 
+    labs(x="", title="Gain by Variable for y ~ f(x1, x2, x3, x4, x5, x6) with xgboost")
+
+# Step 5a: Plot evolution in training data RMSE
+xgbModel$evaluation_log %>%
+    ggplot(aes(x=iter, y=train_rmse)) + 
+    geom_point() + 
+    labs(x="Number of iterations", y="Training Set RMSE", title="Evolution of RMSE")
+
+# Step 5b: Plot evolution in training data R-squared
+xgbModel$evaluation_log %>%
+    mutate(overall_rmse=sd(rfRndTrainOutput), rsq=1-train_rmse**2/overall_rmse**2) %>%
+    ggplot(aes(x=iter, y=rsq)) + 
+    geom_text(aes(y=rsq, label=round(rsq,3)), size=3) +
+    labs(x="Number of iterations", y="Training Set R-squared", title="Evolution of R-squared")
+
+# Step 6: Assess accuracy on test dataset
+# Step 6a: Convert test dataset using same algorithm as training dataset
+rfRndTestSparse <- Matrix::sparse.model.matrix(y ~ ., data=rfRndTest)[, -1]
+str(rfRndTestSparse)
+rfRndTestSparse[1:6, ]
+
+# Step 6b: Make predictions using xgbModel on rfRndTestSparse
+xgbPredict <- predict(xgbModel, newdata=rfRndTestSparse)
+
+# Step 6c: Assess prediction quality
+rfRndTestXGB <- rfRndTest %>%
+    mutate(xgbPred=xgbPredict, err=xgbPred-y)
+rfRndTestXGB %>%
+    group_by(x6) %>%
+    summarize(rmse_orig=sd(y), rmse_xgb=mean(err**2)**0.5) %>%
+    mutate(rsq=1-rmse_xgb**2/rmse_orig**2)
+rfRndTestXGB %>%
+    ggplot(aes(x=y, y=xgbPred)) + 
+    geom_point(alpha=0.1) + 
+    geom_smooth() + 
+    geom_abline(lty=2, color="red") + 
+    labs(title="XGB predictions vs. actual on test dataset")
+
+# Step 7: Assess accuracy on extrapolated test dataset
+rfRndExtrap <- rfRndTest %>%
+    mutate(x1=round(1.4*x1), x2=round(1.4*x1), x3=20*x3, x4=1.4*x4, x5=1.5*x5, y=x1*x2+x3)
+
+# Step 7a: Convert using same algorithm as training dataset
+rfRndExtrapSparse <- Matrix::sparse.model.matrix(y ~ ., data=rfRndExtrap)[, -1]
+str(rfRndExtrapSparse)
+rfRndExtrapSparse[1:6, ]
+
+# Step 7b: Predict and assess prediction quality
+rfRndExtrapXGB <- rfRndExtrap %>%
+    mutate(xgbPred=predict(xgbModel, newdata=rfRndExtrapSparse), err=xgbPred-y)
+rfRndExtrapXGB %>%
+    group_by(x6) %>%
+    summarize(rmse_orig=sd(y), rmse_xgb=mean(err**2)**0.5) %>%
+    mutate(rsq=1-rmse_xgb**2/rmse_orig**2)
+rfRndExtrapXGB %>%
+    ggplot(aes(x=y, y=xgbPred)) + 
+    geom_point(alpha=0.1) + 
+    geom_smooth() + 
+    geom_abline(lty=2, color="red") + 
+    labs(title="XGB predictions vs. actual on test dataset")
+
+```
+  
+The xgb model drives a better fit to the training/testing data than the random forest, though results are similar.  The xgb model struggles with extrapolation, similar to the random forest.  There is potentially more overfitting with the xgb model, though no hyper-parameters or cv methods have yet been attempted to control for that.
+
+Next, a very basic xgb model is attempted for predicting temperature:  
+```{r}
+
+# Step 1: Take regr data and limit to 4 sources from 2016
+baseXGBData <- regrData %>%
+    filter(source %in% c("klas_2016", "kmsy_2016", "kord_2016", "ksan_2016"), !is.na(TempF))
+
+# Step 2: Split in to test and train datasets
+idxTrain <- sample(1:nrow(baseXGBData), size=round(0.7*nrow(baseXGBData)), replace=FALSE)
+baseXGBTrain <- baseXGBData[idxTrain, ]
+baseXGBTest <- baseXGBData[-idxTrain, ]
+
+# Step 3: Select only variables of interest
+xgbTrainInput <- baseXGBTrain %>%
+    select(TempF, 
+           locNamefct, month, hrfct, 
+           DewF, modSLP, Altimeter, WindSpeed, 
+           predomDir, minHeight, ceilingHeight
+           ) %>%
+    mutate(locNamefct=fct_drop(locNamefct))
+
+# Step 4: Convert to spare matrix format
+xgbTrainSparse <- Matrix::sparse.model.matrix(TempF ~ ., data=xgbTrainInput)[, -1]
+str(xgbTrainSparse)
+xgbTrainSparse[1:6, ]
+
+# Step 5: Create the target output variable as a vector
+xgbTrainOutput <- xgbTrainInput$TempF
+str(xgbTrainOutput)
+
+# Step 6: Train the model using xgboost::xgboost, as regression
+xgbModel <- xgboost::xgboost(data=xgbTrainSparse, label=xgbTrainOutput, 
+                             nrounds=200, print_every_n=20, objective="reg:squarederror"
+                             )
+
+```
+  
+Then, the assessment process is run:  
+```{r}
+
+# Step 1: Assess feature importances
+xgbImportance <- xgboost::xgb.importance(feature_names=colnames(xgbTrainSparse), model=xgbModel)
+xgbImportance %>% 
+    column_to_rownames("Feature") %>% 
+    round(3)
+xgbImportance %>%
+    ggplot(aes(x=fct_reorder(Feature, Gain), y=Gain)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=Gain+0.02, label=round(Gain, 3))) + 
+    coord_flip() + 
+    labs(x="", title="Gain by Variable for TempF modeling with xgboost")
+
+# Step 2a: Plot evolution in training data RMSE
+xgbModel$evaluation_log %>%
+    filter(iter %% 5 == 0) %>%
+    ggplot(aes(x=iter, y=train_rmse)) + 
+    geom_text(aes(label=round(train_rmse, 1)), size=3) + 
+    labs(x="Number of iterations", y="Training Set RMSE", title="Evolution of RMSE on training data")
+
+# Step 2b: Plot evolution in training data R-squared
+xgbModel$evaluation_log %>%
+    filter(iter %% 10 == 0) %>%
+    mutate(overall_rmse=sd(rfRndTrainOutput), rsq=1-train_rmse**2/overall_rmse**2) %>%
+    ggplot(aes(x=iter, y=rsq)) + 
+    geom_text(aes(y=rsq, label=round(rsq,3)), size=3) +
+    labs(x="Number of iterations", y="Training Set R-squared", title="Evolution of R-squared on training data")
+
+# Step 3: Assess accuracy on test dataset
+xgbTestInput <- baseXGBTest %>%
+    select(TempF, 
+           locNamefct, month, hrfct, 
+           DewF, modSLP, Altimeter, WindSpeed, 
+           predomDir, minHeight, ceilingHeight
+           ) %>%
+    mutate(locNamefct=fct_drop(locNamefct))
+
+# Step 3a: Convert test dataset using same algorithm as training dataset
+xgbTestSparse <- Matrix::sparse.model.matrix(TempF ~ ., data=xgbTestInput)[, -1]
+
+# Step 3b: Assess prediction quality
+xgbTest <- xgbTestInput %>%
+    mutate(xgbPred=predict(xgbModel, newdata=xgbTestSparse), err=xgbPred-TempF)
+xgbTest %>%
+    group_by(locNamefct) %>%
+    summarize(rmse_orig=sd(TempF), rmse_xgb=mean(err**2)**0.5) %>%
+    mutate(rsq=1-rmse_xgb**2/rmse_orig**2)
+xgbTest %>%
+    group_by(month) %>%
+    summarize(rmse_orig=sd(TempF), rmse_xgb=mean(err**2)**0.5) %>%
+    mutate(rsq=1-rmse_xgb**2/rmse_orig**2)
+xgbTest %>%
+    group_by(TempF, rndPred=round(xgbPred)) %>%
+    summarize(n=n()) %>%
+    ggplot(aes(x=TempF, y=rndPred)) + 
+    geom_point(aes(size=n), alpha=0.1) + 
+    geom_smooth(aes(weight=n)) + 
+    geom_abline(lty=2, color="red") + 
+    labs(title="XGB predictions vs. actual on test dataset", y="Predicted Temperature", x="Actual Temperature")
+
+```
+  
+At a glance, initial prediction results are encouraging.  The model runs very quickly and gets to a comparable RMSE/R-squared on test data as the random forest.  Tuning parameters or adding cross-validation could potentially improve the algorithm further.
