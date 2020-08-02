@@ -1,0 +1,973 @@
+---
+title: "Weather Modeling"
+author: "davegoblue"
+date: "8/1/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+The file 'WeatherEDA_202005_v002.Rmd' contains exploratory data analysis for historical weather data as contained in METAR archives hosted by Iowa State University.
+
+Data have been dowloaded, processed, cleaned, and integrated for several stations (airports) and years, with .rds files saved in "./RInputFiles/ProcessedMETAR".
+
+This module will perform initial modeling on the processed weather files.  It builds on the previous 'WeatherModeling_202006_v001.Rmd' and 'WeatherModeling_202006_v002.Rmd' as well as leveraging functions in 'WeatherModelingFunctions_v001.R'.
+
+This file focuses on:  
+  
+1.  Random forest classification of select locales using 2014-2019 data  
+2.  Random forest classification of locales in 2016  
+3.  Random forest regression of temperatures in select locales for 2014-2019  
+4.  XGB regression of temperatures in select locales for 2014-2019  
+5.  XGB classification of locales in 2016  
+  
+There are numerous other models available in 'WeatherModeling_202006_v002.Rmd'.
+  
+#### _Data Availability_  
+There are three main processed files available for further exploration:  
+  
+_metar_postEDA_20200617.rds and metar_postEDA_extra_20200627.rds_  
+  
+* source (chr) - the reporting station and time  
+* locale (chr) - the descriptive name for source  
+* dtime (dttm) - the date-time for the observation  
+* origMETAR (chr) - the original METAR associated with the observation at that source and date-time  
+* year (dbl) - the year, extracted from dtime  
+* monthint (dbl) - the month, extracted from dtime, as an integer  
+* month (fct) - the month, extracted from dtime, as a three-character abbreviation (factor)  
+* day (int) - the day of the month, extracted from dtime  
+* WindDir (chr) - previaling wind direction in degrees, stored as a character since 'VRB' means variable  
+* WindSpeed (int) - the prevailing wind speed in knots  
+* WindGust (dbl) - the wind gust speed in knots (NA if there is no recorded wind gust at that hour)  
+* predomDir (chr) - the predominant wind direction as NE-E-SE-S-SW-W-NW-N-VRB-000-Error  
+* Visibility (dbl) - surface visibility in statute miles  
+* Altimeter (dbl) - altimeter in inches of mercury  
+* TempF (dbl) - the Fahrenheit temperature  
+* DewF (dbl) - the Fahrenheit dew point  
+* modSLP (dbl) - Sea-Level Pressure (SLP), adjusted to reflect that SLP is recorded as 0-1000 but reflects data that are 950-1050  
+* cTypen (chr) - the cloud type of the nth cloud layer (FEW, BKN, SCT, OVC, or VV)  
+* cLeveln (dbl) - the cloud height in feet of the nth cloud layer  
+* isRain (lgl) - was rain occurring at the moment the METAR was captured?  
+* isSnow (lgl) - was snow occurring at the moment the METAR was captured?  
+* isThunder (lgl) - was thunder occurring at the moment the METAR was captured?  
+* p1Inches (dbl) - how many inches of rain occurred in the past hour?  
+* p36Inches (dbl) - how many inches of rain occurred in the past 3/6 hours (3-hour summaries at 3Z-9Z-15Z-21Z and 6-hour summaries at 6Z-12Z-18Z-24Z and NA at any other Z times)?  
+* p24Inches (dbl) - how many inches of rain occurred in the past 24 hours (at 12Z, NA at all other times)  
+* tempFHi (dbl) - the high temperature in the past 24 hours, in Fahrenheit (reported once per day)  
+* tempFLo (dbl) - the low temperature in the past 24 hours, in Fahrenheit (reported once per day)  
+* minHeight (dbl) - the minimum cloud height in feet (-100 means 'no clouds')  
+* minType (fct) - amount of obscuration at the minimum cloud height (VV > OVC > BKN > SCT > FEW > CLR)  
+* ceilingHeight (dbl) - the minimum cloud ceiling in feet (-100 means 'no ceiling')  
+* ceilingType (fct) - amount of obscuration at the minimum ceiling height (VV > OVC > BKN)  
+  
+_metar_modifiedClouds_20200617.rds and metar_modifiedclouds_extra_20200627.rds_  
+  
+* source (chr) - the reporting station and time  
+* sourceName (chr) - the descriptive name for source  
+* dtime (dttm) - the date-time for the observation  
+* level (dbl) - cloud level (level 0 is inserted for every source-dtime as a base layer of clear)  
+* height (dbl) - level height (height -100 is inserted for every source-dtime as a base layer of clear)  
+* type (dbl) - level type (type CLR is inserted for every source-dtime as a base layer of clear)  
+  
+_metar_precipLists_20200617.rds and metar_precipLists_extra_20200627.rds_  
+  
+* Contains elements for each of rain/snow/thunder for each of 2015/2016/2017  
+* Each element contains a list and a tibble  
+* The tibble is precipLength and contains precipitation by month as source-locale-month-hours-events  
+* The list is precipList and contains data on each precipitation interval  
+  
+Several mapping files are defined for use in plotting; tidyverse, lubridate, and caret are loaded; and the relevant functions are sourced:  
+```{r}
+
+# The process frequently uses tidyverse, lubridate, caret, and randomForest
+library(tidyverse)
+library(lubridate)
+library(caret)
+library(randomForest)
+
+
+# The main path for the files
+filePath <- "./RInputFiles/ProcessedMETAR/"
+
+
+# Sourcing functions
+source("./WeatherModelingFunctions_v001.R")
+
+
+# Descriptive names for key variables
+varMapper <- c(source="Original source file name", 
+               locale="Descriptive name",
+               dtime="Date-Time (UTC)",
+               origMETAR="Original METAR",
+               year="Year",
+               monthint="Month",
+               month="Month", 
+               day="Day of Month",
+               WindDir="Wind Direction (degrees)", 
+               WindSpeed="Wind Speed (kts)",
+               WindGust="Wind Gust (kts)",
+               predomDir="General Prevailing Wind Direction",
+               Visibility="Visibility (SM)", 
+               Altimeter="Altimeter (inches Hg)",
+               TempF="Temperature (F)",
+               DewF="Dew Point (F)", 
+               modSLP="Sea-Level Pressure (hPa)", 
+               cType1="First Cloud Layer Type", 
+               cLevel1="First Cloud Layer Height (ft)",
+               isRain="Rain at Observation Time",
+               isSnow="Snow at Observation Time",
+               isThunder="Thunder at Obsevation Time",
+               tempFHi="24-hour High Temperature (F)",
+               tempFLo="24-hour Low Temperature (F)",
+               minHeight="Minimum Cloud Height (ft)",
+               minType="Obscuration Level at Minimum Cloud Height",
+               ceilingHeight="Minimum Ceiling Height (ft)",
+               ceilingType="Obscuration Level at Minimum Ceiling Height", 
+               hr="Hour of Day (Zulu time)",
+               hrfct="Hour of Day (Zulu time)",
+               hrBucket="Hour of Day (Zulu time) - rounded to nearest 3",
+               locNamefct="Locale Name"
+               )
+
+
+# File name to city name mapper
+cityNameMapper <- c(katl_2016="Atlanta, GA (2016)",
+                    kbos_2016="Boston, MA (2016)", 
+                    kdca_2016="Washington, DC (2016)", 
+                    kden_2016="Denver, CO (2016)", 
+                    kdfw_2016="Dallas, TX (2016)", 
+                    kdtw_2016="Detroit, MI (2016)", 
+                    kewr_2016="Newark, NJ (2016)",
+                    kgrb_2016="Green Bay, WI (2016)",
+                    kgrr_2016="Grand Rapids, MI (2016)",
+                    kiah_2016="Houston, TX (2016)",
+                    kind_2016="Indianapolis, IN (2016)",
+                    klas_2014="Las Vegas, NV (2014)",
+                    klas_2015="Las Vegas, NV (2015)",
+                    klas_2016="Las Vegas, NV (2016)", 
+                    klas_2017="Las Vegas, NV (2017)", 
+                    klas_2018="Las Vegas, NV (2018)",
+                    klas_2019="Las Vegas, NV (2019)",
+                    klax_2016="Los Angeles, CA (2016)", 
+                    klnk_2016="Lincoln, NE (2016)",
+                    kmia_2016="Miami, FL (2016)", 
+                    kmke_2016="Milwaukee, WI (2016)",
+                    kmsn_2016="Madison, WI (2016)",
+                    kmsp_2016="Minneapolis, MN (2016)",
+                    kmsy_2014="New Orleans, LA (2014)",
+                    kmsy_2015="New Orleans, LA (2015)",
+                    kmsy_2016="New Orleans, LA (2016)", 
+                    kmsy_2017="New Orleans, LA (2017)", 
+                    kmsy_2018="New Orleans, LA (2018)",
+                    kmsy_2019="New Orleans, LA (2019)",
+                    kord_2014="Chicago, IL (2014)",
+                    kord_2015="Chicago, IL (2015)",
+                    kord_2016="Chicago, IL (2016)", 
+                    kord_2017="Chicago, IL (2017)", 
+                    kord_2018="Chicago, IL (2018)",
+                    kord_2019="Chicago, IL (2019)",
+                    kphl_2016="Philadelphia, PA (2016)", 
+                    kphx_2016="Phoenix, AZ (2016)", 
+                    ksan_2014="San Diego, CA (2014)",
+                    ksan_2015="San Diego, CA (2015)",
+                    ksan_2016="San Diego, CA (2016)",
+                    ksan_2017="San Diego, CA (2017)",
+                    ksan_2018="San Diego, CA (2018)",
+                    ksan_2019="San Diego, CA (2019)",
+                    ksat_2016="San Antonio, TX (2016)", 
+                    ksea_2016="Seattle, WA (2016)", 
+                    ksfo_2016="San Francisco, CA (2016)", 
+                    ksjc_2016="San Jose, CA (2016)",
+                    kstl_2016="Saint Louis, MO (2016)", 
+                    ktpa_2016="Tampa Bay, FL (2016)", 
+                    ktvc_2016="Traverse City, MI (2016)"
+                    )
+
+# File names in 2016, based on cityNameMapper
+names_2016 <- grep(names(cityNameMapper), pattern="[a-z]{3}_2016", value=TRUE)
+
+```
+  
+The main data will be from the metar_postEDA files.  They are integrated below, cloud and ceiling heights are converted to factors, hour is added as both a factor/numeric variable, and locale is added as a factor variable:  
+```{r}
+
+# Main weather data
+metarData <- readRDS("./RInputFiles/ProcessedMETAR/metar_postEDA_20200617.rds") %>%
+    bind_rows(readRDS("./RInputFiles/ProcessedMETAR/metar_postEDA_extra_20200627.rds")) %>%
+    mutate(orig_minHeight=minHeight, 
+           orig_ceilingHeight=ceilingHeight, 
+           minHeight=mapCloudHeight(minHeight), 
+           ceilingHeight=mapCloudHeight(ceilingHeight), 
+           hr=lubridate::hour(lubridate::round_date(dtime, unit="1 hour")),
+           hrfct=factor(hr), 
+           locNamefct=factor(str_replace(locale, pattern=" \\(\\d{4}\\)", replacement=""))
+           )
+glimpse(metarData)
+
+```
+
+#### _Random Forest Classification (Select Locales for 2014-2019)_  
+Models are run on all 2014-2019 data for Chicago, Las Vegas, New Orleans, and San Diego:  
+```{r}
+
+# Create the subset for Chicago, Las Vegas, New Orleans, San Diego
+sub_2014_2019_data <- metarData %>%
+    filter(str_sub(source, 1, 4) %in% c("kord", "klas", "kmsy", "ksan"), 
+           year %in% c(2014, 2015, 2016, 2017, 2018, 2019)
+           ) %>%
+    mutate(city=str_replace(locale, pattern=" .\\d{4}.", replacement=""), 
+           hr=lubridate::hour(dtime)
+           )
+
+# Check that proper locales are included
+sub_2014_2019_data %>% 
+    count(city, locale)
+
+```
+  
+The random forest model is run and cached:  
+```{r cache=TRUE}
+
+# Run random forest for 2014-2019 data
+rf_types_2014_2019_TDmcwha <- rfMultiLocale(sub_2014_2019_data, 
+                                            vrbls=c("TempF", "DewF", 
+                                                    "month", "hr",
+                                                    "minHeight", "ceilingHeight", 
+                                                    "WindSpeed", "predomDir", 
+                                                    "modSLP"
+                                                    ),
+                                            locs=NULL, 
+                                            locVar="city",
+                                            pred="city",
+                                            ntree=50, 
+                                            seed=2006301420, 
+                                            mtry=4
+                                            )
+
+```
+  
+```{r}
+
+evalPredictions(rf_types_2014_2019_TDmcwha, 
+                plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind, SLP", 
+                keyVar="city"
+                )
+
+```
+  
+Even with a small forest (50 trees), the model is almost always separating Las Vegas, Chicago, San Diego, and New Orleans.  While the climates are very different in these cities, it is striking that the model has so few misclassifications.
+
+How do other cities map against these classifications?  
+```{r}
+
+# Predictions on 2014-2019 data
+helperPredictPlot(rf_types_2014_2019_TDmcwha$rfModel, 
+                  df=filter(mutate(metarData, hr=lubridate::hour(dtime)), 
+                            !(str_sub(source, 1, 4) %in% c("kord", "klas", "kmsy", "ksan"))
+                            ), 
+                  predOrder=c("Chicago, IL", "San Diego, CA", "New Orleans, LA", "Las Vegas, NV")
+                  )
+
+```
+  
+Classifications are broadly as expected based on climates by locale.  Variable importances are plotted:  
+```{r}
+
+helperPlotVarImp(rf_types_2014_2019_TDmcwha$rfModel)
+
+```
+  
+Dew point and temperature are strong factors for separating the four cities in this analysis.  Month, SLP, minimum cloud height, and prevailing wind direction are also meaningful.
+  
+An assessment can be run for the 2014-2019 model:  
+```{r}
+
+# Run for the full model including SLP
+probs_2014_2019_TDmcwha <- 
+    assessPredictionCertainty(rf_types_2014_2019_TDmcwha, 
+                              keyVar="city", 
+                              plotCaption="Temp, Dew Point, Month/Hour, Clouds, Wind, SLP", 
+                              showAcc=TRUE
+                              )
+
+```
+  
+* Predictions with 80%+ of the votes are made ~75% of the time, and these predictions are ~99% accurate  
+* Predictions with <80% of the votes are made ~25% of the times, and these predictions are ~80% accurate  
+* The percentage of votes received appears to be a reasonable proxy for the confidence of the prediction  
+  
+A similar process can be run for assessing the classification of the other cities against the 2014-2019 data for Chicago, Las Vegas, New Orleans, and San Diego:  
+```{r}
+
+useData <- metarData %>%
+    filter(!(str_sub(source, 1, 4) %in% c("kord", "klas", "kmsy", "ksan"))) %>%
+    mutate(hr=lubridate::hour(dtime))
+    
+# Run for the model excluding SLP
+probs_allcities_2014_2019_TDmcwh <- 
+    assessPredictionCertainty(rf_types_2014_2019_TDmcwha, 
+                              testData=useData,
+                              keyVar="locale", 
+                              plotCaption="Temp, Dew Point, Month/Hour, Clouds, Wind, modSLP", 
+                              showHists=TRUE
+                              )
+
+```
+  
+The model is frequently not so confident in assigning an archetype to related cities, though it frequently gets the most sensible assignment.
+
+#### _Random Forest Classification (2016)_  
+Next, an attempt is made to compare every grouping of two cities, using all variables, mtry of 4, and a very small forest of 15 trees:  
+```{r cache=TRUE}
+
+# Create a container list to hold the output
+list_varimp_2016 <- vector("list", 0.5*length(names_2016)*(length(names_2016)-1))
+
+# Set a random seed
+set.seed(2007031342)
+
+# Loop through all possible combinations
+n <- 1
+for (ctr in 1:(length(names_2016)-1)) {
+    for (ctr2 in (ctr+1):length(names_2016)) {
+        list_varimp_2016[[n]] <- rfTwoLocales(mutate(metarData, hr=lubridate::hour(dtime)), 
+                                              loc1=names_2016[ctr], 
+                                              loc2=names_2016[ctr2], 
+                                              vrbls=c("TempF", "DewF", 
+                                                      "month", "hr",
+                                                      "minHeight", "ceilingHeight", 
+                                                      "WindSpeed", "predomDir", 
+                                                      "modSLP", "Altimeter"
+                                                      ),
+                                              ntree=15, 
+                                              mtry=4
+                                              )
+        n <- n + 1
+        if ((n %% 40) == 0) { cat("Through number:", n, "\n")}
+    }
+}
+
+```
+  
+```{r}
+
+# Create a tibble from the underlying accuracy data
+acc_varimp_2016 <- map_dfr(list_varimp_2016, .f=helperAccuracyLocale)
+
+# Assess the top 20 classification accuracies
+acc_varimp_2016 %>%
+    arrange(-accOverall) %>%
+    head(20)
+
+# Assess the bottom 20 classification accuracies
+acc_varimp_2016 %>%
+    arrange(accOverall) %>%
+    head(20)
+
+```
+  
+The best accuracies are obtained when comparing cities in very different climates (e.g., Denver vs. Humid/Marine or Miami vs. Desert/Cold), while the worst accuracies are obtained when comparing very similar cities (e.g., Chicago and Milwaukee or Newar and Philadelphia).
+
+Variable importance can then be assessed across all 1:1 classifications:  
+```{r cache=TRUE}
+
+# Create a tibble of all the variable importance data
+val_varimp_2016 <- map_dfr(list_varimp_2016, 
+                           .f=function(x) { x$rfModel %>% 
+                                   caret::varImp() %>% 
+                                   t() %>% 
+                                   as.data.frame()
+                               }
+                           ) %>% 
+    tibble::as_tibble()
+
+```
+  
+```{r}
+
+# Create boxplot of overall variable importance
+val_varimp_2016 %>% 
+    mutate(num=1:nrow(val_varimp_2016)) %>% 
+    pivot_longer(-num, names_to="variable", values_to="varImp") %>% 
+    ggplot(aes(x=fct_reorder(variable, varImp), y=varImp)) + 
+    geom_boxplot(fill="lightblue") + 
+    labs(x="", 
+         y="Variable Importance", 
+         title="Variable Importance for 1:1 Random Forest Classifications"
+         )
+
+# Attach the city names and OOB error rate
+tbl_varimp_2016 <- sapply(list_varimp_2016, 
+                          FUN=function(x) { c(names(x$errorRate[2:3]), x$errorRate["OOB"]) }
+                          ) %>%
+    t() %>% 
+    as.data.frame() %>% 
+    bind_cols(val_varimp_2016) %>% 
+    tibble::as_tibble() %>% 
+    mutate(OOB=as.numeric(as.character(OOB))) %>%
+    rename(locale1=V1, 
+           locale2=V2
+           )
+
+# Plot accuracy vs. spikiness of variable importance
+tbl_varimp_2016 %>%
+    pivot_longer(-c(locale1, locale2, OOB), names_to="var", values_to="varImp") %>% 
+    group_by(locale1, locale2, OOB) %>% 
+    summarize(mean=mean(varImp), max=max(varImp)) %>% 
+    mutate(maxMean=max/mean) %>%
+    ggplot(aes(x=maxMean, y=1-OOB)) + 
+    geom_point() + 
+    geom_smooth(method="loess") +
+    labs(x="Ratio of Maximum Variable Importance to Mean Variable Importance", 
+         y="OOB Accuracy", 
+         title="Accuracy vs. Spikiness of Variable Importance"
+         )
+
+```
+  
+Broadly speaking, the same variables that drive overall classification are important in driving 1:1 classifications.  There is meaningful spikiness, suggesting that different 1:1 classifications rely on different variables.
+
+There is a strong trend where the best accuracies are obtained where there is a single spiky dimension that drives the classifications.  This suggests that while the model can take advantage of all 10 variables, it has the easiest tome when there is a single, well-differentiated variable.  No surprise.
+  
+#### _Random forest regression of temperatures in select locales for 2014-2019_  
+Random forests can also be used to run regressions, such as on variables like temperature or dew point.  Models are run for the 2014-2019 data for the locales that have data availability (Chicago, IL; Las Vegas, NV; New Orleans, LA; San Diego, CA):  
+```{r cache=TRUE}
+
+# Create list of locations
+fullDataLocs <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA")
+
+# Create a main list, one per locale
+lstFullData <- vector("list", length(fullDataLocs))
+
+
+# Create a list of relevant dependent variables and variables to keep
+depVarFull <- c('hrfct', 'DewF', 'modSLP', 'Altimeter', 'WindSpeed', 
+                'predomDir', 'minHeight', 'ceilingHeight'
+                )
+keepVarFull <- c('source', 'dtime', 'locNamefct', 'year', 'month', 'hrfct', 'DewF', 'modSLP', 
+                 'Altimeter', 'WindSpeed', 'predomDir', 'minHeight', 'ceilingHeight'
+                 )
+
+
+# Run the regressions by locale and month
+nLoc <- 1
+for (loc in fullDataLocs) {
+    
+    # Pull data for only this locale, and where TempF is not missing
+    pullData <- metarData %>%
+        filter(locNamefct==loc, !is.na(TempF))
+    
+    # Create the months to be run
+    fullDataMonths <- pullData %>%
+        count(month) %>%
+        pull(month)
+    
+    # Create containers for each run
+    lstFullData[[nLoc]] <- vector("list", length(fullDataMonths))
+    
+    # Run random forest regression for each month for the locale
+    cat("\nBeginning to process:", loc)
+    nMonth <- 1
+    for (mon in fullDataMonths) {
+        
+        # Run the regression
+        lstFullData[[nLoc]][[nMonth]] <- rfRegression(pullData, 
+                                                      depVar="TempF", 
+                                                      predVars=depVarFull, 
+                                                      otherVar=keepVarFull,
+                                                      critFilter=list(locNamefct=loc, month=mon), 
+                                                      seed=2007271252, 
+                                                      ntree=100, 
+                                                      mtry=4, 
+                                                      testSize=0.3
+                                                      )
+        
+        # Increment the counter
+        nMonth <- nMonth + 1
+        cat("\nFinished month:", mon)
+    }
+    
+    # Incerement the counter
+    nLoc <- nLoc + 1
+    
+}
+
+```
+  
+The relevant 'testData' files can then be combined for an assessment of overall prediction accuracy:  
+```{r}
+
+# Helper function to extract testData from inner list
+combineTestData <- function(lst, elem="testData") {
+    map_dfr(lst, .f=function(x) x[[elem]])
+}
+
+# Combine all of the test data files
+fullTestData <- map_dfr(lstFullData, .f=combineTestData) %>%
+    mutate(err=predicted-TempF, 
+           year=factor(year)
+           )
+
+# Helper function to create RMSE data
+helperCreateRMSE <- function(df, byVar, depVar, errVar="err") {
+    
+    df %>%
+        group_by_at(vars(all_of(byVar))) %>%
+        summarize(varTot=var(get(depVar)), varModel=mean(get(errVar)**2)) %>%
+        mutate(rmseTot=varTot**0.5, rmseModel=varModel**0.5, rsq=1-varModel/varTot)
+    
+}
+
+# Create plot for a given by-variable and facet-variable
+helperRMSEPlot <- function(df, byVar, depVar, facetVar=NULL) {
+
+    # Create a copy of the original by variable
+    byVarOrig <- byVar
+    
+    # Expand byVar to include facetVar if facetVar is not null
+    if (!is.null(facetVar)) {
+        byVar <- unique(c(byVar, facetVar))
+    }
+    
+    # Create 
+    p1 <- df %>%
+        helperCreateRMSE(byVar=byVar, depVar=depVar) %>%
+        select_at(vars(all_of(c(byVar, "rmseTot", "rmseModel")))) %>%
+        pivot_longer(c(rmseTot, rmseModel), names_to="model", values_to="rmse") %>%
+        group_by_at(vars(all_of(byVar))) %>%
+        mutate(dRMSE=ifelse(row_number()==n(), rmse, rmse-lead(rmse)), 
+               model=factor(model, levels=c("rmseTot", "rmseModel"))
+               ) %>%
+        ggplot(aes_string(x=byVarOrig, y="dRMSE", fill="model")) + 
+        geom_col() + 
+        geom_text(data=~filter(., model=="rmseModel"), aes(y=dRMSE/2, label=round(dRMSE, 1))) +
+        coord_flip() + 
+        labs(x="", y="RMSE", title="RMSE before and after modelling") + 
+        scale_fill_discrete("", 
+                            breaks=c("rmseModel", "rmseTot"), 
+                            labels=c("Final", "Explained by Model")
+                            ) + 
+        theme(legend.position="bottom")
+    # Add facetting if the argument was passed
+    if (!is.null(facetVar)) { p1 <- p1 + facet_wrap(as.formula(paste("~", facetVar))) }
+    print(p1)
+    
+}
+
+# Stand-alone on three main dimensions
+helperRMSEPlot(fullTestData, byVar="locNamefct", depVar="TempF")
+helperRMSEPlot(fullTestData, byVar="year", depVar="TempF")
+helperRMSEPlot(fullTestData, byVar="month", depVar="TempF")
+
+# Facetted by locale
+helperRMSEPlot(fullTestData, byVar="year", depVar="TempF", facetVar="locNamefct")
+helperRMSEPlot(fullTestData, byVar="month", depVar="TempF", facetVar="locNamefct")
+
+```
+  
+Further, an overall decline in MSE can be estimated as the average of the MSE declines in each locale-month:  
+```{r}
+
+# Function to extract MSE data from inner lists
+helperMSETibble <- function(x) { 
+    map_dfr(x, .f=function(y) tibble::tibble(ntree=1:length(y$mse), mse=y$mse)) 
+}
+
+map_dfr(lstFullData, .f=function(x) { helperMSETibble(x) }, .id="source") %>%
+    group_by(source, ntree) %>%
+    summarize(meanmse=mean(mse)) %>%
+    ungroup() %>%
+    mutate(source=fullDataLocs[as.integer(source)]) %>%
+    ggplot(aes(x=ntree, y=meanmse, group=source, color=source)) + 
+    geom_line() + 
+    ylim(c(0, NA)) + 
+    labs(x="# Trees", y="MSE", title="Evolution of Average MSE by Number of Trees")
+
+```
+  
+At 100 trees, the model appears to have largely completed learning, with no more material declines in MSE.  Overall, model predictions average 3-4 degrees different from actual temperatures.  Deviations are greater in Las Vegas (4-5 degrees), and in the spring in Chicago (4-5 degrees).  Deviations are lesser in San Diego (2-3 degrees) and winter in Chicago (2-3 degrees).
+  
+The model is then run for all months combined for a single locale, to compare results when month is a trained explanatory variable rather than a segment modelled separately:  
+```{r cache=TRUE}
+
+# Create list of locations
+fullDataLocs <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA")
+
+# Create a main list, one per locale
+lstFullData_002 <- vector("list", length(fullDataLocs))
+
+
+# Create a list of relevant dependent variables and variables to keep
+depVarFull_002 <- c('month', 'hrfct', 'DewF', 'modSLP', 
+                    'Altimeter', 'WindSpeed', 'predomDir', 
+                    'minHeight', 'ceilingHeight'
+                    )
+keepVarFull_002 <- c('source', 'dtime', 'locNamefct', 'year', 'month', 'hrfct', 
+                     'DewF', 'modSLP', 'Altimeter', 'WindSpeed', 'predomDir', 
+                     'minHeight', 'ceilingHeight'
+                     )
+
+
+# Run the regressions by locale and month
+nLoc <- 1
+for (loc in fullDataLocs) {
+    
+    # Pull data for only this locale, and where TempF is not missing
+    pullData <- metarData %>%
+        filter(locNamefct==loc, !is.na(TempF))
+    
+    # To be parallel with previous runs, make a length-one list inside locale
+    lstFullData_002[[nLoc]] <- vector("list", 1)
+    
+    # Run random forest regression for each locale
+    cat("\nBeginning to process:", loc)
+    lstFullData_002[[nLoc]][[1]] <- rfRegression(pullData, 
+                                                 depVar="TempF", 
+                                                 predVars=depVarFull_002, 
+                                                 otherVar=keepVarFull_002,
+                                                 critFilter=list(locNamefct=loc), 
+                                                 seed=2007281307, 
+                                                 ntree=25, 
+                                                 mtry=4, 
+                                                 testSize=0.3
+                                                 )
+    
+    # Incerement the counter
+    nLoc <- nLoc + 1
+    
+}
+
+```
+  
+The results can then be compared to the results of the regressions run using month as a segment:  
+```{r}
+
+# Combine all of the test data files
+fullTestData_002 <- map_dfr(lstFullData_002, .f=combineTestData) %>%
+    mutate(err=predicted-TempF, 
+           year=factor(year)
+           )
+
+# Stand-alone on three main dimensions
+helperRMSEPlot(fullTestData_002, byVar="locNamefct", depVar="TempF")
+helperRMSEPlot(fullTestData_002, byVar="year", depVar="TempF")
+helperRMSEPlot(fullTestData_002, byVar="month", depVar="TempF")
+
+# Facetted by locale
+helperRMSEPlot(fullTestData_002, byVar="year", depVar="TempF", facetVar="locNamefct")
+helperRMSEPlot(fullTestData_002, byVar="month", depVar="TempF", facetVar="locNamefct")
+
+# Evolution of RMSE
+map_dfr(lstFullData_002, .f=function(x) { helperMSETibble(x) }, .id="source") %>%
+    group_by(source, ntree) %>%
+    summarize(meanmse=mean(mse)) %>%
+    ungroup() %>%
+    mutate(source=fullDataLocs[as.integer(source)]) %>%
+    ggplot(aes(x=ntree, y=meanmse, group=source, color=source)) + 
+    geom_line() + 
+    ylim(c(0, NA)) + 
+    labs(x="# Trees", y="MSE", title="Evolution of Average MSE by Number of Trees")
+
+```
+  
+The prediction qualities and evolution of MSE by number of trees look broadly similar to the results run by locale-month.  Notably, month scores high on variable importance:  
+```{r}
+
+impList <- lapply(lstFullData_002, FUN=function(x) { 
+    locName <- x[[1]]$testData$locNamefct %>% as.character() %>% unique()
+    x[[1]]$rfModel$importance %>% 
+        as.data.frame() %>%
+        rownames_to_column("variable") %>%
+        rename_at(vars(all_of("IncNodePurity")), ~locName) %>%
+        tibble::as_tibble()
+    }
+    )
+
+impDF <- Reduce(function(x, y) merge(x, y, all=TRUE), impList)
+
+# Overall variable importance
+impDF %>%
+    pivot_longer(-variable, names_to="locale", values_to="incPurity") %>%
+    ggplot(aes(x=fct_reorder(varMapper[variable], incPurity), y=incPurity)) + 
+    geom_col() + 
+    coord_flip() + 
+    facet_wrap(~locale) + 
+    labs(x="", y="Importance", title="Variable Importance by Locale")
+
+# Relative variable importance
+impDF %>%
+    pivot_longer(-variable, names_to="locale", values_to="incPurity") %>%
+    group_by(locale) %>%
+    mutate(incPurity=incPurity/sum(incPurity)) %>%
+    ggplot(aes(x=fct_reorder(varMapper[variable], incPurity), y=incPurity)) + 
+    geom_col() + 
+    coord_flip() + 
+    facet_wrap(~locale) + 
+    labs(x="", y="Relative Importance", title="Relative Variable Importance by Locale")
+
+```
+  
+There is much more underlying variance in the Chicago data, thus greater overall variable importance in Chicago.  On a relative basis, locale predictions are driven by:  
+  
+* Chicago - Dew Point, Month  
+* Las Vegas - Month, Sea-Level Pressure, Hour, Altimeter  
+* New Orleans - Dew Point, Month  
+* San Diego - Month, Hour, Dew Point  
+  
+It is interesting to see the similarities in Chicago and New Orleans, with both having strong explanatory power from the combination of dew point and month, despite meaningfully different climates.  As in previous analyses, Las Vegas and San Diego look different from each other and also different from Chicago/New Orleans.
+  
+#### _XGB regression of temperatures in select locales for 2014-2019_  
+Next, the xgboost (extreme gradient boosting) algorithm is attempted on the METAR dataset.  The general recipe from [CRAN](https://cran.r-project.org/web/packages/xgboost/vignettes/discoverYourData.html) is followed, which includes several processing steps:  
+  
+1.  Convert factor variable(s) to binary variables using one-hot-encoding without intercept  
+2.  Capture the target output variable as a vector  
+3.  Train the model using xgboost::xgboost (can handle regression or classification)  
+4.  Check feature importances  
+5.  Plot the evolution in training RMSE and R-squared  
+6.  Assess accuracy on test dataset  
+  
+Next, a very basic xgb model is attempted for predicting temperature.  First, data are prepared:  
+```{r}
+
+# Take metarData and limit to 4 sources with 2014-2019 data
+baseXGBData_big4 <- metarData %>%
+    filter(locNamefct %in% c("Las Vegas, NV", "New Orleans, LA", "Chicago, IL", "San Diego, CA"), 
+           !is.na(TempF)
+           )
+
+# Split in to test and train datasets
+idxTrain_big4 <- sample(1:nrow(baseXGBData_big4), size=round(0.7*nrow(baseXGBData_big4)), replace=FALSE)
+baseXGBTrain_big4 <- baseXGBData_big4[idxTrain_big4, ]
+baseXGBTest_big4 <- baseXGBData_big4[-idxTrain_big4, ]
+
+# Select only variables of interest
+xgbTrainInput_big4 <- baseXGBTrain_big4 %>%
+    select(TempF, 
+           locNamefct, month, hrfct, 
+           DewF, modSLP, Altimeter, WindSpeed, 
+           predomDir, minHeight, ceilingHeight
+           ) %>%
+    mutate(locNamefct=fct_drop(locNamefct))
+
+```
+  
+Then, the three modeling steps are run:  
+```{r}
+
+# Step 1: Convert to sparse matrix format using one-hot encoding with no intercept
+xgbTrainSparse_big4 <- Matrix::sparse.model.matrix(TempF ~ . - 1, data=xgbTrainInput_big4)
+str(xgbTrainSparse_big4)
+xgbTrainSparse_big4[1:6, ]
+
+# Step 2: Create the target output variable as a vector
+xgbTrainOutput_big4 <- xgbTrainInput_big4$TempF
+str(xgbTrainOutput_big4)
+
+# Step 3: Train the model using xgboost::xgboost, as regression
+xgbModel_big4 <- xgboost::xgboost(data=xgbTrainSparse_big4, 
+                                  label=xgbTrainOutput_big4, 
+                                  nrounds=200, 
+                                  print_every_n=20, 
+                                  objective="reg:squarederror"
+                                  )
+
+```
+  
+Then, the three assessment steps are run:  
+```{r}
+
+# Step 4: Assess feature importances
+xgbImportance_big4 <- xgboost::xgb.importance(feature_names=colnames(xgbTrainSparse_big4), 
+                                              model=xgbModel_big4
+                                              )
+
+xgbImportance_big4 %>% 
+    column_to_rownames("Feature") %>% 
+    round(3)
+
+xgbImportance_big4 %>%
+    ggplot(aes(x=fct_reorder(Feature, Gain), y=Gain)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=Gain+0.02, label=round(Gain, 3))) + 
+    coord_flip() + 
+    labs(x="", title="Gain by Variable for TempF modeling with xgboost")
+
+# Step 5: Plot evolution in training data RMSE and R-squared
+xgbModel_big4$evaluation_log %>%
+    filter(iter %% 5 == 0) %>%
+    ggplot(aes(x=iter, y=train_rmse)) + 
+    geom_text(aes(label=round(train_rmse, 1)), size=3) + 
+    labs(x="Number of iterations", y="Training Set RMSE", title="Evolution of RMSE on training data")
+
+xgbModel_big4$evaluation_log %>%
+    filter(iter %% 10 == 0) %>%
+    mutate(overall_rmse=sd(baseXGBTrain_big4$TempF), rsq=1-train_rmse**2/overall_rmse**2) %>%
+    ggplot(aes(x=iter, y=rsq)) + 
+    geom_text(aes(y=rsq, label=round(rsq,3)), size=3) +
+    labs(x="Number of iterations", y="Training Set R-squared", title="Evolution of R-squared on training data")
+
+# Step 6: Assess accuracy on test dataset
+xgbTestInput_big4 <- baseXGBTest_big4 %>%
+    select(TempF, 
+           locNamefct, month, hrfct, 
+           DewF, modSLP, Altimeter, WindSpeed, 
+           predomDir, minHeight, ceilingHeight
+           ) %>%
+    mutate(locNamefct=fct_drop(locNamefct))
+
+xgbTestSparse_big4 <- Matrix::sparse.model.matrix(TempF ~ . - 1, data=xgbTestInput_big4)
+
+xgbTest_big4 <- xgbTestInput_big4 %>%
+    mutate(xgbPred=predict(xgbModel_big4, newdata=xgbTestSparse_big4), err=xgbPred-TempF)
+
+xgbTest_big4 %>%
+    group_by(locNamefct) %>%
+    summarize(rmse_orig=sd(TempF), rmse_xgb=mean(err**2)**0.5) %>%
+    mutate(rsq=1-rmse_xgb**2/rmse_orig**2)
+
+xgbTest_big4 %>%
+    group_by(month) %>%
+    summarize(rmse_orig=sd(TempF), rmse_xgb=mean(err**2)**0.5) %>%
+    mutate(rsq=1-rmse_xgb**2/rmse_orig**2)
+
+xgbTest_big4 %>%
+    group_by(TempF, rndPred=round(xgbPred)) %>%
+    summarize(n=n()) %>%
+    ggplot(aes(x=TempF, y=rndPred)) + 
+    geom_point(aes(size=n), alpha=0.1) + 
+    geom_smooth(aes(weight=n)) + 
+    geom_abline(lty=2, color="red") + 
+    labs(title="XGB predictions vs. actual on test dataset", y="Predicted Temperature", x="Actual Temperature")
+
+```
+  
+At a glance, initial prediction results are encouraging.  The model runs very quickly and gets to a comparable RMSE/R-squared on test data as the random forest.  Tuning parameters or adding cross-validation could potentially improve the algorithm further.
+  
+An initial conversion to functional form is made, leveraging some of the code already available in rfMultiLocale() and rfTwoLocales():  
+```{r}
+
+# Helper function to create sparse matrix without intercept (keep all factor levels)
+# Need to adapt to keep all levels of all factors such as caret::dummyVars
+helperMakeSparse <- function(tbl, depVar, predVars) {
+    
+    # FUNCTION ARGUMENTS
+    # tbl: the tibble or data frame to be converted
+    # depVar: the dependent variable (not to be included in the sparse matrix)
+    # predVars: the predictor variables to be converted to sparse format
+    
+    # Filter to include only predVars then make sprase matrix modelling object
+    # Include all contrast levels for every factor variable and exclude the intercept
+    tbl %>%
+        select_at(vars(all_of(c(predVars)))) %>%
+        Matrix::sparse.model.matrix(~ . -1, data=., 
+                                    contrasts.arg=lapply(.[, sapply(., is.factor)], contrasts, contrasts=FALSE)
+                                    )
+    
+}
+
+
+# Run xgb model with desired parameters
+xgbRunModel <- function(tbl, 
+                        depVar, 
+                        predVars,
+                        otherVars=c("source", "dtime"),
+                        critFilter=vector("list", 0),
+                        dropEmptyLevels=TRUE,
+                        seed=NULL, 
+                        nrounds=200, 
+                        print_every_n=nrounds, 
+                        testSize=0.3, 
+                        xgbObjective="reg:squarederror",
+                        ...
+                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # tbl: the data frame or tibble
+    # depVar: the dependent variable that will be predicted
+    # predVars: explanatory variables for modeling
+    # otherVars: other variables to be kept in a final testData file, but not used in modeling
+    # critFilter: named list of format list(varName=c(varValues))
+    #             will include only observations where get(varName) %in% varValues
+    #             vector("list", 0) creates a length-zero list, which never runs in the for loop
+    # dropEmptyLevels: boolean, whether to run fct_drop on all variables of class factor after critFilter
+    # seed: the random seed (NULL means no seed)
+    # nrounds: the maximum number of boosting iterations
+    # print_every_n: how frequently to print the progress of training error/accuracy while fitting
+    # testSize: the fractional portion of data that should be used as the test dataset
+    # xgbObjective: the objective function for xgboost
+    # ...: additional arguments to be passed directly to xgboost
+    
+    # Filter such that only matches to critFilter are included
+    for (xNum in seq_len(length(critFilter))) {
+        tbl <- tbl %>%
+            filter_at(vars(all_of(names(critFilter)[xNum])), ~. %in% critFilter[[xNum]])
+    }
+    
+    # Keep only the depVar, predVar, and otherVars
+    tbl <- tbl %>%
+        select_at(vars(all_of(c(depVar, predVars, otherVars))))
+    
+    # Drop empty levels from factors if requested
+    if (dropEmptyLevels) {
+        tbl <- tbl %>%
+            mutate_if(is.factor, .funs=fct_drop)
+    }
+    
+    # Create test-train split
+    ttLists <- createTestTrain(tbl, testSize=testSize, seed=seed)
+    
+    # Set the seed if requested
+    if (!is.null(seed)) { set.seed(seed) }
+    
+    # Pull the dependent variable
+    yTrain <- ttLists$trainData[, depVar, drop=TRUE]
+    
+    # Convert predictor variables to sparse matrix format keeping only modeling variables
+    sparseTrain <- helperMakeSparse(ttLists$trainData, depVar=depVar, predVars=predVars)
+    sparseTest <- helperMakeSparse(ttLists$testData, depVar=depVar, predVars=predVars)
+    
+    # Train model
+    xgbModel <- xgboost::xgboost(data=sparseTrain, 
+                                 label=yTrain, 
+                                 nrounds=nrounds, 
+                                 print_every_n=print_every_n, 
+                                 objective=xgbObjective, 
+                                 ...
+                                 )
+
+    # Predict on testdata
+    testData <- ttLists$testData %>%
+        mutate(predicted=predict(xgbModel, newdata=sparseTest))
+    
+    # Return list containing trained model and testData
+    list(xgbModel=xgbModel, 
+         testData=testData
+         )
+    
+}
+
+# Define key predictor variables for base XGB runs
+baseXGBPreds <- c("locNamefct", "month", "hrfct", 
+                  "DewF", "modSLP", "Altimeter", "WindSpeed", 
+                  "predomDir", "minHeight", "ceilingHeight"
+                  )
+
+# Core multi-year cities
+multiYearLocales <- c("Las Vegas, NV", "New Orleans, LA", "Chicago, IL", "San Diego, CA")
+
+# Run the function shell
+xgbInit <- xgbRunModel(filter(metarData, !is.na(TempF)), 
+                       depVar="TempF", 
+                       predVars=baseXGBPreds, 
+                       otherVars=c("source", "dtime"), 
+                       critFilter=list(locNamefct=multiYearLocales),
+                       seed=2008011825,
+                       nrounds=2000,
+                       print_every_n=50
+                       )
+
+```
+
