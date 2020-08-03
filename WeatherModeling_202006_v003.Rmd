@@ -862,7 +862,8 @@ helperMakeSparse <- function(tbl, depVar, predVars) {
     # Include all contrast levels for every factor variable and exclude the intercept
     tbl %>%
         select_at(vars(all_of(c(predVars)))) %>%
-        Matrix::sparse.model.matrix(~ . -1, data=., 
+        Matrix::sparse.model.matrix(~ . -1, 
+                                    data=., 
                                     contrasts.arg=lapply(.[, sapply(., is.factor)], contrasts, contrasts=FALSE)
                                     )
     
@@ -968,6 +969,233 @@ xgbInit <- xgbRunModel(filter(metarData, !is.na(TempF)),
                        nrounds=2000,
                        print_every_n=50
                        )
+
+```
+  
+Functions can then be written to assess the quality of the predictions:  
+```{r}
+
+# Create and plot importance for XGB model
+plotXGBImportance <- function(mdl, 
+                              subList="xgbModel", 
+                              featureStems=NULL, 
+                              showMainPlot=TRUE, 
+                              showStemPlot=!is.null(featureStems), 
+                              stemMapper=NULL,
+                              plotTitle="Gain by Variable for xgboost", 
+                              plotSubtitle=NULL
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # mdl: the xgb.Booster model file, or a list containing the xgb.Booster model file
+    # subList: if mdl is a list, attempt to pull out item named in subList
+    # featureStems: aggregate features starting with this vector of stems, and plot sum of gain 
+    #               (NULL means do not do this and just plot the gains "as is" )
+    # showMainPlot: boolean, whether to create the full importance plot (just return importance data otherwise)
+    # showStemPlot: boolean, whether to create the plot summed by stems
+    # stemMapper: mapping file to convert stem variables to descriptive names (NULL means leave as-is)
+    # plotTitle: title to be included on the importance plots
+    # plotSubtitle: subtitle to be included on the importance plots (NULL means no subtitle)
+
+    # Pull out the modeling data from the list if needed
+    if (!("xgb.Booster" %in% class(mdl))) {
+        mdl <- mdl[[subList]]
+    }
+    
+    # Pull out the feature importances
+    xgbImportance <- xgboost::xgb.importance(model=mdl)
+    
+    # Helper function to sum data to stem (called below if featureStems is not NULL)
+    helperStemTotal <- function(pattern, baseData=xgbImportance) {
+        baseData %>%
+            filter(grepl(pattern=paste0("^", pattern), x=Feature)) %>%
+            select_if(is.numeric) %>%
+            colSums()
+    }
+    
+    # Create sums by stem if requested
+    if (!is.null(featureStems)) {
+        stemTotals <- sapply(featureStems, FUN=function(x) { helperStemTotal(pattern=x) } ) %>%
+            t() %>%
+            as.data.frame() %>%
+            rownames_to_column("Feature") %>%
+            tibble::as_tibble()
+        print(stemTotals)
+    } else {
+        stemTotals <- NULL
+    }
+
+    # Helper function to plot gain by Feature
+    helperPlotGain <- function(df, title, subtitle, mapper=NULL, caption=NULL) {
+        # Add descriptive name if mapper is passed
+        if (!is.null(mapper)) df <- df %>% mutate(Feature=paste0(Feature, "\n", mapper[Feature]))
+        p1 <- df %>%
+            ggplot(aes(x=fct_reorder(Feature, Gain), y=Gain)) + 
+            geom_col(fill="lightblue") + 
+            geom_text(aes(y=Gain+0.02, label=round(Gain, 3))) + 
+            coord_flip() + 
+            labs(x="", title=title)
+        if (!is.null(subtitle)) { p1 <- p1 + labs(subtitle=subtitle) }
+        if (!is.null(caption)) { p1 <- p1 + labs(caption=caption) }
+        print(p1)
+    }
+    
+    # Create and display the plots if requested
+    if (showMainPlot) helperPlotGain(xgbImportance, title=plotTitle, subtitle=plotSubtitle)
+    if (showStemPlot) { 
+        helperPlotGain(stemTotals, 
+                       title=plotTitle, 
+                       subtitle=plotSubtitle,
+                       mapper=stemMapper,
+                       caption="Factor variables summed by stem"
+                       )
+    }
+    
+    # Return a list containing the raw data and the stemmed data (can be NULL)
+    list(importanceData=xgbImportance, stemData=stemTotals)
+    
+}
+
+# Find and plot importances
+xgbInit_importance <- plotXGBImportance(xgbInit, 
+                                        featureStems=baseXGBPreds, 
+                                        stemMapper = varMapper, 
+                                        plotTitle="Gain by variable in xgboost", 
+                                        plotSubtitle="Modeling Temperature (F) in 4 Locales 2014-2019"
+                                        )
+
+
+# Function to create and plot RMSE and R-squared evolution of training data
+plotXGBTrainEvolution <- function(mdl, 
+                                  fullSD,
+                                  subList="xgbModel", 
+                                  plotRMSE=TRUE,
+                                  plotR2=TRUE, 
+                                  plot_every=10
+                                  ) {
+    
+    # FUNCTION ARGUMENTS:
+    # mdl: the xgb.Booster model file, or a list containing the xgb.Booster model file
+    # fullSD: the overall stansard deviation for the training variable
+    #         if passed as numeric, use as-is
+    #         if passed as character, try to extract sd of that variable from 'testData' in mdl
+    # subList: if mdl is a list, attempt to pull out item named in subList
+    # plotRMSE: boolean, whether to create the RMSE evolution plot
+    # plotR2: boolean, whether to create the R2 evolution plot
+    # plot_every: how often to plot the RMSE/R-squared data (e.g., 10 means print iter 10, 20, 30, etc.)
+
+    # Create the full standard deviation from 'testData' if passed as character
+    # Must be run before mdl is converted out of list format
+    if (is.character(fullSD)) {
+        fullSD <- mdl[["testData"]] %>% pull(fullSD) %>% sd()
+    }
+    
+    # Pull out the modeling data from the list if needed
+    if (!("xgb.Booster" %in% class(mdl))) {
+        mdl <- mdl[[subList]]
+    }
+    
+    # Extract the evaluation log and add an approximated R-squared
+    rmseR2 <- mdl[["evaluation_log"]] %>%
+        mutate(overall_rmse=fullSD, rsq=1-train_rmse**2/overall_rmse**2) %>%
+        tibble::as_tibble()
+    
+    # Helper function to create requested plot(s)
+    helperPlotEvolution <- function(df, yVar, rnd, desc, size=3, plot_every=1) {
+        p1 <- df %>%
+            filter((iter %% plot_every) == 0) %>%
+            ggplot(aes_string(x="iter", y=yVar)) + 
+            geom_text(aes(label=round(get(yVar), rnd)), size=size) + 
+            labs(x="Number of iterations", 
+                 y=paste0("Training Set ", desc), 
+                 title=paste0("Evolution of ", desc, " on training data")
+                 )
+        print(p1)
+    }
+    
+    # Create the RMSE and R-squared plots if requested
+    if (plotRMSE) helperPlotEvolution(rmseR2, yVar="train_rmse", rnd=1, desc="RMSE", plot_every=plot_every)
+    if (plotR2) helperPlotEvolution(rmseR2, yVar="rsq", rnd=3, desc="R-squared", plot_every=plot_every)
+    
+    # Return the full evolution data frame
+    rmseR2
+    
+}
+
+# Plot the evolution
+xgbInitEvolution <- plotXGBTrainEvolution(xgbInit, fullSD="TempF", plot_every=50)
+
+
+# Function to report on, and plot, prediction caliber on testData
+plotXGBTestData <- function(mdl, 
+                            depVar,
+                            predVar="predicted",
+                            subList="testData", 
+                            reportOverall=TRUE,
+                            reportBy=NULL, 
+                            showPlot=TRUE
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # mdl: the test data file, or a list containing the test data file
+    # depVar: the variable that was predicted
+    # predVar: the variable containing the prediction for depVar
+    # subList: if mdl is a list, attempt to pull out item named in subList
+    # reportOverall: boolean, whether to report an overall RMSE/R2 on test data
+    # reportBy: variable for sumarizing RMSE/R2 by (NULL means no RMSE/R2 by any grouping variables)
+    # showPlot: boolean, whether to create/show the plot of predictions vs actuals
+    
+    # Pull out the modeling data from the list if needed
+    if ("list" %in% class(mdl)) {
+        mdl <- mdl[[subList]]
+    }
+    
+    # Helper function to print RMSE and R2
+    helperReportRMSER2 <- function(df, depVar, errVar) {
+        df %>%
+            summarize(rmse_orig=sd(get(depVar)), 
+                      rmse_xgb=mean((get(predVar)-get(depVar))**2)**0.5
+                      ) %>%
+            mutate(rsq=1-rmse_xgb**2/rmse_orig**2) %>%
+            print()
+        cat("\n")
+    }
+    
+    # Report overall RMSE/R2 if requested
+    if (reportOverall) {
+        cat("\nOVERALL PREDICTIVE PERFORMANCE:\n\n")
+        helperReportRMSER2(mdl, depVar=depVar, errVar=errVar)
+        cat("\n")
+    }
+    
+    # Report by grouping variables if any
+    if (!is.null(reportBy)) {
+        cat("\nPREDICTIVE PERFORMANCE BY GROUP(S):\n\n")
+        sapply(reportBy, FUN=function(x) { 
+            mdl %>% group_by_at(x) %>% helperReportRMSER2(depVar=depVar, errVar=errVar)
+        }
+        )
+        cat("\n")
+    }
+
+    # Show overall model performance using rounded temperature and predictions
+    if (showPlot) {
+        p1 <- mdl %>%
+            mutate(rndPred=round(get(predVar))) %>%
+            group_by_at(vars(all_of(c(depVar, "rndPred")))) %>%
+            summarize(n=n()) %>%
+            ggplot(aes_string(x=depVar, y="rndPred")) + 
+            geom_point(aes(size=n), alpha=0.1) + 
+            geom_smooth(aes(weight=n)) + 
+            geom_abline(lty=2, color="red") + 
+            labs(title="XGB predictions vs. actual on test dataset", y="Predicted", x="Actual")
+        print(p1)
+    }
+    
+}
+
+# Assess performance on test data
+plotXGBTestData(xgbInit, depVar="TempF", reportBy=c("locNamefct", "month"))
 
 ```
 
