@@ -2032,3 +2032,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 explores extreme gradient boosting (XGB)  
 * WeatherModeling_202006_v002 runs XGB for temperature predictions  
   
+### Expansions week of 03-AUG-2020  
+* WeatherModeling_202006_v002 includes functions to run and evaluate XGB  
+  
