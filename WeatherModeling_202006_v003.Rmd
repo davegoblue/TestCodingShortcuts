@@ -941,7 +941,9 @@ xgbRunModel <- function(tbl,
 
     # Predict on testdata
     testData <- ttLists$testData %>%
-        mutate(predicted=predict(xgbModel, newdata=sparseTest))
+        mutate(predicted=predict(xgbModel, newdata=sparseTest), 
+               err=predicted-get(depVar)
+               )
     
     # Return list containing trained model and testData
     list(xgbModel=xgbModel, 
@@ -949,6 +951,10 @@ xgbRunModel <- function(tbl,
          )
     
 }
+
+```
+  
+```{r cache=TRUE}
 
 # Define key predictor variables for base XGB runs
 baseXGBPreds <- c("locNamefct", "month", "hrfct", 
@@ -1198,4 +1204,93 @@ plotXGBTestData <- function(mdl,
 plotXGBTestData(xgbInit, depVar="TempF", reportBy=c("locNamefct", "month"))
 
 ```
+  
+The XGB model appears to be over-fitting the training data, as reflected by the RMSE gap between the test data set and the training data set:  
+```{r}
 
+# Get the random forest by locale RMSE reported by the training process
+rfByLocaleRMSE <- sapply(lstFullData_002, FUN=function(x) { x[[1]][["rfModel"]][["mse"]] }) %>%
+    as.data.frame() %>%
+    tibble::as_tibble() %>%
+    mutate(train_rmse=apply(., 1, FUN=mean)**0.5)
+
+# Get the random forest RMSE reported by the test data
+rfTestRMSE <- fullTestData_002 %>% 
+    summarize(rfTestrmse=mean(err**2)**0.5) %>% 
+    pull(rfTestrmse)
+
+# Get the XGB RMSE reported by the training process
+xgbInitRMSE <- xgbInit$xgbModel$evaluation_log
+
+# Get the XGB RMSE reported by the test data
+xgbTestRMSE <- xgbInit$testData %>%
+    summarize(xgbTestrmse=mean(err**2)**0.5) %>%
+    pull(xgbTestrmse)
+
+# Plot differences in train/test RMSE
+tibble::tibble(model=c("Random Forest", "XGB"), 
+               train=c(tail(rfByLocaleRMSE$train_rmse, 1), tail(xgbInitRMSE$train_rmse, 1)), 
+               test=c(rfTestRMSE, xgbTestRMSE)
+               ) %>%
+    pivot_longer(-model, names_to="type", values_to="RMSE") %>%
+    mutate(type=factor(type, levels=c("train", "test"))) %>%
+    ggplot(aes(x=model, y=RMSE, fill=type)) + 
+    geom_col(position="dodge") + 
+    geom_text(aes(y=RMSE+0.2, label=round(RMSE, 1)), position=position_dodge(width=1)) +
+    labs(x="", title="XGB test RMSE is meaningfully higher than XGB train RMSE (overfitting)") + 
+    scale_fill_discrete("") + 
+    theme(legend.position="bottom")
+
+```
+  
+So, the XGB model either needs to be tuned, or it needs to run for a much smaller number of iterations.  The function xgb.cv allows for cross-validation during the training process, which means that a running count of train/test RMSE is kept by iteration.  Suppose that this function is run:  
+```{r cache=TRUE}
+
+# Create the same training dataset as would have been passed to the previous XGB modeling
+xgbInput_big4 <- metarData %>%
+    filter(!is.na(TempF), locNamefct %in% multiYearLocales) %>%
+    anti_join(xgbInit$testData %>% select(source, dtime)) %>%
+    select_at(vars(all_of(c("TempF", baseXGBPreds, "source", "dtime")))) %>%
+    mutate_if(is.factor, .funs=fct_drop)
+
+
+# Step 1: Convert to sparse matrix format using one-hot encoding with no intercept
+xgbTrain_big4 <- helperMakeSparse(xgbInput_big4, predVars=baseXGBPreds)
+
+# Step 2: Create the target output variable as a vector
+xgbTarget_big4 <- xgbInput_big4$TempF
+
+# Step 3: Train the model using xgboost::xgb.cv, as regression
+xgbInit_cv <- xgboost::xgb.cv(data=xgbTrain_big4, 
+                              label=xgbTarget_big4, 
+                              nrounds=2000, 
+                              nfold=5,
+                              print_every_n=50, 
+                              objective="reg:squarederror"
+                              )
+
+```
+  
+The evolution of RMSE can then be plotted:  
+```{r}
+
+xgbInit_cv$evaluation_log %>%
+    select(iter, train=train_rmse_mean, test=test_rmse_mean) %>%
+    pivot_longer(-iter, names_to="type", values_to="rmse") %>%
+    filter(iter > 10) %>%
+    ggplot(aes(x=iter, y=rmse, color=type, group=type)) + 
+    geom_line() + 
+    scale_color_discrete("") +
+    labs(x="# Iterations", 
+         y="RMSE of Temperature (F)", 
+         title="XGB Model RMSE when trained using Cross Validation (5-fold)", 
+         subtitle="plot excludes first 10 iterations"
+         )
+
+```
+  
+There is a significant divergence between train RMSE and test RMSE, with test RMSE mostly being optimized already after 500-1000 iterations, while train RMSE continues to improve almost linearly even after 1000 iterations.  Unlike random forests, which minimize variance through bootstrap resampling and variable shuffling at each split, the XGB model continues to tune on residuals in the same dataset even after it has learned every pattern that can be generalized to unseen data.  Proper use of CV and early-stopping will be important.
+
+Notably, XGB has achieved roughly 3.0 degrees RMSE with the test data while random forest achieved roughly 3.5 degrees with the test data.  In part this is driven by the very fast optimization of XGB allowing for many more iterations than can be run in the same time for a random forest.
+
+Next steps are to incorporate xgb.cv as an option in the training function, and to explore hyperparameters such as eta (learning rate) and maximum depth, and their impacts on the test set RMSE.
