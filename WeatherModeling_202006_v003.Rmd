@@ -882,6 +882,7 @@ xgbRunModel <- function(tbl,
                         print_every_n=nrounds, 
                         testSize=0.3, 
                         xgbObjective="reg:squarederror",
+                        funcRun=xgboost::xgboost,
                         ...
                         ) {
     
@@ -899,7 +900,16 @@ xgbRunModel <- function(tbl,
     # print_every_n: how frequently to print the progress of training error/accuracy while fitting
     # testSize: the fractional portion of data that should be used as the test dataset
     # xgbObjective: the objective function for xgboost
+    # funcRun: the function to run, passed as a function
     # ...: additional arguments to be passed directly to xgboost
+    
+    # Check that funcName is valid and get the relevant function
+    valFuncs <- c("xgboost", "xgb.cv")
+    funcName <- as.character(substitute(funcRun))
+    if (!(funcName[length(funcName)] %in% valFuncs)) {
+        cat("\nFunction is currently only prepared for:", valFuncs, "\n")
+        stop("Please change passed argument or update function\n")
+    }
     
     # Filter such that only matches to critFilter are included
     for (xNum in seq_len(length(critFilter))) {
@@ -931,22 +941,28 @@ xgbRunModel <- function(tbl,
     sparseTest <- helperMakeSparse(ttLists$testData, depVar=depVar, predVars=predVars)
     
     # Train model
-    xgbModel <- xgboost::xgboost(data=sparseTrain, 
-                                 label=yTrain, 
-                                 nrounds=nrounds, 
-                                 print_every_n=print_every_n, 
-                                 objective=xgbObjective, 
-                                 ...
-                                 )
+    xgbModel <- funcRun(data=sparseTrain, 
+                        label=yTrain, 
+                        nrounds=nrounds, 
+                        print_every_n=print_every_n, 
+                        objective=xgbObjective, 
+                        ...
+                        )
 
-    # Predict on testdata
-    testData <- ttLists$testData %>%
-        mutate(predicted=predict(xgbModel, newdata=sparseTest), 
-               err=predicted-get(depVar)
-               )
+    # Create a base testData file that is NULL (will be for xgb.cv)
+    testData <- NULL
     
-    # Return list containing trained model and testData
-    list(xgbModel=xgbModel, 
+    # Extract testData and add predictions if the model passed is xgboost
+    if (funcName[length(funcName)] %in% c("xgboost")) {
+        testData <- ttLists$testData %>%
+            mutate(predicted=predict(xgbModel, newdata=sparseTest), 
+                   err=predicted-get(depVar)
+                   )
+    }
+    
+    # Return list containing funcName, trained model, and testData
+    list(funcName=funcName[length(funcName)], 
+         xgbModel=xgbModel, 
          testData=testData
          )
     
@@ -1293,4 +1309,134 @@ There is a significant divergence between train RMSE and test RMSE, with test RM
 
 Notably, XGB has achieved roughly 3.0 degrees RMSE with the test data while random forest achieved roughly 3.5 degrees with the test data.  In part this is driven by the very fast optimization of XGB allowing for many more iterations than can be run in the same time for a random forest.
 
-Next steps are to incorporate xgb.cv as an option in the training function, and to explore hyperparameters such as eta (learning rate) and maximum depth, and their impacts on the test set RMSE.
+Potential next steps are to incorporate xgb.cv as an option in the training function, and to explore hyperparameters such as eta (learning rate) and maximum depth, and their impacts on the test set RMSE.
+
+Function xgbRunModel has been updated to accept either xgboost::xgboost or xgboost::xgb.cv.  This allows for running several versions of the hyperparameters through the CV process.  For example:  
+```{r cache=TRUE}
+
+# Create hyperparameter space
+hypGrid <- expand.grid(eta=c(0.1, 0.3, 0.6), 
+                       max_depth=c(3, 6, 10), 
+                       nrounds=500, 
+                       nfold=5
+                       )
+
+# Create containers for results
+xgbSmall <- vector("list", nrow(hypGrid))
+
+# Run xgb.cv once for each combination of hyper-parameters
+for (rowNum in 1:nrow(hypGrid)) {
+
+    # Extract the relevant hyperparameter data row
+    params <- hypGrid[rowNum, ] %>% unlist()
+    
+    # Run the function for 5-fold CV for a few values of eta and max_depth
+    xgbTemp <- xgbRunModel(filter(metarData, !is.na(TempF)), 
+                           depVar="TempF", 
+                           predVars=baseXGBPreds, 
+                           otherVars=c("source", "dtime"), 
+                           critFilter=list(locNamefct=multiYearLocales),
+                           seed=2008041345,
+                           nrounds=params["nrounds"],
+                           eta=params["eta"], 
+                           max_depth=params["max_depth"],
+                           print_every_n=50, 
+                           funcRun=xgboost::xgb.cv, 
+                           nfold=params["nfold"]
+                           )
+    
+    xgbSmall[[rowNum]] <- list(params=params, results=xgbTemp)
+    
+}
+
+```
+  
+The test and train RMSE by iteration can be extracted and plotted by combination of parameters:  
+```{r}
+
+# Extract the key parameters as a character vector
+allParams <- sapply(xgbSmall, FUN=function(x) x[["params"]])
+keyParamVec <- allParams %>% 
+    apply(2, FUN=function(x) paste0(names(x)[1], ": ", x[1], ", ", names(x)[2], ": ", x[2]))
+
+# Extract RMSE and attach character vector
+allRMSE <- map_dfr(xgbSmall, 
+                   .f=function(x) x[["results"]][["xgbModel"]]$evaluation_log, 
+                   .id="source"
+                   ) %>%
+    mutate(desc=factor(keyParamVec[as.numeric(source)], levels=keyParamVec)) %>%
+    tibble::as_tibble()
+
+# Get the minimum test RMSE
+minTestRMSE <- allRMSE %>% 
+    select(test_rmse_mean) %>% 
+    min()
+
+# Create plot for final test RMSE
+allRMSE %>%
+    select(desc, iter, train=train_rmse_mean, test=test_rmse_mean) %>%
+    filter(iter==max(iter)) %>%
+    ggplot(aes(x=desc, y=test)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=test/2, label=round(test, 1))) + 
+    labs(x="", y="Test RMSE after 500 iterations", title="Test RMSE at 500 iterations by hyperparameters") +
+    coord_flip()
+
+# Create plot for RMSE evolution
+allRMSE %>%
+    select(desc, iter, train=train_rmse_mean, test=test_rmse_mean) %>%
+    pivot_longer(-c(desc, iter), names_to="type", values_to="RMSE") %>%
+    filter(RMSE <= 8) %>%
+    ggplot(aes(x=iter, y=RMSE, group=type, color=type)) + 
+    geom_line() + 
+    labs(x="# Iterations", title="RMSE Evolution by Hyperparameters", subtitle="Only RMSE <= 8 plotted") +
+    geom_hline(aes(yintercept=minTestRMSE), color="red", lty=2) +
+    geom_vline(aes(xintercept=10), lty=2) +
+    facet_wrap(~desc)
+
+```
+  
+As expected, increasing eta and max_depth have a tendency to induce over-fitting while also driving to the optimal RMSE quicker.  A trade-off.  The default eta=0.3 and max_depth=6 appear to be close to the minimum RMSE at 500 observations with a rather modest delta between test/train RMSE.  The high over-fit model (eta 0.6 and max_depth 10) appears to have converged with a high test RMSE.  The slowest model (eta 0.1, max_depth 3) appears to still have significant room to learn even after 500 observations.  
+
+The top performing models at 500 iterations appear to be blends of parameters that average out to "moderate-high" learning ability (low eta=0.1 with high max_depth=10, medium eta=0.3 with medium max_depth=6, medium eta=0.3 with high max_depth=10, high eta=0.6 with medium max_depth=6).
+
+Suppose the slowest model is run for 2500 iterations to check on convergence:  
+```{r cache=TRUE}
+
+# Define key predictor variables for base XGB runs
+baseXGBPreds <- c("locNamefct", "month", "hrfct", 
+                  "DewF", "modSLP", "Altimeter", "WindSpeed", 
+                  "predomDir", "minHeight", "ceilingHeight"
+                  )
+
+# Core multi-year cities
+multiYearLocales <- c("Las Vegas, NV", "New Orleans, LA", "Chicago, IL", "San Diego, CA")
+
+# Run the function shell
+xgbSlow <- xgbRunModel(filter(metarData, !is.na(TempF)), 
+                       depVar="TempF", 
+                       predVars=baseXGBPreds, 
+                       otherVars=c("source", "dtime"), 
+                       critFilter=list(locNamefct=multiYearLocales),
+                       seed=2008041432,
+                       nrounds=2500,
+                       print_every_n=50, 
+                       eta=0.1, 
+                       max_depth=3
+                       )
+
+```
+  
+The evalutaion functions can then be run:  
+```{r}
+
+# Plot the evolution
+xgbSlowEvolution <- plotXGBTrainEvolution(xgbSlow, fullSD="TempF", plot_every=100)
+
+# Assess performance on test data
+plotXGBTestData(xgbSlow, depVar="TempF", reportBy=c("locNamefct", "month"))
+
+```
+  
+Even at 2500 iterations, the model has almost no over-fitting (train RMSE 3.5, test RMSE 3.5).  However, the model appears to be converging at several tenths of a degree higher test RMSE than some of the other models achieve in as little as 500 iterations.
+  
