@@ -2035,4 +2035,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 03-AUG-2020  
 * WeatherModeling_202006_v002 includes functions to run and evaluate XGB  
 * WeatherModeling_202006_v002 explores test vs. train RMSE for XGB regression  
+* WeatherModeling_202006_v002 adds CV capability for XGB training  
   
