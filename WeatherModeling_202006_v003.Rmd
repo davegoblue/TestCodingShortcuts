@@ -1440,3 +1440,276 @@ plotXGBTestData(xgbSlow, depVar="TempF", reportBy=c("locNamefct", "month"))
   
 Even at 2500 iterations, the model has almost no over-fitting (train RMSE 3.5, test RMSE 3.5).  However, the model appears to be converging at several tenths of a degree higher test RMSE than some of the other models achieve in as little as 500 iterations.
   
+#### _XGB classification of locales for 2016_  
+The XGB approach can also be followed for classifications, by passing a factor variable for y and updating the objective function and metric to be appropriate for classification.  The general recipe is similar to what is followed for regression.
+  
+To begin, a simple classification will be run using 2016 data to assess "is this data from Las Vegas?".  Las Vegas is selected because it is largely distinct from the other climate types.  For further simplification of the first pass, Phoenix data will be deleted, and the "all other" cities will be reduced to being the same data volume as Las Vegas:  
+```{r}
+
+set.seed(2008051312)
+
+# Extract a balanced sample of Las Vegas 2016 data and all-other 2016 data (excluding Phoenix)
+las2016Data <- metarData %>%
+    filter(year==2016, !is.na(TempF), !(locNamefct %in% c("Phoenix, AZ"))) %>%
+    mutate(isLAS=factor(ifelse(locNamefct=="Las Vegas, NV", "Las Vegas", "All Other"), 
+                        levels=c("Las Vegas", "All Other")
+                        ), 
+           nLAS=sum(isLAS=="Las Vegas")
+           ) %>%
+    group_by(isLAS) %>%
+    sample_n(min(nLAS)) %>% # not ideal coding, but it works
+    ungroup()
+
+```
+  
+First, the random forest approach is run on the Las Vegas 2016 data:  
+```{r}
+
+# Define key predictor variables for base XGB runs
+locXGBPreds <- c("month", "hrfct", 
+                 "TempF", "DewF", "modSLP", "Altimeter", "WindSpeed", 
+                 "predomDir", "minHeight", "ceilingHeight"
+                 )
+
+# Run random forest for Las Vegas 2016 classifications
+rf_las2016 <- rfMultiLocale(las2016Data, 
+                            vrbls=locXGBPreds,
+                            otherVar=keepVarFull,
+                            locs=NULL, 
+                            locVar="isLAS",
+                            pred="isLAS",
+                            ntree=100, 
+                            seed=2008051316, 
+                            mtry=4
+                            )
+
+```
+  
+The variable importances and quality of the predictions can then be assessed:  
+```{r}
+
+# Plot variable importances
+helperPlotVarImp(rf_las2016$rfModel)
+
+# Evaluate prediction accuracy
+evalPredictions(rf_las2016, 
+                plotCaption = "Temp, Dew Point, Month, Hour of Day, Cloud Height, Wind, SLP, Altimeter", 
+                keyVar="isLAS"
+                )
+
+```
+  
+Using majority-rules classification, the model achieves balanced 96% accuracy in classifying locales as being Las Vegas or All Other.  The main variables that assist in the classification are dew point, minimum cloud height, and temperature.  This seems plausible as Las Vegas is rarely cloudy (and almost never at low levels) and shows a significantly different density on a dewpoint/temperature plot than most other locales:  
+```{r}
+
+plotOrder <- rev(levels(rf_las2016$testData$minHeight))
+
+p1_las2016 <- rf_las2016$testData %>%
+    ggplot(aes(x=isLAS, fill=factor(minHeight, levels=plotOrder))) + 
+    geom_bar(position="fill") + 
+    coord_flip() + 
+    labs(x="", y="Percentage of observations", title="Minimum cloud heights") + 
+    scale_fill_discrete("Min Cloud Height", guide=guide_legend(reverse=TRUE, nrow=2, byrow=TRUE), 
+                        labels=plotOrder, breaks=plotOrder
+                        ) + 
+    theme(legend.position="bottom")
+
+p2_las2016 <- rf_las2016$testData %>%
+    ggplot(aes(x=TempF, y=DewF)) + 
+    geom_point(alpha=0.1) + 
+    labs(x="Temperature (F)", y="Dew Point (F)", title="Temp/Dew Point Distribution") + 
+    facet_wrap(~isLAS)
+
+gridExtra::grid.arrange(p1_las2016, p2_las2016, nrow=1)
+
+```
+  
+The modesl has 80%+ votes in one direction or ther other about 80% of the time.  These classifications are ~99% accurate.  When the model is less confident, the prediction quality declines to the 70%-80% range:  
+```{r}
+
+# Evaluate prediction certainty
+probs_las2016 <- 
+    assessPredictionCertainty(rf_las2016, 
+                              keyVar="isLAS", 
+                              plotCaption="Temp, Dew Point, Month/Hour, Clouds, Wind, SLP, Altimeter", 
+                              showAcc=TRUE
+                              )
+
+```
+  
+The process is then run using xgb, with the following modifications:  
+  
+1. Convert the isLAS variable to 0/1  
+2. Update the objective function to be logistic  
+  
+First, the data are reshaped and the CV process is run to see where the test error stabilizes:  
+```{r}
+
+las2016Data <- las2016Data %>%
+    mutate(binLAS=ifelse(isLAS=="Las Vegas", 1, 0))
+
+```
+  
+```{r cache=TRUE}
+
+# Run the function shell
+xgb_las2016_cv <- xgbRunModel(las2016Data, 
+                              depVar="binLAS", 
+                              predVars=locXGBPreds, 
+                              otherVars=keepVarFull, 
+                              seed=2008051405,
+                              nrounds=1000,
+                              print_every_n=50, 
+                              xgbObjective="binary:logistic", 
+                              funcRun=xgboost::xgb.cv, 
+                              nfold=5
+                              )
+
+```
+  
+Error rate evolution can be plotted:  
+```{r}
+
+# Calculate minimum test error
+minTestError <- min(xgb_las2016_cv$xgbModel$evaluation_log$test_error_mean)
+
+# Create plot for RMSE evolution
+xgb_las2016_cv$xgbModel$evaluation_log %>%
+    select(-contains("std")) %>%
+    select(iter, train=train_error_mean, test=test_error_mean) %>%
+    pivot_longer(-c(iter), names_to="type", values_to="RMSE") %>%
+    ggplot(aes(x=iter, y=RMSE, group=type, color=type)) + 
+    geom_line() + 
+    geom_hline(aes(yintercept=minTestError), color="red", lty=2) +
+    labs(x="# Iterations", title="RMSE Evolution")
+
+```
+  
+Test error appears to be minimized in the 250-500 iterations range, while train error has been driven to zero within the first few hundred iterations.  A full XGB process is run using 500 iterations:  
+```{r}
+
+# Run the function shell
+xgb_las2016 <- xgbRunModel(las2016Data, 
+                           depVar="binLAS", 
+                           predVars=locXGBPreds, 
+                           otherVars=keepVarFull, 
+                           seed=2008051405,
+                           nrounds=500,
+                           print_every_n=25, 
+                           xgbObjective="binary:logistic"
+                           )
+
+```
+  
+Accuracy of the classifications can then be assessed by investigating the "predicted" column of the testData frame:  
+```{r}
+
+# Overall classification probability histogram
+xgb_las2016$testData %>%
+    ggplot(aes(x=predicted)) + 
+    geom_histogram(fill="lightblue") + 
+    labs(x="Predicted Probability of Las Vegas", y="", 
+         title="Prediction Probabilities - Las Vegas vs. Other"
+         )
+
+# Overall accuracy by bin
+xgb_las2016$testData %>%
+    mutate(binPred=ifelse(predicted>=0.5, 1, 0)) %>%
+    group_by(binLAS) %>%
+    summarize(accuracy=mean(binLAS==binPred))
+
+# Accuracy by predicted probability (whether certainty is at least 80%)
+xgb_las2016$testData %>%
+    mutate(binPred=ifelse(predicted>=0.5, 1, 0), 
+           confPred=ifelse(abs(predicted-0.5)>=0.3, "High", "Low")
+           ) %>%
+    group_by(confPred, binLAS) %>%
+    summarize(accuracy=mean(binLAS==binPred), n=n())
+
+```
+  
+Overall accuracy is in the 97% range, roughly 1% higher than is achieved using the random forest algorithm.  The XGB model is slightly more likely to make a high-confidence error in classifying a non-Las Vegas locale as Las Vegas, and much less likely to have a low confidence in its predictions.
+
+Variable importance can also be assessed:  
+```{r}
+
+# Find and plot importances
+xgb_las2016_importance <- plotXGBImportance(xgb_las2016, 
+                                            featureStems=locXGBPreds, 
+                                            stemMapper = varMapper, 
+                                            plotTitle="Gain by variable in xgboost", 
+                                            plotSubtitle="Modeling 2016 Locale (Las Vegas vs, Other)"
+                                            )
+
+```
+  
+At a glance, the XGB algorithm makes high use of dew point and temperature, consistent with the random forest algorithm.  In contrast, the XGB algorithm prefers to use sea-level pressure next while the random forest model prefers to use minimum cloud height next.
+
+Lastly, predictions are plotted against actual values:  
+```{r}
+
+xgb_las2016$testData %>%
+    mutate(rndPred=round(2*predicted, 1)/2) %>%
+    group_by(rndPred) %>%
+    summarize(n=n(), meanPred=mean(binLAS)) %>%
+    ggplot(aes(x=rndPred, y=meanPred)) + 
+    geom_point(aes(size=n)) + 
+    geom_abline(lty=2, color="red") + 
+    geom_text(aes(y=meanPred+0.1, label=paste0((round(meanPred, 2)), "\n(n=", n, ")")), size=3) + 
+    labs(x="Predicted Probability Las Vegas", y="Actual Proportion Las Vegas")
+
+```
+  
+Broadly, there is a strong association between the predicted probabilities and the actual proportions.  As noted previously, almost all of the predictions are correctly made with high confidence.
+
+Next steps are to explore some trickier single-locale classifications and then to explore multi-locale classifications.
+  
+Suppose that every locale is run through the process of self vs. other, with other under-sampled to be the same size as self, using 500 rounds:  
+```{r}
+
+# Function to run one vs all using XGB
+helperXGBOnevAll <- function(df, 
+                             keyLoc, 
+                             predVars=locXGBPreds, 
+                             otherVars=keepVarFull, 
+                             seed=NULL, 
+                             nrounds=500, 
+                             print_every=100, 
+                             xgbObjective="binary:logistic"
+                             ) {
+    
+    # Set the seed if it has been passed (drives consistency of under-sampling)
+    if (!is.null(seed)) set.seed(seed)
+    
+    # Generate the descriptive name for keyLoc
+    descName <- str_replace(keyLoc, pattern=", \\w{2}$", replacement="")
+
+# Extract a balanced sample of Las Vegas 2016 data and all-other 2016 data (excluding Phoenix)
+las2016Data <- metarData %>%
+    filter(year==2016, !is.na(TempF), !(locNamefct %in% c("Phoenix, AZ"))) %>%
+    mutate(isLAS=factor(ifelse(locNamefct=="Las Vegas, NV", "Las Vegas", "All Other"), 
+                        levels=c("Las Vegas", "All Other")
+                        ), 
+           nLAS=sum(isLAS=="Las Vegas")
+           ) %>%
+    group_by(isLAS) %>%
+    sample_n(min(nLAS)) %>% # not ideal coding, but it works
+    ungroup()
+
+las2016Data <- las2016Data %>%
+    mutate(binLAS=ifelse(isLAS=="Las Vegas", 1, 0))
+
+# Run the function shell
+xgb_las2016 <- xgbRunModel(las2016Data, 
+                           depVar="binLAS", 
+                           predVars=locXGBPreds, 
+                           otherVars=keepVarFull, 
+                           seed=2008051405,
+                           nrounds=500,
+                           print_every_n=25, 
+                           xgbObjective="binary:logistic"
+                           )
+}
+
+```
+
