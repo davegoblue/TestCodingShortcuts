@@ -2037,4 +2037,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 explores test vs. train RMSE for XGB regression  
 * WeatherModeling_202006_v002 adds CV capability for XGB training  
 * WeatherModeling_202006_v002 adds XGB capability for binary classification  
+* WeatherModeling_202006_v002 uses XGB to classify each locale as self vs all-others  
   
