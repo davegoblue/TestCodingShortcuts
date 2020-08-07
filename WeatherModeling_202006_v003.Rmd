@@ -1670,46 +1670,251 @@ Suppose that every locale is run through the process of self vs. other, with oth
 # Function to run one vs all using XGB
 helperXGBOnevAll <- function(df, 
                              keyLoc, 
+                             critFilter=vector("list", 0),
                              predVars=locXGBPreds, 
                              otherVars=keepVarFull, 
                              seed=NULL, 
                              nrounds=500, 
-                             print_every=100, 
-                             xgbObjective="binary:logistic"
+                             print_every_n=100, 
+                             xgbObjective="binary:logistic", 
+                             ...
                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble
+    # keyLoc: the value of locNamefct to use as the 'one' for 'one' vs. all-other
+    # critFilter: named list, of format name=values, where filtering will be (get(name) %in% values)
+    # predVars: explanatory variables for modeling
+    # otherVars: other variables to be kept, but not used in modeling
+    # seed: the random seed (NULL means no seed)
+    # nrounds: the number of XGB training rounds
+    # print_every_n: the frequency of printing the XGB training error
+    # xgbObjective: the objective function to be used in XGB modeling
+    # ...: any other arguments to be passed (eventually) to xgboost::xgboost
     
     # Set the seed if it has been passed (drives consistency of under-sampling)
     if (!is.null(seed)) set.seed(seed)
     
     # Generate the descriptive name for keyLoc
     descName <- str_replace(keyLoc, pattern=", \\w{2}$", replacement="")
+    
+    # Announce the locale being run
+    cat("\n\n **************")
+    cat("\nRunning for", keyLoc, "with decription", descName, "\n")
+    
+    # Filter for non-NA data across all of 'locNamefct', predVars, otherVars, names(critFilter) are included
+    subDF <- df %>%
+        filter_at(vars(all_of(c("locNamefct", predVars, otherVars, names(critFilter)))), 
+                  all_vars(!is.na(.))
+                  )
+    
+    # Filter such that only matches to critFilter are included
+    for (xNum in seq_len(length(critFilter))) {
+        subDF <- subDF %>%
+            filter_at(vars(all_of(names(critFilter)[xNum])), ~. %in% critFilter[[xNum]])
+    }
 
-# Extract a balanced sample of Las Vegas 2016 data and all-other 2016 data (excluding Phoenix)
-las2016Data <- metarData %>%
-    filter(year==2016, !is.na(TempF), !(locNamefct %in% c("Phoenix, AZ"))) %>%
-    mutate(isLAS=factor(ifelse(locNamefct=="Las Vegas, NV", "Las Vegas", "All Other"), 
-                        levels=c("Las Vegas", "All Other")
-                        ), 
-           nLAS=sum(isLAS=="Las Vegas")
-           ) %>%
-    group_by(isLAS) %>%
-    sample_n(min(nLAS)) %>% # not ideal coding, but it works
-    ungroup()
+    # Extract a balanced sample of data matching keyLoc and all-other data
+    subDF <- subDF %>%
+        mutate(isKEY=factor(ifelse(locNamefct==keyLoc, descName, "All Other"), 
+                            levels=c(descName, "All Other")
+                            ), 
+               nKEY=sum(isKEY==descName)
+               ) %>%
+        group_by(isKEY) %>%
+        sample_n(min(nKEY)) %>% # not ideal coding, but it works
+        ungroup() %>%
+        mutate(binKEY=ifelse(isKEY==descName, 1, 0))
 
-las2016Data <- las2016Data %>%
-    mutate(binLAS=ifelse(isLAS=="Las Vegas", 1, 0))
-
-# Run the function shell
-xgb_las2016 <- xgbRunModel(las2016Data, 
-                           depVar="binLAS", 
-                           predVars=locXGBPreds, 
-                           otherVars=keepVarFull, 
-                           seed=2008051405,
-                           nrounds=500,
-                           print_every_n=25, 
-                           xgbObjective="binary:logistic"
+    # Run the function shell
+    outData <- xgbRunModel(subDF, 
+                           depVar="binKEY", 
+                           predVars=predVars, 
+                           otherVars=otherVars, 
+                           seed=seed,
+                           nrounds=nrounds,
+                           print_every_n=print_every_n, 
+                           xgbObjective=xgbObjective, 
+                           ...
                            )
+    
+    # Calculate overall accuracy
+    accOverall <- outData$testData %>%
+        mutate(correct=round(predicted)==binKEY) %>%
+        pull(correct) %>%
+        mean()
+    
+    # Report on finishing
+    cat("Finished processing", keyLoc, "with overall test set accuracy", round(accOverall, 3), "\n")
+    
+    # Return the list
+    outData
+    
 }
 
 ```
+  
+The function is then run for Las Vegas, including all 2016 cities:  
+```{r}
 
+xgb_las2016_check <- helperXGBOnevAll(metarData, 
+                                      keyLoc="Las Vegas, NV", 
+                                      critFilter=list(year=2016), 
+                                      seed=2008061322
+                                      )
+
+# Report accuracy without Phoenix
+xgb_las2016_check$testData %>%
+    filter(locNamefct != "Phoenix, AZ") %>%
+    mutate(correct=round(predicted)==binKEY) %>%
+    pull(correct) %>%
+    mean() %>%
+    round(3)
+
+```
+  
+Overall test set accuracy as reported is 96.3%.  Excluding Phoenix, which will often classify as Las Vegas and was excluded in the previous run, accuracy is roughly 97% as before.
+
+Suppose that every locale is run, with the objective of finding cities that are most and least unique:  
+```{r cache=TRUE}
+
+# Extract the locales that are available in 2016
+locs2016 <- metarData %>%
+    filter(year==2016) %>%
+    pull(locNamefct) %>%
+    as.character() %>%
+    unique() %>%
+    sort()
+
+# Create a container to hold each of the results
+xgbOnevAll <- vector("list", length=length(locs2016))
+names(xgbOnevAll) <- locs2016
+
+# Run through the XGB process
+n <- 1
+for (loc in locs2016) {
+
+    # Run and save the XGB model
+    xgbOnevAll[[n]] <- helperXGBOnevAll(metarData, 
+                                        keyLoc=loc, 
+                                        critFilter=list(year=2016), 
+                                        seed=2008061340+n
+                                        )
+    
+    # Index the counter
+    n <- n + 1
+    
+}
+
+```
+  
+Overall accuracy by locale can then be assessed:  
+```{r}
+
+# Function to calculate and extract overall accuracy from the XGB list
+helperXGBListAccuracyOverall <- function(lst) {
+    
+    lst[["testData"]] %>%
+        select(binKEY, predicted) %>%
+        mutate(correct=binKEY==round(predicted)) %>%
+        pull(correct) %>%
+        mean()
+    
+}
+
+# Extract overall accuracy by locale and format as a tibble
+accList <- sapply(xgbOnevAll, FUN=helperXGBListAccuracyOverall) %>% 
+    as.data.frame() %>% 
+    rename("accOverall"=".") %>% 
+    rownames_to_column("locale") %>% 
+    tibble::as_tibble()
+
+# Plot the overall accuracy by locale
+ggplot(accList, aes(x=fct_reorder(locale, accOverall), y=accOverall)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=accOverall+0.02, label=round(accOverall, 3)), hjust=0) + 
+    coord_flip() + 
+    labs(x="", y="Overall Accuracy", title="Accuracy of Classifying Locale vs. All Other")
+
+```
+  
+Interestingly, San Antonio stands out as the most distinct of the cities in the analysis.  Several of the locales used previously as distinct archetypes - New Orleans, Las Vegas, San Diego - also score reasonably high in this exercise.  As expected, the cold-weather cities are the most difficult to distinguish, with classification success in the 80% range (null success 50% given deliberate under-sampling of all-other).
+
+Accuracy can also be assessed as "classifying self correctly" and "classifying all-other correctly":  
+```{r}
+
+# Function to calculate and extract overall accuracy from the XGB list
+helperXGBListAccuracySubset <- function(lst) {
+    
+    lst[["testData"]] %>%
+        select(binKEY, predicted) %>%
+        mutate(correct=binKEY==round(predicted)) %>%
+        group_by(binKEY) %>%
+        summarize(acc=mean(correct))
+    
+}
+
+# Extract accuracy by subset by locale
+accListSubset <- map_dfr(xgbOnevAll, .f=helperXGBListAccuracySubset, .id="locale") %>% 
+    mutate(type=factor(ifelse(binKEY==1, "Classifying Self", "Classifying All Other"), 
+                       levels=c("Classifying Self", "Classifying All Other")
+                       )
+           )
+
+# Plot the accuracies by locale, facetted by seld vs. all other
+ggplot(accListSubset, aes(x=fct_reorder(locale, acc), y=acc)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=acc/2, label=round(acc, 3)), hjust=0) + 
+    coord_flip() + 
+    labs(x="", y="Accuracy", title="Accuracy of Classifying Locale vs. All Other") + 
+    facet_wrap(~type)
+
+```
+  
+Models are generally more successful in classifying self that in classifying all-other.  Put differently, the model is more likely to incorrectly flag an All Other locale as Self than it is to incorrectly flag Self as All Other.
+
+Errors in classifying All Other as Self can then be explored further:  
+```{r}
+
+# Function to calculate and extract accuracy by locName fct from the XGB list
+helperXGBListErrorByTrueLocation <- function(lst) {
+    
+    lst[["testData"]] %>%
+        select(locNamefct, binKEY, predicted) %>%
+        mutate(correct=binKEY==round(predicted)) %>%
+        filter(binKEY==0) %>%
+        group_by(locNamefct) %>%
+        summarize(acc=mean(correct))
+    
+}
+
+# Extract by locale
+accListTrueLocation <- map_dfr(xgbOnevAll, .f=helperXGBListErrorByTrueLocation, .id="modelLocale")
+
+# Plot accuracy
+accFactors <- accListTrueLocation %>% 
+    group_by(modelLocale) %>% 
+    summarize(meanAcc=mean(acc)) %>%
+    arrange(meanAcc) %>%
+    pull(modelLocale)
+
+accListTrueLocation %>%
+    ggplot(aes(x=factor(modelLocale, levels=accFactors), 
+               y=factor(locNamefct, levels=accFactors)
+               )
+           ) + 
+    geom_tile(aes(fill=1-acc)) + 
+    geom_text(aes(label=paste0(round(100*(1-acc)), "%")),size=3) + 
+    scale_x_discrete(position="top") + 
+    labs(x="Modeling Locale", 
+         y="True Locale", 
+         title="Rate of Misclassifying True Locale as Modeling Locale"
+         ) + 
+    theme(axis.text.x=element_text(angle=90)) + 
+    scale_fill_continuous("Error Rate", low="white", high="red")
+
+```
+  
+When Seattle and Denver are just a small part of the deliberately under-sampled All Other class, they are routinely misclassified as being part of many other locales.  When they are the full-sampled class, almost no other city is misclassified with any frequency as being them.  This suggests that Seattle and Denver may each be distinct, but in a rather nuanced manner that requires significant training data volumes to learn.
+
+Next steps are to explore some of the more challenging one-vs-one classifications suggested by this grid, then to extend the analysis to explore the multi-class classification capabilities of XGB.
