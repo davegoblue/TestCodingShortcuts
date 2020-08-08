@@ -1671,6 +1671,7 @@ Suppose that every locale is run through the process of self vs. other, with oth
 helperXGBOnevAll <- function(df, 
                              keyLoc, 
                              critFilter=vector("list", 0),
+                             underSample=TRUE,
                              predVars=locXGBPreds, 
                              otherVars=keepVarFull, 
                              seed=NULL, 
@@ -1684,6 +1685,7 @@ helperXGBOnevAll <- function(df,
     # df: the data frame or tibble
     # keyLoc: the value of locNamefct to use as the 'one' for 'one' vs. all-other
     # critFilter: named list, of format name=values, where filtering will be (get(name) %in% values)
+    # underSample: boolean, if TRUE take 'all other' and randomly under-sample to be the same size as keyLoc
     # predVars: explanatory variables for modeling
     # otherVars: other variables to be kept, but not used in modeling
     # seed: the random seed (NULL means no seed)
@@ -1714,17 +1716,22 @@ helperXGBOnevAll <- function(df,
             filter_at(vars(all_of(names(critFilter)[xNum])), ~. %in% critFilter[[xNum]])
     }
 
-    # Extract a balanced sample of data matching keyLoc and all-other data
+    # Create the variables needed for modeling
     subDF <- subDF %>%
         mutate(isKEY=factor(ifelse(locNamefct==keyLoc, descName, "All Other"), 
                             levels=c(descName, "All Other")
                             ), 
-               nKEY=sum(isKEY==descName)
-               ) %>%
-        group_by(isKEY) %>%
-        sample_n(min(nKEY)) %>% # not ideal coding, but it works
-        ungroup() %>%
-        mutate(binKEY=ifelse(isKEY==descName, 1, 0))
+               nKEY=sum(isKEY==descName), 
+               binKEY=ifelse(isKEY==descName, 1, 0)
+               )
+    
+    # Extract a balanced sample of data matching keyLoc and all-other data, if underSample==TRUE
+    if (isTRUE(underSample)) {
+        subDF <- subDF %>%
+            group_by(isKEY) %>%
+            sample_n(min(nKEY)) %>% # not ideal coding, but it works
+            ungroup()
+    }
 
     # Run the function shell
     outData <- xgbRunModel(subDF, 
@@ -1918,3 +1925,226 @@ accListTrueLocation %>%
 When Seattle and Denver are just a small part of the deliberately under-sampled All Other class, they are routinely misclassified as being part of many other locales.  When they are the full-sampled class, almost no other city is misclassified with any frequency as being them.  This suggests that Seattle and Denver may each be distinct, but in a rather nuanced manner that requires significant training data volumes to learn.
 
 Next steps are to explore some of the more challenging one-vs-one classifications suggested by this grid, then to extend the analysis to explore the multi-class classification capabilities of XGB.
+
+Locale pairs that are difficult to classify are identified based on the preceding analysis.  There are two types of "difficult to classify":  
+  
+1.  Generally difficult - A is often classified as B when the model is trained as B vs. all, while B is often classified as A when the model is trained as A vs. all  
+2.  Directionally difficult - A is often classified as B when the model is trained as B vs. all, while B is often correctly classified as "not A" when the model is trained as A vs. all  
+  
+The file accListTrueLocation is merged to itself to identify these cases:  
+```{r}
+
+# Create the frame of mean error and mean difference in error for A vs all and B vs all
+accSummary <- accListTrueLocation %>%
+    mutate(x=factor(modelLocale), modelLocale=locNamefct, locNamefct=x) %>%
+    select(modelLocale, locNamefct, acc1=acc) %>%
+    inner_join(mutate(accListTrueLocation, modelLocale=factor(modelLocale))) %>%
+    mutate(meanError=1-(acc1 + acc)/2, deltaError=abs(acc-acc1))
+
+# The file contains two (pragmatically identical) records for each city pair - once as A/B, once as B/A
+# Keep only the records where modelLocale is "smaller" than locNamefct
+accSummaryUnique <- accSummary %>%
+    filter(pmin(as.character(modelLocale), as.character(locNamefct))==as.character(modelLocale))
+
+# Highest mean error
+highMeanError <- accSummaryUnique %>%
+    arrange(-meanError) %>%
+    filter(meanError >= 0.5)
+highMeanError
+highMeanError %>% mutate(n=n()) %>% select_if(is.numeric) %>% summarize_all(mean)
+
+# Highest delta error
+highDeltaError <- accSummaryUnique %>%
+    arrange(-deltaError) %>%
+    filter(deltaError >= 0.2)
+highDeltaError
+highDeltaError %>% mutate(n=n()) %>% select_if(is.numeric) %>% summarize_all(mean)
+
+```
+  
+There are 29 locale pairs where the average error rate is worse than a coin flip (mean error for these pairs in 60%).  There are 18 locale pairs where the directional error rate differs by at least 20%.
+
+Each of these groupings is run through the prediction process individually, with the goal of seeing how the error rates evolve when the pairs are compared individually.  Function xgbOnevAll() is modified slightly so that there is no under-sampling if a parameter is passed as FALSE.  This is due to the one vs. one comparisons being of the same size, and an attempt to under-sample potentially causing errors due to very small differences in METAR data capture (bad data) by locale:  
+```{r cache=TRUE}
+
+# Create container for each pairing in highMeanError
+# Name for modelLocale
+highMeanErrorList <- vector("list", nrow(highMeanError))
+names(highMeanErrorList) <- highMeanError$modelLocale
+
+# Run model for each pairing in highMeanError
+for (n in 1:nrow(highMeanError)) {
+    
+    # Extract the key locale and the other locale
+    # Note that which locale is defined as key is arbitrary and unimportant since this is a full 1:1 comparison
+    keyLoc <- as.character(highMeanError$modelLocale)[n]
+    otherLoc <- as.character(highMeanError$locNamefct)[n]
+    
+    # Run XGB for 500 rounds using only two locales and 2016 data; do not under-sample 'all other'
+    highMeanErrorList[[n]] <- helperXGBOnevAll(metarData, 
+                                               keyLoc=keyLoc, 
+                                               critFilter=list(year=2016, 
+                                                               locNamefct=c(keyLoc, otherLoc)
+                                                               ), 
+                                               underSample=FALSE,
+                                               seed=2008071346
+                                               )
+    
+}
+
+```
+  
+The error rates are then extracted (overall and by subtype:  
+```{r}
+
+# Helper function to extract one vs one accuracy
+helperExtractOnevOneAccuracy <- function(lst) {
+    
+    # Create accuracy for each sub-group and overall
+    rawSummary <- lst[["testData"]] %>%
+        count(locNamefct, correct=round(predicted)==binKEY) %>%
+        mutate(locNamefct=as.character(locNamefct)) %>%
+        bind_rows(mutate(., locNamefct="Overall")) %>%
+        group_by(locNamefct) %>%
+        summarize(nTotal=sum(n), nCorrect=sum(n*(correct==TRUE))) %>%
+        ungroup() %>%
+        mutate(acc=nCorrect/nTotal)
+    
+    # Create one-row tibble with locA, locB, accA, accB, accOverall
+    locs=rawSummary$locNamefct %>% setdiff("Overall")
+    tibble::tibble(locA=min(locs), 
+                   locB=max(locs), 
+                   accA=rawSummary %>% filter(locNamefct==locA) %>% pull(acc),
+                   accB=rawSummary %>% filter(locNamefct==locB) %>% pull(acc), 
+                   accOverall=rawSummary %>% filter(locNamefct=="Overall") %>% pull(acc)
+                   )
+    
+}
+
+# Extract accuracy by subset by locale
+accHighMeanError <- map_dfr(highMeanErrorList, .f=helperExtractOnevOneAccuracy)
+
+# Combine with the original file, highMeanError
+highMeanOutput <- highMeanError %>%
+    mutate(locA=as.character(modelLocale), 
+           locB=as.character(locNamefct), 
+           original=1-meanError
+           ) %>%
+    select(locA, locB, original) %>%
+    inner_join(accHighMeanError, by=c("locA", "locB")) %>%
+    select(-accA, -accB, new=accOverall) %>%
+    pivot_longer(-c(locA, locB), names_to="model", values_to="accuracy") %>%
+    mutate(desc=paste0(locA, " vs. ", locB)) 
+
+# Plot the accuracy data
+highMeanOutput %>%
+    ggplot(aes(x=fct_reorder(desc, accuracy), y=accuracy, color=model)) + 
+    geom_point() + 
+    geom_text(aes(y=accuracy-0.02, label=round(accuracy, 2)), hjust=1, size=4) +
+    coord_flip() + 
+    labs(x="", y="Accuracy", title="Change in Accuracy - Original One vs. All, New One vs, One") + 
+    geom_hline(aes(yintercept=0.5), lty=2) + 
+    ylim(c(0, 1))
+
+# Plot the change in accuracy data
+highMeanOutput %>%
+    group_by(desc) %>%
+    summarize(accuracyGain=max(accuracy)-min(accuracy)) %>%
+    ggplot(aes(x=fct_reorder(desc, accuracyGain), y=accuracyGain)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=accuracyGain+0.02, label=round(accuracyGain, 2)), hjust=0) + 
+    coord_flip() + 
+    labs(x="", y="Gain in Accuracy", title="Gain in Accuracy (One vs One compared to One vs. All")
+
+# Check the highest delta error records
+accHighMeanError %>%
+    mutate(deltaAccuracy=abs(accA-accB)) %>%
+    arrange(-deltaAccuracy)
+
+```
+  
+Accuracy gains are significant, with many comparisons gaining ~40% accuracy when trained one vs. one rather than being just a small component of a one vs. all training.  Gains are especially notable for Las Vegas/Phoenix, which soars from 36% accuracy (worse than null) to 95% accuracy.  Large gains are also noted for Miami/Tampa and Los Angeles/San Diego, suggesting that a focused one-on-one training can help pull apart similar archetype cities.  
+
+That said, there are still a large number of pairings where the differentiation appears to be OK (accuracy around 80% vs. null accuracy 50%) but still with meaningful confusion.
+
+There is little delta error whether looking at A/B or B/A, not surprising given the balanced nature of the data used for modeling and the generally small delta error for these pairings even in the previous one vs all.
+
+The process is run again for the high delta-error pairings:  
+```{r cache=TRUE}
+
+# Create container for each pairing in highDeltaError
+# Name for modelLocale
+highDeltaErrorList <- vector("list", nrow(highDeltaError))
+names(highDeltaErrorList) <- highDeltaError$modelLocale
+
+# Run model for each pairing in highDeltaError
+for (n in 1:nrow(highDeltaError)) {
+    
+    # Extract the key locale and the other locale
+    # Note that which locale is defined as key is arbitrary and unimportant since this is a full 1:1 comparison
+    keyLoc <- as.character(highDeltaError$modelLocale)[n]
+    otherLoc <- as.character(highDeltaError$locNamefct)[n]
+    
+    # Run XGB for 500 rounds using only two locales and 2016 data; do not under-sample 'all other'
+    highDeltaErrorList[[n]] <- helperXGBOnevAll(metarData, 
+                                                keyLoc=keyLoc, 
+                                                critFilter=list(year=2016, 
+                                                                locNamefct=c(keyLoc, otherLoc)
+                                                                ), 
+                                                underSample=FALSE,
+                                                seed=2008071439
+                                                )
+    
+}
+
+```
+  
+The comparisons can be run again also:  
+```{r}
+
+# Extract accuracy by subset by locale
+accHighDeltaError <- map_dfr(highDeltaErrorList, .f=helperExtractOnevOneAccuracy)
+
+# Combine with the original file, highMeanError
+highDeltaOutput <- highDeltaError %>%
+    mutate(locA=as.character(modelLocale), 
+           locB=as.character(locNamefct), 
+           original=1-meanError
+           ) %>%
+    select(locA, locB, original) %>%
+    inner_join(accHighDeltaError, by=c("locA", "locB")) %>%
+    select(-accA, -accB, new=accOverall) %>%
+    pivot_longer(-c(locA, locB), names_to="model", values_to="accuracy") %>%
+    mutate(desc=paste0(locA, " vs. ", locB)) 
+
+# Plot the accuracy data
+highDeltaOutput %>%
+    ggplot(aes(x=fct_reorder(desc, accuracy), y=accuracy, color=model)) + 
+    geom_point() + 
+    geom_text(aes(y=accuracy-0.02, label=round(accuracy, 2)), hjust=1, size=4) +
+    coord_flip() + 
+    labs(x="", y="Accuracy", title="Change in Accuracy - Original One vs. All, New One vs, One") + 
+    geom_hline(aes(yintercept=0.5), lty=2) + 
+    ylim(c(0, 1))
+
+# Plot the change in accuracy data
+highDeltaOutput %>%
+    group_by(desc) %>%
+    summarize(accuracyGain=max(accuracy)-min(accuracy)) %>%
+    ggplot(aes(x=fct_reorder(desc, accuracyGain), y=accuracyGain)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=accuracyGain+0.02, label=round(accuracyGain, 2)), hjust=0) + 
+    coord_flip() + 
+    labs(x="", y="Gain in Accuracy", title="Gain in Accuracy (One vs One compared to One vs. All")
+
+# Check the highest delta error records
+accHighDeltaError %>%
+    mutate(deltaAccuracy=abs(accA-accB)) %>%
+    arrange(-deltaAccuracy)
+
+```
+  
+There is no longer any meaningful difference in the A/B and B/A accuracy for these pairings, and the overall accuracy has in almost all cases climbed in to the 90%+ range.  This is suggestive that these pairings are largely distinct but need a large training samplt to tease out the distinctions.  The one exception is Detroit vs. Traverse City, which is notably the only pairing that was also part of the "low overall accuracy" runs.
+
+Next steps are to explore what predictions look like for unrelated cities using the one vs. one models.  This may induce significant extrapolation errors, and is intended solely as an exploratory step.  The next main model will be the multiclass version of the XGB, taking care to have sufficient training data volume in an attempt to meaningfully capture the accuracy gains seen in the preceding analysis.
+  
