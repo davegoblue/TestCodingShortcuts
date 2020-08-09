@@ -883,6 +883,7 @@ xgbRunModel <- function(tbl,
                         testSize=0.3, 
                         xgbObjective="reg:squarederror",
                         funcRun=xgboost::xgboost,
+                        calcErr=TRUE,
                         ...
                         ) {
     
@@ -901,6 +902,7 @@ xgbRunModel <- function(tbl,
     # testSize: the fractional portion of data that should be used as the test dataset
     # xgbObjective: the objective function for xgboost
     # funcRun: the function to run, passed as a function
+    # calcErr: boolean, whether to create variable err as predicted-get(depVar)
     # ...: additional arguments to be passed directly to xgboost
     
     # Check that funcName is valid and get the relevant function
@@ -936,6 +938,18 @@ xgbRunModel <- function(tbl,
     # Pull the dependent variable
     yTrain <- ttLists$trainData[, depVar, drop=TRUE]
     
+    # Convert the dependent variable to be integers 0 to (n-1) if xgbObjective is "multi:.*"
+    if (str_detect(xgbObjective, pattern="^multi:")) {
+        # Convert to factor if passed as anything else
+        if (!is.factor(yTrain)) yTrain <- factor(yTrain)
+        # Save the factor levels so they can be added back later
+        yTrainLevels <- levels(yTrain)
+        # Convert to numeric 0 to n-1
+        yTrain <- as.integer(yTrain) - 1
+    } else {
+        yTrainLevels <- NULL
+    }
+    
     # Convert predictor variables to sparse matrix format keeping only modeling variables
     sparseTrain <- helperMakeSparse(ttLists$trainData, depVar=depVar, predVars=predVars)
     sparseTest <- helperMakeSparse(ttLists$testData, depVar=depVar, predVars=predVars)
@@ -949,21 +963,39 @@ xgbRunModel <- function(tbl,
                         ...
                         )
 
-    # Create a base testData file that is NULL (will be for xgb.cv)
+    # Create a base testData file that is NULL (will be for xgb.cv) and predData file that is NULL
     testData <- NULL
+    predData <- NULL
     
     # Extract testData and add predictions if the model passed is xgboost
     if (funcName[length(funcName)] %in% c("xgboost")) {
-        testData <- ttLists$testData %>%
-            mutate(predicted=predict(xgbModel, newdata=sparseTest), 
-                   err=predicted-get(depVar)
-                   )
+        if (xgbObjective=="multi:softprob") {
+            predData <- matrix(data=predict(xgbModel, newdata=sparseTest), 
+                               nrow=nrow(ttLists$testData), 
+                               ncol=length(yTrainLevels), 
+                               byrow=TRUE
+                               )
+            maxCol <- apply(predData, 1, FUN=which.max)
+            testData <- ttLists$testData %>%
+                mutate(predicted=yTrainLevels[maxCol], probPredicted=apply(predData, 1, FUN=max))
+            predData <- predData %>%
+                as_tibble() %>%
+                purrr::set_names(yTrainLevels)
+        } else {
+            testData <- ttLists$testData %>%
+                mutate(predicted=predict(xgbModel, newdata=sparseTest))
+            if (calcErr) { 
+                testData <- testData %>% mutate(err=predicted-get(depVar))
+            }
+        }
     }
     
     # Return list containing funcName, trained model, and testData
     list(funcName=funcName[length(funcName)], 
          xgbModel=xgbModel, 
-         testData=testData
+         testData=testData, 
+         predData=predData,
+         yTrainLevels=yTrainLevels
          )
     
 }
@@ -2147,4 +2179,185 @@ accHighDeltaError %>%
 There is no longer any meaningful difference in the A/B and B/A accuracy for these pairings, and the overall accuracy has in almost all cases climbed in to the 90%+ range.  This is suggestive that these pairings are largely distinct but need a large training samplt to tease out the distinctions.  The one exception is Detroit vs. Traverse City, which is notably the only pairing that was also part of the "low overall accuracy" runs.
 
 Next steps are to explore what predictions look like for unrelated cities using the one vs. one models.  This may induce significant extrapolation errors, and is intended solely as an exploratory step.  The next main model will be the multiclass version of the XGB, taking care to have sufficient training data volume in an attempt to meaningfully capture the accuracy gains seen in the preceding analysis.
+  
+Converting the XGB approach to work for multiclass classification will require the following:  
+  
+1.  Convert the target variable to an integer that indexes from 0 to n-1 (where there are n classes); note that technically this works for n-2, since the XGB algorithm uses 0 and 1 for that  
+2.  Convert the objective to "multi:softprob"  
+3.  Convert the evaluation metric (though this should happen automatically)  
+4.  Convert the predictions back to a normal value  
+  
+The function xgbRunModel() is updated to accept xgbObjective="multi:softprob", and then data are created for the four locales with 2014-2019 data - Chicago, Las Vegas, New Orleans, San Diego:  
+```{r cache=TRUE}
+
+fourLocales <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA")
+
+xgbFourLocalesCV <- xgbRunModel(filter(metarData, !is.na(TempF)), 
+                                depVar="locNamefct", 
+                                predVars=locXGBPreds, 
+                                otherVars=keepVarFull, 
+                                critFilter=list(year=2016, locNamefct=fourLocales), 
+                                seed=2008081315,
+                                nrounds=1000,
+                                print_every_n=50,
+                                xgbObjective="multi:softprob", 
+                                funcRun=xgboost::xgb.cv,
+                                nfold=5,
+                                calcErr=FALSE,
+                                num_class=length(fourLocales)
+                                )
+
+```
+  
+Error evolution can then be plotted:  
+```{r}
+
+minTestError <- xgbFourLocalesCV$xgbModel$evaluation_log %>%
+    pull(test_merror_mean) %>%
+    min()
+
+xgbFourLocalesCV$xgbModel$evaluation_log %>%
+    filter(test_merror_mean <= 0.08) %>%
+    ggplot(aes(x=iter, y=test_merror_mean)) +
+    geom_line() +
+    labs(x="# Iterations", 
+         y="Test Error", 
+         title="Evolution of Test Error", 
+         subtitle="Filtered to Test Error <= 0.08"
+         ) + 
+    ylim(c(0, NA)) + 
+    geom_vline(aes(xintercept=0), lty=2) + 
+    geom_hline(aes(yintercept=minTestError), color="red", lty=2)
+    
+```
+  
+Test error appears to be near the minimum at around 750 iterations.  The xgboost::xgboost algorithm is run with 750 iterations, and with predictions made for the best locale:  
+```{r cache=TRUE}
+
+fourLocales <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA")
+
+xgbFourLocales <- xgbRunModel(filter(metarData, !is.na(TempF)), 
+                              depVar="locNamefct", 
+                              predVars=locXGBPreds, 
+                              otherVars=keepVarFull, 
+                              critFilter=list(year=2016, locNamefct=fourLocales), 
+                              seed=2008081315,
+                              nrounds=750,
+                              print_every_n=50,
+                              xgbObjective="multi:softprob", 
+                              funcRun=xgboost::xgboost,
+                              calcErr=FALSE,
+                              num_class=length(fourLocales)
+                              )
+
+```
+  
+Classification performance on test data can then be assessed:  
+```{r}
+
+# Overall success
+xgbFourLocales$testData %>%
+    summarize(mean(locNamefct==predicted))
+
+# Histogram of predicted probabilities for selected class
+xgbFourLocales$testData %>%
+    mutate(correct=locNamefct==predicted) %>%
+    ggplot() + 
+    stat_count(aes(x=round(probPredicted, 2), y=..prop.., group=correct)) + 
+    facet_wrap(~correct) + 
+    labs(x="Probability Given to Prediction", 
+         y="Proportion of Predictions", 
+         title="Probability of Prediction vs. Accuracy of Prediction"
+         )
+
+# Confusion matrix
+xgbFourLocales$testData %>%
+    count(locNamefct, predicted) %>%
+    group_by(locNamefct) %>%
+    mutate(pct=n/sum(n)) %>%
+    ggplot(aes(x=predicted, y=locNamefct)) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(round(100*pct), "%"))) + 
+    scale_fill_continuous("", low="white", high="green") + 
+    labs(title="Predicted vs. Actual Locale Frequency", y="Actual Locale", x="Predicted Locale")
+
+# Find and plot importances
+xgb_fourLocales_importance <- plotXGBImportance(xgbFourLocales, 
+                                                featureStems=locXGBPreds, 
+                                                stemMapper = varMapper, 
+                                                plotTitle="Gain by variable in xgboost", 
+                                                plotSubtitle="Modeling 2016 Locale (LAS, MSY, ORD, SAN)"
+                                                )
+
+```
+  
+Overall prediction accuracy is ~98%, with incorrect predictions having much lower probabilities than correct predictions.  Predictions for every locale appear to be of about equal (and very high) accuracy.  Dew point stands out as the best differentiato, with temperature, month, and sea-level pressure next highest in gain.  This is consistent with previous analysis on these locales.
+
+Overall, the base XGB parameters seem to be driving increased multiclass accuracy in a much shorter run time than random forest.
+
+How well does the 2016 model predict data from 2014-2015 and 2017-2019 for these same locales?  
+```{r}
+
+# Extract data for the four locales, excluding 2016
+non2016FourLocalesData <- metarData %>%
+    filter(!is.na(TempF), year != 2016, locNamefct %in% fourLocales)
+
+# Make the predictions
+non2016FourLocalesPred <- non2016FourLocalesData %>%
+    mutate_if(is.factor, .funs=fct_drop) %>%
+    helperMakeSparse(predVars=locXGBPreds) %>%
+    predict(xgbFourLocales$xgbModel, newdata=.)
+
+# Create the prediction matrix
+non2016FourLocalesMatrix <- matrix(data=non2016FourLocalesPred, 
+                                   ncol=length(fourLocales), 
+                                   nrow=nrow(non2016FourLocalesData), 
+                                   byrow=TRUE
+                                   )
+
+# Get the predictions and probabilities, and add them to non2016FourLocalesData
+maxCol <- apply(non2016FourLocalesMatrix, 1, FUN=which.max)
+non2016FourLocalesData <- non2016FourLocalesData %>%
+    mutate(predicted=xgbFourLocales$yTrainLevels[maxCol], 
+           probPredicted=apply(non2016FourLocalesMatrix, 1, FUN=max), 
+           correct=locNamefct==predicted
+           )
+
+# Assess overall prediction accuracy by year
+helperNon2016Accuracy <- function(df, grpVar, grpLabel) {
+    p1 <- df %>%
+        group_by_at(grpVar) %>%
+        summarize(pctCorrect=mean(correct)) %>%
+        ggplot(aes(x=factor(get(grpVar)), y=pctCorrect)) + 
+        geom_col(fill="lightblue") + 
+        geom_text(aes(y=pctCorrect/2, label=paste0(round(100*pctCorrect), "%"))) +
+        coord_flip() + 
+        ylim(c(0, 1)) + 
+        labs(x=grpLabel, y="Percent Correct", title="Accuracy of predictions to non-2016 data")
+    print(p1)
+}
+
+helperNon2016Accuracy(non2016FourLocalesData, grpVar="year", grpLabel="Year")
+helperNon2016Accuracy(non2016FourLocalesData, grpVar="locNamefct", grpLabel="Actual Locale")
+helperNon2016Accuracy(non2016FourLocalesData, grpVar="month", grpLabel="Month")
+helperNon2016Accuracy(non2016FourLocalesData, grpVar="hrfct", grpLabel="Hour (Zulu Time)")
+
+# Confusion matrix
+non2016FourLocalesData %>%
+    count(locNamefct, predicted) %>%
+    group_by(locNamefct) %>%
+    mutate(pct=n/sum(n)) %>%
+    ggplot(aes(x=predicted, y=locNamefct)) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(round(100*pct), "%"))) + 
+    scale_fill_continuous("", low="white", high="green") + 
+    labs(title="Predicted vs. Actual Locale Frequency", y="Actual Locale", x="Predicted Locale")
+
+```
+  
+Prediction accuracy dips from ~98% on the 2016 test data to ~92% on the 2014-2015 and 2017-2019 data from the same locales.  This suggests that while the model is learning significant features that differentiate these locales, it is also learning features specific to 2016.
+
+Chicago and Las Vegas are better classified in years other than 2016, retaining ~95% accuracy.  Predictions are generally better in the summer months than in the winter months, and there is no meaningful difference in accuracy by hour.
+
+Next steps are to train the model on a larger tranche of data (2015-2018) to see if this can be better generalized to out-of-sample years (2014, 2019) for the same locales,
   
