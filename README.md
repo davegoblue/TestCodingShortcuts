@@ -2039,4 +2039,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 adds XGB capability for binary classification  
 * WeatherModeling_202006_v002 uses XGB to classify each locale as self vs all-others  
 * WeatherModeling_202006_v002 uses XGB to classify locales one vs one  
+* WeatherModeling_202006_v002 uses XGB for multi-class classification  
   
