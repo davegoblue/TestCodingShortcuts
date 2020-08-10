@@ -2041,3 +2041,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 uses XGB to classify locales one vs one  
 * WeatherModeling_202006_v002 uses XGB for multi-class classification  
   
+### Expansions week of 10-AUG-2020  
+* WeatherModeling_202006_v002 uses XGB to train on 2015-2018 and predict on 2014 and 2019  
+  
