@@ -2359,5 +2359,218 @@ Prediction accuracy dips from ~98% on the 2016 test data to ~92% on the 2014-201
 
 Chicago and Las Vegas are better classified in years other than 2016, retaining ~95% accuracy.  Predictions are generally better in the summer months than in the winter months, and there is no meaningful difference in accuracy by hour.
 
-Next steps are to train the model on a larger tranche of data (2015-2018) to see if this can be better generalized to out-of-sample years (2014, 2019) for the same locales,
+Next steps are to train the model on a larger tranche of data (2015-2018) to see if this can be better generalized to out-of-sample years (2014, 2019) for the same locales:  
+```{r cache=TRUE}
+
+fourLocales <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA")
+
+xgbFourLocalesCV_20152018 <- xgbRunModel(filter(metarData, !is.na(TempF)), 
+                                         depVar="locNamefct", 
+                                         predVars=locXGBPreds, 
+                                         otherVars=keepVarFull, 
+                                         critFilter=list(year=2015:2018, locNamefct=fourLocales), 
+                                         seed=2008091301,
+                                         nrounds=1000,
+                                         print_every_n=50,
+                                         xgbObjective="multi:softprob", 
+                                         funcRun=xgboost::xgb.cv,
+                                         nfold=5,
+                                         calcErr=FALSE,
+                                         num_class=length(fourLocales)
+                                         )
+
+```
   
+Results of the cross-validation can be assessed:  
+```{r}
+
+minTestError_20152018 <- xgbFourLocalesCV_20152018$xgbModel$evaluation_log %>%
+    pull(test_merror_mean) %>%
+    min()
+
+xgbFourLocalesCV_20152018$xgbModel$evaluation_log %>%
+    filter(test_merror_mean <= 0.08) %>%
+    ggplot(aes(x=iter, y=test_merror_mean)) +
+    geom_line() +
+    labs(x="# Iterations", 
+         y="Test Error", 
+         title="Evolution of Test Error", 
+         subtitle="Filtered to Test Error <= 0.08"
+         ) + 
+    ylim(c(0, NA)) + 
+    geom_vline(aes(xintercept=0), lty=2) + 
+    geom_hline(aes(yintercept=minTestError_20152018), color="red", lty=2)
+
+```
+  
+The model using 2015-2018 data appears to drive slightly lower test RMSE than the 2016-only modeling.  Test RMSE evolution appears to be stable by around 1000 iterations.  The model is run for 1000 rounds:  
+```{r cache=TRUE}
+
+fourLocales <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA")
+
+xgbFourLocales_20152018 <- xgbRunModel(filter(metarData, !is.na(TempF)), 
+                                       depVar="locNamefct", 
+                                       predVars=locXGBPreds, 
+                                       otherVars=keepVarFull, 
+                                       critFilter=list(year=2015:2018, locNamefct=fourLocales), 
+                                       seed=2008081315,
+                                       nrounds=1000,
+                                       print_every_n=50,
+                                       xgbObjective="multi:softprob", 
+                                       funcRun=xgboost::xgboost,
+                                       calcErr=FALSE,
+                                       num_class=length(fourLocales)
+                                       )
+
+```
+  
+Model performance can be evaluated:  
+```{r}
+
+# Overall success
+xgbFourLocales_20152018$testData %>%
+    summarize(mean(locNamefct==predicted))
+
+# Histogram of predicted probabilities for selected class
+xgbFourLocales_20152018$testData %>%
+    mutate(correct=locNamefct==predicted) %>%
+    ggplot() + 
+    stat_count(aes(x=round(probPredicted, 2), y=..prop.., group=correct)) + 
+    facet_wrap(~correct) + 
+    labs(x="Probability Given to Prediction", 
+         y="Proportion of Predictions", 
+         title="Probability of Prediction vs. Accuracy of Prediction"
+         )
+
+# Confusion matrix
+xgbFourLocales_20152018$testData %>%
+    count(locNamefct, predicted) %>%
+    group_by(locNamefct) %>%
+    mutate(pct=n/sum(n)) %>%
+    ggplot(aes(x=predicted, y=locNamefct)) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(round(100*pct), "%"))) + 
+    scale_fill_continuous("", low="white", high="green") + 
+    labs(title="Predicted vs. Actual Locale Frequency", y="Actual Locale", x="Predicted Locale")
+
+# Find and plot importances
+xgb_fourLocales_importance_20152018 <- plotXGBImportance(xgbFourLocales_20152018, 
+                                                         featureStems=locXGBPreds, 
+                                                         stemMapper = varMapper, 
+                                                         plotTitle="Gain by variable in xgboost", 
+                                                         plotSubtitle="2015-2018 Locale (LAS, MSY, ORD, SAN)"
+                                                         )
+
+```
+  
+Accuracy and variable importances seem comparable to the previous model run using only 2016 data.  Performance by dimension and the confusion matrix can be evaluated:  
+```{r}
+
+# Extract data for the four locales, excluding 2016
+non20152018FourLocalesData <- metarData %>%
+    filter(!is.na(TempF), !(year %in% 2015:2018), locNamefct %in% fourLocales)
+
+# Make the predictions
+non20152018FourLocalesPred <- non20152018FourLocalesData %>%
+    mutate_if(is.factor, .funs=fct_drop) %>%
+    helperMakeSparse(predVars=locXGBPreds) %>%
+    predict(xgbFourLocales_20152018$xgbModel, newdata=.)
+
+# Create the prediction matrix
+non20152018FourLocalesMatrix <- matrix(data=non20152018FourLocalesPred, 
+                                       ncol=length(fourLocales), 
+                                       nrow=nrow(non20152018FourLocalesData), 
+                                       byrow=TRUE
+                                       )
+
+# Get the predictions and probabilities, and add them to non2016FourLocalesData
+maxCol <- apply(non20152018FourLocalesMatrix, 1, FUN=which.max)
+non20152018FourLocalesData <- non20152018FourLocalesData %>%
+    mutate(predicted=xgbFourLocales_20152018$yTrainLevels[maxCol], 
+           probPredicted=apply(non20152018FourLocalesMatrix, 1, FUN=max), 
+           correct=locNamefct==predicted
+           )
+
+# Assess overall prediction accuracy by year
+helperNon2016Accuracy <- function(df, grpVar, grpLabel) {
+    p1 <- df %>%
+        group_by_at(grpVar) %>%
+        summarize(pctCorrect=mean(correct)) %>%
+        ggplot(aes(x=factor(get(grpVar)), y=pctCorrect)) + 
+        geom_col(fill="lightblue") + 
+        geom_text(aes(y=pctCorrect/2, label=paste0(round(100*pctCorrect), "%"))) +
+        coord_flip() + 
+        ylim(c(0, 1)) + 
+        labs(x=grpLabel, y="Percent Correct", title="Accuracy of predictions to non-2016 data")
+    print(p1)
+}
+
+helperNon2016Accuracy(non20152018FourLocalesData, grpVar="year", grpLabel="Year")
+helperNon2016Accuracy(non20152018FourLocalesData, grpVar="locNamefct", grpLabel="Actual Locale")
+helperNon2016Accuracy(non20152018FourLocalesData, grpVar="month", grpLabel="Month")
+helperNon2016Accuracy(non20152018FourLocalesData, grpVar="hrfct", grpLabel="Hour (Zulu Time)")
+
+# Confusion matrix
+non20152018FourLocalesData %>%
+    count(locNamefct, predicted) %>%
+    group_by(locNamefct) %>%
+    mutate(pct=n/sum(n)) %>%
+    ggplot(aes(x=predicted, y=locNamefct)) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(round(100*pct), "%"))) + 
+    scale_fill_continuous("", low="white", high="green") + 
+    labs(title="Predicted vs. Actual Locale Frequency", y="Actual Locale", x="Predicted Locale")
+
+```
+  
+Prediction quality for out-of-sample years increases meaningfully, from ~90% when the model is based only on 2016 data to ~95% when the model is based on 2015-2018 data.  This suggests that modeling on multiple years helps train the model on recurring climate differences as opposed to sporadic local weather anomalies in a given year.  chicago appears to almost always be predicted as itself, though each other locale predicts as Chicago on occasion.
+
+Data for all other locales is then run through the model to see which of the four cities each of the other cities is "most like":  
+```{r}
+
+# Extract data for the four locales, excluding 2016
+otherLocalesData <- metarData %>%
+    filter(!is.na(TempF), year == 2016, !(locNamefct %in% fourLocales))
+
+# Make the predictions
+otherLocalesPred <- otherLocalesData %>%
+    mutate_if(is.factor, .funs=fct_drop) %>%
+    helperMakeSparse(predVars=locXGBPreds) %>%
+    predict(xgbFourLocales_20152018$xgbModel, newdata=.)
+
+# Create the prediction matrix
+otherLocalesMatrix <- matrix(data=otherLocalesPred, 
+                                   ncol=length(fourLocales), 
+                                   nrow=nrow(otherLocalesData), 
+                                   byrow=TRUE
+                                   )
+
+# Get the predictions and probabilities, and add them to non2016FourLocalesData
+maxCol <- apply(otherLocalesMatrix, 1, FUN=which.max)
+otherLocalesData <- otherLocalesData %>%
+    mutate(predicted=xgbFourLocales_20152018$yTrainLevels[maxCol], 
+           probPredicted=apply(otherLocalesMatrix, 1, FUN=max), 
+           correct=locNamefct==predicted
+           )
+
+# Confusion matrix
+otherLocalesData %>%
+    count(locNamefct, predicted) %>%
+    group_by(locNamefct) %>%
+    mutate(pct=n/sum(n), pctChi=ifelse(predicted=="Chicago, IL", pct, 0)) %>%
+    ggplot(aes(x=predicted, y=fct_reorder(locNamefct, pctChi, .fun=max))) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(round(100*pct), "%"))) + 
+    scale_fill_continuous("", low="white", high="green") + 
+    labs(title="Predicted vs. Actual Locale Frequency", y="Actual Locale", x="Predicted Locale")
+
+```
+  
+Findings include:  
+  
+* Cold weather cities tend to be 90%+ assigned to Chicago  
+* Phoenix is highly associated with Las Vegas, while somewhat surprisingly both Denver and San Antonio align primarily with Las Vegas also  
+* Houston, Tampa, and Miami align primarily with New Orleans, with some association also to San Diego  
+* Coastal California cities tend to align to San Diego and Chicago, with the proportion of Chicago-like days higher in northern California than in Los Angeles  
+  
+Next steps are to consolidate the functions for data preparation, modeling (including CV), and prediction for XGB such that the process is better aligned with functional programming.
