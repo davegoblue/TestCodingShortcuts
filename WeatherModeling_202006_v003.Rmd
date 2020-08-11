@@ -2574,3 +2574,418 @@ Findings include:
 * Coastal California cities tend to align to San Diego and Chicago, with the proportion of Chicago-like days higher in northern California than in Los Angeles  
   
 Next steps are to consolidate the functions for data preparation, modeling (including CV), and prediction for XGB such that the process is better aligned with functional programming.
+  
+Broadly, the XGB modeling process includes several steps:  
+  
+1.  Filtering an initial dataset so that all records meet certain criteria (key variables not missing, locale subsetted, empty factor levels dropped, etc.)  
+2.  Splitting the initial dataset in to test and train  
+3.  Separating a dataset in to response variable (recoded to 0 to n-1) and predictor variables (converted to sparse format with factors as dummy columns)  
+4.  Making predictions using a trained model  
+5.  Training a model and making predictions - can be xgboost::xgboost, xgboost::xgb.cv and use a user-specified objective function  
+  
+Code from above is copied and adapted as needed for achieving these steps.  The first function filters an initial data frame to return data that are ready for preprocessing and then modeling:  
+```{r}
+
+# Function to filter an initial data frame based on specified criteria
+helperFilterData <- function(df, 
+                             keepVars=NULL,
+                             noNA=keepVars, 
+                             critFilter=vector("list", 0), 
+                             critFilterNot=vector("list", 0), 
+                             dropEmptyLevels=TRUE
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble to filter
+    # keepVars: the variables to be kept (NULL means keep all)
+    # noNA: character string of variables that should have a "not NA" rule enforced (NULL means skip step)
+    #       default is to apply noNA to every variable passed to keepVars
+    # critFilter: filtering criteria passed as a named list (list(varName01=allowedValues01, ...))
+    # critFilterNot: filtering criteria passed as a named list (list(varName01=disallowedValues01, ...))
+    #                note that critFilterNot uses !disallowedValues01 while critFilter uses allowedValues01
+    # dropEmptyLevels: whether to drop the empty levels of all factor variables
+    
+    # Remove the NA variables where passed as arguments
+    if (!is.null(noNA)) {
+        df <- df %>%
+            filter_at(vars(all_of(noNA)), all_vars(!is.na(.)))
+    }
+    
+    # Filter such that only matches to critFilter are included
+    for (xNum in seq_len(length(critFilter))) {
+        df <- df %>%
+            filter_at(vars(all_of(names(critFilter)[xNum])), ~. %in% critFilter[[xNum]])
+    }
+    
+    # Filter such that all matches to critFilterNot are excluded
+    for (xNum in seq_len(length(critFilterNot))) {
+        df <- df %>%
+            filter_at(vars(all_of(names(critFilterNot)[xNum])), ~!(. %in% critFilterNot[[xNum]]))
+    }
+    
+    # Keep only the requested variables if keepVars is not NULL
+    if (!is.null(keepVars)) {
+        df <- df %>%
+            select_at(vars(all_of(keepVars)))
+    }
+    
+    # Drop empty levels from factors if requested
+    if (dropEmptyLevels) {
+        df <- df %>%
+            mutate_if(is.factor, .funs=fct_drop)
+    }
+    
+    # Return the modified frame
+    df
+    
+}
+
+# Confirm that function does nothing to dataset with default parameters and dropEmptyLevels=FALSE
+all.equal(metarData, helperFilterData(metarData, dropEmptyLevels=FALSE))
+
+# Example creation of a dataset for weather modeling
+sampData <- helperFilterData(metarData, 
+                             keepVars=c("source", "dtime", "TempF", "DewF", "month", "predomDir"), 
+                             critFilter=list(year=2015, month=c("Jan", "Jun", "Jul", "Dec")), 
+                             critFilterNot=list(predomDir=c("VRB", "000", "Error"), locNamefct="Las Vegas, NV")
+                             ) %>%
+    mutate(isMSY=source=="kmsy_2015")
+sampData %>% count(source, isMSY)
+sampData %>% count(month)
+sampData %>% count(predomDir)
+str(sampData)
+
+```
+  
+The second step is already achieved by function createTestTrain() which creates a list with elements 'trainData' and 'testData':  
+```{r}
+
+sampList <- createTestTrain(sampData)
+sampList
+
+```
+  
+The third function recodes data as needed so that the response variable is either a numeric or a factor that has been recoded as 0 to n-1, while the predictor variables are a sparse matrix where every column is either a numeric or a factor that has been converted to have its contrasts in each column:  
+```{r}
+
+# Recode the data as appropriate for XGB modeling
+helperXGBRecode <- function(df, 
+                            depVar, 
+                            predVars, 
+                            depIsFactor=FALSE
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble for processing
+    # depVar: the dependent variable
+    # predVars: the predictor variables
+    # depIsFactor: whether the dependent variable should be treated as a factor (classification)
+    #              NULL means set TRUE if !is.numeric(depVar)
+    
+    # Pull the dependent variable
+    y <- df[, depVar, drop=TRUE]
+    
+    # Set depIsFactor automatically if it was passed as NULL
+    if (is.null(depIsFactor)) depIsFactor <- !is.numeric(y)
+    
+    # Convert y to factor if flag is set
+    if (depIsFactor) {
+        # Convert y to a factor variable if it is not already of that class
+        if (!is.factor(y)) y <- factor(y)
+        # Store the factor levels so they can be reconstituted if desired
+        yLevels <- levels(y)
+        # Convert the dependent variable to integers running from 0 to n-1
+        y <- as.integer(y) - 1
+    } else {
+        # Set yLevels to NULL if it is not relevant
+        yLevels <- NULL
+    }
+
+    # Create the sparse matrix for 
+    x <- df %>%
+        select_at(vars(all_of(c(predVars)))) %>%
+        Matrix::sparse.model.matrix(~ . -1, 
+                                    data=., 
+                                    contrasts.arg=lapply(.[, sapply(., is.factor)], contrasts, contrasts=FALSE)
+                                    )
+    
+    # Return the key elements
+    list(y=y, x=x, yLevels=yLevels)
+    
+}
+
+# Create a factor modeling list for multi-class
+sampTrainFactor <- helperXGBRecode(sampList$trainData, 
+                                   depVar="source", 
+                                   predVars=c("TempF", "DewF", "month", "predomDir"), 
+                                   depIsFactor=TRUE
+                                   )
+str(sampTrainFactor)
+
+# Create a factor modeling list for single-class
+sampTrainSingle <- helperXGBRecode(sampList$trainData, 
+                                   depVar="isMSY", 
+                                   predVars=c("TempF", "DewF", "month", "predomDir"), 
+                                   depIsFactor=TRUE
+                                   )
+str(sampTrainSingle)
+
+# Create a numeric modeling list
+sampTrainFactor <- helperXGBRecode(sampList$trainData, 
+                                   depVar="TempF", 
+                                   predVars=c("source", "DewF", "month", "predomDir"), 
+                                   depIsFactor=FALSE
+                                   )
+str(sampTrainFactor)
+
+```
+  
+A function to make predictions using an XGB model is created:  
+```{r}
+
+# Function to make predictions given a trained XGB model and an aligned sparse matrix
+helperXGBPredict <- function(mdl, 
+                             dfSparse, 
+                             probMatrix=FALSE, 
+                             yLevels=NULL
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # mdl: the trained XGB model
+    # dfSparse: a sparse data frame that matches the columns used in mdl
+    # probMatrix: boolean, whether to create a probability matrix by class
+    # yLevels: if probMatrix is TRUE, yLevels should be passed (names associated to classes 0 through n-1)
+
+    # Check that yLevels is passed so the probability matrix can be properly consituted
+    if (probMatrix & is.null(yLevels)) {
+        stop("\nMust pass the yLevels variable if a probability matrix is requested\n")
+    }
+    
+    # Create a base probMatrix file that is NULL
+    probData <- NULL
+    
+    # Create the testData tibble (and predData matrix if probMatrix=TRUE)
+    if (probMatrix) {
+        probData <- matrix(data=predict(mdl, newdata=dfSparse), 
+                           nrow=nrow(dfSparse), 
+                           ncol=length(yLevels), 
+                           byrow=TRUE
+                           )
+        maxCol <- apply(probData, 1, FUN=which.max)
+        predData <- tibble::tibble(predicted=yLevels[maxCol], 
+                                   probPredicted=apply(probData, 1, FUN=max)
+                                   )
+        probData <- probData %>%
+            as_tibble() %>%
+            purrr::set_names(yLevels)
+    } else {
+        predData <- tibble::tibble(predicted=predict(mdl, newdata=dfSparse))
+    }
+    
+    # Return a list of predData and probData
+    list(predData=predData, probData=probData)
+
+}
+
+```
+  
+The function xgbRunModel() is modified to call the helper functions just created:  
+```{r}
+
+# Run xgb model with desired parameters
+xgbRunModel_002 <- function(tbl, 
+                            depVar, 
+                            predVars,
+                            otherVars=c("source", "dtime"),
+                            critFilter=vector("list", 0),
+                            critFilterNot=vector("list", 0),
+                            dropEmptyLevels=TRUE,
+                            seed=NULL, 
+                            nrounds=200, 
+                            print_every_n=nrounds, 
+                            testSize=0.3, 
+                            xgbObjective="reg:squarederror",
+                            funcRun=xgboost::xgboost,
+                            calcErr=TRUE,
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # tbl: the data frame or tibble
+    # depVar: the dependent variable that will be predicted
+    # predVars: explanatory variables for modeling
+    # otherVars: other variables to be kept in a final testData file, but not used in modeling
+    # critFilter: named list of format list(varName=c(varValues))
+    #             will include only observations where get(varName) %in% varValues
+    #             vector("list", 0) creates a length-zero list, which never runs in the for loop
+    # critFilterNot: named list of format list(varName=c(varValues))
+    #                same as critFilter operation, but will apply !(varName %in% varValues)
+    # dropEmptyLevels: boolean, whether to run fct_drop on all variables of class factor after critFilter
+    # seed: the random seed (NULL means no seed)
+    # nrounds: the maximum number of boosting iterations
+    # print_every_n: how frequently to print the progress of training error/accuracy while fitting
+    # testSize: the fractional portion of data that should be used as the test dataset
+    # xgbObjective: the objective function for xgboost
+    # funcRun: the function to run, passed as a function
+    # calcErr: boolean, whether to create variable err as predicted-get(depVar)
+    # ...: additional arguments to be passed directly to xgboost
+    
+    # Check that funcName is valid and get the relevant function
+    valFuncs <- c("xgboost", "xgb.cv")
+    funcName <- as.character(substitute(funcRun))
+    if (!(funcName[length(funcName)] %in% valFuncs)) {
+        cat("\nFunction is currently only prepared for:", valFuncs, "\n")
+        stop("Please change passed argument or update function\n")
+    }
+    
+    # Filter such that only matches to critFilter are included
+    tbl <- helperFilterData(tbl, 
+                            keepVars=c(depVar, predVars, otherVars), 
+                            noNA=c(depVar, predVars), 
+                            critFilter=critFilter, 
+                            critFilterNot=critFilterNot,
+                            dropEmptyLevels=dropEmptyLevels
+                            )
+    
+    # Create test-train split
+    ttLists <- createTestTrain(tbl, testSize=testSize, seed=seed)
+    
+    # Set the seed if requested
+    if (!is.null(seed)) { set.seed(seed) }
+    
+    # Recode the training data and testing data
+    # Treat (and convert) depVar as factor unless it is numeric (signified by NULL)
+    recodeTrain <- helperXGBRecode(ttLists$trainData, 
+                                   depVar=depVar, 
+                                   predVars=predVars, 
+                                   depIsFactor=NULL
+                                   )
+    recodeTest <- helperXGBRecode(ttLists$testData, 
+                                  depVar=depVar, 
+                                  predVars=predVars, 
+                                  depIsFactor=NULL
+                                  )
+        
+    # Pull the dependent variable, dependent variable levels, and sparse matrix x for training
+    yTrain <- recodeTrain$y
+    yTrainLevels <- recodeTrain$yLevels
+    sparseTrain <- recodeTrain$x
+    
+    # Train model
+    xgbModel <- funcRun(data=sparseTrain, 
+                        label=yTrain, 
+                        nrounds=nrounds, 
+                        print_every_n=print_every_n, 
+                        objective=xgbObjective, 
+                        ...
+                        )
+
+    # Make predictions, including getting the probability matrix if yTrainLevels exists (yTrain is factor)
+    # Run only if xgboost was passed (no predictions for CV)
+    if (funcName[length(funcName)] %in% c("xgboost")) {
+        # Make the predictions
+        xgbPredsList <- helperXGBPredict(xgbModel, 
+                                         dfSparse=recodeTest$x, 
+                                         probMatrix=!is.null(yTrainLevels), 
+                                         yLevels=yTrainLevels
+                                         )
+    
+        # Combine the xgbPredList output with existing testData file
+        testData <- ttLists$testData %>%
+            bind_cols(xgbPredsList$predData)
+        
+        # Extract probData
+        probData <- xgbPredsList$probData
+        
+    } else {
+        # Create NULL for testData and probData
+        testData <- NULL
+        probData <- NULL
+    }
+    
+    # Return list containing funcName, trained model, and testData
+    list(funcName=funcName[length(funcName)], 
+         xgbModel=xgbModel, 
+         testData=testData, 
+         predData=probData,
+         yTrainLevels=yTrainLevels
+         )
+    
+}
+
+```
+  
+The function is then tested on a numeric response variable:  
+```{r cache=TRUE}
+
+# Define key predictor variables for base XGB runs
+baseXGBPreds <- c("locNamefct", "month", "hrfct", 
+                  "DewF", "modSLP", "Altimeter", "WindSpeed", 
+                  "predomDir", "minHeight", "ceilingHeight"
+                  )
+
+# Core multi-year cities
+multiYearLocales <- c("Las Vegas, NV", "New Orleans, LA", "Chicago, IL", "San Diego, CA")
+
+# Run the function shell
+xgbInit_002 <- xgbRunModel_002(metarData, 
+                               depVar="TempF", 
+                               predVars=baseXGBPreds, 
+                               otherVars=c("source", "dtime"), 
+                               critFilter=list(locNamefct=multiYearLocales),
+                               seed=2008011825,
+                               nrounds=2000,
+                               print_every_n=50
+                               )
+
+```
+  
+The function is then tested on a single-class factor variable with the CV capability:  
+```{r cache=TRUE}
+
+# Run the function shell
+xgb_las2016_cv_002 <- xgbRunModel_002(las2016Data, 
+                                      depVar="isLAS", 
+                                      predVars=locXGBPreds, 
+                                      otherVars=keepVarFull, 
+                                      seed=2008051405,
+                                      nrounds=1000,
+                                      print_every_n=50, 
+                                      xgbObjective="binary:logistic", 
+                                      funcRun=xgboost::xgb.cv, 
+                                      nfold=5
+                                      )
+
+```
+  
+Test RMSE is a bit higher than previous.  The disconnect should be explored further.
+
+And then function is then tested on multi-class classification:  
+```{r cache=TRUE}
+
+fourLocales <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA")
+
+xgbFourLocales_002 <- xgbRunModel_002(filter(metarData, !is.na(TempF)), 
+                                      depVar="locNamefct", 
+                                      predVars=locXGBPreds, 
+                                      otherVars=keepVarFull, 
+                                      critFilter=list(year=2016, locNamefct=fourLocales), 
+                                      seed=2008081315,
+                                      nrounds=1000,
+                                      print_every_n=50,
+                                      xgbObjective="multi:softprob", 
+                                      funcRun=xgboost::xgboost,
+                                      nfold=5,
+                                      calcErr=FALSE,
+                                      num_class=length(fourLocales)
+                                      )
+
+# Overall success
+xgbFourLocales_002$testData %>%
+    summarize(mean(locNamefct==predicted))
+
+```
+  
+Overall accuracy is the same as when run using the xgbRunModel function.
+
+Next steps are to check whether the logistic regression approach is being properly implemented in the updated function.
