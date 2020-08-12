@@ -2746,6 +2746,7 @@ A function to make predictions using an XGB model is created:
 # Function to make predictions given a trained XGB model and an aligned sparse matrix
 helperXGBPredict <- function(mdl, 
                              dfSparse, 
+                             objective,
                              probMatrix=FALSE, 
                              yLevels=NULL
                              ) {
@@ -2753,9 +2754,10 @@ helperXGBPredict <- function(mdl,
     # FUNCTION ARGUMENTS:
     # mdl: the trained XGB model
     # dfSparse: a sparse data frame that matches the columns used in mdl
+    # objective: the objective function that was used (drives the prediction approach)
     # probMatrix: boolean, whether to create a probability matrix by class
     # yLevels: if probMatrix is TRUE, yLevels should be passed (names associated to classes 0 through n-1)
-
+    
     # Check that yLevels is passed so the probability matrix can be properly consituted
     if (probMatrix & is.null(yLevels)) {
         stop("\nMust pass the yLevels variable if a probability matrix is requested\n")
@@ -2763,16 +2765,26 @@ helperXGBPredict <- function(mdl,
     
     # Create a base probMatrix file that is NULL
     probData <- NULL
-    
+
     # Create the testData tibble (and predData matrix if probMatrix=TRUE)
+    # If logistic, the probability is the prediction and a tentative class can be set using 50%
     if (probMatrix) {
-        probData <- matrix(data=predict(mdl, newdata=dfSparse), 
-                           nrow=nrow(dfSparse), 
-                           ncol=length(yLevels), 
-                           byrow=TRUE
-                           )
+        # If logistic, the probability is the prediction and a tentative class can be set using 50%
+        if (objective=="binary:logistic") {
+            probData <- matrix(data=c(1-predict(mdl, newdata=dfSparse), predict(mdl, newdata=dfSparse)), 
+                               nrow=nrow(dfSparse), 
+                               ncol=length(yLevels), 
+                               byrow=FALSE
+                               )
+        } else {
+            probData <- matrix(data=predict(mdl, newdata=dfSparse), 
+                               nrow=nrow(dfSparse), 
+                               ncol=length(yLevels), 
+                               byrow=TRUE
+                               )
+        }
         maxCol <- apply(probData, 1, FUN=which.max)
-        predData <- tibble::tibble(predicted=yLevels[maxCol], 
+        predData <- tibble::tibble(predicted=factor(yLevels[maxCol], levels=yLevels), 
                                    probPredicted=apply(probData, 1, FUN=max)
                                    )
         probData <- probData %>%
@@ -2838,6 +2850,13 @@ xgbRunModel_002 <- function(tbl,
         stop("Please change passed argument or update function\n")
     }
     
+    # Check that the objective function is programmed
+    valObjective <- c("reg:squarederror", "binary:logistic", "multi:softprob")
+    if (!(xgbObjective %in% valObjective)) {
+        cat("\nFunction is currently only prepared for:", valObjective, "\n")
+        stop("Please change passed argument or update function (need to also updated helperXGBPredict()\n")
+    }
+    
     # Filter such that only matches to critFilter are included
     tbl <- helperFilterData(tbl, 
                             keepVars=c(depVar, predVars, otherVars), 
@@ -2887,7 +2906,8 @@ xgbRunModel_002 <- function(tbl,
         xgbPredsList <- helperXGBPredict(xgbModel, 
                                          dfSparse=recodeTest$x, 
                                          probMatrix=!is.null(yTrainLevels), 
-                                         yLevels=yTrainLevels
+                                         yLevels=yTrainLevels, 
+                                         objective=xgbObjective
                                          )
     
         # Combine the xgbPredList output with existing testData file
@@ -2975,7 +2995,6 @@ xgbFourLocales_002 <- xgbRunModel_002(filter(metarData, !is.na(TempF)),
                                       print_every_n=50,
                                       xgbObjective="multi:softprob", 
                                       funcRun=xgboost::xgboost,
-                                      nfold=5,
                                       calcErr=FALSE,
                                       num_class=length(fourLocales)
                                       )
@@ -2988,4 +3007,216 @@ xgbFourLocales_002$testData %>%
   
 Overall accuracy is the same as when run using the xgbRunModel function.
 
-Next steps are to check whether the logistic regression approach is being properly implemented in the updated function.
+Next steps are to check whether the logistic regression approach is being properly implemented in the updated function:  
+```{r}
+
+select(xgb_las2016_cv$xgbModel$evaluation_log, iter, test_rmse_orig=test_error_mean) %>%
+    inner_join(select(xgb_las2016_cv_002$xgbModel$evaluation_log, iter, test_rmse_new=test_error_mean)) %>%
+    pivot_longer(-iter, names_to="model", values_to="rmse") %>%
+    filter(rmse <= 0.06) %>%
+    ggplot(aes(x=iter, y=rmse, group=model, color=model)) + 
+    geom_line() + 
+    ylim(c(0, NA)) + 
+    labs(x="# Iterations", 
+         y="RMSE", 
+         title="CV Test RMSE by Function", 
+         subtitle="New Function vs. Original Function"
+         )
+
+```
+  
+RMSE is slightly higher when the data were passed to the function as 0/1 rather than having the function convert a factor.  Is the same true when running the xgboost::xgboost?  
+
+Exploration shows there was a logic error in helperXGBPredict that output nonsensical probabilities.  Broadly speaking, since the logit only outputs the probability of the positive class by default, creating a yes/no probability matrix from this data is both duplicative and erroneous in an unintended manner.
+
+Function xgbRunModel() is updated to check that only a specified group of objective functions are allowed.  Adding an objective function may require updating the associated helper functions.  Currently allowed objective functions include:  
+  
+* reg:squarederror (default for numeric regression)  
+* binary:logistic (default for 1/0 classification)  
+* multi:softprob (default for multi-class classification)
+  
+Function helperXGBPredict is updated to account for the type of objective function, with binary:logistic separated so that the probability matrix is 1-predicted (probability of 0) and predicted (probability of 1).  The modeling process can then be run on the Las Vegas data:  
+```{r cache=TRUE}
+
+# Run the function shell
+xgb_las2016_002 <- xgbRunModel_002(las2016Data, 
+                                   depVar="isLAS", 
+                                   predVars=locXGBPreds, 
+                                   otherVars=keepVarFull, 
+                                   seed=2008051405,
+                                   nrounds=500,
+                                   print_every_n=50, 
+                                   xgbObjective="binary:logistic", 
+                                   funcRun=xgboost::xgboost
+                                   )
+
+```
+  
+And, the confusion matrices for the original and new approach can be compared:  
+```{r}
+
+# Original model
+xgb_las2016$testData %>%
+    count(binLAS, round(predicted))
+
+# Updated model
+xgb_las2016_002$testData %>%
+    count(isLAS, predicted)
+
+```
+  
+Predictions for the model run with the same seed are identical.  The ability to pass factor variables to binary:logistic is useful, as it returning output with the predicted class and probability of that class (such as would happen in softmax).
+
+Suppose that instead the Las Vegas model were run directly using softprob:  
+```{r cache=TRUE}
+
+# Run the function shell
+xgb_las2016_002_softprob <- xgbRunModel_002(las2016Data, 
+                                            depVar="isLAS", 
+                                            predVars=locXGBPreds, 
+                                            otherVars=keepVarFull, 
+                                            seed=2008051405,
+                                            nrounds=500,
+                                            print_every_n=50, 
+                                            xgbObjective="multi:softprob", 
+                                            funcRun=xgboost::xgboost, 
+                                            calcErr=FALSE,
+                                            num_class=2
+                                            )
+
+```
+  
+The confusion matrix can again be checked:  
+```{r}
+
+# Updated model
+xgb_las2016_002_softprob$testData %>%
+    count(isLAS, predicted)
+
+```
+  
+Classification success is nearly identical, with just some small rounding differences.
+
+A bigger classification is run using the four key locales plus a selection of locales that seem to map to more than one of the four key locales:  
+  
+* Chicago  
+* Las Vegas  
+* New Orleans  
+* San Diego  
+* Seattle  
+* Atlanta  
+* San Francisco  
+* Denver  
+* San Antonio  
+* Tampa Bay  
+  
+```{r cache=TRUE}
+
+keyLocales <- c("Chicago, IL", "Las Vegas, NV", "New Orleans, LA", "San Diego, CA", "Seattle, WA", 
+                "Atlanta, GA", "San Francisco, CA", "Denver, CO", "San Antonio, TX", "Tampa Bay, FL"
+                )
+
+xgbKeyLocales_002 <- xgbRunModel_002(metarData, 
+                                     depVar="locNamefct", 
+                                     predVars=locXGBPreds, 
+                                     otherVars=keepVarFull, 
+                                     critFilter=list(year=2016, locNamefct=keyLocales), 
+                                     seed=2008111413,
+                                     nrounds=1000,
+                                     print_every_n=50,
+                                     xgbObjective="multi:softprob", 
+                                     funcRun=xgboost::xgboost,
+                                     calcErr=FALSE,
+                                     num_class=length(keyLocales)
+                                     )
+
+```
+  
+Model performance can be evaluated:  
+```{r}
+
+# Overall success
+xgbKeyLocales_002$testData %>%
+    summarize(mean(locNamefct==predicted))
+
+# Histogram of predicted probabilities for selected class
+xgbKeyLocales_002$testData %>%
+    mutate(correct=locNamefct==predicted) %>%
+    ggplot() + 
+    stat_count(aes(x=round(probPredicted, 2), y=..prop.., group=correct)) + 
+    facet_wrap(~correct) + 
+    labs(x="Probability Given to Prediction", 
+         y="Proportion of Predictions", 
+         title="Probability of Prediction vs. Accuracy of Prediction"
+         )
+
+# Confusion matrix
+xgbKeyLocales_002$testData %>%
+    count(locNamefct, predicted) %>%
+    group_by(locNamefct) %>%
+    mutate(pct=n/sum(n)) %>%
+    ggplot(aes(x=stringr::str_replace(predicted, pattern=", ", replacement="\n"), y=locNamefct)) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(round(100*pct), "%"))) + 
+    scale_fill_continuous("", low="white", high="green") + 
+    labs(title="Predicted vs. Actual Locale Frequency", y="Actual Locale", x="Predicted Locale")
+
+# Find and plot importances
+xgbKeyLocales_importance_002 <- plotXGBImportance(xgbKeyLocales_002, 
+                                                  featureStems=locXGBPreds, 
+                                                  stemMapper = varMapper, 
+                                                  plotTitle="Gain by variable in xgboost", 
+                                                  plotSubtitle="2016 Locale (Subset of 10 locales modeled)"
+                                                  )
+
+```
+  
+The numeric variables (dew point, SLP, altimeter, temperature) dominate the variable importance (gain) in the XGB model, and the combination drives roughly 95% accuracy in predictions.  There are a few clusters that drive misclassifications of over 1% - Chicago/Atlanta, New Orleans/Tampa, San Diego/San Francisco.
+  
+Predictions can then be extended to the non-modeled locales:  
+```{r cache=TRUE}
+
+# Extract data for the non-modeled locales
+otherLocalesData_002 <- metarData %>%
+    filter(!is.na(TempF), year == 2016, !(locNamefct %in% keyLocales))
+
+# Make the predictions
+otherLocalesPred_002 <- otherLocalesData_002 %>%
+    mutate_if(is.factor, .funs=fct_drop) %>%
+    helperMakeSparse(predVars=locXGBPreds) %>%
+    predict(xgbKeyLocales_002$xgbModel, newdata=.)
+
+# Create the prediction matrix
+otherLocalesMatrix_002 <- matrix(data=otherLocalesPred_002, 
+                                 ncol=length(keyLocales), 
+                                 nrow=nrow(otherLocalesData_002), 
+                                 byrow=TRUE
+                                 )
+
+# Get the predictions and probabilities, and add them to non2016FourLocalesData
+maxCol <- apply(otherLocalesMatrix_002, 1, FUN=which.max)
+otherLocalesData_002 <- otherLocalesData_002 %>%
+    mutate(predicted=xgbKeyLocales_002$yTrainLevels[maxCol], 
+           probPredicted=apply(otherLocalesMatrix_002, 1, FUN=max), 
+           correct=locNamefct==predicted
+           )
+
+# Confusion matrix
+otherLocalesData_002 %>%
+    count(locNamefct, predicted) %>%
+    group_by(locNamefct) %>%
+    mutate(pct=n/sum(n), pctChi=ifelse(predicted=="Chicago, IL", pct, 0)) %>%
+    ggplot(aes(x=stringr::str_replace(predicted, pattern=", ", replacement="\n"), 
+               y=fct_reorder(locNamefct, pctChi, .fun=max)
+               )
+           ) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(round(100*pct), "%"))) + 
+    scale_fill_continuous("", low="white", high="green") + 
+    labs(title="Predicted vs. Actual Locale Frequency", y="Actual Locale", x="Predicted Locale")
+
+```
+  
+As the number of categories has increased, so has the likelihood of a locale being classified as having meaningful probability of being in 2+ categories.  Some of the larger splits seem sensible - Saint Louis/Indianapolis/Lincoln as Atlanta/Chicago, Dallas as Atlanta/Chicago/San Antonio, Newark/Philadelpia/DC as Chicago/Atlanta/Denver/Tampa, San Jose/Los Angeles as San Diego/San Francisco, Houston as Tampa/New Orleans.
+
+Next steps are to consolidate the evaluation functions to assess model quality for both regression and classification exercises.
