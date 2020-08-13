@@ -2045,4 +2045,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 uses XGB to train on 2015-2018 and predict on 2014 and 2019  
 * WeatherModeling_202006_v002 creates initial attempt at integrated functions for XGB modeling  
 * WeatherModeling_202006_v002 uses integrated XGB functons to model 10 locales with 2016 data  
+* WeatherModeling_202006_v002 creates initial attempt at integrated functions for XGB model assessment  
   
