@@ -1074,7 +1074,6 @@ plotXGBImportance <- function(mdl,
             as.data.frame() %>%
             rownames_to_column("Feature") %>%
             tibble::as_tibble()
-        print(stemTotals)
     } else {
         stemTotals <- NULL
     }
@@ -3220,3 +3219,149 @@ otherLocalesData_002 %>%
 As the number of categories has increased, so has the likelihood of a locale being classified as having meaningful probability of being in 2+ categories.  Some of the larger splits seem sensible - Saint Louis/Indianapolis/Lincoln as Atlanta/Chicago, Dallas as Atlanta/Chicago/San Antonio, Newark/Philadelpia/DC as Chicago/Atlanta/Denver/Tampa, San Jose/Los Angeles as San Diego/San Francisco, Houston as Tampa/New Orleans.
 
 Next steps are to consolidate the evaluation functions to assess model quality for both regression and classification exercises.
+
+The evaluation process includes:  
+  
+* Assessment of variable importance from modeling - plotXGBImportance()  
+* Assessment of the train (and sometimes test) error during modeling as shown in evaluation_log - plotXGBTrainEvolution() with modifications  
+* Assessment of model predictions on hold-out data from the test data that was split from the training data - plotXGBTestData() should be updated for linear and confusion matrix  
+* Assessment of prediction confidence vs. prediction accuracy on hold-out data  
+* Assessment of model predictions on data that was not originally part of the train/test methodology  
+  
+Function plotXGBImportance() is already programmed.  It produces a full feature importance by every contrast of the factor and a summarized feature importance based on the stems associated with the factor:  
+```{r}
+
+# Find and plot importances
+xgbKeyLocales_importance_002 <- plotXGBImportance(xgbKeyLocales_002, 
+                                                  featureStems=locXGBPreds, 
+                                                  stemMapper = varMapper, 
+                                                  plotTitle="Gain by variable in xgboost", 
+                                                  plotSubtitle="2016 Locale (Subset of 10 locales modeled)"
+                                                  )
+
+# Example of data available in the output list
+str(xgbKeyLocales_importance_002)
+
+```
+  
+Next, the function plotXGBTrainEvolution() is updated to plotXGBEvolution(), updated to handle both 1) regression vs. classification, and 2) train-only vs. train and test:  
+```{r}
+
+# Function to create and plot key metrics for an XGB model
+# Currently, the R-squared capability is disabled, and this will only plot RMSE/Error
+plotXGBEvolution <- function(mdl, 
+                             subList="xgbModel", 
+                             isRegression=TRUE,
+                             isClassification=!isRegression,
+                             first_iter_plot=10,
+                             label_every=10, 
+                             show_line=FALSE,
+                             show_dashed=isClassification,
+                             rounding=1, 
+                             yLim=NULL
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # mdl: the xgb.Booster model file, or a list containing the xgb.Booster model file
+    # subList: if mdl is a list, attempt to pull out item named in subList
+    # isRegression: boolean, should this have regression metrics (RMSE, R2) plotted?
+    # isClassification: boolean, should this have classification metrics (accuracy) plotted?
+    # first_iter_plot: the first iteration to plot (for avoiding the very early burn-in errors)
+    # label_every: how often to add text for the error data (e.g., 10 means print iter 10, 20, 30, etc.)
+    # show_line: boolean, whether to include a line in the plot, or just the labels
+    # rounding: level of precision for rounding when text is displayed on the plot
+    # yLim: user-specified y-limits
+
+    # Check that exactly one of isRegression and isClassification has been chosen
+    if (!xor(isRegression, isClassification)) {
+        cat("\nParemeters passed for isRegression:", isRegression, " and isClassification:", isClassification)
+        stop("\nThese parameters must be logical and pass an exclusive or gate; please retry\n")
+    }
+    
+    # Pull out the modeling data from the list if needed
+    if (!("xgb.Booster" %in% class(mdl))) {
+        mdl <- mdl[[subList]]
+    }
+    
+    # Pull the error data
+    errData <- mdl$evaluation_log
+    
+    # Convert names so that _merror becomes _error
+    errNames <- names(errData)
+    errNames <- str_replace(errNames, pattern="_merror", replacement="_error")
+    names(errData) <- errNames
+    
+    # Keep only iter and then items that end in _rmse, _error, or _mean
+    keepVars <- errNames[grepl(x=errNames, pattern="[iter|_rmse|_error|_mean]$")]
+    errUse <- select_at(errData, vars(all_of(keepVars)))
+    
+    # Convert names so that train.* becomes train and test.* becomes test
+    errUseNames <- names(errUse)
+    errUseNames <- str_replace(errUseNames, pattern="train.*", replacement="train")
+    errUseNames <- str_replace(errUseNames, pattern="test.*", replacement="test")
+    names(errUse) <- errUseNames
+    
+    # Pivot the data longer, making the new descriptive column 'type' and the new numeric column 'error'
+    errUse <- errUse %>%
+        pivot_longer(-iter, names_to="type", values_to="error")
+    
+    # Helper function to create requested plot(s)
+    helperPlotEvolution <- function(df, yVar, rnd, desc, size=3, label_every=1) {
+        # Horizontal lines to be drawn at minimum by group
+        groupMin <- df %>% group_by(type) %>% summarize(minError=min(error)) %>% pull(minError)
+        # Create the base plot
+        p1 <- df %>%
+            filter(iter >= first_iter_plot) %>%
+            ggplot(aes_string(x="iter", y=yVar, group="type", color="type")) + 
+            labs(x="Number of iterations", 
+                 y=paste0(desc), 
+                 title=paste0("Evolution of ", desc)
+                 ) + 
+            scale_color_discrete("Data set") + 
+            geom_vline(aes(xintercept=0), lty=2)
+        if (show_dashed) p1 <- p1 + geom_hline(yintercept=groupMin, lty=2)
+        if (!is.null(label_every)) {
+            p1 <- p1 + geom_text(data=~filter(., (iter %% label_every)==0), 
+                                 aes(label=round(get(yVar), rnd)), 
+                                 size=size
+                                 )
+        }
+        if (show_line) p1 <- p1 + geom_line()
+        if (!is.null(yLim)) p1 <- p1 + ylim(yLim)
+        print(p1)
+    }
+    
+    # Create plot for regression (RMSE) or classification (error)
+    helperPlotEvolution(errUse, 
+                        yVar="error", 
+                        rnd=rounding, 
+                        desc=if(isRegression) "RMSE" else "Error", 
+                        label_every=label_every
+                        )
+
+    # Return the relevant data file
+    errUse
+    
+}
+
+# Test for regression data
+plotXGBEvolution(xgbInit_002, isRegression=TRUE, label_every=50, yLim=c(0, NA))
+
+# Test for classification data - single-class
+plotXGBEvolution(xgb_las2016, isRegression=FALSE, label_every=NULL, yLim=c(0, NA), show_line=TRUE)
+
+# Test for classification data - single-class with CV
+plotXGBEvolution(xgb_las2016_cv, isRegression=FALSE, label_every=NULL, yLim=c(0, NA), show_line=TRUE)
+
+# Test for classification data - multi-class with CV
+plotXGBEvolution(xgbFourLocalesCV_20152018, 
+                 isRegression=FALSE, 
+                 label_every=NULL, 
+                 first_iter_plot = 50,
+                 yLim=c(0, NA), 
+                 show_line=TRUE
+                 )
+
+```
+  
+Next steps are to continue with evaluating model predictions on test data (RMSE or confusion, confidence level) and to extend to predictions on other data sets.
