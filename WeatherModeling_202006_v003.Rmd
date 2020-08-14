@@ -3364,4 +3364,263 @@ plotXGBEvolution(xgbFourLocalesCV_20152018,
 
 ```
   
-Next steps are to continue with evaluating model predictions on test data (RMSE or confusion, confidence level) and to extend to predictions on other data sets.
+Next steps are to continue with evaluating model predictions on test data (RMSE or confusion, confidence level) and to extend to predictions on other data sets.  Function plotXGBTestData() is updated so that it can show either the linear trend of the relationships or the confusion matrix:  
+```{r}
+
+# Helper function to calculate and display RMSE/R2 for continuous data
+helperCalculateRMSER2 <- function(df, depVar, predVar) {
+    
+    df %>%
+        summarize(rmse_overall=sd(get(depVar)), 
+                  rmse_model=mean((get(predVar)-get(depVar))**2)**0.5
+                  ) %>%
+        mutate(rsq=1-rmse_model**2/rmse_overall**2)
+
+}
+
+
+# Helper function to plot predicted vs. actual for continuous data
+helperPlotTestContinuous <- function(df, predVar, depVar, roundSig=0) {
+    
+    # Show overall model performance using rounded temperature and predictions
+    p1 <- df %>%
+        mutate(rndPred=round(get(predVar), roundSig), rndDep=round(get(depVar), roundSig)) %>%
+        group_by_at(vars(all_of(c("rndDep", "rndPred")))) %>%
+        summarize(n=n()) %>%
+        ggplot(aes_string(x="rndDep", y="rndPred")) + 
+        geom_point(aes(size=n), alpha=0.1) + 
+        geom_smooth(aes(weight=n)) + 
+        geom_abline(lty=2, color="red") + 
+        labs(title="Predictions vs. actual on test dataset", y="Predicted", x="Actual")
+    print(p1)
+
+}
+
+
+# Helper function to create a confusion matrix
+helperConfusion <- function(df, actual, predVar="predicted", ySortVar=NULL) {
+    
+    # Confusion matrix
+    p1 <- df %>%
+        group_by_at(vars(all_of(c(actual, predVar)))) %>%
+        summarize(n=n()) %>%
+        group_by_at(vars(all_of(actual))) %>%
+        mutate(pct=n/sum(n), 
+               pctSort=if (is.null(ySortVar)) 0 else ifelse(get(predVar)==ySortVar, pct, 0)
+               ) %>%
+        ggplot(aes(x=stringr::str_replace(get(predVar), pattern=", ", replacement="\n"), 
+                   y=if (is.null(ySortVar)) get(actual) else fct_reorder(get(actual), pctSort, .fun=max)
+                   )
+               ) + 
+        geom_tile(aes(fill=pct)) + 
+        geom_text(aes(label=paste0(round(100*pct), "%"))) + 
+        scale_fill_continuous("", low="white", high="green") + 
+        labs(title="Predicted vs. Actual Frequency", y="Actual Locale", x="Predicted Locale")
+    print(p1)
+    
+}
+
+
+# Updated function to report on, and plot, prediction quality
+assessTestData <- function(df, 
+                           depVar,
+                           predVar="predicted",
+                           subList="testData", 
+                           isRegression=FALSE, 
+                           isClassification=FALSE,
+                           reportOverall=TRUE,
+                           reportBy=NULL, 
+                           roundSig=0,
+                           showPlot=TRUE, 
+                           ySortVar=NULL
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the test data file, or a list containing the test data file
+    # depVar: the variable that was predicted
+    # predVar: the variable containing the prediction for depVar
+    # subList: if mdl is a list, attempt to pull out item named in subList
+    # reportOverall: boolean, whether to report an overall RMSE/R2 on test data
+    # reportBy: variable for sumarizing RMSE/R2 by (NULL means no RMSE/R2 by any grouping variables)
+    # roundSig: rounding significance for numeric plotting (points at x/y will be sized by n after rounding)
+    # showPlot: boolean, whether to create/show the plot of predictions vs actuals
+    # ySortVar: character, if a confusion matrix is plotted, sort y high-low by percent in this category
+    
+    # Pull out the modeling data from the list if needed
+    if ("list" %in% class(df)) {
+        df <- df[[subList]]
+    }
+
+    # Report overall RMSE/R2 if regression model and requested
+    if (isRegression & reportOverall) {
+        cat("\nOVERALL PREDICTIVE PERFORMANCE:\n\n")
+        helperCalculateRMSER2(df, depVar=depVar, predVar=predVar) %>%
+            print()
+        cat("\n")
+    }    
+
+    # Report by grouping variables if any provided and regression model
+    if (!is.null(reportBy) & isRegression) {
+        cat("\nPREDICTIVE PERFORMANCE BY GROUP(S):\n\n")
+        sapply(reportBy, FUN=function(x) { 
+            df %>% 
+                group_by_at(x) %>% 
+                helperCalculateRMSER2(depVar=depVar, predVar=predVar) %>%
+                print()
+            }
+        )
+        cat("\n")
+    }
+    
+    # Plot numerical summary
+    if (showPlot & isRegression) {
+        helperPlotTestContinuous(df, predVar=predVar, depVar=depVar, roundSig=roundSig)
+    }
+    
+    # Plot categorical summary
+    if (showPlot & isClassification) {
+        helperConfusion(df, actual=depVar, predVar=predVar, ySortVar=ySortVar)
+    }
+    
+}
+
+
+# Test for regression data
+assessTestData(xgbInit_002, depVar="TempF", reportBy="locNamefct", isRegression=TRUE)
+
+# Test for classification data - single-class
+assessTestData(xgb_las2016_002, depVar="isLAS", isClassification=TRUE)
+
+# Test for classification data - multi-class
+assessTestData(xgbFourLocales_002, depVar="locNamefct", isClassification=TRUE)
+
+```
+  
+Next, a function is written to assess prediction quality by confidence (applicable only for classification):  
+```{r}
+
+# Function to plot predictuon accuracy vs. prediction confidence
+plotPredictionConfidencevQuality <- function(df, 
+                                             depVar,
+                                             predVar="predicted", 
+                                             probVar="probPredicted", 
+                                             subList="testData", 
+                                             roundProb=0.05, 
+                                             dataLim=1
+                                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the test data file, or a list containing the test data file
+    # depVar: the variable that was predicted
+    # predVar: the variable containing the prediction for depVar
+    # probVar: the variable containing the probability associated to the prediction
+    # subList: if mdl is a list, attempt to pull out item named in subList
+    # roundProb: round predicted probabilities to the nearest this
+    # dataLim: only report for points with at least this quantity of data
+    
+    # Pull out the modeling data from the list if needed
+    if ("list" %in% class(df)) {
+        df <- df[[subList]]
+    }
+    
+    # Pull a main plotting database together
+    plotData <- df %>%
+        mutate(prob=round(get(probVar)/roundProb)*roundProb, 
+               correct=get(depVar)==get(predVar)
+               ) %>%
+        count(prob, correct) %>%
+        mutate(nCorrect=ifelse(correct, n, 0)) %>%
+        group_by(prob) %>%
+        summarize(n=sum(n), nCorrect=sum(nCorrect)) %>%
+        mutate(pctCorrect=nCorrect/n) %>%
+        ungroup()
+    
+    # Create overall plot of accuracy by predicted probability
+    p1 <- plotData %>%
+        filter(n >= dataLim) %>%
+        ggplot(aes(x=prob, y=pctCorrect)) + 
+        geom_point(aes(size=n)) + 
+        geom_text(aes(y=pctCorrect-0.04, label=paste0(round(100*pctCorrect, 1), "%\n(n=", n, ")"))) + 
+        geom_abline(lty=2) + 
+        labs(x="Probability Predicted", y="Percent Correct", title="Accuracy vs. Probability Predicted")
+    print(p1)
+    
+}
+
+# Assess for classification data - single-class
+plotPredictionConfidencevQuality(xgb_las2016_002, depVar="isLAS")
+
+# Assess for classification data - multi-class
+plotPredictionConfidencevQuality(xgbFourLocales_002, depVar="locNamefct", dataLim=5)
+
+```
+  
+Functions can then be written to assess model quality on data that is not yet part of the test dataset.  This requires as inputs a trained model and a dataset that can be converted to the same variables as the trained model.  The process is currently implemented only for classification:  
+```{r}
+
+# Function to apply predictions to other data
+assessNonModelDataPredictions <- function(mdl, 
+                                          df, 
+                                          depVar,
+                                          predVars, 
+                                          yLevels, 
+                                          ySortVar=NULL
+                                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # mdl: the trained model
+    # df: the data file for predictions
+    # depVar: the actual category as contained in df
+    # predVars: the variable containing the prediction for depVar
+    # yLevels: the levels that the prediction can be made to (sort order is important)
+    # ySortVar: character, if a confusion matrix is plotted, sort y high-low by percent in this category    
+    #           NULL means no factor reordering, plot as-is
+    
+    # Create the sparse data
+    dfSparse <- df %>%
+        mutate_if(is.factor, .funs=fct_drop) %>%
+        helperMakeSparse(predVars=predVars)
+    
+    # Create the predictions
+    predsList <- helperXGBPredict(mdl=mdl, 
+                                  dfSparse=dfSparse, 
+                                  objective=mdl$params$objective, 
+                                  probMatrix=TRUE, 
+                                  yLevels=yLevels
+                                  )
+    
+    # Add the predictions and associated probabilities to df
+    df <- df %>%
+        mutate(predicted=predsList$predData$predicted, 
+               probPredicted=predsList$predData$probPredicted
+               )
+    
+    # Plot the confusion matrix
+    helperConfusion(df, actual=depVar, predVar="predicted", ySortVar=ySortVar)
+    
+    # Return the data frame
+    df
+    
+}
+
+# Assess for classification data - single-class
+df_las2016_002 <- assessNonModelDataPredictions(mdl=xgb_las2016_002$xgbModel, 
+                                                df=filter(metarData, !is.na(TempF), year!=2016), 
+                                                depVar="locNamefct", 
+                                                predVars=locXGBPreds, 
+                                                yLevels=xgb_las2016_002$yTrainLevels, 
+                                                ySortVar="Las Vegas"
+                                                )
+
+# Assess for classification data - multi-class
+df_FourLocales_002 <- assessNonModelDataPredictions(mdl=xgbFourLocales_002$xgbModel, 
+                                                    df=filter(metarData, !is.na(TempF), year==2016), 
+                                                    depVar="locNamefct", 
+                                                    predVars=locXGBPreds, 
+                                                    yLevels=xgbFourLocales_002$yTrainLevels, 
+                                                    ySortVar="Chicago, IL"
+                                                    )
+
+```
+  
+Next steps are to better organize the functions so the process can be run from start to finish for a specific data set and modeling technique.
