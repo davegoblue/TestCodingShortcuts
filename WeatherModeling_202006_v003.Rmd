@@ -3564,7 +3564,8 @@ assessNonModelDataPredictions <- function(mdl,
                                           depVar,
                                           predVars, 
                                           yLevels, 
-                                          ySortVar=NULL
+                                          ySortVar=NULL, 
+                                          diagnose=FALSE
                                           ) {
     
     # FUNCTION ARGUMENTS:
@@ -3575,11 +3576,18 @@ assessNonModelDataPredictions <- function(mdl,
     # yLevels: the levels that the prediction can be made to (sort order is important)
     # ySortVar: character, if a confusion matrix is plotted, sort y high-low by percent in this category    
     #           NULL means no factor reordering, plot as-is
+    # diagnose: boolean, whether to print mdl and dfSparse to help with debugging
     
     # Create the sparse data
     dfSparse <- df %>%
         mutate_if(is.factor, .funs=fct_drop) %>%
         helperMakeSparse(predVars=predVars)
+    
+    # Debugging, if needed
+    if (diagnose) {
+        print(mdl$feature_names)
+        print(colnames(dfSparse))
+    }
     
     # Create the predictions
     predsList <- helperXGBPredict(mdl=mdl, 
@@ -3624,3 +3632,218 @@ df_FourLocales_002 <- assessNonModelDataPredictions(mdl=xgbFourLocales_002$xgbMo
 ```
   
 Next steps are to better organize the functions so the process can be run from start to finish for a specific data set and modeling technique.
+
+Suppose for example that the goal is to predict the dew point based on the other information in a METAR file.  The function xgbRunModel_002() will achieve this by integrating all of the prediction functions:  
+```{r cache=TRUE}
+
+# Define key predictor variables for base XGB runs
+dewXGBPreds <- c("locNamefct", "month", "hrfct", 
+                 "TempF", "modSLP", "Altimeter", "WindSpeed", 
+                 "predomDir", "minHeight", "ceilingHeight"
+                 )
+
+# Core multi-year cities
+multiYearLocales <- c("Las Vegas, NV", "New Orleans, LA", "Chicago, IL", "San Diego, CA")
+
+# Run the function shell
+xgb_dewpoint_cv <- xgbRunModel_002(metarData, 
+                                   depVar="DewF", 
+                                   predVars=dewXGBPreds, 
+                                   otherVars=keepVarFull, 
+                                   critFilter=list(locNamefct=multiYearLocales),
+                                   critFilterNot=list(year=2016),
+                                   seed=2008141315,
+                                   nrounds=500,
+                                   print_every_n=50, 
+                                   xgbObjective="reg:squarederror", 
+                                   funcRun=xgboost::xgb.cv, 
+                                   nfold=5
+                                   )
+
+```
+  
+An assesment of the train-test error can be performed:  
+```{r}
+
+plotXGBEvolution(xgb_dewpoint_cv, isRegression=TRUE, label_every=25, yLim=c(0, NA), show_line=FALSE)
+
+```
+  
+Test error is fairly stable after 200 rounds, at just under 6 degrees.  The full model can then be run using 200 rounds:  
+```{r cache=TRUE}
+
+# Run the function shell
+xgb_dewpoint <- xgbRunModel_002(metarData, 
+                                depVar="DewF", 
+                                predVars=dewXGBPreds, 
+                                otherVars=keepVarFull, 
+                                critFilter=list(locNamefct=multiYearLocales),
+                                critFilterNot=list(year=2016),
+                                seed=2008141325,
+                                nrounds=200,
+                                print_every_n=50, 
+                                xgbObjective="reg:squarederror", 
+                                funcRun=xgboost::xgboost
+                                )
+
+```
+  
+The full series of assessment functions can then be run:  
+```{r}
+
+# ASSESSMENT 1: Variable Importance
+xgb_dewpoint_importance <- plotXGBImportance(xgb_dewpoint, 
+                                             featureStems=dewXGBPreds, 
+                                             stemMapper = varMapper, 
+                                             plotTitle="Gain by variable in xgboost", 
+                                             plotSubtitle="Dewpoint (four key locales modeled)"
+                                             )
+
+# ASSESSMENT 2: Evolution of training error
+plotXGBEvolution(xgb_dewpoint, isRegression=TRUE, label_every=10, yLim=c(0, NA), show_line=FALSE)
+
+# ASSESSMENT 3: Assess performance on test dataset
+assessTestData(xgb_dewpoint, depVar="DewF", reportBy="locNamefct", isRegression=TRUE)
+
+# ASSESSMENT 4: Prediction quality vs. confidence (currently only implemented for classification)
+
+# ASSESSMENT 5: Performance on other data (currently only implemented for classification)
+
+```
+  
+The model primarily estimates dewpoint based on temperature and locale.  Predictions are most accurate for Chicago and New Orleans, and least accurate for Las Vegas.  There does not appear to be much learning that can generalize to unseen data after the first hundred rounds.
+  
+The process is repeated, with an attempt made to model the ceiling height for the four key locales.  The minimum cloud height is included, which may be a leak:  
+```{r cache=TRUE}
+
+# Define key predictor variables for base XGB runs
+ceilXGBPreds <- c("locNamefct", "month", "hrfct", 
+                  "TempF", "DewF", "modSLP", "Altimeter", "WindSpeed", 
+                  "predomDir", "minHeight"
+                  )
+
+# Core multi-year cities
+multiYearLocales <- c("Las Vegas, NV", "New Orleans, LA", "Chicago, IL", "San Diego, CA")
+
+# Ceiling types
+ceilTypes <- sort(as.character(unique(metarData$ceilingHeight)))
+ceilTypes
+
+# Run the function shell
+xgb_ceiling_cv <- xgbRunModel_002(metarData, 
+                                  depVar="ceilingHeight", 
+                                  predVars=ceilXGBPreds, 
+                                  otherVars=keepVarFull, 
+                                  critFilter=list(locNamefct=multiYearLocales),
+                                  critFilterNot=list(year=2016),
+                                  seed=2008141340,
+                                  nrounds=500,
+                                  print_every_n=50, 
+                                  xgbObjective="multi:softprob", 
+                                  funcRun=xgboost::xgb.cv, 
+                                  nfold=5, 
+                                  num_class=length(ceilTypes)
+                                  )
+
+```
+  
+An assesment of the train-test error can be performed:  
+```{r}
+
+plotXGBEvolution(xgb_ceiling_cv, isRegression=FALSE, yLim=c(0, NA), show_line=TRUE, label_every=NULL)
+
+```
+  
+Test error is fairly stable after 200 rounds, at just under 20%.  The full model is run using 200 rounds:  
+```{r cache=TRUE}
+
+# Run the function shell
+xgb_ceiling <- xgbRunModel_002(metarData, 
+                               depVar="ceilingHeight", 
+                               predVars=ceilXGBPreds, 
+                               otherVars=keepVarFull, 
+                               critFilter=list(locNamefct=multiYearLocales),
+                               critFilterNot=list(year=2016),
+                               seed=2008141350,
+                               nrounds=200,
+                               print_every_n=50, 
+                               xgbObjective="multi:softprob", 
+                               funcRun=xgboost::xgboost, 
+                               num_class=length(ceilTypes)
+                               )
+
+```
+  
+The full series of assessment functions can then be run:  
+```{r}
+
+# ASSESSMENT 1: Variable Importance
+xgb_ceiling_importance <- plotXGBImportance(xgb_ceiling, 
+                                            featureStems=ceilXGBPreds, 
+                                            stemMapper = varMapper, 
+                                            plotTitle="Gain by variable in xgboost", 
+                                            plotSubtitle="Ceiling Height (four key locales modeled)"
+                                            )
+
+# ASSESSMENT 2: Evolution of training error
+plotXGBEvolution(xgb_ceiling, isRegression=FALSE, label_every=NULL, yLim=c(0, NA), show_line=TRUE)
+
+# ASSESSMENT 3: Assess performance on test dataset
+assessTestData(xgb_ceiling, depVar="ceilingHeight", isClassification=TRUE)
+
+# ASSESSMENT 4: Prediction quality vs. confidence (currently only implemented for classification)
+plotPredictionConfidencevQuality(xgb_ceiling, depVar="ceilingHeight", dataLim=5)
+
+# ASSESSMENT 5: Performance on other data (currently only implemented for classification)
+df_ceiling_pred <- assessNonModelDataPredictions(mdl=xgb_ceiling$xgbModel, 
+                                                 df=filter(metarData, 
+                                                           !is.na(TempF), 
+                                                           year==2016, 
+                                                           locNamefct %in% fourLocales
+                                                           ), 
+                                                 depVar="ceilingHeight", 
+                                                 predVars=ceilXGBPreds, 
+                                                 yLevels=xgb_ceiling$yTrainLevels, 
+                                                 ySortVar="None"
+                                                 )
+
+# Additional assessments
+xgb_ceiling$testData %>%
+    mutate(correct=(ceilingHeight==predicted)) %>%
+    count(ceilingHeight, correct) %>%
+    ggplot(aes(x=ceilingHeight, y=n, fill=correct)) + 
+    geom_col(position="stack")
+
+xgb_ceiling$testData %>%
+    mutate(correct=(ceilingHeight==predicted)) %>%
+    count(ceilingHeight, correct) %>%
+    ggplot(aes(x=ceilingHeight, y=n, fill=correct)) + 
+    geom_col(position="fill")
+
+xgb_ceiling$testData %>%
+    mutate(correct=(ceilingHeight==predicted)) %>%
+    count(minHeight, correct) %>%
+    ggplot(aes(x=minHeight, y=n, fill=correct)) + 
+    geom_col(position="stack")
+
+xgb_ceiling$testData %>%
+    mutate(correct=(ceilingHeight==predicted)) %>%
+    count(minHeight, correct) %>%
+    ggplot(aes(x=minHeight, y=n, fill=correct)) + 
+    geom_col(position="fill")
+
+xgb_ceiling$testData %>%
+    mutate(correct=(ceilingHeight==predicted)) %>%
+    count(minHeight, predicted) %>%
+    group_by(minHeight) %>%
+    mutate(pct=n/sum(n)) %>%
+    ggplot(aes(x=minHeight, y=predicted)) + 
+    geom_tile(aes(fill=n)) + 
+    geom_text(aes(label=paste0(round(100*pct), "%"))) + 
+    scale_fill_continuous(low="white", high="green")
+
+```
+  
+The model prediction probabilities are well aligned with the model percent of correct predictions.  Minimum cloud height is, as expected, a key driver of ceiling height, followed by temperature, dewpoint, and locale.  
+
+Due to significant class imbalance, overall prediction accuracy is high even though prediction accuracy is poor for cases where the ceiling height is medium or high.  The model generally does well in classifying Surface ceilings and None (cases of no ceilings).  This is driven by the somewhat trivial prediction that there is no ceiling when there are no clouds.  Prediction accuracies are about 75% in the other cases where there are at least some clouds.  In general, the model will either predict minHeight or None as the ceiling.
