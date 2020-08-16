@@ -2850,9 +2850,14 @@ xgbRunModel_002 <- function(tbl,
     }
     
     # Check that the objective function is programmed
-    valObjective <- c("reg:squarederror", "binary:logistic", "multi:softprob")
-    if (!(xgbObjective %in% valObjective)) {
-        cat("\nFunction is currently only prepared for:", valObjective, "\n")
+    valObjectiveFull <- c("reg:squarederror", "binary:logistic", "multi:softprob")
+    valObjectiveCVOnly <- c("multi:softmax")  # This is not implemented in helperXGBPredict, so it is CV only
+    if (!(xgbObjective %in% valObjectiveFull) & funcName[length(funcName)]=="xgboost") {
+        cat("\nFunction runs xgboost with predict only for:", valObjectiveFull, "\n")
+        stop("Please change passed argument or update function (need to also updated helperXGBPredict()\n")
+    }
+    if (!(xgbObjective %in% c(valObjectiveFull, valObjectiveCVOnly))) {
+        cat("\nFunction runs xgb.cv only for:", valObjectiveFull, valObjectiveCVOnly, "\n")
         stop("Please change passed argument or update function (need to also updated helperXGBPredict()\n")
     }
     
@@ -3398,7 +3403,14 @@ helperPlotTestContinuous <- function(df, predVar, depVar, roundSig=0) {
 
 
 # Helper function to create a confusion matrix
-helperConfusion <- function(df, actual, predVar="predicted", ySortVar=NULL) {
+helperConfusion <- function(df, actual, predVar="predicted", ySortVar=NULL, rotateOn=11) {
+
+    # Number of categories that will be on the x-axis
+    nX <- df %>% 
+        pull(predVar) %>% 
+        as.character() %>% 
+        unique() %>% 
+        length()
     
     # Confusion matrix
     p1 <- df %>%
@@ -3408,7 +3420,7 @@ helperConfusion <- function(df, actual, predVar="predicted", ySortVar=NULL) {
         mutate(pct=n/sum(n), 
                pctSort=if (is.null(ySortVar)) 0 else ifelse(get(predVar)==ySortVar, pct, 0)
                ) %>%
-        ggplot(aes(x=stringr::str_replace(get(predVar), pattern=", ", replacement="\n"), 
+        ggplot(aes(x=if (nX < rotateOn) stringr::str_replace(get(predVar), pattern=", ", replacement="\n") else get(predVar), 
                    y=if (is.null(ySortVar)) get(actual) else fct_reorder(get(actual), pctSort, .fun=max)
                    )
                ) + 
@@ -3416,6 +3428,13 @@ helperConfusion <- function(df, actual, predVar="predicted", ySortVar=NULL) {
         geom_text(aes(label=paste0(round(100*pct), "%"))) + 
         scale_fill_continuous("", low="white", high="green") + 
         labs(title="Predicted vs. Actual Frequency", y="Actual Locale", x="Predicted Locale")
+    # If the rotateOn criteria is exceeded, rotate the x-axis by 90 degrees and place axes at top
+    if (nX >= rotateOn) {
+        p1 <- p1 + 
+            theme(axis.text.x=element_text(angle=90, hjust=0.1)) + # Rotate by 90 degrees
+            scale_x_discrete(position = "top") # Put at the top of the graph
+    }
+    # Print the plot
     print(p1)
     
 }
@@ -3470,6 +3489,30 @@ assessTestData <- function(df,
             }
         )
         cat("\n")
+    }
+
+    # Report accuracy by grouping variable and overall if reportBy and classification model
+    if (!is.null(reportBy) & isClassification) {
+        dfPlot <- df %>%
+            mutate(isCorrect=(get(depVar)==get(predVar)))
+        overallAcc <- mean(dfPlot$isCorrect)
+        p1 <- dfPlot %>%
+            group_by_at(vars(all_of(reportBy))) %>%
+            summarize(pctCorrect=mean(isCorrect)) %>%
+            ggplot(aes(x=fct_reorder(get(reportBy), pctCorrect), y=pctCorrect)) + 
+            geom_col(fill="lightblue") + 
+            geom_text(aes(y=pctCorrect+0.02, label=paste0(round(100*pctCorrect), "%")), hjust=0) +
+            coord_flip() + 
+            geom_hline(aes(yintercept=overallAcc), lty=2) + 
+            annotate("text", 
+                     x=2, 
+                     y=overallAcc+0.02, 
+                     label=paste0("Overall Accuracy:\n", round(100*overallAcc, 1), "%"), 
+                     hjust=0
+                     ) +
+            labs(title="Accuracy of Predictions by Actual", x="Actual", y="Percent Accurately Predicted") + 
+            ylim(c(0, 1.05))
+        print(p1)
     }
     
     # Plot numerical summary
@@ -3847,3 +3890,96 @@ xgb_ceiling$testData %>%
 The model prediction probabilities are well aligned with the model percent of correct predictions.  Minimum cloud height is, as expected, a key driver of ceiling height, followed by temperature, dewpoint, and locale.  
 
 Due to significant class imbalance, overall prediction accuracy is high even though prediction accuracy is poor for cases where the ceiling height is medium or high.  The model generally does well in classifying Surface ceilings and None (cases of no ceilings).  This is driven by the somewhat trivial prediction that there is no ceiling when there are no clouds.  Prediction accuracies are about 75% in the other cases where there are at least some clouds.  In general, the model will either predict minHeight or None as the ceiling.
+
+Next, the process is run to classify each of the locales in the 2016 data:  
+```{r cache=TRUE}
+
+# Extract the locales that are available in 2016
+locs2016 <- metarData %>%
+    filter(year==2016) %>%
+    pull(locNamefct) %>%
+    as.character() %>%
+    unique() %>%
+    sort()
+
+# Run the function shell for CV
+xgb_alllocales_cv <- xgbRunModel_002(metarData, 
+                                     depVar="locNamefct", 
+                                     predVars=locXGBPreds, 
+                                     otherVars=keepVarFull, 
+                                     critFilter=list(year=2016),
+                                     seed=2008151247,
+                                     nrounds=250,
+                                     print_every_n=10, 
+                                     xgbObjective="multi:softmax", 
+                                     funcRun=xgboost::xgb.cv, 
+                                     nfold=5, 
+                                     num_class=length(locs2016)
+                                     )
+
+# Plot the error evolution
+plotXGBEvolution(xgb_alllocales_cv, 
+                 isRegression=FALSE, 
+                 yLim=c(0, NA), 
+                 show_line=TRUE, 
+                 label_every=NULL, 
+                 first_iter_plot = 1
+                 )
+
+```
+  
+The function can then be run for 250 rounds:  
+```{r cache=TRUE}
+
+# Run the function shell
+xgb_alllocales <- xgbRunModel_002(metarData, 
+                                  depVar="locNamefct", 
+                                  predVars=locXGBPreds, 
+                                  otherVars=keepVarFull, 
+                                  critFilter=list(year=2016),
+                                  seed=2008151315,
+                                  nrounds=250,
+                                  print_every_n=10, 
+                                  xgbObjective="multi:softprob", 
+                                  funcRun=xgboost::xgboost, 
+                                  num_class=length(locs2016)
+                                  )
+
+```
+  
+And the evaluation functions can then be run:  
+```{r}
+
+# ASSESSMENT 1: Variable Importance
+xgb_alllocales_importance <- plotXGBImportance(xgb_alllocales, 
+                                               featureStems=locXGBPreds, 
+                                               stemMapper = varMapper, 
+                                               plotTitle="Gain by variable in xgboost", 
+                                               plotSubtitle="Locale (2016)"
+                                               )
+
+# ASSESSMENT 2: Evolution of training error
+plotXGBEvolution(xgb_alllocales, isRegression=FALSE, label_every=NULL, yLim=c(0, NA), show_line=TRUE)
+
+# ASSESSMENT 3: Assess performance on test dataset
+assessTestData(xgb_alllocales, depVar="locNamefct", reportBy="locNamefct", isClassification=TRUE)
+
+# ASSESSMENT 4: Prediction quality vs. confidence (currently only implemented for classification)
+plotPredictionConfidencevQuality(xgb_alllocales, depVar="locNamefct", dataLim=5)
+
+# ASSESSMENT 5: Performance on other data (currently only implemented for classification)
+df_alllocales_pred <- assessNonModelDataPredictions(mdl=xgb_alllocales$xgbModel, 
+                                                    df=filter(metarData, 
+                                                              !is.na(TempF), 
+                                                              year!=2016, 
+                                                              locNamefct %in% fourLocales
+                                                              ), 
+                                                    depVar="locNamefct", 
+                                                    predVars=locXGBPreds, 
+                                                    yLevels=xgb_alllocales$yTrainLevels, 
+                                                    ySortVar="None"
+                                                    )
+
+```
+  
+The model is reasonably effective at classifying many of the more "distinct" locales, but struggles with the cold weather locales like Chicago.  Next steps are to build on the previous one vs. all approach to see if that can speed up the process or enhance the predictive power (overall or for trickier locales).
