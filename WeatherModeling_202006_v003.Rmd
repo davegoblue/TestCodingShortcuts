@@ -3983,3 +3983,231 @@ df_alllocales_pred <- assessNonModelDataPredictions(mdl=xgb_alllocales$xgbModel,
 ```
   
 The model is reasonably effective at classifying many of the more "distinct" locales, but struggles with the cold weather locales like Chicago.  Next steps are to build on the previous one vs. all approach to see if that can speed up the process or enhance the predictive power (overall or for trickier locales).
+  
+Two approaches are taken to model individual locales in 2016:  
+  
+* Locale vs. all-other, with under-sampling of all-other so that classes are balanced  
+* Locale vs. locale for a specific city pairing  
+  
+Test data can then be run through the locale vs. all-other algorithms in an attempt at classification.  Close calls can be further run through the relevant locale vs. locale classification.  Example code includes:  
+```{r}
+
+# Create the overall test and train data
+fullDataSplit <- createTestTrain(filter(metarData, year==2016, !is.na(TempF)), 
+                                 noNA=FALSE, 
+                                 seed=2008161312
+                                 )
+
+# Extract the training data for the remainder of the process
+localeTrainData <- fullDataSplit$trainData
+
+```
+  
+The models for one vs. all can then be run and cached:  
+```{r cache=TRUE}
+
+# Create the locations to be modeled
+useLocs <- locs2016
+
+# Create a container for storing all relevant objects
+localeOnevAll <- vector("list", length(useLocs))
+
+# Run the modeling process once for each locale
+n <- 1
+for (thisLoc in useLocs) {
+    
+    # Announce the progress
+    cat("\nProcess for:", thisLoc, "\n")
+    
+    # Create the training data to use for the model
+    thisTrain <- localeTrainData %>%
+        mutate(curLocale=factor(ifelse(locNamefct==thisLoc, thisLoc, "All Other"), 
+                                levels=c(thisLoc, "All Other")
+                                )
+               )
+    
+    # Find the samllest group size
+    smallN <- thisTrain %>%
+        count(curLocale) %>%
+        pull(n) %>%
+        min()
+    
+    # Balance the samples in thisTrain
+    thisTrain <- thisTrain %>%
+        group_by(curLocale) %>%
+        sample_n(smallN) %>%
+        ungroup()
+    
+    # Run the CV process with a callback for early stopping if 5 iterations show no improvement
+    xgb_thislocale_cv <- xgbRunModel_002(thisTrain, 
+                                         depVar="curLocale", 
+                                         predVars=locXGBPreds, 
+                                         otherVars=keepVarFull, 
+                                         seed=2008161330+n,
+                                         nrounds=500,
+                                         print_every_n=500, 
+                                         xgbObjective="multi:softmax", 
+                                         funcRun=xgboost::xgb.cv, 
+                                         nfold=5, 
+                                         num_class=2, 
+                                         early_stopping_rounds=5
+                                         )
+
+    # The best iteration can then be pulled
+    bestN <- xgb_thislocale_cv$xgbModel$best_iteration
+    
+    # And the model can be run for that number of iterations
+    xgb_thislocale <- xgbRunModel_002(thisTrain, 
+                                      depVar="curLocale", 
+                                      predVars=locXGBPreds, 
+                                      otherVars=keepVarFull, 
+                                      seed=2008161330+100+n,
+                                      nrounds=bestN,
+                                      print_every_n=500, 
+                                      xgbObjective="multi:softprob", 
+                                      funcRun=xgboost::xgboost, 
+                                      num_class=2
+                                      )
+    
+    
+    # Place the trained CV object in the relevant list
+    localeOnevAll[[n]] <- list(cvResult=xgb_thislocale_cv, 
+                               mdlResult=xgb_thislocale, 
+                               bestN=bestN
+                               )
+    
+    # Increment the counter
+    n <- n + 1
+    
+}
+
+
+# Name the list
+names(localeOnevAll) <- useLocs
+
+```
+  
+Error statistics can then be calculated and reported:  
+```{r}
+
+# Report on summary statistics
+# Test error by CV file
+cvError <- map_dfr(localeOnevAll, 
+                   .f=function(x) {x$cvResult$xgbModel$evaluation_log[x$bestN, ]}, 
+                   .id="locale"
+                   )
+
+# Function to extract key error data
+dummyError <- function(x) {
+    df <- x$mdlResult$testData %>%
+        mutate(correct=ifelse(predicted==curLocale, 1, 0), 
+               self=ifelse(curLocale=="All Other", 0, 1), 
+               pctCorrectOverall=mean(correct)
+               ) %>%
+        group_by(self) %>%
+        summarize(pctCorrectGroup=mean(correct), pctCorrectOverall=mean(pctCorrectOverall)) %>%
+        ungroup()
+}
+
+# Test error by model file
+mdlError <- map_dfr(localeOnevAll, 
+                    .f=dummyError,
+                    .id="locale"
+                    )
+
+# Plot of error rates - overall for CV and model
+mdlError %>%
+    inner_join(cvError) %>%
+    filter(self==1) %>%
+    mutate(pctCorrectCV=1-test_merror_mean) %>%
+    select(locale, Overall=pctCorrectOverall, CV=pctCorrectCV) %>%
+    pivot_longer(-locale) %>%
+    ggplot(aes(x=fct_reorder(locale, value), y=value)) + 
+    geom_point(aes(color=name)) + 
+    coord_flip() + 
+    labs(y="Test Accuracy", title="CV and Model Accuracy on Test Data", x="") + 
+    scale_color_discrete("Model Type") + 
+    ylim(c(0, 1))
+
+# Plot of error rates - self vs. other for model
+mdlError %>%
+    ggplot(aes(x=fct_reorder(locale, pctCorrectOverall), y=pctCorrectGroup)) + 
+    geom_point(aes(color=factor(self))) + 
+    coord_flip() + 
+    labs(y="Test Accuracy", title="Model Accuracy on Test Data", subtitle="Self=1, All Other=0", x="") + 
+    scale_color_discrete("Classifying Self?") + 
+    ylim(c(0, 1))
+
+
+```
+  
+CV errors are generally well aligned with modeling errors, as expected.  As seen previously, the model is generally more successful in classifying self and less successful in classifying all other.  Suppose that just this model were used to make predictions for all of the test data:  
+```{r}
+
+# Prepare the test data
+testData <- fullDataSplit$testData %>%
+    select_at(vars(all_of(c(locXGBPreds, keepVarFull)))) %>%
+    filter(locNamefct %in% useLocs) %>%
+    mutate_if(is.factor, .funs=fct_drop)
+
+# Function to create the probabilities by locale
+predictLocaleProbs <- function(x) {
+    helperXGBPredict(x$mdlResult$xgbModel, 
+                     dfSparse=helperMakeSparse(testData, 
+                                               depVar="locNamefct", 
+                                               predVars=locXGBPreds
+                                               ), 
+                     objective="multi:softprob", 
+                     probMatrix=TRUE, 
+                     yLevels=x$mdlResult$yTrainLevels
+                     )$probData %>%
+        select(-`All Other`)
+}
+
+# Extract from list
+locData <- testData %>%
+    select(locNamefct, source, dtime) %>%
+    bind_cols(map_dfc(localeOnevAll, .f=predictLocaleProbs))
+
+# Convert to prediction based purely on maximum probability
+sampPreds <- locData %>%
+    mutate(record=row_number()) %>%
+    pivot_longer(-c(record, locNamefct, source, dtime)) %>%
+    group_by(record, locNamefct, source, dtime) %>%
+    filter(value==max(value)) %>%
+    ungroup() %>%
+    mutate(correct=(as.character(locNamefct)==name))
+
+# Overall accuracy by locale
+sampPreds %>%
+    group_by(locNamefct) %>%
+    summarize(pctCorrect=mean(correct), n=n()) %>%
+    ggplot(aes(x=fct_reorder(locNamefct, pctCorrect), y=pctCorrect)) + 
+    geom_point() + 
+    geom_text(aes(y=pctCorrect+0.02, label=paste0(round(100*pctCorrect), "%")), hjust=0, size=3.5) + 
+    coord_flip() + 
+    labs(x="Actual Locale", y="Percent Correctly Predicted", 
+         title="Predictions based on Maximum Probability"
+         ) + 
+    ylim(c(0, 1.1))
+
+# Confusion matrix
+sampPreds %>%
+    mutate(name=factor(name)) %>%
+    count(locNamefct, name) %>%
+    group_by(locNamefct) %>%
+    mutate(pct=n/sum(n)) %>%
+    ungroup() %>%
+    ggplot(aes(x=locNamefct, y=name)) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(round(100*pct), "%")), size=2) + 
+    coord_flip() + 
+    labs(x="Actual Locale", y="Predicted Locale", 
+         title="Predictions based on Maximum Probability"
+         ) + 
+    scale_fill_continuous(low="white", high="lightgreen") + 
+    theme(axis.text.x=element_text(angle=90, hjust=1))
+
+```
+  
+There are meaningful classification issues with the base predictor.  Next steps are to find cases where a city has multiple "likely" predictions and to use one vs. one modeling to help make those decisions.
