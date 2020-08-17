@@ -2050,3 +2050,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 runs integrated XGB modeling and assessment functions  
 * WeatherModeling_202006_v002 runs XGB classification for all 2016 locales  
   
+### Expansions week of 17-AUG-2020  
+* WeatherModeling_202006_v002 integrates one vs all XGB classification for 2016 locales  
+  
