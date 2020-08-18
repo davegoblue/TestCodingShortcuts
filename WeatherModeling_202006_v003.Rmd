@@ -4211,3 +4211,161 @@ sampPreds %>%
 ```
   
 There are meaningful classification issues with the base predictor.  Next steps are to find cases where a city has multiple "likely" predictions and to use one vs. one modeling to help make those decisions.
+  
+Each predicted locale has an associated probability that can be used to help model the data.  For example, a look at twenty random records shows:  
+```{r}
+
+# Initialize a seed so that the random sampling is consistent
+set.seed(2008171324)
+
+# Take 20 random records and see the assigned probabilities
+locData %>%
+    mutate(record=row_number()) %>%
+    sample_n(size=20) %>%
+    pivot_longer(-c(record, locNamefct, source, dtime)) %>%
+    ggplot(aes(x=paste0(locNamefct, " - ", record), y=factor(name))) + 
+    geom_tile(aes(fill=value)) + 
+    geom_text(aes(label=paste0(round(100*value), "%")), size=2.5) + 
+    coord_flip() + 
+    labs(x="Actual Locale", y="Potential Locale", title="Probability Associated to Potential Locale") + 
+    theme(axis.text.x=element_text(angle=90, hjust=1)) + 
+    scale_fill_continuous(low="white", high="green")
+
+```
+  
+It is common for a locale to have decent potential matches to several potential locales, and the highest probability is not always associated to the best prediction.  Suppose that for every actual locale, the following statistics are gathered:  
+  
+* Highest predicted probability  
+* Second highest predicted probability  
+* Accuracy of highest predicted probability locale  
+* Predicted probability of correct locale  
+  
+```{r}
+
+# Calculate key data for every prediction
+predStats <- locData %>%
+    mutate(record=row_number()) %>%
+    pivot_longer(-c(record, locNamefct, source, dtime)) %>%
+    mutate(correct=(locNamefct==name)) %>%
+    group_by(record, locNamefct, source, dtime) %>%
+    arrange(record, locNamefct, source, dtime, -value) %>%
+    summarize(highProb=nth(value, 1), 
+              nextProb=nth(value, 2), 
+              accHigh=nth(correct, 1),
+              actualLocaleProb=sum(ifelse(correct, value, 0))
+              ) %>%
+    ungroup()
+
+```
+  
+Summaries by locale can then be generated, to answer questions such as:
+  
+* How often is the actual locale the highest prediction or the second highest prediction?  
+* What is the distribution of the probabilities associated to prediction of actual locale?  
+* What is the distribution of difference in probability between highest predicted probability and prediction of actual locale?  
+  
+```{r}
+
+# Frequency by Prediction Caliber
+predStats %>%
+    mutate(isFirst=as.integer(accHigh), 
+           isSecond=pmax(0, (actualLocaleProb==nextProb)-isFirst), 
+           isClose=pmax(0, (actualLocaleProb >= highProb-0.25)-isFirst-isSecond)
+           ) %>% 
+    select(record, locNamefct, isFirst, isSecond, isClose) %>%
+    pivot_longer(-c(record, locNamefct), names_to="type", values_to="boolean") %>%
+    mutate(type=factor(type, levels=c("isClose", "isSecond", "isFirst"))) %>%
+    group_by(locNamefct, type) %>%
+    summarize(pct=mean(boolean)) %>%
+    ggplot(aes(x=fct_reorder(locNamefct, pct, .fun=sum), y=pct)) + 
+    geom_col(aes(fill=type), position="stack") + 
+    coord_flip() + 
+    labs(x="Actual Locale", y="Percentage of Predictions", title="Prediction Caliber by Actual Locale") + 
+    theme(legend.position="bottom") + 
+    scale_fill_discrete("Prediction Caliber", 
+                         breaks=c("isFirst", "isSecond", "isClose"), 
+                         labels=c("Highest Prob", "Second Highest Prob", "Prob Within 25%")
+                         )
+
+# Histogram of Prediction Probabilities by Actual Locale
+predStats %>%
+    ggplot(aes(x=actualLocaleProb)) + 
+    geom_histogram(fill="lightblue") + 
+    facet_wrap(~locNamefct) + 
+    labs(x="", y="n", title="Predicted Probability for Actual Locale")
+
+# Histogram of Highest Probability minus Correct Locale Probability by Actual Locale
+predStats %>%
+    ggplot(aes(x=actualLocaleProb-highProb)) + 
+    geom_histogram(fill="lightblue") + 
+    facet_wrap(~locNamefct) + 
+    labs(x="", 
+         y="n", 
+         title="Error in Predicted Probability for Actual Locale", 
+         subtitle="Error is probability for actual locale minus highest probability for any locale"
+         )
+
+```
+  
+For some of the locales, the predicted probability is very frequently either the highest probability prediction or close to the highest probability prediction.  These locales may be further enhanced by exploring the one vs one model when there is more than one high probability prediction to this subset of locales.
+
+For other locales, the predicted probability is frequently middling, which creates challenges in pulling apart the observation from other locales.  In particular, this challenge is observed for the four-season locales, which can be misclassified as each other and also as a different archetype during a peak and spiky season.
+
+Further exploration can be made for prediction quality given the highest probability and the difference in the highest probability and the second highest probability:  
+```{r}
+
+roundStats <- predStats %>%
+    mutate(roundProb=round(20*highProb)/20, 
+           deltaProb=round(10*(highProb-nextProb))/10
+           ) 
+
+roundStats %>%
+    group_by(roundProb, deltaProb) %>%
+    summarize(n=n(), acc=mean(accHigh)) %>%
+    ungroup() %>%
+    filter(n >= 10) %>%
+    ggplot(aes(x=factor(roundProb), y=factor(deltaProb))) + 
+    geom_tile(aes(fill=acc)) + 
+    geom_text(aes(label=paste0(round(100*acc), "%\n(n=", n, ")")), size=2.5) + 
+    scale_fill_continuous(low="white", high="green") + 
+    labs(x="Highest Predicted Probability", 
+         y="Gap to Next Highest Predicted Probability", 
+         title="Accuracy by Highest Probability vs. Next Highest Probability"
+         )
+
+```
+  
+There is a small subset of predictions where the predicted probability is high (97.5% plus) and the gap to the next highest probability is also high (25% plus).  These predictions have very high accuracy:  
+```{r}
+
+# Plot of accuracy by condition
+predStats %>%
+    mutate(isLikely=(highProb >= 0.975) & (highProb-nextProb >= 0.25)) %>%
+    group_by(isLikely) %>%
+    summarize(acc=mean(accHigh), n=n()) %>%
+    ungroup() %>%
+    ggplot(aes(x=isLikely, y=acc)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=acc/2, label=paste0(round(100*acc), "%\n(n=", n, ")"))) + 
+    labs(x="Highest Probability >= 0.975 and Delta Probability >= 0.25?", y="Accuracy")
+
+# Plot of accuracy by condition
+predStats %>%
+    mutate(isLikely=(highProb >= 0.975) & (highProb-nextProb >= 0.25)) %>%
+    group_by(locNamefct, isLikely) %>%
+    summarize(n=n()) %>%
+    ungroup() %>%
+    ggplot(aes(x=fct_reorder(locNamefct, n, .fun=min), y=n)) + 
+    geom_col(aes(fill=isLikely), position="fill") + 
+    labs(y="", x="") + 
+    coord_flip() + 
+    theme(legend.position="bottom") + 
+    scale_fill_discrete("Highest Probability >= 0.975 and Delta Probability >= 0.25?", 
+                        breaks=c(TRUE, FALSE)
+                        )
+
+```
+  
+Further work is needed to explore the one vs all predictor to see if it has potential to be expanded using one vs one predictors or if it is overly faulty and prone to making confidently inaccurate predictions,
+  
+
