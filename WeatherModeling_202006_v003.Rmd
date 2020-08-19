@@ -4368,4 +4368,409 @@ predStats %>%
   
 Further work is needed to explore the one vs all predictor to see if it has potential to be expanded using one vs one predictors or if it is overly faulty and prone to making confidently inaccurate predictions,
   
+The correct locale is frequently reasonably close in probability to the "highest probability" locale.  For example, plots of the actual probability and distance show:  
+```{r}
 
+helperAccHighPlot <- function(boolHigh, desc) {
+
+    p1 <- predStats %>% 
+        mutate(delta=round(-2*(actualLocaleProb-highProb), 1)/2, 
+               rndActual=round(2*actualLocaleProb, 1)/2
+               ) %>% 
+        filter(accHigh==boolHigh) %>%
+        count(rndActual, delta) %>% 
+        ggplot(aes(x=rndActual, y=delta)) + 
+        geom_tile(aes(fill=n)) + 
+        scale_fill_continuous("# Obs", low="white", high="green") + 
+        geom_text(aes(label=n), size=3.5) + 
+        labs(x="Rounded Probability of Actual", 
+             y="Delta of Highest Probability vs. Actual Probability", 
+             title=paste0("Probabilities Associated with Actual Locale and Highest Probability Locale", desc)
+             )
+    print(p1)
+    
+}
+
+helperAccHighPlot(boolHigh=TRUE, desc=" (Correct Predictions)")
+helperAccHighPlot(boolHigh=FALSE, desc=" (Incorrect Predictions)")
+
+```
+  
+Statistics can then be captured from the overall data to assess the probability of a prediction being correct conditional on the prediction falling in a given bucket of actual probability vs. delta probability:  
+```{r}
+
+# Find the probabilities associated with all predictions for each locale
+allProbs <- locData %>%
+    mutate(record=row_number()) %>%
+    pivot_longer(-c(record, locNamefct, source, dtime)) %>%
+    mutate(rndValue=round(20*value)/20, 
+           correct=(name==locNamefct)
+           ) %>%
+    group_by(record, locNamefct, source, dtime) %>%
+    mutate(maxValue=max(value)) %>%
+    ungroup() %>%
+    mutate(deltaValue=round(20*(maxValue-value))/20)
+
+# Find the probability that the prediction is correct
+allProbs %>%
+    group_by(rndValue, deltaValue) %>%
+    summarize(n=n(), acc=mean(correct)) %>%
+    filter(n>=10) %>%
+    ggplot(aes(x=rndValue, y=deltaValue)) +
+    geom_tile(aes(fill=acc)) + 
+    geom_text(aes(label=paste0(round(100*acc), "%")), size=3) +
+    scale_fill_continuous("% Actual", low="white", high="green") + 
+    labs(x="Rounded Probability", 
+         y="Delta of Highest Probability vs. Probability", 
+         title="Percent Correct Given Locale Probability and Delta from Highest Probability", 
+         subtitle="Includes only buckets with 10+ observations"
+         )
+
+```
+  
+Suppose that as a process of exclusion, every locale that is further than 27.5% from the highest prediction and has a probability lower than 47.5% is removed from consideration.  What is the frequency of data remaining for consideration, and how much correct data has been excluded?  
+```{r}
+
+excludeSummary <- allProbs %>%
+    mutate(include=(deltaValue <= 0.275 | rndValue >= 0.475)) %>%
+    group_by(locNamefct, source, dtime, record) %>%
+    summarize(n=sum(include), hasCorrect=max(correct*include)) %>%
+    ungroup()
+
+excludeSummary %>% 
+    summarize(n=mean(n), acc=mean(hasCorrect))
+
+```
+  
+This approach reduced data volumes by roughly 75% (29 possibilities down to an average of 7) while preserving 90% of the correct predictions.  How do the statistics vary by actual locale?  
+```{r}
+
+excludeSummary %>% 
+    group_by(locNamefct) %>%
+    summarize(n=mean(n), acc=mean(hasCorrect)) %>%
+    ggplot(aes(x=fct_reorder(locNamefct, acc), y=acc)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=acc/2, label=paste0(round(100*acc), "% (avg.n is ", round(n, 1), ")"))) + 
+    coord_flip() + 
+    labs(x="", y="Percent Included")
+
+```
+  
+For all locales, a strong majority are at least considered for the next step.
+
+An additional approach is to train multiple one-vs-one models and to assess the number of votes received.  A smaller subset of the data is used as a starting point, with two cities per archetype:  
+```{r cache=TRUE}
+
+# Define a set of locales
+oneoneLocs <- c("Chicago, IL", "Milwaukee, WI", 
+                "Las Vegas, NV", "Phoenix, AZ", 
+                "Houston, TX", "New Orleans, LA", 
+                "Philadelphia, PA", "Newark, NJ",
+                "San Diego, CA", "Los Angeles, CA"
+                )
+
+# Create a container for storing all relevant objects
+localeOnevOne <- vector("list", choose(length(oneoneLocs), 2))
+
+# Run the modeling process once for each locale comparison
+n <- 1
+for (firstLoc in oneoneLocs[1:length(oneoneLocs)-1]) {
+    for (secondLoc in oneoneLocs[(match(firstLoc, oneoneLocs)+1):length(oneoneLocs)]) {
+    
+        # Announce the progress
+        cat("\nProcess for:", firstLoc, "and", secondLoc, "\n")
+    
+        # Create the training data to use for the model
+        thisTrain <- localeTrainData %>%
+            filter(locNamefct %in% c(firstLoc, secondLoc)) %>%
+            mutate(curLocale=factor(locNamefct, levels=c(firstLoc, secondLoc)))
+    
+        # Find the samllest group size
+        smallN <- thisTrain %>%
+            count(curLocale) %>%
+            pull(n) %>%
+            min()
+    
+        # Balance the samples in thisTrain
+        thisTrain <- thisTrain %>%
+            group_by(curLocale) %>%
+            sample_n(smallN) %>%
+            ungroup()
+    
+        # Run the CV process with a callback for early stopping if 5 iterations show no improvement
+        xgb_thislocale_cv <- xgbRunModel_002(thisTrain, 
+                                             depVar="curLocale", 
+                                             predVars=locXGBPreds, 
+                                             otherVars=keepVarFull, 
+                                             seed=2008181350+n,
+                                             nrounds=500,
+                                             print_every_n=500, 
+                                             xgbObjective="multi:softmax", 
+                                             funcRun=xgboost::xgb.cv, 
+                                             nfold=5, 
+                                             num_class=2, 
+                                             early_stopping_rounds=5
+                                             )
+
+        # The best iteration can then be pulled
+        bestN <- xgb_thislocale_cv$xgbModel$best_iteration
+    
+        # And the model can be run for that number of iterations
+        xgb_thislocale <- xgbRunModel_002(thisTrain, 
+                                          depVar="curLocale", 
+                                          predVars=locXGBPreds, 
+                                          otherVars=keepVarFull, 
+                                          seed=2008181350+1000+n,
+                                          nrounds=bestN,
+                                          print_every_n=500, 
+                                          xgbObjective="multi:softprob", 
+                                          funcRun=xgboost::xgboost, 
+                                          num_class=2
+                                          )
+    
+    
+        # Place the trained CV object in the relevant list
+        localeOnevOne[[n]] <- list(cvResult=xgb_thislocale_cv, 
+                                   mdlResult=xgb_thislocale, 
+                                   bestN=bestN, 
+                                   firstLoc=firstLoc, 
+                                   secondLoc=secondLoc
+                                   )
+    
+        # Increment the counter
+        n <- n + 1
+    
+    }
+}
+
+```
+  
+Suppose then that the test data file is subset to only these 10 locales, and that each one vs. one prediction is run on the data subset:  
+```{r}
+
+# Prepare the test data
+testOneOne <- fullDataSplit$testData %>%
+    select_at(vars(all_of(c(locXGBPreds, keepVarFull)))) %>%
+    filter(locNamefct %in% oneoneLocs) %>%
+    mutate_if(is.factor, .funs=fct_drop)
+
+# Function to create the probabilities by locale
+predictOneOneProbs <- function(x) {
+    helperXGBPredict(x$mdlResult$xgbModel, 
+                     dfSparse=helperMakeSparse(testOneOne, 
+                                               depVar="locNamefct", 
+                                               predVars=locXGBPreds
+                                               ), 
+                     objective="multi:softprob", 
+                     probMatrix=TRUE, 
+                     yLevels=x$mdlResult$yTrainLevels
+                     )$predData %>%
+        mutate(rownum=row_number(), predicted=as.character(predicted))
+}
+
+# Extract from list
+allOneOneProbs <- map_dfr(localeOnevOne, .f=predictOneOneProbs, .id="Run")
+
+# Make the prediction based on 1) most votes, then 2) highest probability when in majority
+locOneOne <- allOneOneProbs %>%
+    group_by(rownum, predicted) %>%
+    summarize(n=n(), highProb=sum(probPredicted >= 0.9), majProb=sum(probPredicted)) %>%
+    filter(n==max(n)) %>%
+    ungroup() %>%
+    arrange(rownum, -highProb, -majProb) %>%
+    group_by(rownum) %>%
+    filter(row_number()==1) %>%
+    ungroup() %>%
+    bind_cols(select(testOneOne, locNamefct, source, dtime))
+
+# Overall accuracy by locale
+locOneOne %>%
+    mutate(correct=predicted==locNamefct) %>%
+    group_by(locNamefct) %>%
+    summarize(pctCorrect=mean(correct), n=n()) %>%
+    ggplot(aes(x=fct_reorder(locNamefct, pctCorrect), y=pctCorrect)) + 
+    geom_point() + 
+    geom_text(aes(y=pctCorrect+0.02, label=paste0(round(100*pctCorrect), "%")), hjust=0, size=3.5) + 
+    coord_flip() + 
+    labs(x="Actual Locale", 
+         y="Percent Correctly Predicted", 
+         title="Predictions based on Maximum Probability"
+         ) + 
+    ylim(c(0, 1.1))
+
+# Confusion matrix
+locOneOne %>%
+    mutate(name=factor(predicted)) %>%
+    count(locNamefct, name) %>%
+    group_by(locNamefct) %>%
+    mutate(pct=n/sum(n)) %>%
+    ungroup() %>%
+    ggplot(aes(x=locNamefct, y=name)) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(round(100*pct), "%")), size=2.5) + 
+    coord_flip() + 
+    labs(x="Actual Locale", 
+         y="Predicted Locale", 
+         title="Predictions based on Maximum Probability"
+         ) + 
+    scale_fill_continuous(low="white", high="lightgreen") + 
+    theme(axis.text.x=element_text(angle=90, hjust=1))
+
+```
+  
+Locales are being classified to the proper archetype, which is encouraging.  Accuracy is improved, though likely driven by having only 10 categories rather than 30.  The process is expanded to consider all 2016 locales:  
+```{r cache=TRUE}
+
+# Define a set of locales
+oneoneLocs_002 <- locs2016
+
+# Create a container for storing all relevant objects
+localeOnevOne_002 <- vector("list", choose(length(oneoneLocs_002), 2))
+
+# Run the modeling process once for each locale comparison
+n <- 1
+for (firstLoc in oneoneLocs_002[1:length(oneoneLocs_002)-1]) {
+    for (secondLoc in oneoneLocs_002[(match(firstLoc, oneoneLocs_002)+1):length(oneoneLocs_002)]) {
+    
+        # Announce the progress
+        cat("\nProcess for:", firstLoc, "and", secondLoc, "\n")
+    
+        # Create the training data to use for the model
+        thisTrain <- localeTrainData %>%
+            filter(locNamefct %in% c(firstLoc, secondLoc)) %>%
+            mutate(curLocale=factor(locNamefct, levels=c(firstLoc, secondLoc)))
+    
+        # Find the samllest group size
+        smallN <- thisTrain %>%
+            count(curLocale) %>%
+            pull(n) %>%
+            min()
+    
+        # Balance the samples in thisTrain
+        thisTrain <- thisTrain %>%
+            group_by(curLocale) %>%
+            sample_n(smallN) %>%
+            ungroup()
+    
+        # Run the CV process with a callback for early stopping if 5 iterations show no improvement
+        xgb_thislocale_cv <- xgbRunModel_002(thisTrain, 
+                                             depVar="curLocale", 
+                                             predVars=locXGBPreds, 
+                                             otherVars=keepVarFull, 
+                                             seed=2008181350+n,
+                                             nrounds=500,
+                                             print_every_n=500, 
+                                             xgbObjective="multi:softmax", 
+                                             funcRun=xgboost::xgb.cv, 
+                                             nfold=5, 
+                                             num_class=2, 
+                                             early_stopping_rounds=5
+                                             )
+
+        # The best iteration can then be pulled
+        bestN <- xgb_thislocale_cv$xgbModel$best_iteration
+    
+        # And the model can be run for that number of iterations
+        xgb_thislocale <- xgbRunModel_002(thisTrain, 
+                                          depVar="curLocale", 
+                                          predVars=locXGBPreds, 
+                                          otherVars=keepVarFull, 
+                                          seed=2008181350+1000+n,
+                                          nrounds=bestN,
+                                          print_every_n=500, 
+                                          xgbObjective="multi:softprob", 
+                                          funcRun=xgboost::xgboost, 
+                                          num_class=2
+                                          )
+    
+    
+        # Place the trained CV object in the relevant list
+        localeOnevOne_002[[n]] <- list(cvResult=xgb_thislocale_cv, 
+                                       mdlResult=xgb_thislocale, 
+                                       bestN=bestN, 
+                                       firstLoc=firstLoc, 
+                                       secondLoc=secondLoc
+                                       )
+    
+        # Increment the counter
+        n <- n + 1
+    
+    }
+}
+
+```
+  
+Suppose then that the test data file is subset to only these 10 locales, and that each one vs. one prediction is run on the data subset:  
+```{r}
+
+# Prepare the test data
+testOneOne_002 <- fullDataSplit$testData %>%
+    select_at(vars(all_of(c(locXGBPreds, keepVarFull)))) %>%
+    filter(locNamefct %in% oneoneLocs_002) %>%
+    mutate_if(is.factor, .funs=fct_drop)
+
+# Function to create the probabilities by locale
+predictOneOneProbs_002 <- function(x) {
+    helperXGBPredict(x$mdlResult$xgbModel, 
+                     dfSparse=helperMakeSparse(testOneOne_002, 
+                                               depVar="locNamefct", 
+                                               predVars=locXGBPreds
+                                               ), 
+                     objective="multi:softprob", 
+                     probMatrix=TRUE, 
+                     yLevels=x$mdlResult$yTrainLevels
+                     )$predData %>%
+        mutate(rownum=row_number(), predicted=as.character(predicted))
+}
+
+# Extract from list
+allOneOneProbs_002 <- map_dfr(localeOnevOne_002, .f=predictOneOneProbs_002, .id="Run")
+
+# Make the prediction based on 1) most votes, then 2) highest probability when in majority
+locOneOne_002 <- allOneOneProbs_002 %>%
+    group_by(rownum, predicted) %>%
+    summarize(n=n(), highProb=sum(probPredicted >= 0.9), majProb=sum(probPredicted)) %>%
+    filter(n==max(n)) %>%
+    ungroup() %>%
+    arrange(rownum, -highProb, -majProb) %>%
+    group_by(rownum) %>%
+    filter(row_number()==1) %>%
+    ungroup() %>%
+    bind_cols(select(testOneOne_002, locNamefct, source, dtime))
+
+# Overall accuracy by locale
+locOneOne_002 %>%
+    mutate(correct=predicted==locNamefct) %>%
+    group_by(locNamefct) %>%
+    summarize(pctCorrect=mean(correct), n=n()) %>%
+    ggplot(aes(x=fct_reorder(locNamefct, pctCorrect), y=pctCorrect)) + 
+    geom_point() + 
+    geom_text(aes(y=pctCorrect+0.02, label=paste0(round(100*pctCorrect), "%")), hjust=0, size=3.5) + 
+    coord_flip() + 
+    labs(x="Actual Locale", 
+         y="Percent Correctly Predicted", 
+         title="Predictions based on Maximum Probability"
+         ) + 
+    ylim(c(0, 1.1))
+
+# Confusion matrix
+locOneOne_002 %>%
+    mutate(name=factor(predicted)) %>%
+    count(locNamefct, name) %>%
+    group_by(locNamefct) %>%
+    mutate(pct=n/sum(n)) %>%
+    ungroup() %>%
+    ggplot(aes(x=locNamefct, y=name)) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(round(100*pct), "%")), size=2.5) + 
+    coord_flip() + 
+    labs(x="Actual Locale", 
+         y="Predicted Locale", 
+         title="Predictions based on Maximum Probability"
+         ) + 
+    scale_fill_continuous(low="white", high="lightgreen") + 
+    theme(axis.text.x=element_text(angle=90, hjust=1))
+
+```
+  
+This approach increases the percentage of correct classifications from 44% to 55%.  The cold weather cities in particular should be explored to see if accuracies can be further improved.
