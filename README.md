@@ -2053,4 +2053,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 17-AUG-2020  
 * WeatherModeling_202006_v002 integrates one vs all XGB classification for 2016 locales  
 * WeatherModeling_202006_v002 expands one vs all XGB classification for 2016 locales  
+* WeatherModeling_202006_v002 integrates one vs one XGB classification for 2016 locales  
   
