@@ -4774,3 +4774,372 @@ locOneOne_002 %>%
 ```
   
 This approach increases the percentage of correct classifications from 44% to 55%.  The cold weather cities in particular should be explored to see if accuracies can be further improved.
+  
+Suppose that the objective is changed to classifying cities according to some broad buckets based on the confusion matri outcomes:  
+  
+* Tampa, Houston, Miami - Humid  
+* DC, Newark, Philadelphia - Mid-Atlantic  
+* San Jose, San Francisco - Marine, N CA  
+* San Diego, Los Angeles - Marine, S CA  
+* Saint Louis, Dallas, Atlanta - South Central  
+* Phoenix, Las Vegas - Desert  
+* Traverse City, Chicago, Detroit, Grand Rapids, Green Bay, Madison, Milwaukee, Minneapolis - Wintry  
+  
+Suppose also that the stand-alone cities that are generally well classified are excluded:  
+  
+* Seattle, San Antonio, New Orleans, Denver  
+
+Suppose also that the stand-alone cities that are broadly misclassified are excluded:  
+  
+* Indianapolis, Lincoln, Boston  
+  
+A mapping file is created to convert locNamefct to groupNamefct:  
+```{r}
+
+mapLoc2Group <- c("Atlanta, GA"="South Central", 
+                  "Boston, MA"="Exclude", 
+                  "Chicago, IL"="Wintry", 
+                  "Dallas, TX"="South Central", 
+                  "Denver, CO"="Exclude", 
+                  "Detroit, MI"="Wintry", 
+                  "Grand Rapids, MI"="Wintry", 
+                  "Green Bay, WI"="Wintry", 
+                  "Houston, TX"="Humid", 
+                  "Indianapolis, TX"="Exclude", 
+                  "Las Vegas, NV"="Desert", 
+                  "Lincoln, NE"="Exclude", 
+                  "Los Angeles, CA"="Marine, S CA", 
+                  "Madison, WI"="Wintry", 
+                  "Miami, FL"="Humid", 
+                  "Milwaukee, WI"="Wintry", 
+                  "Minneapolis, MN"="Wintry", 
+                  "New Orleans, LA"="Exclude", 
+                  "Newark, NJ"="Mid-Atlantic", 
+                  "Philadelphia, PA"="Mid-Atlantic", 
+                  "Phoenix, AZ"="Desert", 
+                  "Saint Louis, MO"="South Central", 
+                  "San Antonio, TX"="Exclude", 
+                  "San Diego, CA"="Marine, S CA", 
+                  "San Francisco, CA"="Marine, N CA", 
+                  "San Jose, CA"="Marine, N CA", 
+                  "Seattle, WA"="Exclude", 
+                  "Tampa Bay, FL"="Humid", 
+                  "Traverse City, MI"="Wintry", 
+                  "Washington, DC"="Mid-Atlantic"
+                  )
+
+```
+  
+The mapping file is tested to be sure that counts by group are as expected:  
+```{r}
+
+groupTrainData <- localeTrainData %>%
+    mutate(groupNamefct=factor(mapLoc2Group[locNamefct]))
+
+groupTestData <- fullDataSplit$testData %>%
+    mutate(groupNamefct=factor(mapLoc2Group[locNamefct]))
+
+groupTrainData %>%
+    count(groupNamefct, locNamefct) %>%
+    pivot_wider(locNamefct, names_from=groupNamefct, values_from=n) %>%
+    as.data.frame()
+
+```
+  
+The mappings appear as expected, and the CV process can be run on the mapped data:  
+```{r cache=TRUE}
+
+# Run the CV process with a callback for early stopping if 5 iterations show no improvement
+xgb_group_cv <- xgbRunModel_002(groupTrainData, 
+                                depVar="groupNamefct", 
+                                predVars=locXGBPreds, 
+                                otherVars=keepVarFull, 
+                                critFilterNot=list(groupNamefct="Exclude"),
+                                seed=2008191330,
+                                nrounds=1000,
+                                print_every_n=25, 
+                                xgbObjective="multi:softmax", 
+                                funcRun=xgboost::xgb.cv, 
+                                nfold=5, 
+                                num_class=7, 
+                                early_stopping_rounds=5
+                                )
+
+```
+  
+The model can then be trained using 200 observations:  
+```{r cache=TRUE}
+
+# Extract best n
+bestN <- xgb_group_cv$xgbModel$best_iteration
+
+# And the model can be run for that number of iterations
+xgb_group <- xgbRunModel_002(groupTrainData, 
+                             depVar="groupNamefct", 
+                             predVars=locXGBPreds, 
+                             otherVars=keepVarFull, 
+                             critFilterNot=list(groupNamefct="Exclude"),
+                             seed=2008191350,
+                             nrounds=bestN,
+                             print_every_n=25, 
+                             xgbObjective="multi:softprob", 
+                             funcRun=xgboost::xgboost, 
+                             num_class=7
+                             )
+
+```
+  
+The assessment process can then be run on the trained model:  
+```{r}
+
+# ASSESSMENT 1: Variable Importance
+xgb_allgroups_importance <- plotXGBImportance(xgb_group, 
+                                              featureStems=locXGBPreds, 
+                                              stemMapper = varMapper, 
+                                              plotTitle="Gain by variable in xgboost", 
+                                              plotSubtitle="Locale Group (2016)"
+                                              )
+
+# ASSESSMENT 2: Evolution of training error
+plotXGBEvolution(xgb_group, isRegression=FALSE, label_every=NULL, yLim=c(0, NA), show_line=TRUE)
+
+# ASSESSMENT 3: Assess performance on test dataset
+assessTestData(xgb_group, depVar="groupNamefct", reportBy="groupNamefct", isClassification=TRUE)
+
+# ASSESSMENT 4: Prediction quality vs. confidence (currently only implemented for classification)
+plotPredictionConfidencevQuality(xgb_group, depVar="groupNamefct", dataLim=5)
+
+# ASSESSMENT 5: Performance on other data (currently only implemented for classification)
+df_group_pred <- assessNonModelDataPredictions(mdl=xgb_group$xgbModel, 
+                                               df=filter(groupTestData, 
+                                                         !is.na(TempF), 
+                                                         year==2016, 
+                                                         !(groupNamefct %in% c("Exclude"))
+                                                         ), 
+                                               depVar="groupNamefct", 
+                                               predVars=locXGBPreds, 
+                                               yLevels=xgb_group$yTrainLevels, 
+                                               ySortVar="None"
+                                               )
+
+```
+  
+Classifications on the holdout data are generally strong, with meaningful mismatches as follows:  
+  
+* Mid-Atlantic as Wintry (~15%)  
+* South Central as Wintry (~10%)  
+* Marine S vs Marine N (~5% in each direction)  
+  
+Suppose two steps are taken to address this:  
+  
+* Collapse Marine S and Marine N to a single group, Marine  
+* Cut the size of the Wintry test data by 50% so that it is functionally more like 4 city volumes of data rather than 8 city volumes of data  
+  
+```{r}
+
+set.seed(2008191408)
+
+groupTrainData_002 <- localeTrainData %>%
+    mutate(groupName=mapLoc2Group[locNamefct], 
+           groupNamefct=ifelse(str_detect(groupName, "Marine"), "Marine", groupName)
+           ) %>%
+    filter(groupNamefct != "Wintry" | rnorm(nrow(.)) >= 0)
+    
+
+groupTestData_002 <- fullDataSplit$testData %>%
+    mutate(groupName=mapLoc2Group[locNamefct], 
+           groupNamefct=ifelse(str_detect(groupName, "Marine"), "Marine", groupName)
+           )
+
+groupTrainData_002 %>%
+    count(groupNamefct, locNamefct) %>%
+    pivot_wider(locNamefct, names_from=groupNamefct, values_from=n) %>%
+    as.data.frame()
+
+groupTrainData_002 %>%
+    count(groupNamefct)
+
+```
+  
+The model is then trained as before, starting with CV:  
+```{r cache=TRUE}
+
+# Run the CV process with a callback for early stopping if 5 iterations show no improvement
+xgb_group_cv_002 <- xgbRunModel_002(groupTrainData_002, 
+                                    depVar="groupNamefct", 
+                                    predVars=locXGBPreds, 
+                                    otherVars=keepVarFull, 
+                                    critFilterNot=list(groupNamefct="Exclude"),
+                                    seed=2008191415,
+                                    nrounds=1000,
+                                    print_every_n=25, 
+                                    xgbObjective="multi:softmax", 
+                                    funcRun=xgboost::xgb.cv, 
+                                    nfold=5, 
+                                    num_class=6, 
+                                    early_stopping_rounds=5
+                                    )
+
+```
+  
+The best number of rounds can again be extracted, and a model trained:  
+```{r cache=TRUE}
+
+# Extract best n
+bestN <- xgb_group_cv_002$xgbModel$best_iteration
+
+# And the model can be run for that number of iterations
+xgb_group_002 <- xgbRunModel_002(groupTrainData_002, 
+                                 depVar="groupNamefct", 
+                                 predVars=locXGBPreds, 
+                                 otherVars=keepVarFull, 
+                                 critFilterNot=list(groupNamefct="Exclude"),
+                                 seed=2008191430,
+                                 nrounds=bestN,
+                                 print_every_n=25, 
+                                 xgbObjective="multi:softprob", 
+                                 funcRun=xgboost::xgboost, 
+                                 num_class=6
+                                 )
+
+```
+
+The assessment process can then be run on the trained model:  
+```{r}
+
+# ASSESSMENT 1: Variable Importance
+xgb_allgroups_importance_002 <- plotXGBImportance(xgb_group_002, 
+                                                  featureStems=locXGBPreds, 
+                                                  stemMapper = varMapper, 
+                                                  plotTitle="Gain by variable in xgboost", 
+                                                  plotSubtitle="Locale Group (2016)"
+                                                  )
+
+# ASSESSMENT 2: Evolution of training error
+plotXGBEvolution(xgb_group_002, isRegression=FALSE, label_every=NULL, yLim=c(0, NA), show_line=TRUE)
+
+# ASSESSMENT 3: Assess performance on test dataset
+assessTestData(xgb_group_002, depVar="groupNamefct", reportBy="groupNamefct", isClassification=TRUE)
+
+# ASSESSMENT 4: Prediction quality vs. confidence (currently only implemented for classification)
+plotPredictionConfidencevQuality(xgb_group_002, depVar="groupNamefct", dataLim=5)
+
+# ASSESSMENT 5: Performance on other data (currently only implemented for classification)
+df_group_pred_002 <- assessNonModelDataPredictions(mdl=xgb_group_002$xgbModel, 
+                                                   df=filter(groupTestData_002, 
+                                                             !is.na(TempF), 
+                                                             year==2016, 
+                                                             !(groupNamefct %in% c("Exclude"))
+                                                             ), 
+                                                   depVar="groupNamefct", 
+                                                   predVars=locXGBPreds, 
+                                                   yLevels=xgb_group_002$yTrainLevels, 
+                                                   ySortVar="None"
+                                                   )
+
+```
+  
+Overall error levels are comparable.  With Wintry no longer being the dominant class, Wintry moves down to 85% accuracy, but fewer observations are inaccurately classified as Wintry.  Marine and Desert are almost always correctly classified.
+
+The exclude data are run through the classifier to see where they fall:  
+```{r}
+
+# ASSESSMENT 5: Performance on other data (currently only implemented for classification)
+df_group_pred_exclude_002 <- assessNonModelDataPredictions(mdl=xgb_group_002$xgbModel, 
+                                                           df=filter(groupTestData_002, 
+                                                                     !is.na(TempF), 
+                                                                     year==2016, 
+                                                                     (groupNamefct %in% c("Exclude"))
+                                                                     ), 
+                                                           depVar="locNamefct", 
+                                                           predVars=locXGBPreds, 
+                                                           yLevels=xgb_group_002$yTrainLevels, 
+                                                           ySortVar="Wintry"
+                                                           )
+
+```
+  
+Classifications are broadly as expected based on previous analyses.
+
+A next area for exploration is hyperparameter tuning, including eta (learning rate) and depth.  An initial model is run with a significant increase in depth, from the default of 6 to a new attempt of 50.  The CV process will again be run with the goal of avoiding overfitting:  
+```{r cache=TRUE}
+
+# Same data and approach as previous, but with maximum depth of 50 (instead of default 6)
+# Run the CV process with a callback for early stopping if 5 iterations show no improvement
+xgb_group_cv_003 <- xgbRunModel_002(groupTrainData_002, 
+                                    depVar="groupNamefct", 
+                                    predVars=locXGBPreds, 
+                                    otherVars=keepVarFull, 
+                                    critFilterNot=list(groupNamefct="Exclude"),
+                                    seed=2008191415,
+                                    nrounds=1000,
+                                    print_every_n=25, 
+                                    xgbObjective="multi:softmax", 
+                                    funcRun=xgboost::xgb.cv, 
+                                    nfold=5, 
+                                    num_class=6, 
+                                    early_stopping_rounds=5, 
+                                    max_depth=50
+                                    )
+
+```
+
+The best number of rounds can again be extracted, and a model trained:  
+```{r cache=TRUE}
+
+# Extract best n
+bestN <- xgb_group_cv_003$xgbModel$best_iteration
+
+# And the model can be run for that number of iterations
+xgb_group_003 <- xgbRunModel_002(groupTrainData_002, 
+                                 depVar="groupNamefct", 
+                                 predVars=locXGBPreds, 
+                                 otherVars=keepVarFull, 
+                                 critFilterNot=list(groupNamefct="Exclude"),
+                                 seed=2008191430,
+                                 nrounds=bestN,
+                                 print_every_n=25, 
+                                 xgbObjective="multi:softprob", 
+                                 funcRun=xgboost::xgboost, 
+                                 num_class=6, 
+                                 max_depth=60
+                                 )
+
+```
+  
+The assessment process can then be run on the trained model:  
+```{r}
+
+# ASSESSMENT 1: Variable Importance
+xgb_allgroups_importance_003 <- plotXGBImportance(xgb_group_003, 
+                                                  featureStems=locXGBPreds, 
+                                                  stemMapper = varMapper, 
+                                                  plotTitle="Gain by variable in xgboost", 
+                                                  plotSubtitle="Locale Group (2016)"
+                                                  )
+
+# ASSESSMENT 2: Evolution of training error
+plotXGBEvolution(xgb_group_003, isRegression=FALSE, label_every=NULL, yLim=c(0, NA), show_line=TRUE)
+
+# ASSESSMENT 3: Assess performance on test dataset
+assessTestData(xgb_group_003, depVar="groupNamefct", reportBy="groupNamefct", isClassification=TRUE)
+
+# ASSESSMENT 4: Prediction quality vs. confidence (currently only implemented for classification)
+plotPredictionConfidencevQuality(xgb_group_003, depVar="groupNamefct", dataLim=5)
+
+# ASSESSMENT 5: Performance on other data (currently only implemented for classification)
+df_group_pred_003 <- assessNonModelDataPredictions(mdl=xgb_group_003$xgbModel, 
+                                                   df=filter(groupTestData_002, 
+                                                             !is.na(TempF), 
+                                                             year==2016, 
+                                                             !(groupNamefct %in% c("Exclude"))
+                                                             ), 
+                                                   depVar="groupNamefct", 
+                                                   predVars=locXGBPreds, 
+                                                   yLevels=xgb_group_003$yTrainLevels, 
+                                                   ySortVar="None"
+                                                   )
+
+```
+  
+There is roughly a 2% increase in classification accuracy, though the model now tends towards overconfidence in its predictions.  Next steps are to further assess the impact of eta and max_depth.
