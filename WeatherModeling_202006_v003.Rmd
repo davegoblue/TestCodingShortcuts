@@ -5142,4 +5142,272 @@ df_group_pred_003 <- assessNonModelDataPredictions(mdl=xgb_group_003$xgbModel,
 
 ```
   
-There is roughly a 2% increase in classification accuracy, though the model now tends towards overconfidence in its predictions.  Next steps are to further assess the impact of eta and max_depth.
+There is roughly a 2% increase in classification accuracy, though the model now tends towards overconfidence in its predictions.  Next steps are to 1) integrate the more distinct stand-alone locales, and 2) further assess the impact of eta and max_depth.
+  
+As a next step, the locales of Seattle, San Antonio, Denver, and New Orleans are added back to the classification.  These locales generally have strong stand-alone classification, so the goal is to see whether that holds even in comparison to other archetypes.
+
+* Add Denver, New Orleans, San Antonio, Seattle as stand-alone  
+* Consolidate to Marine as per previous  
+* Reduce Wintry to half-sampling (functionally, the equivalent of 4 locales of data)  
+  
+Example code includes:  
+```{r}
+
+mapLoc2Group_004 <- c("Atlanta, GA"="South Central", 
+                      "Boston, MA"="Exclude", 
+                      "Chicago, IL"="Wintry", 
+                      "Dallas, TX"="South Central", 
+                      "Denver, CO"="Denver", 
+                      "Detroit, MI"="Wintry", 
+                      "Grand Rapids, MI"="Wintry", 
+                      "Green Bay, WI"="Wintry", 
+                      "Houston, TX"="Humid", 
+                      "Indianapolis, TX"="Exclude", 
+                      "Las Vegas, NV"="Desert", 
+                      "Lincoln, NE"="Exclude", 
+                      "Los Angeles, CA"="Marine", 
+                      "Madison, WI"="Wintry", 
+                      "Miami, FL"="Humid", 
+                      "Milwaukee, WI"="Wintry", 
+                      "Minneapolis, MN"="Wintry", 
+                      "New Orleans, LA"="New Orleans", 
+                      "Newark, NJ"="Mid-Atlantic", 
+                      "Philadelphia, PA"="Mid-Atlantic", 
+                      "Phoenix, AZ"="Desert", 
+                      "Saint Louis, MO"="South Central", 
+                      "San Antonio, TX"="San Antonio", 
+                      "San Diego, CA"="Marine", 
+                      "San Francisco, CA"="Marine", 
+                      "San Jose, CA"="Marine", 
+                      "Seattle, WA"="Seattle", 
+                      "Tampa Bay, FL"="Humid", 
+                      "Traverse City, MI"="Wintry", 
+                      "Washington, DC"="Mid-Atlantic"
+                      )
+
+set.seed(2008201259)
+
+groupTrainData_004 <- localeTrainData %>%
+    mutate(groupName=mapLoc2Group_004[locNamefct], groupNamefct=factor(groupName)) %>%
+    filter(groupNamefct != "Wintry" | rnorm(nrow(.)) >= 0)
+
+groupTestData_004 <- fullDataSplit$testData %>%
+    mutate(groupName=mapLoc2Group_004[locNamefct], groupNamefct=factor(groupName)) %>%
+    filter(groupNamefct != "Wintry" | rnorm(nrow(.)) >= 0)
+
+groupTrainData_004 %>%
+    count(groupNamefct, locNamefct) %>%
+    pivot_wider(locNamefct, names_from=groupNamefct, values_from=n) %>%
+    as.data.frame()
+
+groupTrainData_004 %>%
+    count(groupNamefct)
+
+```
+
+The eta will be maintained at the default with the maximum depth set to 25.  The CV process is run, with early stopping to determine the number of rounds:  
+```{r cache=TRUE}
+
+# Same data and approach as previous, but with maximum depth of 25 (instead of default 6)
+# Run the CV process with a callback for early stopping if 5 iterations show no improvement
+xgb_group_cv_004 <- xgbRunModel_002(groupTrainData_004, 
+                                    depVar="groupNamefct", 
+                                    predVars=locXGBPreds, 
+                                    otherVars=keepVarFull, 
+                                    critFilterNot=list(groupNamefct="Exclude"),
+                                    seed=2008201313,
+                                    nrounds=1000,
+                                    print_every_n=25, 
+                                    xgbObjective="multi:softmax", 
+                                    funcRun=xgboost::xgb.cv, 
+                                    nfold=5, 
+                                    num_class=10, 
+                                    early_stopping_rounds=5, 
+                                    max_depth=25
+                                    )
+
+```
+
+The best number of rounds can again be extracted, and a model trained:  
+```{r cache=TRUE}
+
+# CV Error Evolution
+plotXGBEvolution(xgb_group_cv_004, isRegression=FALSE, label_every=NULL, yLim=c(0, NA), show_line=TRUE)
+
+# Extract best n
+bestN <- xgb_group_cv_004$xgbModel$best_iteration
+
+# And the model can be run for that number of iterations
+xgb_group_004 <- xgbRunModel_002(groupTrainData_004, 
+                                 depVar="groupNamefct", 
+                                 predVars=locXGBPreds, 
+                                 otherVars=keepVarFull, 
+                                 critFilterNot=list(groupNamefct="Exclude"),
+                                 seed=2008201330,
+                                 nrounds=bestN,
+                                 print_every_n=25, 
+                                 xgbObjective="multi:softprob", 
+                                 funcRun=xgboost::xgboost, 
+                                 num_class=10, 
+                                 max_depth=25
+                                 )
+
+```
+  
+The assessment process can then be run on the trained model:  
+```{r}
+
+# ASSESSMENT 1: Variable Importance
+xgb_allgroups_importance_004 <- plotXGBImportance(xgb_group_004, 
+                                                  featureStems=locXGBPreds, 
+                                                  stemMapper = varMapper, 
+                                                  plotTitle="Gain by variable in xgboost", 
+                                                  plotSubtitle="Locale Group (2016)"
+                                                  )
+
+# ASSESSMENT 2: Evolution of training error
+plotXGBEvolution(xgb_group_004, isRegression=FALSE, label_every=NULL, yLim=c(0, NA), show_line=TRUE)
+
+# ASSESSMENT 3: Assess performance on test dataset
+assessTestData(xgb_group_004, depVar="groupNamefct", reportBy="groupNamefct", isClassification=TRUE)
+
+# ASSESSMENT 4: Prediction quality vs. confidence (currently only implemented for classification)
+plotPredictionConfidencevQuality(xgb_group_004, depVar="groupNamefct", dataLim=5)
+
+# ASSESSMENT 5: Performance on other data (currently only implemented for classification)
+df_group_pred_004 <- assessNonModelDataPredictions(mdl=xgb_group_004$xgbModel, 
+                                                   df=filter(groupTestData_004, 
+                                                             !is.na(TempF), 
+                                                             year==2016, 
+                                                             !(groupNamefct %in% c("Exclude"))
+                                                             ), 
+                                                   depVar="groupNamefct", 
+                                                   predVars=locXGBPreds, 
+                                                   yLevels=xgb_group_004$yTrainLevels, 
+                                                   ySortVar="None"
+                                                   )
+
+```
+  
+The model achieves 88% accuracy, including ~90% accuracy for each of Denver, San Antonio, and Seattle.  New Orleans is at ~80% accuracy with ~10% misclassified as New Orleans.  The model tends towards overly confident predictions (probabilities higher than achieved).
+
+Suppose the fully out of sample data are separated in to records with 97.5%+ probability and all other:  
+```{r}
+
+# Distribution of predictions
+df_group_pred_004 %>%
+    filter(groupNamefct != "Exclude") %>%
+    mutate(highProb=probPredicted >= 0.975) %>%
+    ggplot(aes(x=fct_reorder(groupNamefct, highProb, .fun=mean), fill=highProb)) + 
+    geom_bar(position="fill") + 
+    labs(x="Actual Archetype", 
+         y="Percent of Predictions", 
+         title="A majority of predictions have probability >= 97.5+"
+         ) + 
+    scale_fill_discrete("Predicted Probability >= 97.5%?") + 
+    coord_flip() +
+    theme(legend.position="bottom")
+
+# Accuracy rates when probability >= 97.5%
+df_group_pred_004 %>%
+    filter(probPredicted >= 0.975, groupNamefct != "Exclude") %>%
+    mutate(correct=fct_drop(predicted)==fct_drop(groupNamefct)) %>%
+    group_by(groupNamefct) %>%
+    summarize(n=n(), pct=sum(correct)/n()) %>%
+    ggplot(aes(x=fct_reorder(groupNamefct, pct), y=pct)) + 
+    geom_point() + 
+    geom_text(aes(y=pct+0.03, label=paste0(round(100*pct), "%"))) +
+    coord_flip() +
+    ylim(c(0, NA)) +
+    labs(x="Actual Archetype", 
+         y="Percent Assigned to Correct Archetype", 
+         title="Almost all highly confident (97.5%+) predictions assign the proper archetype"
+         )
+
+# Accuracy rates when probability >= 97.5%
+df_group_pred_004 %>%
+    filter(probPredicted >= 0.975, groupNamefct != "Exclude") %>%
+    mutate(correct=fct_drop(predicted)==fct_drop(groupNamefct)) %>%
+    group_by(locNamefct) %>%
+    summarize(n=n(), pct=sum(correct)/n()) %>%
+    ggplot(aes(x=fct_reorder(locNamefct, pct), y=pct)) + 
+    geom_point() + 
+    geom_text(aes(y=pct+0.03, label=paste0(round(100*pct), "%"))) +
+    coord_flip() +
+    ylim(c(0, NA)) +
+    labs(x="Actual Locale", 
+         y="Percent Assigned to Correct Archetype", 
+         title="Almost all highly confident (97.5%+) predictions assign the proper archetype"
+         )
+
+# Accuracy rates when probability < 97.5%
+df_group_pred_004 %>%
+    filter(probPredicted < 0.975, groupNamefct != "Exclude") %>%
+    mutate(correct=fct_drop(predicted)==fct_drop(groupNamefct)) %>%
+    group_by(groupNamefct) %>%
+    summarize(n=n(), pct=sum(correct)/n()) %>%
+    ggplot(aes(x=fct_reorder(groupNamefct, pct), y=pct)) + 
+    geom_point() + 
+    geom_text(aes(y=pct+0.03, label=paste0(round(100*pct), "%"))) +
+    coord_flip() +
+    ylim(c(0, 1)) +
+    labs(x="Actual Archetype", 
+         y="Percent Assigned to Correct Archetype", 
+         title="The correct archetype is assigned ~70% of the time for less confident (97.5%-) predictions"
+         )
+
+# Accuracy rates when probability < 97.5%
+df_group_pred_004 %>%
+    filter(probPredicted < 0.975, groupNamefct != "Exclude") %>%
+    mutate(correct=fct_drop(predicted)==fct_drop(groupNamefct)) %>%
+    group_by(locNamefct) %>%
+    summarize(n=n(), pct=sum(correct)/n()) %>%
+    ggplot(aes(x=fct_reorder(locNamefct, pct), y=pct)) + 
+    geom_point() + 
+    geom_text(aes(y=pct+0.03, label=paste0(round(100*pct), "%"))) +
+    coord_flip() +
+    ylim(c(0, 1)) +
+    labs(x="Actual Locale", 
+         y="Percent Assigned to Correct Archetype", 
+         title="The correct archetype is assigned ~70% of the time for less confident (97.5%-) predictions"
+         )
+
+# Confusion matrix for less confident predictions
+df_group_pred_004 %>%
+    filter(probPredicted < 0.975, groupNamefct != "Exclude") %>%
+    mutate(predicted=fct_drop(predicted), groupNamefct=fct_drop(groupNamefct)) %>%
+    count(groupNamefct, predicted) %>%
+    group_by(groupNamefct) %>%
+    mutate(pct=n/sum(n)) %>%
+    ggplot(aes(y=groupNamefct, x=predicted)) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(round(100*pct), "%"))) +
+    labs(y="Actual Archetype", 
+         x="Predicted Archetype", 
+         title="Confusion matrix for predictions with probability < 97.5%"
+         ) + 
+    scale_fill_continuous("", low="white", high="green")
+
+```
+  
+High probability predictions have ~99% accuracy while lower probability predictions average ~70% accuracy.  The higher overall accuracy observed in Desert, Denver, and Marine are due to a higher proportion of predictions for these archetypes being highly confident (the archetypes are well-differentiated).
+
+The predicted probability matrix from the modeled test data can inform investigation of "how close" the correct locale is when there is a classification error:  
+```{r}
+
+xgb_group_004$predData %>%
+    mutate(rowNumber=row_number()) %>%
+    pivot_longer(-rowNumber) %>%
+    inner_join(mutate(xgb_group_004$testData, rowNumber=row_number())) %>%
+    filter(groupNamefct!=predicted, name==groupNamefct) %>%
+    mutate(delta=probPredicted-value) %>%
+    ggplot(aes(x=delta)) + 
+    geom_histogram() + 
+    facet_wrap(~groupNamefct) + 
+    labs(title="Predicted probability for the correct archetype is often very low", 
+         y="", x="Difference in maximum predicted probability and predicted probability for correct archetype"
+         )
+
+```
+  
+Next steps are to explore these specific observations to see if something systemic is causing so many "very low" predictions for the correct archetype.
