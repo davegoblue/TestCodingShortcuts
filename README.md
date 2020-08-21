@@ -2055,4 +2055,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 expands one vs all XGB classification for 2016 locales  
 * WeatherModeling_202006_v002 integrates one vs one XGB classification for 2016 locales  
 * WeatherModeling_202006_v002 integrates archetype XGB classification for 2016 locales  
+* WeatherModeling_202006_v002 expands archetype XGB classification for 2016 locales  
   
