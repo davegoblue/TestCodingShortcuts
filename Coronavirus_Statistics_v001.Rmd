@@ -1,0 +1,226 @@
+---
+title: "Coronavirus US Data (as of 20-AUG-2020)"
+author: "davegoblue"
+date: "8/21/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+This file is for analysis of some data downloaded from [The COVID Tracking Project](https://covidtracking.com/) on 20 August, 2020.  This file contains data on positive tests, hospitalizations, deaths, and the like for coronavirus cases in the US.  Data are unique by state and date.
+
+#### _Data Availability_  
+The downloaded data file is read in as CSV, and the date column is converted to date format:  
+```{r}
+
+library(tidyverse)
+
+cvData <- readr::read_csv("./RInputFiles/Coronavirus/CV_downloaded_200820.csv")
+glimpse(cvData)
+
+cvData <- cvData %>% 
+    mutate(date=lubridate::ymd(date))
+glimpse(cvData)
+
+cvData %>%
+    select(date, state) %>%
+    anyDuplicated()
+
+```
+  
+As expected, the file is unique by date and state.  The date field has been converted from double to date.  The main columns of interest will be:  
+  
+* date  
+* state  
+* positiveIncrease - number of new positive cases for state during date  
+* deathIncrease - number of new deaths for state during date  
+  
+A smaller frame containing only this data is created:  
+```{r}
+
+cvUse <- cvData %>%
+    select(date, state, cases=positiveIncrease, deaths=deathIncrease)
+
+cvUse %>%
+    summarize_if(is.numeric, sum)
+
+```
+  
+The numeric totals match those reported by the COVID Tracking Project for the same date.  They are roughly 5% lower than the totals reported by worldometers.info.  There are significant issues associated with official reporting for corornavirus, and a 5% discrepancy between sources is not unexpected.
+  
+The data are next checked for totals by state and by week:  
+```{r}
+
+cvUse %>%
+    group_by(state) %>%
+    summarize_if(is.numeric, sum) %>%
+    pivot_longer(-state) %>%
+    ggplot(aes(x=fct_reorder(state, value), y=value)) + 
+    geom_col(fill="lightblue") +
+    coord_flip() + 
+    facet_wrap(~name, scales="free_x") + 
+    labs(x="", y="", title="Coronavirus cases and deaths by state through August 20, 2020")
+
+cvUse %>%
+    group_by(week=lubridate::epiweek(date)) %>%
+    summarize_if(is.numeric, sum) %>%
+    pivot_longer(-week) %>%
+    ggplot(aes(x=week, y=value)) + 
+    geom_line() +
+    facet_wrap(~name, scales="free_y") + 
+    labs(x="", y="", title="Coronavirus cases and deaths by epidemiological week through August 20, 2020")
+
+```
+  
+Sort order by state generally matches published reports of coronavirus burden by state.  The weekly data appear broadly aligned with other published data.  The dip in the final week is due to only 5 of the 7 days of the week being included in the Thursday data file.
+
+State population data (2015 estimates) are obtained from usmap for converting metrics to per capita, and the cvData file is filtered to only those observations contained in the state population file:  
+```{r}
+
+statePop <- usmap::statepop %>%
+    select(state=abbr, name=full, pop_2015)
+glimpse(statePop)
+
+cvUse <- cvUse %>%
+    semi_join(statePop)
+
+cvUse %>%
+    summarize_if(is.numeric, sum)
+
+```
+  
+Over 99% of the cases and deaths are preserved when the territories and other non-state data are removed.
+
+There appear to be at least two peaks in the case and death data, likely driven by different locales experiencing outbreaks at different times.  Per capita cases and deaths by state are plotted:  
+```{r}
+
+# Per capita metrics by state
+cvStatePerCapita <- cvUse %>%
+    group_by(state) %>%
+    summarize_if(is.numeric, sum) %>%
+    inner_join(statePop) %>%
+    mutate(cases=1000000*cases/pop_2015, deaths=1000000*deaths/pop_2015)
+
+# Disease burden by state, per capita
+cvStatePerCapita %>%
+    ggplot(aes(x=cases, y=deaths)) +
+    geom_text(aes(label=state)) + 
+    labs(x="Cases per million through August 20", y="Deaths per million through August 20")
+
+```
+  
+States will be defined as having a low impact of disease if 1) deaths per million are 100 or less, and 2) cases per million are 10000 or less:  
+```{r}
+
+lowBurden <- cvStatePerCapita %>%
+    filter(deaths <= 100, cases <= 10000) %>%
+    pull(state)
+
+```
+  
+Next, the states that are not defined as low burden are hierarchically clustered, using total deaths per capita by week.  Due to very significant expansions in testing volume both by state and within state over time, death data is likely more representative of disease burden by time than cases data.  Deaths per capita by state by month are capped at 300 since otherwise the distance between the extremely high states (which is not so meaningful here) dominates the differences in early vs. late disease bruden:  
+```{r}
+
+# Calculate the raw data
+clustData <- cvUse %>%
+    filter(!(state %in% lowBurden)) %>%
+    inner_join(statePop) %>% 
+    mutate(month=lubridate::month(date), cpm=1000000*cases/pop_2015, dpm=1000000*deaths/pop_2015) %>% 
+    filter(date >= as.Date("2020-03-15")) %>% 
+    group_by(state, month) %>% 
+    summarize(dpm=sum(dpm), cpm=sum(cpm), n=n()) %>% 
+    pivot_wider(state, names_from=month, values_from=c(dpm, cpm)) %>%
+    ungroup()
+
+# Run clusters without normalization, but with dpm limited to 300
+distData <- clustData %>%
+    select(state, starts_with("dpm")) %>%
+    mutate_if(is.numeric, .funs=~pmin(., 300)) %>%
+    column_to_rownames("state")
+
+cvTree <- hclust(dist(distData))
+
+# Plot the dendrogram
+plot(cvTree)
+
+```
+  
+There appears to be a cluster of states that had early outbreaks, a cluster of states that had later outbreaks, and a large segment that falls in between these extremes.  Suppose the dendrogram is split in to three clusters, with the low burden states added as a fourth cluster:  
+```{r}
+
+# Get the clusters from the tree, adding the low burden states as cluster 4
+cvClusters <- c(cutree(cvTree, k=3), 
+                rep(4, length(lowBurden)) %>% set_names(lowBurden)
+                )
+
+# Add the clusters to the population data file
+statePop <- statePop %>%
+    mutate(cluster=factor(cvClusters[state]))
+
+# Show a map of the clusters
+usmap::plot_usmap(regions="states", data=statePop, values="cluster")
+
+# Show population totals by cluster
+statePop %>%
+    group_by(cluster) %>%
+    summarize(pop_2015=sum(pop_2015)/1000000) %>%
+    ggplot(aes(x=fct_reorder(cluster, pop_2015), y=pop_2015)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=pop_2015/2, label=round(pop_2015))) + 
+    labs(y="2015 population (millions)", x="Cluster", title="Population by cluster (millions)") +
+    coord_flip()
+
+# Virus by week by cluster
+cvUse %>%
+    mutate(cluster=factor(cvClusters[state]), week=lubridate::epiweek(date)) %>%
+    group_by(cluster, week) %>%
+    summarize(cases=sum(cases), deaths=sum(deaths)) %>%
+    pivot_longer(-c(week, cluster)) %>%
+    ggplot(aes(x=week, y=value, group=cluster, color=cluster)) + 
+    geom_line() + 
+    facet_wrap(~name, scales="free_y")
+
+```
+  
+Metrics can be normalized by population to look at coronavirus burden per capita by segment over time:  
+```{r}
+
+# Integrated data file
+cvWeekPop <- cvUse %>%
+    mutate(week=lubridate::epiweek(date)) %>%
+    inner_join(statePop, by="state")
+
+# Summarized by date-cluster
+cvDateCluster <- cvWeekPop %>%
+    group_by(date, cluster) %>%
+    summarize(cases=sum(cases), deaths=sum(deaths)) %>%
+    inner_join(statePop %>% group_by(cluster) %>% summarize(pop_mill=sum(pop_2015)/1000000), by="cluster") %>%
+    group_by(cluster) %>%
+    mutate(cpm7=zoo::rollmean(cases, 7, fill=NA)/pop_mill, 
+           dpm7=zoo::rollmean(deaths, 7, fill=NA)/pop_mill
+           ) %>%
+    ungroup()
+
+# Plotted by date
+cvDateCluster %>%
+    select(date, cluster, cases=cpm7, deaths=dpm7) %>%
+    pivot_longer(-c(date, cluster)) %>%
+    filter(!is.na(value)) %>%
+    ggplot(aes(x=date, y=value, group=cluster, color=cluster)) +
+    geom_line() + 
+    facet_wrap(~name, scales="free_y") + 
+    labs(x="", y="Rolling 7-day mean, per million", title="Rolling 7-day mean disease burden, per million")
+
+```
+  
+Broadly speaking:  
+  
+* Segment 4, which is small states with low coronavirus burden, may be experiencing a small rise in both cases and deaths  
+* Segment 3, which is much of the northeast plus MI, IL, and LA has a significant spike early followed by a rapid and largely sustained decline  
+* Segment 1, which is largely the south ex-LA/NM, appears to have peaked in cases by the middle of July and to be starting to decline in deaths as of the middle of August  
+* Segment 2, which is about half the country, appears similar to Segment 1 but with a much less pronounced spike in both cases and deaths in July/August  
+
+There appear to be meaningful differences in disease burden over time, and with a meaningful geographical explanatory component
