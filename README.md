@@ -2057,4 +2057,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * WeatherModeling_202006_v002 integrates archetype XGB classification for 2016 locales  
 * WeatherModeling_202006_v002 expands archetype XGB classification for 2016 locales  
 * Coronavirus_Statistics_v001 explores data from COVID Tracking Project  
+* Coronavirus_Statistics_v001 explores state-level segments for coronavirus  
   
