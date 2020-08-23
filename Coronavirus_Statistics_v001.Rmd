@@ -223,4 +223,160 @@ Broadly speaking:
 * Segment 1, which is largely the south ex-LA/NM, appears to have peaked in cases by the middle of July and to be starting to decline in deaths as of the middle of August  
 * Segment 2, which is about half the country, appears similar to Segment 1 but with a much less pronounced spike in both cases and deaths in July/August  
 
-There appear to be meaningful differences in disease burden over time, and with a meaningful geographical explanatory component
+There appear to be meaningful differences in disease burden over time, and with a meaningful geographical explanatory component.
+
+Next, the total volume of disease through August 20 is explored by state:  
+```{r}
+
+varMapper <- c("cases"="Cases through Aug 20", 
+               "newCases"="Increase in cases, 30 days through Aug 20",
+               "deaths"="Deaths through Aug 20", 
+               "newDeaths"="Increase in deaths, 30 days through Aug 20",
+               "cpm"="Cases through Aug 20 (per million)", 
+               "newcpm"="Increase in cases, 30 days through Aug 20 (per million)",
+               "dpm"="Deaths through Aug 20 (per million)", 
+               "newdpm"="Increase in deaths, 30 days through Aug 20 (per million)"
+               )
+
+cvWeekPop %>%
+    group_by(state, cluster) %>%
+    summarize(cases=sum(cases), deaths=sum(deaths), pop_2015=mean(pop_2015)) %>%
+    ungroup() %>%
+    mutate(cpm=1000000*cases/pop_2015, dpm=1000000*deaths/pop_2015) %>%
+    select(state, cluster, cases, deaths) %>%
+    pivot_longer(c(cases, deaths)) %>%
+    ggplot(aes(x=fct_reorder(state, value, .fun=min), y=value)) + 
+    geom_col(aes(fill=cluster)) + 
+    coord_flip() + 
+    labs(x="", y="", title="Coronavirus impact by state through August 20, 2020") + 
+    facet_wrap(~varMapper[name], scales="free_x")
+
+cvWeekPop %>%
+    group_by(state, cluster) %>%
+    summarize(cases=sum(cases), deaths=sum(deaths), pop_2015=mean(pop_2015)) %>%
+    ungroup() %>%
+    mutate(cpm=1000000*cases/pop_2015, dpm=1000000*deaths/pop_2015) %>%
+    select(state, cluster, cpm, dpm) %>%
+    pivot_longer(c(cpm, dpm)) %>%
+    ggplot(aes(x=fct_reorder(state, value, .fun=min), y=value)) + 
+    geom_col(aes(fill=cluster)) + 
+    coord_flip() + 
+    labs(x="", y="", title="Coronavirus impact by state through August 20, 2020") + 
+    facet_wrap(~varMapper[name], scales="free_x")
+
+```
+  
+As expected, the segmentation approach has largely divided the states by total coronavirus burden.  Mississippi and Arizona are in segment 1 due to the late nature of their outbreak.
+
+Further, the data are explored for a combination of total disease burden and change over the past 30 days:  
+```{r}
+
+cvWeekPop %>%
+    mutate(newCases=ifelse(as.Date("2020-08-21")-date <= 30, cases, 0), 
+           newDeaths=ifelse(as.Date("2020-08-21")-date <= 30, deaths, 0)
+           ) %>%
+    group_by(state, cluster) %>%
+    summarize(cases=sum(cases), 
+              deaths=sum(deaths), 
+              newCases=sum(newCases),
+              newDeaths=sum(newDeaths),
+              pop_2015=mean(pop_2015)
+              ) %>%
+    ungroup() %>%
+    mutate(cpm=1000000*cases/pop_2015, 
+           dpm=1000000*deaths/pop_2015,
+           newcpm=1000000*newCases/pop_2015, 
+           newdpm=1000000*newDeaths/pop_2015
+           ) %>%
+    ggplot(aes(x=cpm, y=newcpm)) + 
+    geom_text(aes(color=cluster, label=state)) + 
+    labs(x=varMapper["cpm"], 
+         y=varMapper["newcpm"], 
+         title="Coronavirus impact by state through August 20, 2020"
+         ) + 
+    geom_abline(lty=2, slope=c(0.5)) + 
+    lims(x=c(0, NA), y=c(0, NA)) +
+    annotate("text", x=18000, y=11000, label="50% of total cases\nin last 30 days", hjust=1) + 
+    annotate("segment", x=18500, y=10500, xend=20000, yend=10000, arrow=arrow(), lty=2)
+
+cvWeekPop %>%
+    mutate(newCases=ifelse(as.Date("2020-08-21")-date <= 30, cases, 0), 
+           newDeaths=ifelse(as.Date("2020-08-21")-date <= 30, deaths, 0)
+           ) %>%
+    group_by(state, cluster) %>%
+    summarize(cases=sum(cases), 
+              deaths=sum(deaths), 
+              newCases=sum(newCases),
+              newDeaths=sum(newDeaths),
+              pop_2015=mean(pop_2015)
+              ) %>%
+    ungroup() %>%
+    mutate(cpm=1000000*cases/pop_2015, 
+           dpm=1000000*deaths/pop_2015,
+           newcpm=1000000*newCases/pop_2015, 
+           newdpm=1000000*newDeaths/pop_2015
+           ) %>%
+    ggplot(aes(x=dpm, y=newdpm)) + 
+    geom_text(aes(color=cluster, label=state)) + 
+    labs(x=varMapper["dpm"], 
+         y=varMapper["newdpm"], 
+         title="Coronavirus impact by state through August 20, 2020"
+         ) + 
+    geom_abline(lty=2, slope=c(0.5)) + 
+    lims(x=c(0, NA), y=c(0, NA)) +
+    annotate("text", x=250, y=200, label="50% of total deaths\nin last 30 days", hjust=1) + 
+    annotate("segment", x=250, y=200, xend=400, yend=200, arrow=arrow(), lty=2)
+
+```
+  
+The clusters appear relatively well separated, with the possible exception of Louisiana which is arguably quite close to cluster 1.  Cluster 3 stands out as having had a very high overall impact, but with not much of an increase in the past 30 days.
+
+The individual trends by state are also plotted, smoothed by week:  
+```{r}
+
+cvWeekPop %>%
+    rbind(mutate(., state="cluster")) %>%
+    group_by(state, cluster, date) %>%
+    summarize_if(is.numeric, sum) %>%
+    ungroup() %>%
+    mutate(cpm=1000000*cases/pop_2015, dpm=1000000*deaths/pop_2015) %>%
+    group_by(state, cluster) %>%
+    mutate(cpm7=zoo::rollmean(cpm, k=7, fill=NA), dpm7=zoo::rollmean(dpm, k=7, fill=NA)) %>%
+    ungroup() %>%
+    filter(!is.na(cpm7)) %>%
+    ggplot(aes(x=date, y=cpm7)) + 
+    geom_line(data=~filter(., state != "cluster"), aes(group=state), alpha=0.25) + 
+    geom_line(data=~filter(., state == "cluster"), aes(group=state, color=cluster), lwd=1.5) + 
+    facet_wrap(~cluster, scales="free_y") + 
+    labs(x="", 
+         y=varMapper["cpm"], 
+         title="Cases per million per day (rolling 7-day mean) by state and cluster", 
+         subtitle="Caution that each facet has its own y axis with different scales"
+         ) + 
+    ylim(c(0, NA))
+
+cvWeekPop %>%
+    rbind(mutate(., state="cluster")) %>%
+    group_by(state, cluster, date) %>%
+    summarize_if(is.numeric, sum) %>%
+    ungroup() %>%
+    mutate(cpm=1000000*cases/pop_2015, dpm=1000000*deaths/pop_2015) %>%
+    group_by(state, cluster) %>%
+    mutate(cpm7=zoo::rollmean(cpm, k=7, fill=NA), dpm7=zoo::rollmean(dpm, k=7, fill=NA)) %>%
+    ungroup() %>%
+    filter(!is.na(dpm7)) %>%
+    ggplot(aes(x=date, y=dpm7)) + 
+    geom_line(data=~filter(., state != "cluster"), aes(group=state), alpha=0.25) + 
+    geom_line(data=~filter(., state == "cluster"), aes(group=state, color=cluster), lwd=1.5) + 
+    facet_wrap(~cluster, scales="free_y") + 
+    labs(x="", 
+         y=varMapper["dpm"], 
+         title="Deaths per million per day (rolling 7-day mean) by state and cluster", 
+         subtitle="Caution that each facet has its own y axis with different scales"
+         ) + 
+    ylim(c(0, NA))
+
+```
+  
+With a few exceptions in a rather noisy segment 2 (as well as Louisiana in segment 3), states seem to broadly follow the disease state pattern for their cluster, though with some differences in magnitude and timing.
+  
