@@ -2059,3 +2059,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 explores data from COVID Tracking Project  
 * Coronavirus_Statistics_v001 explores state-level segments for coronavirus  
   
+### Expansions week of 24-AUG-2020  
+* Coronavirus_Statistics_v001 creates functions for coronavirus exploration  
+  
