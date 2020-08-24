@@ -230,8 +230,10 @@ Next, the total volume of disease through August 20 is explored by state:
 
 varMapper <- c("cases"="Cases through Aug 20", 
                "newCases"="Increase in cases, 30 days through Aug 20",
+               "casesroll7"="Rolling 7-day mean cases, through Aug 20", 
                "deaths"="Deaths through Aug 20", 
                "newDeaths"="Increase in deaths, 30 days through Aug 20",
+               "deathsroll7"="Rolling 7-day mean deaths, through Aug 20", 
                "cpm"="Cases through Aug 20 (per million)", 
                "newcpm"="Increase in cases, 30 days through Aug 20 (per million)",
                "dpm"="Deaths through Aug 20 (per million)", 
@@ -380,3 +382,275 @@ cvWeekPop %>%
   
 With a few exceptions in a rather noisy segment 2 (as well as Louisiana in segment 3), states seem to broadly follow the disease state pattern for their cluster, though with some differences in magnitude and timing.
   
+The process is converted to functional form so that it can be run using different data.  First, a function is written to read in the data:  
+```{r}
+
+# Function to read in the raw coronavirus data file (assume it is already downloaded)
+readCVData <- function(fileName,
+                       showGlimpse=TRUE,
+                       uqVars=c("date", "state"),
+                       errDups=TRUE
+                       ) {
+
+    # FUNCTION ARGUMENTS
+    # fileName: location of the downloded CSV file from COVID Tracking Project
+    # showGlimpse: boolean, whether to run glimpse() on the file
+    # uqVars: variables that the file is expected to be unique by
+    # errDups: boolean, whether to error out if uniqueness is violated
+    
+    # Read in the file and convert the 'date' from double to date
+    cvData <- readr::read_csv(fileName) %>%
+        mutate(date=lubridate::ymd(date))
+    
+    # See a sample of the data
+    if (showGlimpse) glimpse(cvData)
+
+    # Check that the data are unique by date and state
+    nDups <- cvData %>%
+        select_at(vars(all_of(uqVars))) %>%
+        anyDuplicated()
+    
+    # Inform of the uniqueness check results
+    if (nDups==0) {
+        cat("\nFile is unique by:", uqVars, "and has dimensions:", dim(cvData))
+    } else {
+        cat("\nUniqueness check failed, file has duplicates by:", uqVars, "\n")
+        if (errDups) stop("Fix and re-run")
+    }
+    
+    # Return the file
+    cvData
+    
+}
+
+cvFull <- readCVData("./RInputFiles/Coronavirus/CV_downloaded_200820.csv")
+
+```
+  
+Next, a function selects only the key variables of interest, filters to include only states (plus DC), and reports on relevant control totals:  
+```{r}
+
+# Function to select relevant variables and observations, and report on control totals
+processCVData <- function(dfFull, 
+                          varsKeep=c("date", "state", "positiveIncrease", "deathIncrease"), 
+                          varsRename=c("positiveIncrease"="cases", "deathIncrease"="deaths"), 
+                          stateList=c(state.abb, "DC")
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # dfFull: the full data file originally loaded
+    # varsKeep: variables to keep from the full file
+    # varsRename: variables to be renamed, using a named vector of form originalName=newName
+    # stateList: variables for filtering state (NULL means do not run any filters)
+    
+    # Select only the key variables
+    df <- dfFull %>%
+        select_at(vars(all_of(varsKeep)))
+    
+    # Apply the renaming of variables
+    names(df) <- ifelse(is.na(varsRename[names(df)]), names(df), varsRename[names(df)])
+
+    # Designate each record as being either a valid state or not
+    if (!is.null(stateList)) {
+        df <- df %>%
+            mutate(validState=state %in% stateList)
+    } else {
+        df <- df %>%
+            mutate(validState=TRUE)
+    }
+    
+    # Summarize the control totals for the data, based on whether the state is valid
+    cat("\n\nControl totals - note that validState other than TRUE will be discarded\n\n")
+    df %>%
+        mutate(n=1) %>%
+        group_by(validState) %>%
+        summarize_if(is.numeric, sum) %>%
+        print()
+    
+    # Return the file, filtered to where validState is TRUE, and deleting variable validState
+    df %>%
+        filter(validState) %>%
+        select(-validState)
+
+}
+
+cvFiltered <- processCVData(cvFull)
+
+```
+  
+Next, a state population data is processed for future use:  
+```{r}
+
+# Function to extract and format key state data
+getStateData <- function(df=usmap::statepop, 
+                         renameVars=c("abbr"="state", "full"="name", "pop_2015"="pop"), 
+                         keepVars=c("state", "name", "pop")
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing state data
+    # renameVars: variables to be renamed, using named list with format "originalName"="newName"
+    # keepVars: variables to be kept in the final file
+    
+    # Rename variables where appropriate
+    names(df) <- ifelse(is.na(renameVars[names(df)]), names(df), renameVars[names(df)])
+    
+    # Return file with only key variables kept
+    df %>%
+        select_at(vars(all_of(keepVars)))
+    
+}
+
+stateData <- getStateData()
+
+```
+  
+Next, helper functions are written to convert a variable to per capita, or to convert a variable to a "rolling" mean:  
+```{r}
+
+# Helper function to create per capita metrics
+helperPerCapita <- function(df, 
+                            origVar, 
+                            newName,
+                            byVar="state",
+                            popVar="pop",
+                            popData=stateData,
+                            mult=1000000
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame currently being processed
+    # origVar: the variables to be converted to per capita
+    # newName: the new per capita variable name
+    # byVar: the variable that will be merged by
+    # popVar: the name of the population variable in the popData file
+    # popData: the file containing the population data
+    # mult: the multiplier, so that the metric is "per mult people"
+    
+    # Create the per capita variable
+    df %>%
+        inner_join(select_at(popData, vars(all_of(c(byVar, popVar)))), by=byVar) %>%
+        mutate(!!newName:=mult*get(origVar)/get(popVar)) %>%
+        select(-all_of(popVar))
+    
+}
+
+
+# Helper function to create rolling aggregates
+helperRollingAgg <- function(df, 
+                             origVar, 
+                             newName,
+                             func=zoo::rollmean,
+                             k=7, 
+                             fill=NA, 
+                             ...
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the data
+    # origVar: the original data column name
+    # newName: the new variable column name
+    # func: the function to be applied (zoo::rollmean will be by far the most common)
+    # k: the periodicity (k=7 is rolling weekly data)
+    # fill: how to fill leading.trailing data to maintain the same vector lengths
+    # ...: any other arguments to be passed to func
+    
+    # Create the appropriate variable
+    df %>%
+        mutate(!!newName:=func(get(origVar), k=k, fill=fill, ...))
+    
+}
+
+
+# Create the variables for cpm, dpm, cpm7, and dpm7
+cvFilteredPerCapita <- cvFiltered %>%
+    helperPerCapita(origVar="cases", newName="cpm") %>%
+    helperPerCapita(origVar="deaths", newName="dpm") %>%
+    helperRollingAgg(origVar="cpm", newName="cpm7") %>%
+    helperRollingAgg(origVar="dpm", newName="dpm7")
+cvFilteredPerCapita
+
+```
+  
+Next, a function is written for creating side-by-side cases and death bar plots:  
+```{r}
+
+# Function to create side-by-side plots for a deaths and cases metric
+# Data in df will be aggregated to be unique by byVar using aggFunc
+helperBarDeathsCases <- function(df, 
+                                 numVars,
+                                 title="",
+                                 byVar="state",
+                                 aggFunc=sum, 
+                                 mapper=varMapper
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the data
+    # numVars: the relevant numeric variables for plotting
+    # title: plot title, default is nothing
+    # byVar: the x-axis variable that all data will be summed to
+    # aggFunc: the aggregate function (will be applied to create data unique by byVar)
+    
+    # Process the data and create the plot
+    p1 <- df %>%
+        select_at(vars(all_of(c(byVar, numVars)))) %>%
+        group_by_at(vars(all_of(byVar))) %>%
+        summarize_all(aggFunc) %>%
+        pivot_longer(-all_of(byVar)) %>%
+        ggplot(aes(x=fct_reorder(get(byVar), value, .fun=min), y=value)) + 
+        geom_col(fill="lightblue") + 
+        coord_flip() + 
+        facet_wrap(~mapper[name], scales="free_x") + 
+        labs(x="", y="", title=title)
+    
+    # Print the plot
+    print(p1)
+    
+}
+
+
+# Plot cases and deaths by state, once for overall and once per capita
+helperBarDeathsCases(cvFilteredPerCapita, 
+                     numVars=c("deaths", "cases"), 
+                     title="Coronavirus burden by state (total)"
+                     )
+helperBarDeathsCases(cvFilteredPerCapita, 
+                     numVars=c("dpm", "cpm"), 
+                     title="Coronavirus burden by state (per capita)"
+                     )
+
+# Disease burden by state, per capita, not using functional form
+cvFilteredPerCapita %>%
+    group_by(state) %>%
+    summarize(cpm=sum(cpm), dpm=sum(dpm)) %>%
+    ggplot(aes(x=cpm, y=dpm)) +
+    geom_text(aes(label=state)) + 
+    labs(x="Cases per million through August 20", 
+         y="Deaths per million through August 20", 
+         title="Deaths vs. cases by state (per million people)", 
+         subtitle="CFR is estimated at ~0.5%; most states are far above, suggesting cases are undercounted"
+         ) + 
+    geom_abline(slope=1/200, lty=2) + 
+    annotate("text", x=28000, y=170, label="Deaths at 0.5% CFR")
+
+# Total disease burden nationally by day, not using functional form
+cvFiltered %>%
+    group_by(date) %>%
+    summarize_if(is.numeric, sum) %>%
+    ungroup() %>%
+    helperRollingAgg(origVar="cases", newName="casesroll7") %>%
+    helperRollingAgg(origVar="deaths", newName="deathsroll7") %>%
+    select(-cases, -deaths) %>%
+    pivot_longer(-date) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line() +
+    facet_wrap(~varMapper[name], scales="free_y") + 
+    labs(x="", 
+         y="",
+         title="US Coronavirus Burden (States plus DC)",
+         subtitle="Coronavirus cases and deaths per day (7-day rolling mean) through August 20, 2020"
+         )
+
+```
+
