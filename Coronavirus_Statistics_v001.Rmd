@@ -566,8 +566,11 @@ helperRollingAgg <- function(df,
 cvFilteredPerCapita <- cvFiltered %>%
     helperPerCapita(origVar="cases", newName="cpm") %>%
     helperPerCapita(origVar="deaths", newName="dpm") %>%
+    group_by(state) %>%
+    arrange(date) %>%
     helperRollingAgg(origVar="cpm", newName="cpm7") %>%
-    helperRollingAgg(origVar="dpm", newName="dpm7")
+    helperRollingAgg(origVar="dpm", newName="dpm7") %>%
+    ungroup()
 cvFilteredPerCapita
 
 ```
@@ -620,6 +623,11 @@ helperBarDeathsCases(cvFilteredPerCapita,
                      title="Coronavirus burden by state (per capita)"
                      )
 
+```
+  
+A few summaries are created without using functional form:  
+```{r}
+
 # Disease burden by state, per capita, not using functional form
 cvFilteredPerCapita %>%
     group_by(state) %>%
@@ -653,4 +661,215 @@ cvFiltered %>%
          )
 
 ```
+  
+Next, functions for creating and assessing clusters are created.  The approach can use either hierarchical clustering or k-means, and focus on the following variables:  
+  
+* Aggregate cases  
+* Aggregate deaths  
+* Shape of case curve (percentage by week/month)  
+* Shape of death curve (percentage by week/month)  
+  
+Cases is a tricky clustering variable since detection rates were in the single-digit percentages early in the outbreak (estimates of ~50x as many infected as diagnosed).  As testing volumes increased, it is likely that a greater percentage of cases are diagnosed.  States that have later outbreaks appear to have many more cases per capita but with a lower death rate per capita:  
+```{r}
 
+# Function to create clusters for the state data (requires all data from same year, as currently true)
+clusterStates <- function(df, 
+                          caseVar="cpm", 
+                          deathVar="dpm",
+                          shapeFunc=lubridate::month, 
+                          minShape=NULL, 
+                          minDeath=0,
+                          minCase=0,
+                          ratioTotalvsShape=1, 
+                          ratioDeathvsCase=1, 
+                          hierarchical=TRUE, 
+                          method="complete"
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing cases and deaths data
+    # caseVar: the variable containing the cases per capita data
+    # deathVar: the variable containing the deaths per capita data
+    # shapeFunc: the function to be used for creating the shape of the curve
+    # minShape: the minimum value to be used for shape (to avoid very small amounts of data in Jan/Feb)
+    #           NULL means keep everything
+    # minDeath: use this value as a floor for the death metric when calculating shape
+    # minCase: use this metric as a floor for the case metric when calculating shape
+    # ratioTotalvsShape: amount of standard deviation to be kept in total variable vs shape variables
+    # ratioDeathvsCase: amount of standard deviation to be kept in deaths vs cases 
+    #                   (total death data will be scaled to have sd this many times higher than cases)
+    #                   (death percentages by time period will be scaled directly by this amount)
+    # hierarchical: boolean, if TRUE run hierarchical clustering, otherwise run k-means clustering
+    #               only hierarchical clustering is currently implemented
+    # method: the method for hierarchical clustering (e.g., 'complete' or 'single')
+    
+    # Extract key information (aggregates and by shapeFunc for each state)
+    df <- df %>%
+        select_at(vars(all_of(c("date", "state", caseVar, deathVar)))) %>%
+        purrr::set_names(c("date", "state", "cases", "deaths")) %>%
+        mutate(timeBucket=shapeFunc(date)) %>%
+        group_by(state, timeBucket) %>%
+        summarize(cases=sum(cases), deaths=sum(deaths)) %>%
+        ungroup()
+    
+    # Limit to only relevant time buckets if requested
+    if (!is.null(minShape)) {
+        df <- df %>%
+            filter(timeBucket >= minShape)
+    }
+    
+    # Extract an aggregate by state, scaled so that they have the proper ratio
+    dfAgg <- df %>%
+        group_by(state) %>%
+        summarize(totalCases=sum(cases), totalDeaths=sum(deaths)) %>%
+        ungroup() %>%
+        mutate(totalDeaths=ratioDeathvsCase*totalDeaths*sd(totalCases)/sd(totalDeaths))
+    
+    # Extract the percentages (shapes) by month, scaled so that they have the proper ratio
+    dfShape <- df %>%
+        pivot_longer(-c(state, timeBucket)) %>%
+        group_by(state, name) %>%
+        mutate(tot=pmax(sum(value), ifelse(name=="deaths", minDeath, minCase)), 
+               value=ifelse(name=="deaths", ratioDeathvsCase, 1) * value / tot) %>%
+        select(-tot) %>%
+        pivot_wider(state, names_from=c(name, timeBucket), values_from=value) %>%
+        ungroup()
+    
+    # Function to calculate SD of a subset of columns
+    calcSumSD <- function(df) {
+        df %>% ungroup() %>% select(-state) %>% summarize_all(.funs=sd) %>% as.vector() %>% sum()
+    }
+    # Down-weight the aggregate data so that there is the proper sum of sd in aggregates and shapes
+    aggSD <- calcSumSD(dfAgg)
+    shapeSD <- calcSumSD(dfShape)
+    dfAgg <- dfAgg %>%
+        mutate_if(is.numeric, ~. * ratioTotalvsShape * shapeSD / aggSD)
+
+    # Combine so there is one row per state
+    dfCluster <- dfAgg %>%
+        inner_join(dfShape, by="state")
+    print(arrange(dfCluster, desc(state)))
+    
+    # Create hierarchical segments or kmeans segments
+    if (hierarchical) {
+        distData <- dfCluster %>%
+            column_to_rownames("state")
+        objCluster <-  hclust(dist(distData), method=method)
+        plot(objCluster)
+    } else {
+        cat("\nK-means is not yet implemented\n")
+        objCluster <- NULL
+    }
+
+    # Return the clustering object
+    objCluster
+    
+}
+
+# Test clusters that weight deaths heavily vs. cases and that weight shape more highly than total
+testCluster <- clusterStates(cvFilteredPerCapita, 
+                             minShape=3, 
+                             ratioDeathvsCase = 5, 
+                             ratioTotalvsShape = 0.5, 
+                             minDeath=100, 
+                             minCase=10000
+                             )
+
+```
+  
+The clusters can then be assessed against several criteria:  
+```{r}
+
+# Function to assess clusters
+assessClusters <- function(clusters, 
+                           dfState=stateData, 
+                           dfBurden=cvFilteredPerCapita,
+                           hierarchical=TRUE
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # clusters: the named vector containing the clusters
+    # dfState: the file containing the states and populations
+    # hierarchical: boolean, is this hierarchical data (FALSE means kmeans)
+    #               currently only implemented for hieracrhical
+    
+    # Attach the clusters to the state population data
+    if (hierarchical) {
+        dfState <- as.data.frame(clusters) %>%
+            set_names("cluster") %>%
+            rownames_to_column("state") %>%
+            inner_join(dfState, by="state") %>%
+            mutate(cluster=factor(cluster))
+    } else {
+        stop("\nOnly hierarchical is currently implemented\n")
+    }
+    
+    # Plot the segments on a state map
+    p1 <- usmap::plot_usmap(regions="states", data=dfState, values="cluster")
+    print(p1)
+    
+    # Plot the population totals by segment
+    # Show population totals by cluster
+    p2 <- dfState %>%
+        group_by(cluster) %>%
+        summarize(pop=sum(pop)/1000000) %>%
+        ggplot(aes(x=cluster, y=pop)) + 
+        geom_col(aes(fill=cluster)) + 
+        geom_text(aes(y=pop/2, label=round(pop))) + 
+        labs(y="2015 population (millions)", x="Cluster", title="Population by cluster (millions)") +
+        coord_flip()
+    print(p2)
+    
+    # Plot the rolling 7-day mean dialy disease burden by cluster
+    dfPlot <- dfState %>%
+        inner_join(dfBurden, by="state") %>%
+        tibble::as_tibble()
+    
+    # Plot the rolling 7-day mean dialy disease burden by cluster
+    p3 <- dfPlot %>%        
+        select(date, cluster, cases=cpm7, deaths=dpm7) %>%
+        pivot_longer(-c(date, cluster)) %>%
+        filter(!is.na(value)) %>%
+        group_by(date, cluster, name) %>%
+        summarize(value=median(value)) %>%
+        ggplot(aes(x=date, y=value)) +
+        geom_line(aes(group=cluster, color=cluster)) +
+        facet_wrap(~name, scales="free_y") +
+        labs(x="",
+             y="Rolling 7-day mean, per million",
+             title="Rolling 7-day mean daily disease burden, per million",
+             subtitle="Median per day for states assigned to cluster"
+             )
+    print(p3)
+    
+    # Plot the total cases and total deaths by cluster
+    p4 <- dfPlot %>%
+        group_by(cluster) %>%
+        summarize(cases=sum(cases), deaths=sum(deaths)) %>%
+        pivot_longer(-cluster) %>%
+        ggplot(aes(x=cluster, y=value/1000)) + 
+        geom_col(aes(fill=cluster)) + 
+        geom_text(aes(y=value/2000, label=round(value/1000))) +
+        coord_flip() + 
+        facet_wrap(~varMapper[name], scales="free_x") + 
+        labs(x="Cluster", y="Burden (000s)", title="Total cases and deaths by segment")
+    print(p4)
+    
+    # Return the plotting data frame
+    dfPlot
+
+}
+
+# Check how 5 clusters look, with Vermont arbitrarily reassigned as the same cluster as New Hampshire
+clustVec <- cutree(testCluster, k=6)
+clustVec["VT"] <- clustVec["NH"]
+assessClusters(clustVec)
+
+```
+  
+At a glance, the segments appear reasonable:  
+  
+* Segments 4 and 5 had early disease, but with less pronounced spikes in segment 5 than in segment 4, but with a greater case rebound in segment 5 than in segment 4    
+* Segments 2 had late disease, with little spike early  
+* Segments 1 and 3 have generally had few deaths, though with spiky cases that are similarly shaped if much lower than segment 2  
+  
