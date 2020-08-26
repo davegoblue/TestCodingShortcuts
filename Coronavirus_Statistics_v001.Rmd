@@ -234,9 +234,11 @@ varMapper <- c("cases"="Cases through Aug 20",
                "deaths"="Deaths through Aug 20", 
                "newDeaths"="Increase in deaths, 30 days through Aug 20",
                "deathsroll7"="Rolling 7-day mean deaths, through Aug 20", 
-               "cpm"="Cases through Aug 20 (per million)", 
+               "cpm"="Cases through Aug 20 (per million)",
+               "cpm7"="Cases per day (7-day rolling mean) through Aug 20 (per million)", 
                "newcpm"="Increase in cases, 30 days through Aug 20 (per million)",
                "dpm"="Deaths through Aug 20 (per million)", 
+               "dpm7"="Deaths per day (7-day rolling mean) through Aug 20 (per million)", 
                "newdpm"="Increase in deaths, 30 days through Aug 20 (per million)"
                )
 
@@ -412,7 +414,7 @@ readCVData <- function(fileName,
     
     # Inform of the uniqueness check results
     if (nDups==0) {
-        cat("\nFile is unique by:", uqVars, "and has dimensions:", dim(cvData))
+        cat("\nFile is unique by:", uqVars, "and has dimensions:", dim(cvData), "\n")
     } else {
         cat("\nUniqueness check failed, file has duplicates by:", uqVars, "\n")
         if (errDups) stop("Fix and re-run")
@@ -562,15 +564,34 @@ helperRollingAgg <- function(df,
 }
 
 
+
+# Function to add per capita and rolling to the base data frame
+helperMakePerCapita <- function(df, 
+                                k=7
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the initial data frame for conversion
+    # k: the rolling time period to use
+    
+    # Create the variables for cpm, dpm, cpm7, and dpm7
+    dfNew <- df %>%
+        helperPerCapita(origVar="cases", newName="cpm") %>%
+        helperPerCapita(origVar="deaths", newName="dpm") %>%
+        group_by(state) %>%
+        arrange(date) %>%
+        helperRollingAgg(origVar="cpm", newName=paste0("cpm", k), k=k) %>%
+        helperRollingAgg(origVar="dpm", newName=paste0("dpm", k), k=k) %>%
+        ungroup()
+
+    # Return the new data frame
+    dfNew
+    
+}
+
+
 # Create the variables for cpm, dpm, cpm7, and dpm7
-cvFilteredPerCapita <- cvFiltered %>%
-    helperPerCapita(origVar="cases", newName="cpm") %>%
-    helperPerCapita(origVar="deaths", newName="dpm") %>%
-    group_by(state) %>%
-    arrange(date) %>%
-    helperRollingAgg(origVar="cpm", newName="cpm7") %>%
-    helperRollingAgg(origVar="dpm", newName="dpm7") %>%
-    ungroup()
+cvFilteredPerCapita <- helperMakePerCapita(cvFiltered, k=7)
 cvFilteredPerCapita
 
 ```
@@ -583,7 +604,8 @@ Next, a function is written for creating side-by-side cases and death bar plots:
 helperBarDeathsCases <- function(df, 
                                  numVars,
                                  title="",
-                                 byVar="state",
+                                 xVar="state",
+                                 fillVar=NULL,
                                  aggFunc=sum, 
                                  mapper=varMapper
                                  ) {
@@ -592,8 +614,19 @@ helperBarDeathsCases <- function(df,
     # df: the data frame containing the data
     # numVars: the relevant numeric variables for plotting
     # title: plot title, default is nothing
-    # byVar: the x-axis variable that all data will be summed to
+    # xVar: the x-axis variable for plotting
+    # fillVar: the variable that will color the bars in the final plot (NULL means use "lightblue" for all)
     # aggFunc: the aggregate function (will be applied to create data unique by byVar)
+    # mapper: mapping file to convert x/y variables to descriptive axes (named vector "variable"="label")
+    
+    # OVERALL FUNCTION PROCESS:
+    # 1.  Variables in numVar are aggregated by aggFunc to be unique by c(xVar, fillVar)
+    # 2.  Data are pivoted longer
+    # 3.  Bar charts are created, with coloring by fillVar if provided
+    
+    # Create the byVar for summing
+    byVar <- xVar
+    if (!is.null(fillVar)) { byVar <- c(byVar, fillVar) }
     
     # Process the data and create the plot
     p1 <- df %>%
@@ -601,11 +634,11 @@ helperBarDeathsCases <- function(df,
         group_by_at(vars(all_of(byVar))) %>%
         summarize_all(aggFunc) %>%
         pivot_longer(-all_of(byVar)) %>%
-        ggplot(aes(x=fct_reorder(get(byVar), value, .fun=min), y=value)) + 
-        geom_col(fill="lightblue") + 
+        ggplot(aes(x=fct_reorder(get(xVar), value, .fun=min), y=value)) + 
         coord_flip() + 
         facet_wrap(~mapper[name], scales="free_x") + 
-        labs(x="", y="", title=title)
+        labs(x="", y="", title=title) + 
+        if (is.null(fillVar)) geom_col(fill="lightblue") else geom_col(aes_string(fill=fillVar))
     
     # Print the plot
     print(p1)
@@ -613,52 +646,70 @@ helperBarDeathsCases <- function(df,
 }
 
 
-# Plot cases and deaths by state, once for overall and once per capita
-helperBarDeathsCases(cvFilteredPerCapita, 
-                     numVars=c("deaths", "cases"), 
-                     title="Coronavirus burden by state (total)"
-                     )
-helperBarDeathsCases(cvFilteredPerCapita, 
-                     numVars=c("dpm", "cpm"), 
-                     title="Coronavirus burden by state (per capita)"
-                     )
-
 ```
   
-A few summaries are created without using functional form:  
+A function is written to assess the raw state-level totals:  
 ```{r}
 
-# Disease burden by state, per capita, not using functional form
-cvFilteredPerCapita %>%
-    group_by(state) %>%
-    summarize(cpm=sum(cpm), dpm=sum(dpm)) %>%
-    ggplot(aes(x=cpm, y=dpm)) +
-    geom_text(aes(label=state)) + 
-    labs(x="Cases per million through August 20", 
-         y="Deaths per million through August 20", 
-         title="Deaths vs. cases by state (per million people)", 
-         subtitle="CFR is estimated at ~0.5%; most states are far above, suggesting cases are undercounted"
-         ) + 
-    geom_abline(slope=1/200, lty=2) + 
-    annotate("text", x=28000, y=170, label="Deaths at 0.5% CFR")
+# Function to assess state data (no segments created yet)
+assessStateData <- function(df, 
+                            titleStem="Coronavirus burden by state", 
+                            cfrEst=0.005,
+                            mapper=varMapper
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the state-level data
+    # titleStem: the main title description, with (total) or (per capita) appended
+    # cfrEst: the estimated case fatality rate (CFR); a dashed abline will be plotted at this slope
+    # mapper: mapping file to convert x/y variables to descriptive axes (named vector "variable"="label")
+    
+    # Plot cases and deaths by state, once for overall and once per capita
+    helperBarDeathsCases(df, numVars=c("deaths", "cases"), title=paste0(titleStem, " (total)"))
+    helperBarDeathsCases(df, numVars=c("dpm", "cpm"), title=paste0(titleStem, " (per capita)"))
 
-# Total disease burden nationally by day, not using functional form
-cvFiltered %>%
-    group_by(date) %>%
-    summarize_if(is.numeric, sum) %>%
-    ungroup() %>%
-    helperRollingAgg(origVar="cases", newName="casesroll7") %>%
-    helperRollingAgg(origVar="deaths", newName="deathsroll7") %>%
-    select(-cases, -deaths) %>%
-    pivot_longer(-date) %>%
-    ggplot(aes(x=date, y=value)) + 
-    geom_line() +
-    facet_wrap(~varMapper[name], scales="free_y") + 
-    labs(x="", 
-         y="",
-         title="US Coronavirus Burden (States plus DC)",
-         subtitle="Coronavirus cases and deaths per day (7-day rolling mean) through August 20, 2020"
-         )
+    # Disease burden by state, per capita
+    p1 <- df %>%
+        group_by(state) %>%
+        summarize(cpm=sum(cpm), dpm=sum(dpm)) %>%
+        ggplot(aes(x=cpm, y=dpm)) +
+        geom_text(aes(label=state)) + 
+        labs(x=mapper["cpm"], 
+             y=mapper["dpm"], 
+             title="Deaths vs. cases by state (per million people)", 
+             subtitle=paste0("Dashed line is a CFR of ", 
+                             round(100*cfrEst, 1), 
+                             "% (states far from this may have case counting issues)"
+                             )
+             ) + 
+        geom_abline(slope=cfrEst, lty=2)
+    print(p1)
+    
+    # Total disease burden nationally by day, not using functional form
+    p2 <- df %>%
+        select(date, cases, deaths) %>%
+        group_by(date) %>%
+        summarize_if(is.numeric, sum) %>%
+        ungroup() %>%
+        helperRollingAgg(origVar="cases", newName="casesroll7") %>%
+        helperRollingAgg(origVar="deaths", newName="deathsroll7") %>%
+        select(-cases, -deaths) %>%
+        pivot_longer(-date) %>%
+        filter(!is.na(value)) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line() +
+        facet_wrap(~varMapper[name], scales="free_y") + 
+        labs(x="", 
+             y="",
+             title=titleStem
+             )
+    print(p2)
+    
+}
+
+
+# State-level assessments
+assessStateData(cvFilteredPerCapita)
 
 ```
   
@@ -748,7 +799,6 @@ clusterStates <- function(df,
     # Combine so there is one row per state
     dfCluster <- dfAgg %>%
         inner_join(dfShape, by="state")
-    print(arrange(dfCluster, desc(state)))
     
     # Create hierarchical segments or kmeans segments
     if (hierarchical) {
@@ -779,6 +829,109 @@ testCluster <- clusterStates(cvFilteredPerCapita,
   
 The clusters can then be assessed against several criteria:  
 ```{r}
+
+# Helper function to assess 30-day change vs. total
+helperRecentvsTotal <- function(df, 
+                                xVar, 
+                                yVar,
+                                title,
+                                recencyDays=30, 
+                                ablineSlope=0.5, 
+                                mapper=varMapper
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the tibble containing data by state by day
+    # xVar: the x-variable
+    # yVar: the y-variable
+    # title: the plot title
+    # recencyDays: number of days to consider as recent
+    # ablineSlope: dashed line will be drawn with this slope and intercept 0
+    # mapper: mapping file to convert x/y variables to descriptive axes (named vector "variable"="label")
+    
+    # Get the most date cutoff
+    dateCutoff <- df %>% pull(date) %>% max() - recencyDays + 1
+    cat("\nRecency is defined as", format(dateCutoff, "%Y-%m-%d"), "through current\n")
+    
+    # Create the plot
+    p1 <- df %>%
+        mutate(newCases=ifelse(date >= dateCutoff, cases, 0), 
+               newDeaths=ifelse(date >= dateCutoff, deaths, 0), 
+               newcpm=ifelse(date >= dateCutoff, cpm, 0), 
+               newdpm=ifelse(date >= dateCutoff, dpm, 0)
+               ) %>%
+        group_by(state, cluster) %>%
+        summarize_if(is.numeric, .funs=sum) %>%
+        ungroup() %>%
+        ggplot(aes_string(x=xVar, y=yVar)) + 
+        geom_text(aes(color=cluster, label=state)) + 
+        labs(x=mapper[xVar], 
+             y=mapper[yVar], 
+             title=title, 
+             subtitle=paste0("Dashed line represents ", 
+                             round(100*ablineSlope), 
+                             "% of total is new in last ", 
+                             recencyDays,
+                             " days"
+                             )
+             ) + 
+        geom_abline(lty=2, slope=ablineSlope) + 
+        lims(x=c(0, NA), y=c(0, NA))
+    print(p1)
+
+}
+
+
+# Function to plot cluster vs. individual elements on a key metric
+helperTotalvsElements <- function(df, 
+                                  keyVar, 
+                                  title,
+                                  aggFunc=median, 
+                                  mapper=varMapper, 
+                                  facetScales="free_y"
+                                  ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing n-day rolling averages
+    # keyVar: the variable to be plotted
+    # title: the plot title
+    # aggFunc: how to aggregate the elements to the segment
+    #          CAUTION that this is an aggregate of averages, rather than a population-weighted aggregate
+    # mapper: the variable mapping file to get the appropriate label for keyVar
+    # facetScales: the scaling for the facets - "free_y" to let them all float, "fixed" to have them the same
+
+    # Create an appropriate subtitle
+    subtitle <- if(facetScales=="free_y") {
+        "Caution that each facet has its own y axis with different scales"
+    } else if (facetScales=="fixed") { 
+        "All facets are on the same scale"
+    } else {
+        "Update subtitle code in function helperTotalvsElements"
+    }
+    
+    # Create the plots for segment-level data
+    p1 <- df %>%
+        rbind(mutate(., state="cluster")) %>%
+        group_by(state, cluster, date) %>%
+        summarize_at(vars(all_of(keyVar)), .funs=aggFunc) %>%
+        ungroup() %>%
+        filter(!is.na(get(keyVar))) %>%
+        ggplot(aes_string(x="date", y=keyVar)) + 
+        geom_line(data=~filter(., state != "cluster"), aes(group=state), alpha=0.25) + 
+        geom_line(data=~filter(., state == "cluster"), aes(group=state, color=cluster), lwd=1.5) + 
+        facet_wrap(~cluster, scales=facetScales) + 
+        labs(x="", 
+             y=mapper[keyVar], 
+             title=title, 
+             subtitle=subtitle,
+             caption="Cluster-level aggregates weight each state equally\n(NOT population-weighted)"
+             ) + 
+        ylim(c(0, NA))
+    print(p1)
+    
+}
+
+
 
 # Function to assess clusters
 assessClusters <- function(clusters, 
@@ -854,6 +1007,45 @@ assessClusters <- function(clusters,
         facet_wrap(~varMapper[name], scales="free_x") + 
         labs(x="Cluster", y="Burden (000s)", title="Total cases and deaths by segment")
     print(p4)
+
+    # Plot total cases and total deaths by state, colored by cluster
+    helperBarDeathsCases(dfPlot, 
+                         numVars=c("cases", "deaths"), 
+                         title="Coronavirus impact by state through August 20, 2020", 
+                         xVar=c("state"), 
+                         fillVar=c("cluster")
+                         )
+    
+    # Plot cases per million and deaths per million by state, colored by cluster
+    helperBarDeathsCases(dfPlot, 
+                         numVars=c("cpm", "dpm"), 
+                         title="Coronavirus impact by state through August 20, 2020", 
+                         xVar=c("state"), 
+                         fillVar=c("cluster")
+                         )
+    
+    # Plot last-30 vs total for cases per million by state, colored by cluster
+    helperRecentvsTotal(dfPlot, xVar="cpm", yVar="newcpm", title="Coronavirus burden through August 20")
+    
+    # Plot last-30 vs total for deaths per million by state, colored by cluster
+    helperRecentvsTotal(dfPlot, xVar="dpm", yVar="newdpm", title="Coronavirus burden through August 20")
+    
+    # Plot the cases per million on a free y-scale and a fixed y-scale
+    helperTotalvsElements(dfPlot, keyVar="cpm7", title="Cases per million, 7-day rolling mean")
+    helperTotalvsElements(dfPlot, 
+                          keyVar="cpm7", 
+                          title="Cases per million, 7-day rolling mean", 
+                          facetScales="fixed"
+                          )
+    
+    # Plot the deaths per million on a free y-scale and a fixed y-scale
+    helperTotalvsElements(dfPlot, keyVar="dpm7", title="Deaths per million, 7-day rolling mean")
+    helperTotalvsElements(dfPlot, 
+                          keyVar="dpm7", 
+                          title="Deaths per million, 7-day rolling mean", 
+                          facetScales="fixed"
+                          )
+    
     
     # Return the plotting data frame
     dfPlot
@@ -863,13 +1055,58 @@ assessClusters <- function(clusters,
 # Check how 5 clusters look, with Vermont arbitrarily reassigned as the same cluster as New Hampshire
 clustVec <- cutree(testCluster, k=6)
 clustVec["VT"] <- clustVec["NH"]
-assessClusters(clustVec)
+plotData <- assessClusters(clustVec)
 
 ```
   
 At a glance, the segments appear reasonable:  
   
-* Segments 4 and 5 had early disease, but with less pronounced spikes in segment 5 than in segment 4, but with a greater case rebound in segment 5 than in segment 4    
+* Segments 4 and 5 had early disease, but with less pronounced spikes in segment 5 than in segment 4, and with a greater case rebound in segment 5 than in segment 4    
 * Segments 2 had late disease, with little spike early  
-* Segments 1 and 3 have generally had few deaths, though with spiky cases that are similarly shaped if much lower than segment 2  
+* Segments 1 and 3 have generally had fewer deaths, though with spiky cases that are similarly shaped if much lower than segment 2 (late disease, which may be increased testing finding a higher percentage of disease)  
+  
+The full process can then all be run in one place:  
+```{r}
+
+# Extract state data
+stateData <- getStateData()
+
+# Load and process CV data
+cvFull <- readCVData("./RInputFiles/Coronavirus/CV_downloaded_200820.csv")
+cvFiltered <- processCVData(cvFull)
+cvFilteredPerCapita <- helperMakePerCapita(cvFiltered, k=7)
+
+# Run state-level assessments
+assessStateData(cvFilteredPerCapita)
+
+# Test clusters that weight deaths heavily vs. cases and that weight shape more highly than total
+testCluster <- clusterStates(cvFilteredPerCapita, 
+                             minShape=3, 
+                             ratioDeathvsCase = 5, 
+                             ratioTotalvsShape = 0.5, 
+                             minDeath=100, 
+                             minCase=10000
+                             )
+
+# Check how 6 clusters look, with Vermont arbitrarily reassigned as the same cluster as New Hampshire
+clustVec2 <- cutree(testCluster, k=7)
+clustVec2["VT"] <- clustVec2["NH"]
+
+# Create the cluster assessments
+plotData2 <- assessClusters(clustVec2)
+
+```
+  
+The process is easy to run and update now that it is in functional form.  An exploration is made for 6 segments, which allows for a bucket of LA, DC, RI.  These are states that had meaningful early disease spikes (though less than the main high-spike-early cluster) and also meaningful late disease spikes (though less than the main high-spike-late cluster).  Findings include:  
+  
+* There are significant differences (more than 10:1) in coronavirus deaths per capita by US state through August 20  
+* There is strong evidence that cases are significantly undercounted in aggregate, since almost all states have a calculated CFR that is well above the current best estimate of 0.5%  
+* The observed double-peak ("second wave") in the US national data appears to be driven by different geographies (segments) having their first wave at different times; there has been a significant increase in testing, so deaths vs. cases in the late first waves are much less than they were in the early first waves  
+* While the segments are data-derived, there are significant qualitative similarities among many of the states assigned to a given cluster (e.g., south, Acela corrdior, central/upper plains, etc.)  
+* With the exception of segment 5, all segments have between 40 million and 80 million people  
+* Segment 2 (south plus AZ/NV) has a meaningful spike in cases and deaths in July/August; the spike in cases appears to be descending rapidly, with deaths plateaued if not decreasing  
+* Segment 4 (NY, NJ, CT, MA) has a meaningful spike in cases and deaths in March-May; the spikes appear to have descended to, and remained near, zero thereafter  
+* Segment 6 (IL, IN, MI, PA, MD, DE) had a meaningful spike in cases and deaths in March-May, though at under half the per capita levels of Segment 4; there has been a second spike of cases in July/August, though with little increase in deaths, suggestive that there may be increased testing more so than increased disease  
+* Segment 5 (LA, DC, RI) is something of a blend of Segment 4 and Segment 6; it has a higher spike early than Segment 6, but has a meaningful spike in cases late unlike Segment 4  
+* Segments 1 and 3 both have relatively low coronavirus burden, with segment 3 having greater cases than Segment 1 early, while segment 1 has greater cases than segment 3 late (Segment 1 is roughly a low-impact version of Segment 2, while Segment 3 is roughly a low-impact version of Segment 6)  
   
