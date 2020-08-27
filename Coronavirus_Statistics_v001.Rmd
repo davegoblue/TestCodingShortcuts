@@ -723,6 +723,63 @@ Next, functions for creating and assessing clusters are created.  The approach c
 Cases is a tricky clustering variable since detection rates were in the single-digit percentages early in the outbreak (estimates of ~50x as many infected as diagnosed).  As testing volumes increased, it is likely that a greater percentage of cases are diagnosed.  States that have later outbreaks appear to have many more cases per capita but with a lower death rate per capita:  
 ```{r}
 
+# Function to create an elbow plot for various numbers of clusters in the data
+helperElbow <- function(mtx, 
+                        testCenters, 
+                        iter.max, 
+                        nstart, 
+                        silhouette=FALSE
+                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # mtx: a numeric matrix, or an object that can be coerced to a numeric matrix (no character fields)
+    # testCenters: integer vector for the centers to be tested
+    # iter.max: parameter passed to kmeans
+    # nstart: parameter passed to kmeans
+    # silhouette: whether to calculate the silhouette score
+    
+    # Create an object for storing tot.withinss and silhouetteScore
+    totWithin <- vector("numeric", length(testCenters))
+    silhouetteScore <- vector("numeric", length(testCenters))
+    
+    # Create the distancing data (required for silhouette score)
+    if (silhouette) distData <- dist(mtx)
+    
+    # Run k-means for every value in testCenters, and store $tot.withinss (and silhouetteScore, if requested)
+    n <- 1
+    for (k in testCenters) {
+        km <- kmeans(mtx, centers=k, iter.max=iter.max, nstart=nstart)
+        totWithin[n] <- km$tot.withinss
+        if (silhouette & (k > 1)) silhouetteScore[n] <- mean(cluster::silhouette(km$cluster, distData)[, 3])
+        n <- n + 1
+    }
+    
+    # Create the elbow plot
+    p1 <- tibble::tibble(n=testCenters, wss=totWithin) %>%
+        ggplot(aes(x=n, y=wss)) + 
+        geom_point() + 
+        geom_line() + 
+        geom_text(aes(y=wss + 0.05*max(totWithin), x=n+0.2, label=round(wss, 1))) + 
+        labs(x="Number of segments", y="Total Within Sum-Squares", title="Elbow plot") + 
+        ylim(c(0, NA))
+    
+    # Create the silhouette plot if requested
+    if (silhouette) {
+        p2 <- tibble::tibble(n=testCenters, ss=silhouetteScore) %>%
+            ggplot(aes(x=n, y=ss)) + 
+            geom_point() + 
+            geom_line() + 
+            geom_text(aes(y=ss + 0.05*max(silhouetteScore), x=n+0.2, label=round(ss, 1))) + 
+            labs(x="Number of segments", y="Mean silhouette width", title="Silhouette plot") + 
+            ylim(c(-1, NA))
+        gridExtra::grid.arrange(p1, p2, nrow=1)
+    } else {
+        print(p1)
+    }
+    
+}
+
+
 # Function to create clusters for the state data (requires all data from same year, as currently true)
 clusterStates <- function(df, 
                           caseVar="cpm", 
@@ -734,7 +791,13 @@ clusterStates <- function(df,
                           ratioTotalvsShape=1, 
                           ratioDeathvsCase=1, 
                           hierarchical=TRUE, 
-                          method="complete"
+                          hierMethod="complete", 
+                          nCenters=3, 
+                          iter.max=10,
+                          nstart=1,
+                          testCenters=NULL,
+                          returnList=FALSE, 
+                          seed=NULL
                           ) {
     
     # FUNCTION ARGUMENTS:
@@ -752,7 +815,14 @@ clusterStates <- function(df,
     #                   (death percentages by time period will be scaled directly by this amount)
     # hierarchical: boolean, if TRUE run hierarchical clustering, otherwise run k-means clustering
     #               only hierarchical clustering is currently implemented
-    # method: the method for hierarchical clustering (e.g., 'complete' or 'single')
+    # hierMethod: the method for hierarchical clustering (e.g., 'complete' or 'single')
+    # nCenters: the number of centers to use for kmeans clustering
+    # testCenters: integer vector of centers to test (will create an elbow plot); NULL means do not test
+    # iter.max: maximumum number of kmeans iterations (default in kmeans algorithm is 10)
+    # nstart: number of random sets chosen for kmeans (default in kmeans algorithm is 1)
+    # returnList: boolean, if FALSE just the cluster object is returned
+    #                      if TRUE, a list is returned with dfCluster and the cluster object
+    # seed: set the seed to this value (NULL means no seed)
     
     # Extract key information (aggregates and by shapeFunc for each state)
     df <- df %>%
@@ -801,18 +871,28 @@ clusterStates <- function(df,
         inner_join(dfShape, by="state")
     
     # Create hierarchical segments or kmeans segments
+    keyData <- dfCluster %>% column_to_rownames("state")
     if (hierarchical) {
-        distData <- dfCluster %>%
-            column_to_rownames("state")
-        objCluster <-  hclust(dist(distData), method=method)
+        objCluster <-  hclust(dist(keyData), method=hierMethod)
         plot(objCluster)
     } else {
-        cat("\nK-means is not yet implemented\n")
-        objCluster <- NULL
+        # Create an elbow plot if testCenters is not NULL
+        if (!is.null(testCenters)) {
+            helperElbow(keyData, testCenters=testCenters, iter.max=iter.max, nstart=nstart, silhouette=TRUE)
+        }
+        # Create the kmeans cluster object, setting a seed if requested
+        if (!is.null(seed)) set.seed(seed)
+        objCluster <- kmeans(keyData, centers=nCenters, iter.max=iter.max, nstart=nstart)
+        cat("\nCluster means and counts\n")
+        n=objCluster$size %>% cbind(objCluster$centers) %>% round(2) %>% t() %>% print()
     }
 
-    # Return the clustering object
-    objCluster
+    # Return the data and object is a list if returnList is TRUE, otherwise return only the clustering object
+    if (!isTRUE(returnList)) {
+        objCluster
+    } else {
+        list(objCluster=objCluster, dfCluster=dfCluster)
+    }
     
 }
 
@@ -1109,4 +1189,80 @@ The process is easy to run and update now that it is in functional form.  An exp
 * Segment 6 (IL, IN, MI, PA, MD, DE) had a meaningful spike in cases and deaths in March-May, though at under half the per capita levels of Segment 4; there has been a second spike of cases in July/August, though with little increase in deaths, suggestive that there may be increased testing more so than increased disease  
 * Segment 5 (LA, DC, RI) is something of a blend of Segment 4 and Segment 6; it has a higher spike early than Segment 6, but has a meaningful spike in cases late unlike Segment 4  
 * Segments 1 and 3 both have relatively low coronavirus burden, with segment 3 having greater cases than Segment 1 early, while segment 1 has greater cases than segment 3 late (Segment 1 is roughly a low-impact version of Segment 2, while Segment 3 is roughly a low-impact version of Segment 6)  
+  
+The clusterStates() function is updated in two ways:  
+  
+1.  Designed to output, at user's request, a list containing the processed state-level data as well as the clustering object  
+2.  Designed to implement kmeans segmentation in addition to hierarchical clustering  
+  
+An example is run using k-means, with 2 segments (the most obvious best silhouette width given these parameters):  
+```{r}
+
+# Test clusters that weight deaths heavily vs. cases and that weight shape more highly than total
+# Using kmeans and testing for 1-10 clusters
+testCluster_km2 <- clusterStates(cvFilteredPerCapita, 
+                                 minShape=3, 
+                                 ratioDeathvsCase = 5, 
+                                 ratioTotalvsShape = 0.5, 
+                                 minDeath=100, 
+                                 minCase=10000, 
+                                 hierarchical=FALSE, 
+                                 nCenters=2,
+                                 testCenters=1:10, 
+                                 iter.max=20,
+                                 nstart=10, 
+                                 returnList=TRUE, 
+                                 seed=2008261350
+                                 )
+
+# Check how 2 clusters look
+clustVec_km2 <- testCluster_km2$objCluster$cluster
+
+# Create the cluster assessments
+plotData_km2 <- assessClusters(clustVec_km2)
+
+```
+  
+Given the criteria that deaths matter much more than cases and that aggregate matters more than shape, the main clustering distinction is the 11 states plus DC that had early, heavy disease.  While this produces the best mean silhouette width, it appears to be missing the distinction of states with a later spike.  The elbow plot is consistent with this, as there is no obvious break where within-sum-squares meaningfully stops decreasing.  Suppose that 5 segments are created, with the intent of splitting high/low deaths and early/late spikes:  
+```{r}
+
+# Test clusters that weight deaths heavily vs. cases and that weight shape more highly than total
+# Using kmeans and testing for 1-10 clusters
+testCluster_km5 <- clusterStates(cvFilteredPerCapita, 
+                                 minShape=3, 
+                                 ratioDeathvsCase = 5, 
+                                 ratioTotalvsShape = 0.5, 
+                                 minDeath=100, 
+                                 minCase=10000, 
+                                 hierarchical=FALSE, 
+                                 nCenters=5,
+                                 testCenters=1:10, 
+                                 iter.max=20,
+                                 nstart=10, 
+                                 returnList=TRUE, 
+                                 seed=2008261400
+                                 )
+
+# Check how 5 clusters look
+clustVec_km5 <- testCluster_km5$objCluster$cluster
+
+# Create the cluster assessments
+plotData_km5 <- assessClusters(clustVec_km5)
+
+```
+  
+The clusters appear very similar to those created using hierarchical clustering.  A comparison of the segments assigned is made:  
+```{r}
+
+tibble::tibble(state=names(clustVec), 
+               hier5=clustVec, 
+               hier6=clustVec2,
+               km2=clustVec_km2,
+               km5=clustVec_km5
+               ) %>%
+    count(hier6, hier5, km2, km5)
+
+```
+  
+States are sufficiently differentiated, and the method sufficiently focused on deaths and aggregates, such that the clustering techniques produce similar results.  There are many states that are near the edges of the clusters, and the choice of metrics and even random seeds will drive their assignments.  Provided there are enough segments, there appears to typically be 1) at least one segment of early and heavy disease, 2) at least one segment of late and heavy disease, and 3) at least one segment of much lower than average disease.  There is then some differentiation as to how the "early and heavy" and "lower than average" segments are identified and/or further subsetted.
   
