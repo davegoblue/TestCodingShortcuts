@@ -2063,4 +2063,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 creates functions for coronavirus exploration  
 * Coronavirus_Statistics_v001 creates functions for state-level coronavirus segments  
 * Coronavirus_Statistics_v001 integrates functions for state-level coronavirus segments  
+* Coronavirus_Statistics_v001 adds kmeans as a segmentation option  
   
