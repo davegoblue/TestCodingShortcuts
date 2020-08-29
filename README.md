@@ -2065,4 +2065,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 integrates functions for state-level coronavirus segments  
 * Coronavirus_Statistics_v001 adds kmeans as a segmentation option  
 * Coronavirus_Statistics_v001 adds option to place multiple charts on one page  
+* Coronavirus_Statistics_v001 explores hospitalization data  
   
