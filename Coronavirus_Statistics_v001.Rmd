@@ -1330,4 +1330,116 @@ plotData_km5 <- assessClusters(clustVec_km5,
                                )
 
 ```
+  
+Hospitalization data is also included in the raw coronavirus file from The COVID Project:  
+```{r}
 
+# All fields contained in the raw CV file
+names(cvData)
+
+# Fields matching to 'hosp' or 'icu' or 'ventilator'
+hospVars <- names(cvData) %>% 
+    grep(x=., pattern="[Hh]osp|[Ii]cu|[Vv]entilator", value=TRUE) %>% 
+    sort()
+hospVars
+
+```
+  
+Data are investigated for amount of 'missingness' by time period:  
+```{r}
+
+set.seed(2008281323)
+
+cvData %>%
+    select_at(vars(all_of(c("state", "date", hospVars)))) %>%
+    sample_n(20) %>%
+    purrr::set_names(c("state", "date", 
+                       "hosp", "hospCum", "hospCur", "hospInc", 
+                       "icuCum", "icuCur", "ventCum", "ventCur"
+                       )
+                     ) %>%
+    arrange(date)
+
+```
+  
+Missing data appears to be common, and not always reflective of zero.  There is at least some directional evidence that the hospitalized currently variables has been coming on line and that the hospitalized increase variable uses 0 for both NA and 'no increase'.  This would be problematic for using any of the variables (potentially other than hospCur) for cross-state comparisons.  An analysis is run to see the frequency of NA by variable by date:  
+```{r}
+
+# Not NA data
+notNADate <- cvData %>%
+    filter(state %in% c(state.abb, "DC")) %>%
+    select_at(vars(all_of(c("state", "date", hospVars)))) %>%
+    mutate(nState=1) %>%
+    group_by(date) %>%
+    summarize_if(is.numeric, .funs=function(x) { sum(!is.na(x))}) %>%
+    ungroup()
+
+# Evolution of Not NA states by time
+notNADate %>%
+    pivot_longer(-date) %>%
+    ggplot(aes(x=date, 
+               y=value, 
+               group=fct_rev(fct_reorder(name, value, .fun=max)), 
+               color=fct_rev(fct_reorder(name, value, .fun=max))
+               )
+           ) + 
+    geom_line(lwd=1) + 
+    geom_hline(yintercept=51, lty=2) + 
+    labs(x="", y="Number of states with non-NA data", title="Evolution of data availability by metric") + 
+    scale_color_discrete("") + 
+    scale_x_date(date_breaks="1 months", date_labels="%m")
+
+# Confirmation that hospitalized increase and nState are identical
+sum(notNADate$hospitalizedIncrease != notNADate$nState)
+
+```
+  
+The plots confirm the meaningful gaps in the hospitalization, ICU, and ventilator data.  Further, hospitalized increase exists and is non-missing for every case where there is a record (nState), suggesting that this metric has already had a filter such as ifelse(is.na(x), 0, x) applied.  The only data that appears to grow from NA to potentially stable is 'hospitalized currently', which has become valid in all 51 states as of August.
+
+General data availability by metric is:  
+```{r}
+
+# Not NA data
+notNADateState <- cvData %>%
+    filter(state %in% c(state.abb, "DC")) %>%
+    select_at(vars(all_of(c("state", "date", hospVars)))) %>%
+    mutate(nState=1, month=lubridate::month(date)) %>%
+    group_by(month, state) %>%
+    summarize_if(is.numeric, .funs=function(x) { min(!is.na(x))}) %>%
+    ungroup()
+
+# Evolution of Not NA states by month
+notNADateState %>%
+    pivot_longer(-c(state, month)) %>%
+    filter(!(name %in% c("nState", "hospitalizedIncrease"))) %>%
+    ggplot(aes(y=fct_reorder(state, value, .fun=sum), x=month)) + 
+    geom_tile(aes(fill=value)) + 
+    labs(x="", y="", title="Evolution of data availability by metric") + 
+    scale_fill_continuous("", low="white", high="green") + 
+    facet_wrap(~name, nrow=1)
+
+# States missing hospitalizedCurrently as of May 1
+notNADateState %>%
+    filter(hospitalizedCurrently != 1, month >= 5)
+
+```
+  
+The hospitalized currently metric is fully complete as of August, and mostly complete as of June.  Only data from Florida, Hawaii, Kansas, and Nebraska is missing, and all but Nebraska report data in 'hospitalized' for those time periods.  How does the hospitalized data compare with the hospitalizedCurrently data for FL, HI, and KS?  
+```{r}
+
+# Hospitalized comparisons
+cvData %>%
+    arrange(state, date) %>% 
+    group_by(state) %>%
+    filter(state %in% c("FL", "HI", "KS"), 
+           is.na(lag(hospitalizedCurrently, 10)), 
+                 !is.na(lead(hospitalizedCurrently, 5))
+           ) %>% 
+    select(date, state, contains("hosp")) %>% 
+    as.data.frame()
+
+```
+  
+Prior to reporting hospitalizedCurrently, it appears that the hopitalized field and hospitalizedCumulative fields were identical for these states.  And, hospitalizedIncrease appears to be the change in hospitalizedCumulative, which would be the number of people newly admitted to the hospital on that day (no reduction for any discharges/deaths on that day).
+  
+The lack of data will meaningfully complicate any cross-state comparisons, since some states did not report the same metrics (or at all) during times when their state had meaningful disease burden as shown by cases and deaths.
