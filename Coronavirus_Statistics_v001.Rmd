@@ -239,7 +239,8 @@ varMapper <- c("cases"="Cases through Aug 20",
                "newcpm"="Increase in cases, 30 days through Aug 20 (per million)",
                "dpm"="Deaths through Aug 20 (per million)", 
                "dpm7"="Deaths per day (7-day rolling mean) through Aug 20 (per million)", 
-               "newdpm"="Increase in deaths, 30 days through Aug 20 (per million)"
+               "newdpm"="Increase in deaths, 30 days through Aug 20 (per million)", 
+               "hpm7"="Currently Hospitalized per million (7-day rolling mean)"
                )
 
 cvWeekPop %>%
@@ -1443,3 +1444,135 @@ cvData %>%
 Prior to reporting hospitalizedCurrently, it appears that the hopitalized field and hospitalizedCumulative fields were identical for these states.  And, hospitalizedIncrease appears to be the change in hospitalizedCumulative, which would be the number of people newly admitted to the hospital on that day (no reduction for any discharges/deaths on that day).
   
 The lack of data will meaningfully complicate any cross-state comparisons, since some states did not report the same metrics (or at all) during times when their state had meaningful disease burden as shown by cases and deaths.
+  
+Since the 'hospitalizedCurrently' field is the most complete, a function is written to plot the per capita evolution of this metric by segment:  
+```{r}
+
+# Function to create plots of the number hospitalized by state and cluster
+plotHospitalized <- function(df, 
+                             clusterVector,
+                             dfState=stateData, 
+                             subT=""
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a data frame or tibble containing 'state', 'date', 'hospitalizedCurrently'
+    # clusterVector: a named vector of form 'state'='cluster'
+    # dfState: a state-level population file containing 'state' and 'pop'
+    # subT: a subtitle for the plot
+    
+    # Create the key plotting data
+    plotData <- df %>% 
+        inner_join(dfState, by="state") %>% 
+        mutate(cluster=factor(clusterVector[state])) %>% 
+        filter(!is.na(hospitalizedCurrently)) %>% 
+        select(date, state, cluster, hospitalizedCurrently, pop) %>%
+        rbind(mutate(., state="Total")) %>%
+        group_by(state, cluster, date) %>% 
+        summarize(n=n(), 
+                  hospitalizedCurrently=sum(hospitalizedCurrently), 
+                  pop=sum(pop)
+                  ) %>% 
+        mutate(hpm=1000000*hospitalizedCurrently/pop) %>%
+        helperRollingAgg(origVar="hpm", newName="hpm7") %>%
+        ungroup()
+    
+    # Create the plot
+    p1 <- plotData %>%
+        filter(!is.na(hpm7)) %>%
+        ggplot(aes(x=date, y=hpm7)) + 
+        geom_line(data=~filter(., state != "Total"), aes(group=state), alpha=0.25) +
+        geom_line(data=~filter(., state == "Total"), aes(group=state, color=cluster), lwd=1.5) + 
+        facet_wrap(~cluster, scales="fixed") + 
+        ylim(c(0, NA)) + 
+        labs(x="", 
+             y="Currently Hospitalized 7-day rolling mean (per million)", 
+             title="Hospitalized per million by cluster", 
+             subtitle=subT
+             )
+    print(p1)
+    
+    # Return the plot data
+    plotData
+
+}
+
+# Create the hospitalized plot
+dfHospital <- plotHospitalized(cvData, clusterVector=clustVec_km5, subT="Data through August 20")
+
+```
+  
+The data show very similar patterns and shapes as when the segments were plotted using cases and deaths.
+
+The hospital data can then be integrated to the existing data file with cases and deaths.  Filling with NA for the hospitalized data is OK, so a left join is performed:  
+```{r}
+
+# This will drop the cluster aggregate that was created inside dfHospital
+metrics_km5 <- plotData_km5 %>%
+    left_join(select(dfHospital, -n, -pop), by=c("state", "cluster", "date"))
+
+# Explore cluster-level totals for cases, deaths, hospitalizedCurrently
+metrics_km5_plotData <- metrics_km5 %>%
+    select(state, cluster, date, pop, cases, deaths, hosp=hospitalizedCurrently) %>%
+    pivot_longer(-c(state, cluster, date, pop)) %>%
+    filter(!is.na(value)) %>%
+    rbind(mutate(., state="cluster")) %>%
+    group_by(state, cluster, date, name) %>%
+    summarize(value=sum(value), pop=sum(pop)) %>%
+    mutate(vpm=1000000*value/pop) %>%
+    arrange(state, cluster, name, date) %>%
+    group_by(state, cluster, name) %>%
+    helperRollingAgg(origVar="vpm", newName="vpm7")
+
+# Create facetted plots for totals by metric by segment
+metrics_km5_plotData %>%
+    filter(!is.na(vpm7)) %>%
+    ggplot(aes(x=date, y=vpm7)) + 
+    geom_line(data=~filter(., state=="cluster"), aes(group=cluster, color=cluster), lwd=1.5) +
+    geom_line(data=~filter(., state!="cluster"), aes(group=state), alpha=0.25) + 
+    facet_grid(name ~ cluster, scales="free_y") + 
+    labs(x="", 
+         y="Rolling 7-day mean per million", 
+         title="Key metrics by cluster (7-day rolling mean per million)", 
+         subtitle="Cases: new cases, Deaths: new deaths, Hospitalized: total in hospital (not new)"
+         ) + 
+    scale_x_date(date_breaks="1 months", date_labels="%b") + 
+    theme(axis.text.x=element_text(angle=90))
+    
+# Create all-segment plot by metric
+metrics_km5_plotData %>%
+    filter(!is.na(vpm7)) %>%
+    ggplot(aes(x=date, y=vpm7)) + 
+    geom_line(data=~filter(., state=="cluster"), aes(group=cluster, color=cluster), lwd=1.5) +
+    facet_wrap(~ name, scales="free_y", nrow=1) + 
+    labs(x="", 
+         y="Rolling 7-day mean per million", 
+         title="Key metrics by cluster (7-day rolling mean per million)", 
+         subtitle="Cases: new cases, Deaths: new deaths, Hospitalized: total in hospital (not new)"
+         ) + 
+    scale_x_date(date_breaks="1 months", date_labels="%b") + 
+    theme(axis.text.x=element_text(angle=90))
+
+# Create all-metric plot by segment (define 100% as peak for segment-metric)
+metrics_km5_plotData %>%
+    filter(!is.na(vpm7)) %>%
+    group_by(state, cluster, name) %>%
+    mutate(spm7=vpm7/max(vpm7)) %>%
+    ggplot(aes(x=date, y=spm7)) + 
+    geom_line(data=~filter(., state=="cluster"), aes(group=name, color=cluster, linetype=name), lwd=1) +
+    facet_wrap(~ cluster, scales="free_y") + 
+    labs(x="", 
+         y="% of Maximum", 
+         title="Key metrics by cluster (% of maximum)", 
+         subtitle="Cases: new cases, Deaths: new deaths, Hospitalized: total in hospital (not new)"
+         ) + 
+    scale_x_date(date_breaks="1 months", date_labels="%b") + 
+    theme(axis.text.x=element_text(angle=90))
+
+```
+  
+For the segments hit early (2 and 4), there was at most a small time difference between the peak for cases, hospitalizations, and deaths.  This is potentially driven by very limited testing, with many diagnoses being made when patients already had advanced disease.  Segment 4 has had a reborund in cases but without any rebound in hospitalizations or deaths, suggesting that the recent spike in cases may be due to increased testing.
+
+For the primary segment being hit late (1), there appears to be a 2-4 week gap between the peak in cases and hospitalizations and the peak in deaths.  This is potentially driven by a larger number of cases being found early due to increased testing.
+
+Segments 3 and 5 are near their peaks for cases and hospitalizations, while segment 3 (but not segment 5) is also near its peak for deaths.  These segments have currently had a low burden on a per million basis, and the evolution of disease bruden in the following weeks or months is uncertain.  Segment 3 across plots may be showing more indicia of a late spike like segment 1, while segment 5 across plots may be showing more indicia of a modest rebound in cases like segment 4.
