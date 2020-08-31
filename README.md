@@ -2068,3 +2068,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 explores hospitalization data  
 * Coronavirus_Statistics_v001 analyzes hospitalization vs. time by segment  
   
+### Expansions week of 31-AUG-2020  
+* Coronavirus_Statistics_v001 includes functions for data download and initial checks  
+  
