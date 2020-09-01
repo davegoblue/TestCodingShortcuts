@@ -1035,6 +1035,7 @@ helperTotalvsElements <- function(df,
 assessClusters <- function(clusters, 
                            dfState=stateData, 
                            dfBurden=cvFilteredPerCapita,
+                           thruLabel="Aug 20, 2020",
                            plotsTogether=FALSE, 
                            clusterPlotsTogether=plotsTogether,
                            recentTotalTogether=plotsTogether, 
@@ -1044,8 +1045,12 @@ assessClusters <- function(clusters,
     # FUNCTION ARGUMENTS:
     # clusters: the named vector containing the clusters by state
     # dfState: the file containing the states and populations
+    # dfBurden: the data containing the relevant per capita burden statistics by state-date
+    # thruLabel: label for plots for 'data through'
     # plotsTogether: boolean, should plots be consolidated on fewer pages?
     # clusterPlotsTogether: boolean, should plots p1-p4 be consolidated?
+    # recentTotalTogether: boolean, should recent total plots p7-p8 be consolidated?
+    # clusterAggTogether: boolean, should aggregate plots p9/p11 and p10/p12 be consolidated?
     
     # Attach the clusters to the state population data
     dfState <- as.data.frame(clusters) %>%
@@ -1113,7 +1118,7 @@ assessClusters <- function(clusters,
     # Plot total cases and total deaths by state, colored by cluster
     helperBarDeathsCases(dfPlot, 
                          numVars=c("cases", "deaths"), 
-                         title="Coronavirus impact by state through August 20, 2020", 
+                         title=paste0("Coronavirus impact by state through ", thruLabel), 
                          xVar=c("state"), 
                          fillVar=c("cluster")
                          )
@@ -1121,7 +1126,7 @@ assessClusters <- function(clusters,
     # Plot cases per million and deaths per million by state, colored by cluster
     helperBarDeathsCases(dfPlot, 
                          numVars=c("cpm", "dpm"), 
-                         title="Coronavirus impact by state through August 20, 2020", 
+                         title=paste0("Coronavirus impact by state through ", thruLabel), 
                          xVar=c("state"), 
                          fillVar=c("cluster")
                          )
@@ -1130,7 +1135,7 @@ assessClusters <- function(clusters,
     p7 <- helperRecentvsTotal(dfPlot, 
                               xVar="cpm", 
                               yVar="newcpm", 
-                              title="Coronavirus burden through August 20", 
+                              title=paste0("Coronavirus burden through ", thruLabel), 
                               printPlot=FALSE
                               )
     
@@ -1138,7 +1143,7 @@ assessClusters <- function(clusters,
     p8 <- helperRecentvsTotal(dfPlot, 
                               xVar="dpm", 
                               yVar="newdpm", 
-                              title="Coronavirus burden through August 20", 
+                              title=paste0("Coronavirus burden through ", thruLabel), 
                               printPlot=FALSE
                               )
     
@@ -1738,3 +1743,236 @@ glimpse(dfRaw_20200830)
 There appear to be multiple modest restatements of the data, but the overall trends by date and state are substantially the same as in the previous file.
 
 Next steps are to use existing segments and to track their evolution against the newer data.
+
+The data can be run against the filtering functions, with only key variables maintained:  
+```{r}
+
+# Variables to be kept
+varsFilter <- c("date", "state", "positiveIncrease", "deathIncrease", "hospitalizedCurrently")
+
+# Keep the cases, deaths, and hospitalized currently data for the 50 states and DC
+dfFiltered_20200830 <- processCVData(dfRaw_20200830, 
+                                     varsKeep=varsFilter, 
+                                     varsRename=c(positiveIncrease="cases", 
+                                                  deathIncrease="deaths", 
+                                                  hospitalizedCurrently="hosp"
+                                                  )
+                                     )
+
+# Show a sample of the filtered file
+glimpse(dfFiltered_20200830)
+
+```
+  
+The function for making per capita variables is updated to allow for other fields to be included:  
+```{r}
+
+# Function to add per capita and rolling to the base data frame
+# Updated function to take an arbitrary number of variables and convert them
+helperMakePerCapita <- function(df, 
+                                mapVars=c("cases"="cpm", "deaths"="dpm"),
+                                k=7
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the initial data frame for conversion
+    # mapVars: named vector of variables to be converted 'original name'='converted name'
+    # k: the rolling time period to use
+    
+    # Create the variables for per capita
+    for (origVar in names(mapVars)) {
+        df <- df %>% 
+            helperPerCapita(origVar=origVar, newName=mapVars[origVar])
+    }
+    # Arrange the data by date in preparation for rolling aggregations
+    df <- df %>% 
+        group_by(state) %>% 
+        arrange(date)
+    # Create the rolling variables
+    for (newVar in mapVars) {
+        df <- df %>% 
+            helperRollingAgg(origVar=newVar, newName=paste0(newVar, k), k=k)
+    }
+
+    # Return the updated data frame, ungrouped
+    df %>%
+        ungroup()
+    
+}
+
+# Confirm that the function, with defaults, is identical to previous
+identical(cvFilteredPerCapita, helperMakePerCapita(cvFiltered))
+
+```
+  
+The updated function can then be applied, with the hospital data also included:  
+```{r}
+
+# Create per capita and rolling 7 for cases, deaths, hosp
+dfPerCapita_20200830 <- helperMakePerCapita(dfFiltered_20200830, 
+                                            mapVars=c("cases"="cpm", "deaths"="dpm", "hosp"="hpm")
+                                            )
+glimpse(dfPerCapita_20200830)
+
+```
+  
+The data can then be applied to the segment assessment routine, using the clustVec (hierarchical with 5 segments after VT is collapsed to the NH segment) segments as an example:  
+```{r}
+
+# More generic version of varMapper that is date agnostic
+varMapper <- c("cases"="Cases", 
+               "newCases"="Increase in cases, most recent 30 days",
+               "casesroll7"="Rolling 7-day mean cases", 
+               "deaths"="Deaths", 
+               "newDeaths"="Increase in deaths, most recent 30 days",
+               "deathsroll7"="Rolling 7-day mean deaths", 
+               "cpm"="Cases per million",
+               "cpm7"="Cases per day (7-day rolling mean) per million", 
+               "newcpm"="Increase in cases, most recent 30 days, per million",
+               "dpm"="Deaths per million", 
+               "dpm7"="Deaths per day (7-day rolling mean) per million", 
+               "newdpm"="Increase in deaths, most recent 30 days, per million", 
+               "hpm7"="Currently Hospitalized per million (7-day rolling mean)"
+               )
+
+# Create the cluster assessments
+plot_20200830_hier5 <- assessClusters(clustVec, 
+                                      dfState=stateData, 
+                                      dfBurden=dfPerCapita_20200830,
+                                      thruLabel="Aug 30, 2020",
+                                      plotsTogether=TRUE
+                                      )
+
+# Create the hospitalized plot
+dfHospital_20200830 <- plotHospitalized(rename(dfFiltered_20200830, hospitalizedCurrently=hosp),
+                                        clusterVector=clustVec, 
+                                        subT="Data through August 30"
+                                        )
+
+```
+  
+A function is then written to consolidate the key metrics (cases, deaths, hospitalizations) by cluster:  
+```{r}
+
+# Function to create plots of consolidated metrics
+plotConsolidatedMetrics <- function(dfMain, 
+                                    dfHosp=NULL, 
+                                    varMain=c("state", "cluster", "date", "pop", "cases", "deaths", "hosp"),
+                                    varDropHosp=c("n", "pop"), 
+                                    joinBy=c("state", "cluster", "date"), 
+                                    subT=NULL
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfMain: the main file produced by assessClusters(), containing data by state-cluster-date
+    # dfHosp: the separate file with hospital data (NULL means data already available in dfMain)
+    # varMain: variables to keep from dfMain
+    # varDropHosp: variables to drop from dfHosp
+    # joinBy: variables for joining dfMain and dfHosp
+    # subT: plot subtitle (NULL will use the defaults)
+    
+    if (is.null(subT)) {
+        subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new)"
+    }
+    
+    # Filter dfMain to include only variables in varMain
+    dfMain <- dfMain %>%
+        select_at(vars(all_of(varMain)))
+    
+    # Left join dfMain to dfHosp unless dfHosp is NULL
+    if (!is.null(dfHosp)) {
+        dfHosp <- dfHosp %>%
+            select_at(vars(all_of(names(dfHosp)[!(names(dfHosp) %in% varDropHosp)])))
+        dfMain <- dfMain %>%
+            left_join(dfHosp, by=all_of(joinBy))
+    }
+    
+    # Check that variables state, cluster, date, pop are all available
+    if (!(c("state", "cluster", "date", "pop") %in% names(dfMain) %>% all())) {
+        stop("\nFunction requires variables state, cluster, date, and pop after processing\n")
+    }
+    
+    # Create the relevant plotting data
+    dfPlot <- dfMain %>%
+        pivot_longer(-c(state, cluster, date, pop)) %>%
+        filter(!is.na(value)) %>%
+        rbind(mutate(., state="cluster")) %>%
+        group_by_at(vars(all_of(c(joinBy, "name")))) %>%
+        summarize(value=sum(value), pop=sum(pop)) %>%
+        mutate(vpm=1000000*value/pop) %>%
+        arrange(state, cluster, name, date) %>%
+        group_by(state, cluster, name) %>%
+        helperRollingAgg(origVar="vpm", newName="vpm7")    
+
+    # Create facetted plots for totals by metric by segment
+    p1 <- dfPlot %>%
+        filter(!is.na(vpm7)) %>%
+        ggplot(aes(x=date, y=vpm7)) + 
+        geom_line(data=~filter(., state=="cluster"), aes(group=cluster, color=cluster), lwd=1.5) +
+        geom_line(data=~filter(., state!="cluster"), aes(group=state), alpha=0.25) + 
+        facet_grid(name ~ cluster, scales="free_y") + 
+        labs(x="", 
+             y="Rolling 7-day mean per million", 
+             title="Key metrics by cluster (7-day rolling mean per million)", 
+             subtitle=subT
+             ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b") + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p1)
+
+    # Create all-segment plot by metric
+    p2 <- dfPlot %>%
+        filter(!is.na(vpm7)) %>%
+        ggplot(aes(x=date, y=vpm7)) + 
+        geom_line(data=~filter(., state=="cluster"), aes(group=cluster, color=cluster), lwd=1.5) +
+        facet_wrap(~ name, scales="free_y", nrow=1) + 
+        labs(x="", 
+             y="Rolling 7-day mean per million", 
+             title="Key metrics by cluster (7-day rolling mean per million)", 
+             subtitle=subT
+             ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b") + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p2)
+
+    # Create all-metric plot by segment (define 100% as peak for segment-metric)
+    p3 <- dfPlot %>%
+        filter(!is.na(vpm7)) %>%
+        group_by(state, cluster, name) %>%
+        mutate(spm7=vpm7/max(vpm7)) %>%
+        ggplot(aes(x=date, y=spm7)) + 
+        geom_line(data=~filter(., state=="cluster"), aes(group=name, color=name), lwd=1) +
+        facet_wrap(~ cluster, scales="free_y") + 
+        labs(x="", 
+             y="% of Maximum", 
+             title="Key metrics by cluster (% of cluster maximum for variable)", 
+             subtitle=subT
+             ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b") + 
+        scale_color_discrete("variable") +
+        theme(axis.text.x=element_text(angle=90))
+    print(p3)
+    
+    # Return the plotting data
+    dfPlot
+    
+}
+
+```
+  
+The function can then be run for the updated data:  
+```{r}
+
+# Create the relevant consolidated plots
+consolidatedPlotData_20200830 <- plotConsolidatedMetrics(plot_20200830_hier5)
+
+```
+  
+There is increasing evidence that the primary late-outbreak segment is meaningfully past the peak and on the downswing, with the decline in deaths lagging the decline in cases and hospitalizations by a month or so.  The primary early-outbreak states are not seeing much rebound in hospitalization or death, even as there has been a spike in cases (potentially near or even past plateau) in one of the segments.  There is some evidence of spiking (cases and hospitalizations perhaps having peaked a month ago, deaths perhaps at or near peak now) of the mid-southern and western state segment that has generally seen low death rates from coronavirus.
+
+[The Ethical Skeptic](https://theethicalskeptic.com/) creates interesting analyses of coronavirus, driven among other things by a search for consilience.  Among the points raised are that PCR testing (for coronavirus and in other areas) has a high false-positive rate.  As such, spikes in positive cases can be driven both by spikes in disease prevalence and spikes in testing.  There are also meaningful lags in data reporting that can influence the timing of reported spikes.
+
+These factors could contribute to the observation that increases in hospitalizations and deaths sometimes, but not always, follow increases in positive test results.  It may also contribute to the observation that deaths no longer spike anywhere near as high for a given spike in positive cases as they did in March-May.
+
+Next steps are to explore the evolution of reported tests (positive and negative) by cluster as well as the adjustment methodology used in the TES consilience plots (attempting to normalize reported positive cases so that a number of cases reported in April and the same number of cases reported in August represent the same level of disease prevalence).
+
