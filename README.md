@@ -2070,4 +2070,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 31-AUG-2020  
 * Coronavirus_Statistics_v001 includes functions for data download and initial checks  
+* Coronavirus_Statistics_v001 includes functions for cross-metric comparisons by segment  
   
