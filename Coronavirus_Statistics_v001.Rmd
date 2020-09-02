@@ -1976,3 +1976,143 @@ These factors could contribute to the observation that increases in hospitalizat
 
 Next steps are to explore the evolution of reported tests (positive and negative) by cluster as well as the adjustment methodology used in the TES consilience plots (attempting to normalize reported positive cases so that a number of cases reported in April and the same number of cases reported in August represent the same level of disease prevalence).
 
+There are many variables related to testing available in the COVID Tracking Project files:  
+```{r}
+
+# Columns that contain 'test' or 'Test'
+testNames <- names(dfRaw_20200830) %>% grep(x=., pattern="[Tt]est", value=TRUE)
+testNames
+
+# Glimpse of the data
+dfRaw_20200830 %>%
+    select_at(vars(all_of(c("state", "date", testNames)))) %>% 
+    glimpse()
+
+# Summaries by the totalTestResultsSource, totals by column
+dfRaw_20200830 %>%
+    select_at(vars(all_of(testNames))) %>%
+    group_by_at("totalTestResultsSource") %>%
+    mutate(n=1) %>%
+    summarize_all(sum, na.rm=TRUE) %>%
+    pivot_longer(-totalTestResultsSource) %>%
+    filter(value > 0) %>%
+    ggplot(aes(x=fct_reorder(name, value), y=value)) + 
+    geom_point() + 
+    geom_text(aes(y=ifelse(name=="n", 15, 0.8)*value, label=scales::scientific(value)), hjust=1, size=3.5) +
+    facet_wrap(~totalTestResultsSource) + 
+    coord_flip() + 
+    scale_y_log10() + 
+    labs(title="Sum across records by test type", x="", y="Tests (log10)")
+
+```
+  
+Most of the tests are based on the source 'posNeg', and most are of type 'totalTestsViral'.
+
+The COIV Tracking Project API notes that fields 'negative' is a column that reports the total number of people with a negative test result. Since a person can test negative many times, this is not necessarily reflective of testing volume.
+
+The 'totalTestResults' column (and therefore 'totalTestResultsIncrease') is heterogeneous data that cannot be easily compared across states.  It is either 'posNeg' (sum of positive and negative) or 'totalTestEncountersViral'.
+
+The 'totalTestsViral' column is listed as being the total number of PCR tests.  It may in a handful of cases include antigen tests.
+
+The 'totalTestEncountersViral' column is listed as being the total number of people who underwent PCR testing in a given day (multiple tests to the same person on the same day counted as only 1).
+
+Data availability for some of the key variables is assessed by month:  
+```{r}
+
+# Not NA data
+notNATests <- dfRaw_20200830 %>%
+    filter(state %in% c(state.abb, "DC")) %>%
+    select_at(vars(all_of(c("state", "date", testNames)))) %>%
+    mutate(nState=1) %>%
+    group_by(date) %>%
+    summarize_if(is.numeric, .funs=function(x) { sum(!is.na(x))}) %>%
+    ungroup()
+
+# Evolution of Not NA states by time
+notNATests %>%
+    pivot_longer(-date) %>%
+    ggplot(aes(x=date, 
+               y=value, 
+               group=fct_rev(fct_reorder(name, value, .fun=max)), 
+               color=fct_rev(fct_reorder(name, value, .fun=max))
+               )
+           ) + 
+    geom_line(lwd=1) + 
+    geom_hline(yintercept=51, lty=2) + 
+    labs(x="", y="Number of states with non-NA data", title="Evolution of data availability by metric") + 
+    scale_color_discrete("") + 
+    scale_x_date(date_breaks="1 months", date_labels="%m")
+
+notNATests %>%
+    pivot_longer(-date) %>% 
+    filter(date==as.Date("2020-08-29")) %>% 
+    arrange(-value)
+
+```
+  
+Data availability varies significantly, with only the totalTestResults and totalTestResultsIncrease columns being generally available in all states on all dates.
+
+Next, availability of data by state over time is assessed:  
+```{r}
+
+# Not NA data
+notNADateStateTests <- dfRaw_20200830 %>%
+    filter(state %in% c(state.abb, "DC")) %>%
+    select_at(vars(all_of(c("state", "date", testNames)))) %>%
+    mutate(nState=1, month=lubridate::month(date)) %>%
+    group_by(month, state) %>%
+    summarize_if(is.numeric, .funs=function(x) { min(!is.na(x))}) %>%
+    ungroup()
+
+# Evolution of Not NA states by month
+notNADateStateTests %>%
+    pivot_longer(-c(state, month)) %>%
+    filter(!(name %in% c("nState"))) %>%
+    ggplot(aes(y=fct_reorder(state, value, .fun=sum), x=month)) + 
+    geom_tile(aes(fill=value)) + 
+    labs(x="", y="", title="Evolution of data availability by metric") + 
+    scale_fill_continuous("", low="white", high="green") + 
+    facet_wrap(~name, nrow=1)
+
+```
+  
+So, while the field is heterogeneous, data availability may suggest use of 'totalTestResultsIncrease' as a general proxy for the testing volume occurring over time.  The evolution is as follows:  
+```{r}
+
+dfRaw_20200830 %>%
+    group_by(date) %>%
+    summarize(tests=sum(totalTestResultsIncrease, na.rm=TRUE)) %>%
+    ungroup() %>%
+    arrange(date) %>%
+    helperRollingAgg(origVar="tests", newName="tests7") %>%
+    ggplot(aes(x=date, y=tests7)) + 
+    geom_line() + 
+    labs(x="Month", y="Daily tests (rolling 7-day mean", title="Rolling 7-day mean tests per day") + 
+    scale_x_date(date_breaks="1 months", date_labels="%m")
+
+```
+  
+The metric can also be assessed on a per capita basis by segment:  
+```{r}
+
+dfRaw_20200830 %>%
+    select(state, date, totalTestResultsIncrease) %>%
+    inner_join(stateData, by="state") %>%
+    mutate(cluster=factor(clustVec[state])) %>%
+    mutate(tpm=1000000*totalTestResultsIncrease/pop) %>%
+    group_by(state) %>%
+    arrange(date) %>%
+    helperRollingAgg(origVar="tpm", newName="tpm7") %>%
+    ungroup() %>%
+    helperTotalvsElements(keyVar="tpm7", 
+                          title="Evolution of tests by segment",
+                          mapper=c("tpm7"="Tests per million per day (7-day rolling mean"), 
+                          facetScales="free_y"
+                          )
+```
+  
+Testing appears to have grown rapidly in all segments, though with a significant decline in testing in the "late spike" states that is associated with the same timing as the fall in cases in "late spike" states.
+
+Most segments appear to be reporting 2000 tests per 1 million population.  At a false positive rate of 1%, this would produce 20 false-positive tests per million.  The New England and Mid-Atlantic states are reporting case-per-million numbers of aound this magnitude, which is suggestive that they may be catching mostly false positives rather than disease prevalence.  This would be consisent with the hospitalization and deaths data being extremely low currently in these segments.
+
+Further exploration will focus on integrating testing data with the other key metrics (cases, hospitalizations, deaths) for the overall process.
