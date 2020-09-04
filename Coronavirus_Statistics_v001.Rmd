@@ -2468,3 +2468,290 @@ plotCumulativeData(clCum,
   
 Results are generally as expected.
 
+The site [USA Facts](https://usafacts.org/visualizations/coronavirus-covid-19-spread-map/) makes data available for coronavirus cases and deaths by county.  Data are provided with one row per county and one column for each date.  As of September 1, the site reports 6.02 million cases and 183 thousand deaths, roughly aligned with the 5.93 million cases and 175 thousand deaths as of August 29 in the COVID Tracking Project data.  Counting cases and deaths is an inexact science and differences of ~5% are not uncommon based on different standards for counting a "case" or a "death" due to coronavirus.
+
+The data are read in:  
+```{r}
+
+# File names
+caseFile <- "./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20200903.csv"
+deathFile <- "./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20200903.csv"
+popFile <- "./RInputFiles/Coronavirus/covid_county_population_usafacts.csv"
+
+# Cases file
+rawCases_20200903 <- readr::read_csv(caseFile)
+glimpse(rawCases_20200903)
+
+# Deaths file
+rawDeaths_20200903 <- readr::read_csv(deathFile)
+glimpse(rawDeaths_20200903)
+
+# Population file
+rawPop_usafacts <- readr::read_csv(popFile)
+glimpse(rawPop_usafacts)
+
+```
+  
+Data appear to be stored as cumulative rather than daily increases.  The raw data files for cases and deaths are pivoted longer such that 'date' becomes a field of appropriate type:  
+```{r}
+
+# Conversion of the raw cases data
+pvtCases_20200903 <- rawCases_20200903 %>%
+    rename(countyName=`County Name`, state=State) %>%
+    pivot_longer(-c(countyFIPS, countyName, state, stateFIPS), names_to="date", values_to="cumCases") %>%
+    mutate(date=lubridate::mdy(date))
+glimpse(pvtCases_20200903)
+
+# Conversion of the raw deaths data
+pvtDeaths_20200903 <- rawDeaths_20200903 %>%
+    rename(countyName=`County Name`, state=State) %>%
+    pivot_longer(-c(countyFIPS, countyName, state, stateFIPS), names_to="date", values_to="cumDeaths") %>%
+    mutate(date=lubridate::mdy(date))
+glimpse(pvtDeaths_20200903)
+
+pop_usafacts <- rawPop_usafacts %>%
+    rename(countyName=`County Name`, state=State)
+glimpse(pop_usafacts)
+
+```
+  
+Control totals by state can be generated and compared with the associated COVID Tracking Project data:  
+```{r}
+
+# Cases by state from USA Facts
+casebyState_usf <- pvtCases_20200903 %>%
+    filter(date==as.Date("2020-08-29")) %>%
+    group_by(state, date) %>%
+    summarize(cumCases_usaf=sum(cumCases)) %>%
+    ungroup()
+
+# Deaths by state from USA Facts
+deathbyState_usf <- pvtDeaths_20200903 %>%
+    filter(date==as.Date("2020-08-29")) %>%
+    group_by(state, date) %>%
+    summarize(cumDeaths_usaf=sum(cumDeaths)) %>%
+    ungroup()
+
+# Combined data for USA Facts
+byState_usf <- casebyState_usf %>%
+    inner_join(deathbyState_usf, by=c("state", "date"))
+glimpse(byState_usf)
+
+# Cases and deaths by state from COVID Tracking Project
+byState_ctp <- dfPerCapita_20200830_002 %>%
+    filter(date <= as.Date("2020-08-29")) %>%
+    group_by(state) %>%
+    summarize(cumCases_ctp=sum(cases), cumDeaths_ctp=sum(deaths))
+glimpse(byState_ctp)
+
+# Fully merged data
+byState_both <- byState_ctp %>%
+    full_join(byState_usf, by=c("state"))
+glimpse(byState_both)
+
+```
+  
+Comparisons by state are made first for cases:  
+```{r}
+
+# Plot of cases by source
+byState_both %>%
+    select(state, `COVID Tracking Project`=cumCases_ctp, `USA Facts`=cumCases_usaf) %>%
+    pivot_longer(-state) %>%
+    ggplot(aes(x=fct_reorder(state, value, .fun=min), y=value)) + 
+    geom_point(aes(color=name)) + 
+    coord_flip() + 
+    scale_y_log10() + 
+    labs(x="", y="Cases as of August 29", title="Cases through August 29 by source") + 
+    scale_color_discrete("Source")
+
+# Plot of percent difference by state
+byState_both %>%
+    mutate(deltaCases=cumCases_usaf-cumCases_ctp, pctDelta=2*deltaCases/(cumCases_usaf+cumCases_ctp)) %>%
+    select(state, `Absolute Delta`=deltaCases, `Percent Delta`=pctDelta) %>%
+    pivot_longer(-state) %>%
+    ggplot(aes(x=fct_reorder(state, value), y=value)) + 
+    geom_point() + 
+    coord_flip() + 
+    labs(x="", 
+         y="Difference as of August 29", 
+         title="Difference in cases by state and source through August 29", 
+         subtitle="Delta is USA Facts minus COVID Tracking Project (positive means USA Facts greater)"
+         ) + 
+    facet_wrap(~name, scales="free_x")
+
+```
+  
+At a glance, there are minor differences by state, most accounting for a handful of percent or less.  Nothing appears likely to impact the analysis.
+
+The same analysis is run for deaths:  
+```{r}
+
+# Plot of deaths by source
+byState_both %>%
+    select(state, `COVID Tracking Project`=cumDeaths_ctp, `USA Facts`=cumDeaths_usaf) %>%
+    pivot_longer(-state) %>%
+    ggplot(aes(x=fct_reorder(state, value, .fun=min), y=value)) + 
+    geom_point(aes(color=name)) + 
+    coord_flip() + 
+    scale_y_log10() + 
+    labs(x="", y="Deaths as of August 29", title="Deaths through August 29 by source") + 
+    scale_color_discrete("Source")
+
+# Plot of percent difference by state
+byState_both %>%
+    mutate(deltaDeaths=cumDeaths_usaf-cumDeaths_ctp, pctDelta=2*deltaDeaths/(cumDeaths_usaf+cumDeaths_ctp)) %>%
+    select(state, `Absolute Delta`=deltaDeaths, `Percent Delta`=pctDelta) %>%
+    pivot_longer(-state) %>%
+    ggplot(aes(x=fct_reorder(state, value), y=value)) + 
+    geom_point() + 
+    coord_flip() + 
+    labs(x="", 
+         y="Difference as of August 29", 
+         title="Difference in deaths by state and source through August 29", 
+         subtitle="Delta is USA Facts minus COVID Tracking Project (positive means USA Facts greater)"
+         ) + 
+    facet_wrap(~name, scales="free_x")
+
+```
+  
+The difference in deaths is driven largely by New York, where USA Facts reports ~7000 more deaths (~25% of the baseline deaths) than COVID Tracking Project.  Most other states are fairly well aligned between the data sources, and the caution is noted that conclusions focused on New York (standalone or segment) may be heavily influenced by selection of data source.
+
+Evolution of deaths and cases over time is also assessed:  
+```{r}
+
+usfByDate <- pvtDeaths_20200903 %>%
+    group_by(date) %>%
+    summarize(deaths_usf=sum(cumDeaths)) %>%
+    ungroup() %>%
+    full_join(pvtCases_20200903 %>% 
+                  group_by(date) %>% 
+                  summarize(cases_usf=sum(cumCases)) %>% 
+                  ungroup()
+              )
+
+bothByDate <- dfPerCapita_20200830 %>% 
+    group_by(state) %>% 
+    arrange(date) %>% 
+    mutate(cumCases=cumsum(cases), cumDeaths=cumsum(deaths)) %>% 
+    group_by(date) %>% 
+    summarize(cases_ctp=sum(cumCases), deaths_ctp=sum(cumDeaths)) %>%
+    full_join(usfByDate) %>%
+    pivot_longer(-date) %>%
+    tidyr::separate(name, into=c("type", "source"), sep="_")
+
+bothByDate %>%
+    ggplot(aes(x=date, y=value/1000)) + 
+    geom_line(aes(group=source, color=source)) + 
+    facet_wrap(~type, scales="free_y") + 
+    labs(x="Month (2020)", 
+         y="Cumulative USA National Burden (000s)", 
+         title="Evolution of reported coronavirus burden in USA by source"
+         ) + 
+    scale_x_date(date_breaks="1 months", date_labels="%m")
+
+bothByDate %>%
+    group_by(date, type) %>%
+    summarize(delta=sum(ifelse(source=="usf", value, 0))-sum(ifelse(source=="ctp", value, 0))) %>%
+    ungroup() %>%
+    ggplot(aes(x=date, y=delta)) + 
+    geom_col(fill="lightblue") + 
+    facet_wrap(~type, scales="free_y") + 
+    labs(x="Month (2020)", 
+         y="Delta as USA Facts minus COVID Tracking Project", 
+         title="Evolution of delta in reported cumulative coronavirus burden in USA by source", 
+         subtitle="Positive numbers mean higher reported total in USA Facts than in COVID Tracking Project"
+         ) + 
+    scale_x_date(date_breaks="1 months", date_labels="%m")
+
+```
+
+A second investigation is taken with the New York data removed:  
+```{r}
+
+usfByDate_nony <- pvtDeaths_20200903 %>%
+    filter(state != "NY") %>%
+    group_by(date) %>%
+    summarize(deaths_usf=sum(cumDeaths)) %>%
+    ungroup() %>%
+    full_join(pvtCases_20200903 %>% 
+                  filter(state != "NY") %>%
+                  group_by(date) %>% 
+                  summarize(cases_usf=sum(cumCases)) %>% 
+                  ungroup()
+              )
+
+bothByDate_nony <- dfPerCapita_20200830 %>% 
+    filter(state != "NY") %>%
+    group_by(state) %>% 
+    arrange(date) %>% 
+    mutate(cumCases=cumsum(cases), cumDeaths=cumsum(deaths)) %>% 
+    group_by(date) %>% 
+    summarize(cases_ctp=sum(cumCases), deaths_ctp=sum(cumDeaths)) %>%
+    full_join(usfByDate_nony) %>%
+    pivot_longer(-date) %>%
+    tidyr::separate(name, into=c("type", "source"), sep="_")
+
+bothByDate_nony %>%
+    ggplot(aes(x=date, y=value/1000)) + 
+    geom_line(aes(group=source, color=source)) + 
+    facet_wrap(~type, scales="free_y") + 
+    labs(x="Month (2020)", 
+         y="Cumulative USA National Burden (000s)", 
+         title="Evolution of reported coronavirus burden in USA by source - excludes New York State"
+         ) + 
+    scale_x_date(date_breaks="1 months", date_labels="%m")
+
+bothByDate_nony %>%
+    group_by(date, type) %>%
+    summarize(delta=sum(ifelse(source=="usf", value, 0))-sum(ifelse(source=="ctp", value, 0))) %>%
+    ungroup() %>%
+    ggplot(aes(x=date, y=delta)) + 
+    geom_col(fill="lightblue") + 
+    facet_wrap(~type, scales="free_y") + 
+    labs(x="Month (2020)", 
+         y="Delta as USA Facts minus COVID Tracking Project", 
+         title="Delta in reported cumulative coronavirus burden in USA by source - excludes New York State", 
+         subtitle="Positive numbers mean higher reported total in USA Facts than in COVID Tracking Project"
+         ) + 
+    scale_x_date(date_breaks="1 months", date_labels="%m")
+
+```
+  
+The plots provide further evidence that the sources are well aligned with the exception of New York state.  There is some directional evidence that COVID Tracking Project reports deaths earlier than USA Facts, though a cumuluative difference of 500 deaths will have modest if any impact on the analysis.
+
+The population data is also compared to usmap::statepop, that data source used for the existing analyses:  
+```{r}
+
+pop_usafacts %>%
+    group_by(state) %>%
+    summarize(usf=sum(population)) %>%
+    ungroup() %>%
+    full_join(select(usmap::statepop, state=abbr, usmap=pop_2015)) %>%
+    ggplot(aes(x=usmap, y=usf)) + 
+    geom_text(aes(label=state)) + 
+    labs(x="Population in usmap::statepop", y="Population is USA Facts", title="Comparison of Population") + 
+    geom_abline(lty=2) + 
+    scale_x_log10() + 
+    scale_y_log10()
+
+pop_usafacts %>%
+    group_by(state) %>%
+    summarize(usf=sum(population)) %>%
+    ungroup() %>%
+    full_join(select(usmap::statepop, state=abbr, usmap=pop_2015)) %>%
+    ggplot(aes(x=fct_reorder(state, usf/usmap-1), y=usf/usmap-1)) + 
+    geom_col(fill="lightblue") + 
+    coord_flip() + 
+    labs(x="", 
+         y="% Change in Population (USA Facts vs. usmap::statepop)", 
+         title="Comparison of Population", 
+         subtitle="Positive means larger in USA Facts than in usmap::statepop"
+         ) + 
+    scale_y_continuous(labels=scales::percent)
+
+```
+  
+USA Facts appear to be using more recent estimates of US population which include a generally larger population and with different states gaining or losing population at different rates.
+
+Next steps are to explore the coronavirus burden by county using the USA Facts data.
