@@ -2073,4 +2073,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 includes functions for cross-metric comparisons by segment  
 * Coronavirus_Statistics_v001 explores test data  
 * Coronavirus_Statistics_v001 explores cumulative disease burden  
+* Coronavirus_Statistics_v001 loads county-level data  
   
