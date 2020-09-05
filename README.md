@@ -2074,4 +2074,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 explores test data  
 * Coronavirus_Statistics_v001 explores cumulative disease burden  
 * Coronavirus_Statistics_v001 loads county-level data  
+* Coronavirus_Statistics_v001 explores county-level data in New England and NY/NJ  
   
