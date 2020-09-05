@@ -2755,3 +2755,170 @@ pop_usafacts %>%
 USA Facts appear to be using more recent estimates of US population which include a generally larger population and with different states gaining or losing population at different rates.
 
 Next steps are to explore the coronavirus burden by county using the USA Facts data.
+
+A handful of states assign meaningful amounts of disease burden to "unassigned":  
+```{r}
+
+unassignedState <- pvtCases_20200903 %>%
+    mutate(unassigned=ifelse(countyFIPS==0, 1, 0)) %>%
+    group_by(state, date, unassigned) %>%
+    summarize(cases=sum(cumCases)) %>%
+    ungroup() %>%
+    full_join(pvtDeaths_20200903 %>% 
+                  mutate(unassigned=ifelse(countyFIPS==0, 1, 0)) %>% 
+                  group_by(state, date, unassigned) %>% 
+                  summarize(deaths=sum(cumDeaths)) %>% 
+                  ungroup()
+              )
+
+unassignedState %>%
+    filter(date=="2020-08-29") %>%
+    pivot_longer(c("cases", "deaths")) %>%
+    group_by(state, name) %>%
+    summarize(total=sum(value), unass=sum(value*unassigned)/sum(value)) %>%
+    ggplot(aes(x=fct_reorder(state, unass*ifelse(name=="cases", 1, 0)), y=unass)) + 
+    geom_point() + 
+    geom_text(data=~filter(., (name=="cases" & unass >= 0.02) | (name=="deaths" & unass > 0.005)), 
+              aes(y=unass + ifelse(name=="cases", -0.0025, -0.001), 
+                  label=paste0(round(100*unass, 1), "% (", state ,")")
+                  ), 
+              size=3, 
+              hjust=1
+              ) +
+    coord_flip() + 
+    labs(x="", y="% Unassigned as of August 29, 2020", title="Unassigned percentage by state") +
+    facet_wrap(~name, scales="free_x")
+
+```
+  
+These amounts appear to be modest overall and unlikely to meaningfully drive macro-level findings.  Perhaps an algorithm can be considered for assigning cases to counties in proportion to total burden and/or population by county in the assigned portion of the state.
+
+Four states hit hard on a per capita basis are in the northern Acela corridor - NJ, NY, CT, MA.  A graph is created for the per capita death rate and disease rate in these geographies, with RI, VT, and NH added since they are contiguous.  Data in the unassigned bucket are not included:  
+```{r}
+
+# Function to plot per capita data by county
+plotCountyPerCapita <- function(dfDisease, 
+                                burdenVar,
+                                useDate,
+                                plotTitle,
+                                inclStates=NULL,
+                                dfCounty=filter(pop_usafacts, countyFIPS!=0), 
+                                popVar="population", 
+                                highColor="darkblue", 
+                                printPlot=TRUE, 
+                                returnData=!printPlot
+                                ) {
+    
+    # FUNCTION ARGUMENTS
+    # dfDisease: file containing disease data
+    # burdenVar: variable for disease burden (cumulative) on date
+    # useDate: date for the analysis
+    # plotTitle: title for the plot
+    # inclStates: states to include (NULL means include all)
+    # dfCounty: data for county-level population
+    # popVar: variable for population in the dfCounty file
+    # highColor: the color to be used for high disease burden
+    # printPlot: boolean, whether to print the plot
+    # returnData: boolean, whether to return the underlying data (if FALSE, the plot object is returned)
+    
+    # Create the relevant data frame
+    dfData <- dfDisease %>% 
+        left_join(dfCounty, by=c("countyFIPS", "state")) %>% 
+        filter(date %in% useDate, countyFIPS!=0, population>0) %>% 
+        mutate(burden=1000000*get(burdenVar)/get(popVar))
+
+    # Modify inclStates to be every state (if needed due to NULL)
+    if (is.null(inclStates)) inclStates <- dfData %>% pull(state) %>% unique() %>% sort()
+    
+    # Create the relevant plot
+    p1 <- dfData %>%
+        select(fips=countyFIPS, burden) %>% 
+        usmap::plot_usmap(regions="counties", data=., values="burden", include=inclStates) + 
+        scale_fill_continuous(plotTitle, low="white", high=highColor)
+    
+    # Print the plot if requested
+    if (printPlot) print(p1)
+    
+    # Return the data if requested, otherwise return the plot object
+    if (returnData) dfData %>% filter(state %in% inclStates) else p1
+    
+}
+
+deathPlot <- plotCountyPerCapita(pvtDeaths_20200903, 
+                                 burdenVar="cumDeaths", 
+                                 useDate=as.Date(c("2020-08-29")), 
+                                 plotTitle="Deaths\nper million", 
+                                 inclStates=c("NJ", "NY", "CT", "MA", "RI", "VT", "NH"), 
+                                 highColor="darkred", 
+                                 printPlot=FALSE, 
+                                 returnData=FALSE
+                                 )
+
+casesPlot <- plotCountyPerCapita(pvtCases_20200903, 
+                                 burdenVar="cumCases", 
+                                 useDate=as.Date(c("2020-08-29")), 
+                                 plotTitle="Cases\nper million", 
+                                 inclStates=c("NJ", "NY", "CT", "MA", "RI", "VT", "NH"), 
+                                 highColor="darkblue", 
+                                 printPlot=FALSE, 
+                                 returnData=FALSE
+                                 )
+
+gridExtra::grid.arrange(casesPlot, 
+                        deathPlot, 
+                        nrow=1, 
+                        top=grid::textGrob("Per capita coronavirus burden as of August 29, 2020", 
+                                           gp=grid::gpar(fontface=2, fontsize=12),
+                                           hjust=0, 
+                                           x=0.05
+                                           )
+                        )
+
+```
+  
+There is significant variation in disease burden by county, with many of the more rural counties having a modest coronavirus burden per capita relative to the more densely populated areas.
+
+The data are then pulled using the function without plotting:  
+```{r}
+
+# All possible dates
+allDates <- pvtDeaths_20200903 %>% count(date) %>% pull(date)
+
+# All northeast deaths data for all dates, per capita
+perCapDeathNE <- plotCountyPerCapita(pvtDeaths_20200903, 
+                                     burdenVar="cumDeaths", 
+                                     useDate=allDates, 
+                                     plotTitle="Deaths\nper million", 
+                                     inclStates=c("NJ", "NY", "CT", "MA", "RI", "VT", "NH"), 
+                                     highColor="darkred", 
+                                     printPlot=FALSE, 
+                                     returnData=TRUE
+                                     )
+
+# Top 10 counties hit
+top10FIPS <- perCapDeathNE %>%
+    filter(date=="2020-09-01") %>%
+    arrange(-burden) %>%
+    head(10) %>%
+    pull(countyFIPS)
+
+# Evolution of per capita deaths by date in the northeast
+perCapDeathNE %>%
+    mutate(county=paste0(str_replace(countyName.x, " County", ""), " (", state, ")"), 
+           bold=ifelse(countyFIPS %in% top10FIPS, 1, 0)
+           ) %>%
+    arrange(date) %>%
+    ggplot(aes(x=date, y=burden)) + 
+    geom_line(aes(group=countyFIPS, color=state, alpha=0.25 + 0.75*bold, size=0.5+0.5*bold)) + 
+    scale_alpha_identity() + 
+    scale_size_identity() + 
+    geom_text(data=~filter(., bold==1, date==max(date)), 
+              aes(x=date+lubridate::days(2), label=paste0(county, ": ", round(burden)), color=state), 
+              size=3, fontface="bold", hjust=0
+              ) +
+    scale_x_date(date_breaks="1 months", date_labels="%m", expand=expand_scale(0.2))
+
+
+```
+  
+The hardest hit counties are in the NYC metro area and have deaths per capita in the 0.2%-0.35% range.  The disases is estimated to have a fatality rate of 0.25%-0.50% (though with a lot of uncertainty), so there is some evidence that a large percentage of these areas may have contracted coronavirus if the reported death data and fatality rates are accurate.
