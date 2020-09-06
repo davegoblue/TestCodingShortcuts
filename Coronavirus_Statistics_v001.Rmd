@@ -2805,6 +2805,7 @@ plotCountyPerCapita <- function(dfDisease,
                                 dfCounty=filter(pop_usafacts, countyFIPS!=0), 
                                 popVar="population", 
                                 highColor="darkblue", 
+                                maxPerCap=NULL,
                                 printPlot=TRUE, 
                                 returnData=!printPlot
                                 ) {
@@ -2817,6 +2818,7 @@ plotCountyPerCapita <- function(dfDisease,
     # inclStates: states to include (NULL means include all)
     # dfCounty: data for county-level population
     # popVar: variable for population in the dfCounty file
+    # maxPerCap: the maximum amount to be used for per capita (everything at or above shaded the same)
     # highColor: the color to be used for high disease burden
     # printPlot: boolean, whether to print the plot
     # returnData: boolean, whether to return the underlying data (if FALSE, the plot object is returned)
@@ -2832,9 +2834,16 @@ plotCountyPerCapita <- function(dfDisease,
     
     # Create the relevant plot
     p1 <- dfData %>%
+        mutate(burden=if(is.null(maxPerCap)) burden else pmin(burden, maxPerCap)) %>%
         select(fips=countyFIPS, burden) %>% 
-        usmap::plot_usmap(regions="counties", data=., values="burden", include=inclStates) + 
-        scale_fill_continuous(plotTitle, low="white", high=highColor)
+        usmap::plot_usmap(regions="counties", data=., values="burden", include=inclStates)
+    if (is.null(maxPerCap)) 
+        p1 <- p1 + scale_fill_continuous(plotTitle, low="white", high=highColor)
+    else {
+        p1 <- p1 + 
+            scale_fill_continuous(plotTitle, low="white", high=highColor, limits=c(0, maxPerCap)) + 
+            labs(caption=paste0("Values at/above ", maxPerCap, " plotted as ", maxPerCap))
+    }
     
     # Print the plot if requested
     if (printPlot) print(p1)
@@ -2922,3 +2931,97 @@ perCapDeathNE %>%
 ```
   
 The hardest hit counties are in the NYC metro area and have deaths per capita in the 0.2%-0.35% range.  The disases is estimated to have a fatality rate of 0.25%-0.50% (though with a lot of uncertainty), so there is some evidence that a large percentage of these areas may have contracted coronavirus if the reported death data and fatality rates are accurate.
+
+The functions are further integrated so they can be repeated for different geographies:  
+```{r}
+
+# Function to make the cases and deaths by county plot
+casesDeathsByCounty <- function(useDate,
+                                inclStates=NULL,
+                                caseData=pvtCases_20200903, 
+                                deathData=pvtDeaths_20200903, 
+                                highCaseColor="darkblue", 
+                                highDeathColor="darkred", 
+                                highCaseAmount=NULL, 
+                                highDeathAmount=NULL,
+                                mainTitle=NULL
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # useDate: the date to be plotted
+    # inclStates: the states to be included (NULL means all)
+    # caseData: the frame containing the cases date
+    # deathData: the frame containing the death data
+    # highCaseColor: color for the highest level of cases in a county
+    # highDeathColor: color for the highest level of deaths in a county
+    # highCaseAmount: cases at/above this level will be the same color (NULL means leave as-is)
+    # highDeathAmount: deaths at/above this level will be the same color (NULL means leave as-is)
+    # mainTitle: main title for the grid.arrange (NULL means useDate will be used)
+
+    # Convert useDate to date if not already in that format
+    if (!("Date") %in% class(useDate)) useDate <- as.Date(useDate)
+    
+    # Convert inclStates to be all states if not specified
+    if (is.null(inclStates)) inclStates <- caseData %>% pull(state) %>% unique() %>% sort()
+    
+    # Create mainTitle if not passed
+    if (is.null(mainTitle)) 
+        mainTitle <- paste0("Per capita coronavirus burden as of ", format(useDate, "%B %d, %Y"))
+    
+    # Create the plot for deaths    
+    deathPlot <- plotCountyPerCapita(deathData, 
+                                     burdenVar="cumDeaths", 
+                                     useDate=useDate, 
+                                     plotTitle="Deaths\nper million", 
+                                     inclStates=inclStates, 
+                                     highColor=highDeathColor, 
+                                     maxPerCap=highDeathAmount,
+                                     printPlot=FALSE, 
+                                     returnData=FALSE
+                                     )
+
+    # Create the plot for cases
+    casesPlot <- plotCountyPerCapita(caseData, 
+                                     burdenVar="cumCases", 
+                                     useDate=useDate, 
+                                     plotTitle="Cases\nper million", 
+                                     inclStates=inclStates, 
+                                     highColor=highCaseColor, 
+                                     maxPerCap=highCaseAmount,
+                                     printPlot=FALSE, 
+                                     returnData=FALSE
+                                     )
+
+    # Print the combined plot object
+    gridExtra::grid.arrange(casesPlot, 
+                            deathPlot, 
+                            nrow=1, 
+                            top=grid::textGrob(mainTitle, 
+                                               gp=grid::gpar(fontface=2, fontsize=12),
+                                               hjust=0, 
+                                               x=0.05
+                                               )
+                            )
+
+}
+
+
+casesDeathsByCounty(useDate="2020-08-29", 
+                    inclStates=c("FL", "GA", "SC", "AL", "MS"), 
+                    highCaseAmount=80000, 
+                    highDeathAmount=2000
+                    )
+casesDeathsByCounty(useDate="2020-08-29", 
+                    inclStates=c("LA", "TX"), 
+                    highCaseAmount=80000, 
+                    highDeathAmount=2000
+                    )
+casesDeathsByCounty(useDate="2020-08-29", 
+                    inclStates=c("NV", "NM", "AZ", "CO", "UT"), 
+                    highCaseAmount=80000, 
+                    highDeathAmount=2000
+                    )
+
+```
+  
+The high impact areas show meaningful differences in burden by county, which will be explored further as a next step.
