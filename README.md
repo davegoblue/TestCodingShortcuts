@@ -2077,3 +2077,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 explores county-level data in New England and NY/NJ  
 * Coronavirus_Statistics_v001 explores county-level data in southern hot-spots  
   
+### Expansions week of 07-SEP-2020  
+* Coronavirus_Statistics_v001 explores county-level disease evolution in southern hot-spots  
+  
