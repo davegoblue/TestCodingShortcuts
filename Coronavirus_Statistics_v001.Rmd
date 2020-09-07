@@ -2800,7 +2800,7 @@ Four states hit hard on a per capita basis are in the northern Acela corridor - 
 plotCountyPerCapita <- function(dfDisease, 
                                 burdenVar,
                                 useDate,
-                                plotTitle,
+                                plotTitle="",
                                 inclStates=NULL,
                                 dfCounty=filter(pop_usafacts, countyFIPS!=0), 
                                 popVar="population", 
@@ -2832,17 +2832,19 @@ plotCountyPerCapita <- function(dfDisease,
     # Modify inclStates to be every state (if needed due to NULL)
     if (is.null(inclStates)) inclStates <- dfData %>% pull(state) %>% unique() %>% sort()
     
-    # Create the relevant plot
-    p1 <- dfData %>%
-        mutate(burden=if(is.null(maxPerCap)) burden else pmin(burden, maxPerCap)) %>%
-        select(fips=countyFIPS, burden) %>% 
-        usmap::plot_usmap(regions="counties", data=., values="burden", include=inclStates)
-    if (is.null(maxPerCap)) 
-        p1 <- p1 + scale_fill_continuous(plotTitle, low="white", high=highColor)
-    else {
-        p1 <- p1 + 
-            scale_fill_continuous(plotTitle, low="white", high=highColor, limits=c(0, maxPerCap)) + 
-            labs(caption=paste0("Values at/above ", maxPerCap, " plotted as ", maxPerCap))
+    # Create the relevant plot (this is necessary if printPlot is TRUE or returnData is FALSE)
+    if (printPlot | !returnData) {
+        p1 <- dfData %>%
+            mutate(burden=if(is.null(maxPerCap)) burden else pmin(burden, maxPerCap)) %>%
+            select(fips=countyFIPS, burden) %>% 
+            usmap::plot_usmap(regions="counties", data=., values="burden", include=inclStates)
+        if (is.null(maxPerCap)) 
+            p1 <- p1 + scale_fill_continuous(plotTitle, low="white", high=highColor)
+        else {
+            p1 <- p1 + 
+                scale_fill_continuous(plotTitle, low="white", high=highColor, limits=c(0, maxPerCap)) + 
+                labs(caption=paste0("Values at/above ", maxPerCap, " plotted as ", maxPerCap))
+        }
     }
     
     # Print the plot if requested
@@ -3025,3 +3027,206 @@ casesDeathsByCounty(useDate="2020-08-29",
 ```
   
 The high impact areas show meaningful differences in burden by county, which will be explored further as a next step.
+
+A function is written to plot the evolution of county-level statistics:  
+```{r}
+
+# Function to plot evolution of county-level burdens
+countyLevelEvolution <- function(dfBurden, 
+                                 burdenVar, 
+                                 inclStates=NULL, 
+                                 topN=10, 
+                                 topNDate=NULL, 
+                                 printPlot=TRUE, 
+                                 returnData=TRUE, 
+                                 plotTitle=NULL, 
+                                 countyPopFloor=0, 
+                                 subT=NULL
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfBurden: file containing the relevant per-capita burden data
+    # burdenVar: the name of the variable containing the burden per-capita data
+    # inclStates: states to be included (default NULL means include all)
+    # topN: integer, number of counties to flag as "top"
+    # topNDate: the data to use as the topN cutpoint (NULL means most recent)
+    # printPlot: boolean, whether to print the plot
+    # returnData: boolean, if TRUE return the per-capita data file, otherwise return the plot object
+    # plotTitle: title for the plot (NULL means assume from burdenVar)
+    # countyPopFloor: floor for county population for the county to be plotted
+    # subT: subtitle for the chart (NULL means none)
+    
+    # Adjust inclStates if NULL
+    if (is.null(inclStates)) inclStates <- dfBurden %>% count(state) %>% pull(state)
+    
+    # Create plotTitle if needed
+    if (is.null(plotTitle)) {
+        plotTitle <- if(stringr::str_detect(string=stringr::str_to_lower(burdenVar), pattern="deaths")) {
+            "Cumulative per-capita deaths by county" 
+        } else {
+            "Cumulative per-capita cases by county"
+        }
+    }
+    
+    # Get all possible dates
+    allDates <- dfBurden %>% count(date) %>% pull(date)
+    
+    # Get the data for the counties in the relevant states (return data only and do not plot)
+    perCapData <- plotCountyPerCapita(dfBurden, 
+                                      burdenVar=burdenVar, 
+                                      useDate=allDates, 
+                                      inclStates=inclStates, 
+                                      printPlot=FALSE, 
+                                      returnData=TRUE
+                                      )
+
+    # Get the relevant top-N date and convert to Date if not already of that type
+    if (is.null(topNDate)) topNDate <- perCapData %>% pull(date) %>% max()
+    if (!("Date" %in% class(topNDate))) topNDate <- as.Date(topNDate)
+    
+    # Get the top-n counties by burdenVar
+    # Top 10 counties hit by FIPS, counting only those that exceed the population floor
+    topN <- perCapData %>%
+        filter(date==topNDate, population>=countyPopFloor) %>%
+        arrange(-burden) %>%
+        head(topN) %>%
+        pull(countyFIPS)
+
+    # Update perCapData with easy-read county name and bolding instructions
+    perCapData <- perCapData %>%
+        mutate(county=paste0(str_replace(countyName.x, " County", ""), " (", state, ")"), 
+               bold=ifelse(countyFIPS %in% topN, 1, 0)
+               ) %>%
+        arrange(date)
+    
+    # Create the plot of all counties with the topN flagged
+    # Evolution of per capita deaths by date in the northeast
+    p1 <- perCapData %>%
+        filter(population>=countyPopFloor) %>%
+        ggplot(aes(x=date, y=burden)) + 
+        geom_line(aes(group=countyFIPS, color=state, alpha=0.25 + 0.75*bold, size=0.5+0.5*bold)) + 
+        scale_alpha_identity() + 
+        scale_size_identity() + 
+        geom_text(data=~filter(., bold==1, date==max(date)), 
+                  aes(x=date+lubridate::days(2), label=paste0(county, ": ", round(burden)), color=state), 
+                  size=3, 
+                  fontface="bold", 
+                  hjust=0
+              ) +
+        scale_x_date(date_breaks="1 months", date_labels="%m", expand=expand_scale(mult=c(0, 0.4))) + 
+        labs(x="", y="Burden per million people", title=plotTitle) + 
+        theme(legend.position="bottom")
+    
+    # Add the subtitle if passed
+    if (!is.null(subT)) p1 <- p1 + labs(subtitle=subT)
+
+    # Print the plot if requested
+    if (printPlot) print(p1)
+    
+    # Return the relevant object
+    if (returnData) perCapData else p1
+    
+}
+
+# Deaths and cases in SE counties
+deathSE <- countyLevelEvolution(pvtDeaths_20200903, 
+                                burdenVar="cumDeaths", 
+                                inclStates=c("FL", "GA", "SC", "AL", "MS"), 
+                                topN=5,
+                                printPlot=FALSE, 
+                                returnData=FALSE
+                                )
+casesSE <- countyLevelEvolution(pvtCases_20200903, 
+                                burdenVar="cumCases", 
+                                inclStates=c("FL", "GA", "SC", "AL", "MS"), 
+                                topN=5,
+                                printPlot=FALSE, 
+                                returnData=FALSE
+                                )
+gridExtra::grid.arrange(casesSE, deathSE, nrow=1)
+
+# Deaths and cases in LA-TX-AZ-NV
+deathSC <- countyLevelEvolution(pvtDeaths_20200903, 
+                                burdenVar="cumDeaths", 
+                                inclStates=c("LA", "TX", "AZ", "NV"), 
+                                topN=5,
+                                printPlot=FALSE, 
+                                returnData=FALSE
+                                )
+casesSC <- countyLevelEvolution(pvtCases_20200903, 
+                                burdenVar="cumCases", 
+                                inclStates=c("LA", "TX", "AZ", "NV"), 
+                                topN=5,
+                                printPlot=FALSE, 
+                                returnData=FALSE
+                                )
+gridExtra::grid.arrange(casesSC, deathSC, nrow=1)
+
+```
+  
+The hardest hit counties tend to be smaller in population (e.g., East Carroll Parish is 7000 people and Madison Parish is 11000 people).  Suppose instead that the analysis is limited to areas that clear a specified population threshold:  
+```{r}
+
+pop_usafacts %>%
+    filter(countyFIPS != 0) %>%
+    mutate(pop25k=ifelse(population>=25000, 1, 0)) %>%
+    group_by(state) %>%
+    summarize(nCounty=n(), 
+              n25k=sum(pop25k), 
+              pop=sum(population), 
+              pop25k=sum(population*pop25k)
+              ) %>%
+    mutate(pctPopin25k=pop25k/pop) %>%
+    arrange(-pctPopin25k) %>%
+    filter(state %in% c("SC", "GA", "FL", "AL", "MS", "LA", "TX", "AZ", "NM"))
+
+```
+  
+With the exception of Mississippi (80%), 90% or more of the population lives in counties with at least 25000 people.  The countyLevelEvolution() function is updated for a county-level exclusion process:  
+```{r}
+
+# Deaths and cases in SE counties
+deathSE <- countyLevelEvolution(pvtDeaths_20200903, 
+                                burdenVar="cumDeaths", 
+                                inclStates=c("FL", "GA", "SC", "AL", "MS"), 
+                                topN=5,
+                                printPlot=FALSE, 
+                                returnData=FALSE, 
+                                countyPopFloor=25000,
+                                subT="Excludes counties with population <25k"
+                                )
+casesSE <- countyLevelEvolution(pvtCases_20200903, 
+                                burdenVar="cumCases", 
+                                inclStates=c("FL", "GA", "SC", "AL", "MS"), 
+                                topN=5,
+                                printPlot=FALSE, 
+                                returnData=FALSE, 
+                                countyPopFloor=25000,
+                                subT="Excludes counties with population <25k"
+                                )
+gridExtra::grid.arrange(casesSE, deathSE, nrow=1)
+
+# Deaths and cases in LA-TX-AZ-NV
+deathSC <- countyLevelEvolution(pvtDeaths_20200903, 
+                                burdenVar="cumDeaths", 
+                                inclStates=c("LA", "TX", "AZ", "NV"), 
+                                topN=5,
+                                printPlot=FALSE, 
+                                returnData=FALSE, 
+                                countyPopFloor=25000,
+                                subT="Excludes counties with population <25k"
+                                )
+casesSC <- countyLevelEvolution(pvtCases_20200903, 
+                                burdenVar="cumCases", 
+                                inclStates=c("LA", "TX", "AZ", "NV"), 
+                                topN=5,
+                                printPlot=FALSE, 
+                                returnData=FALSE, 
+                                countyPopFloor=25000,
+                                subT="Excludes counties with population <25k"
+                                )
+gridExtra::grid.arrange(casesSC, deathSC, nrow=1)
+
+```
+  
+Cases appear to be leveling off in the hardest hit counties, but there has been rapid growth in both cases and deaths in some of the counties associated with the hardest hit regions.
