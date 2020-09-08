@@ -2079,4 +2079,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 07-SEP-2020  
 * Coronavirus_Statistics_v001 explores county-level disease evolution in southern hot-spots  
+* Coronavirus_Statistics_v001 explores county-level disease burden by state cluster  
   
