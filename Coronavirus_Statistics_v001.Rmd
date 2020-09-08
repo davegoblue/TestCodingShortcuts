@@ -3230,3 +3230,81 @@ gridExtra::grid.arrange(casesSC, deathSC, nrow=1)
 ```
   
 Cases appear to be leveling off in the hardest hit counties, but there has been rapid growth in both cases and deaths in some of the counties associated with the hardest hit regions.
+
+Next, counties are plotted for both their total reported cases and deaths (each per million), with unassigned data excluded:  
+```{r}
+
+# Deaths and cases in SE counties
+deathUS <- countyLevelEvolution(pvtDeaths_20200903, 
+                                burdenVar="cumDeaths", 
+                                inclStates=NULL, 
+                                topN=5,
+                                printPlot=FALSE, 
+                                returnData=TRUE
+                                )
+casesUS <- countyLevelEvolution(pvtCases_20200903, 
+                                burdenVar="cumCases", 
+                                inclStates=NULL, 
+                                topN=5,
+                                printPlot=FALSE, 
+                                returnData=TRUE
+                                )
+
+# Join the files so there is countyFIPS-county-population-date and cumCases cumDeaths
+# Also, add the hierarchical (method="complete", 5 segments) segment for the associated state
+burdenUS <- deathUS %>% 
+    select(-countyName.x, -countyName.y, -bold, cumDeathPer=burden) %>%
+    inner_join(casesUS %>% 
+                   select(-countyName.x, -countyName.y, -bold, cumCasesPer=burden), 
+               by=c("countyFIPS", "stateFIPS", "county", "state", "date", "population")
+               ) %>%
+    mutate(cluster=clustVec[state])
+
+# Plot the data as of September 1, 2020
+burdenUS %>%
+    filter(date=="2020-09-01", population>=10000) %>%
+    ggplot(aes(x=cumCasesPer, y=cumDeathPer)) + 
+    geom_point(aes(size=log10(population), color=factor(cluster)), alpha=0.25) + 
+    geom_smooth(method="lm", se=FALSE, aes(weight=population, color=factor(cluster))) +
+    scale_size_continuous("log10\nCounty\nPop") + 
+    labs(x="Cases per million as of Sep 1, 2020", 
+         y="Deaths per million as of Sep 1, 2020", 
+         title="County-level per-capita coronavirus burden as of Sep 1, 2020", 
+         subtitle="Filtered to counties with population of at least 10000"
+         ) + 
+    facet_wrap(~cluster)
+
+# Further, the total burden by cluster is plotted
+burdenUS %>%
+    filter(date=="2020-09-01", population>=0) %>%
+    group_by(cluster) %>%
+    summarize(population=sum(population), 
+              cumCases=sum(cumCases), 
+              cumDeath=sum(cumDeaths), 
+              mdn_CasesPer=median(cumCasesPer), 
+              mdn_DeathPer=median(cumDeathPer)
+              ) %>%
+    mutate(mean_CasesPer=1000000*cumCases/population, mean_DeathPer=1000000*cumDeath/population) %>%
+    select(cluster, starts_with("mdn"), starts_with("mean")) %>%
+    pivot_longer(-cluster) %>%
+    mutate(aggType=stringr::str_replace(name, "_.*", ""), 
+           metType=stringr::str_replace(name, ".*_", "")
+           ) %>%
+    pivot_wider(c(cluster, aggType), names_from="metType", values_from="value") %>%
+    ggplot(aes(x=CasesPer, y=DeathPer)) + 
+    geom_point(aes(color=factor(cluster)), size=5) + 
+    labs(x="Cases per million as of Sep 1, 2020", 
+         y="Deaths per million as of Sep 1, 2020", 
+         title="Cluster-level per-capita coronavirus burden as of Sep 1, 2020", 
+         subtitle="State-level clusters based on hierarchical (method=`complete`)"
+         ) + 
+    scale_color_discrete("Cluster") +
+    ylim(c(0, NA)) + 
+    xlim(c(0, NA)) + 
+    facet_wrap(~c("mdn"="Median of all counties in segment", "mean"="Segment-level metric")[aggType])
+
+```
+  
+There is a very different slope of deaths vs. cases that seems to be consistent across counties, particularly for the segment that was hit early and hard.  There is a significant difference in the median county-level burden and the overall segment-level burden, suggestive that heavier outbreaks in larger counties may play a role.  Notably, the southern states that have been hit late have similar metrics whether reported as the median by county or aggregate by segment, potentially suggestive of a lesser population-driven impact in this segment.
+
+
