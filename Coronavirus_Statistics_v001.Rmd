@@ -859,8 +859,14 @@ clusterStates <- function(df,
     
     # Function to calculate SD of a subset of columns
     calcSumSD <- function(df) {
-        df %>% ungroup() %>% select(-state) %>% summarize_all(.funs=sd) %>% as.vector() %>% sum()
+        df %>% 
+            ungroup() %>% 
+            select(-state) %>% 
+            summarize_all(.funs=sd) %>% 
+            as.vector() %>% 
+            sum()
     }
+    
     # Down-weight the aggregate data so that there is the proper sum of sd in aggregates and shapes
     aggSD <- calcSumSD(dfAgg)
     shapeSD <- calcSumSD(dfShape)
@@ -871,8 +877,10 @@ clusterStates <- function(df,
     dfCluster <- dfAgg %>%
         inner_join(dfShape, by="state")
     
-    # Create hierarchical segments or kmeans segments
+    # convert 'state' to rowname
     keyData <- dfCluster %>% column_to_rownames("state")
+    
+    # Create hierarchical segments or kmeans segments
     if (hierarchical) {
         objCluster <-  hclust(dist(keyData), method=hierMethod)
         plot(objCluster)
@@ -1036,6 +1044,7 @@ assessClusters <- function(clusters,
                            dfState=stateData, 
                            dfBurden=cvFilteredPerCapita,
                            thruLabel="Aug 20, 2020",
+                           isCounty=FALSE,
                            plotsTogether=FALSE, 
                            clusterPlotsTogether=plotsTogether,
                            recentTotalTogether=plotsTogether, 
@@ -1047,6 +1056,8 @@ assessClusters <- function(clusters,
     # dfState: the file containing the states and populations
     # dfBurden: the data containing the relevant per capita burden statistics by state-date
     # thruLabel: label for plots for 'data through'
+    # isCounty: boolean, is this a plot of county-level data that have been named 'state'?
+    #           FALSE means that it is normal state-level data
     # plotsTogether: boolean, should plots be consolidated on fewer pages?
     # clusterPlotsTogether: boolean, should plots p1-p4 be consolidated?
     # recentTotalTogether: boolean, should recent total plots p7-p8 be consolidated?
@@ -1059,10 +1070,20 @@ assessClusters <- function(clusters,
         inner_join(dfState, by="state") %>%
         mutate(cluster=factor(cluster))
     
-    # Plot the segments on a state map
-    p1 <- usmap::plot_usmap(regions="states", data=dfState, values="cluster") + 
-        scale_fill_discrete("cluster") + 
-        theme(legend.position="right")
+    # Plot the segments on a state map (only if !isCounty)
+    if (isCounty) {
+        p1 <- dfState %>%
+            count(cluster) %>%
+            ggplot(aes(x=fct_rev(cluster), y=n)) + 
+            geom_col(aes(fill=cluster)) +
+            geom_text(aes(y=n/2, label=n)) +
+            coord_flip() + 
+            labs(x="", y="# Counties", title="Membership by segment")
+    } else {
+        p1 <- usmap::plot_usmap(regions="states", data=dfState, values="cluster") + 
+            scale_fill_discrete("cluster") + 
+            theme(legend.position="right")
+    }
     
     # Plot the population totals by segment
     # Show population totals by cluster
@@ -1109,27 +1130,30 @@ assessClusters <- function(clusters,
         labs(x="Cluster", y="Burden (000s)", title="Total cases and deaths by segment")
 
     # Place the plots together if plotsTogether is TRUE, otherwise just print
-    if (isTRUE(plotsTogether)) {
+    if (isTRUE(clusterPlotsTogether)) {
         gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2, ncol=2)
     } else {
         print(p1); print(p2); print(p3); print(p4)
     }
+
+    # These are relevant and useful only for state-level data
+    if (!isCounty) {
+        # Plot total cases and total deaths by state, colored by cluster
+        helperBarDeathsCases(dfPlot, 
+                             numVars=c("cases", "deaths"), 
+                             title=paste0("Coronavirus impact by state through ", thruLabel), 
+                             xVar=c("state"), 
+                             fillVar=c("cluster")
+                             )
     
-    # Plot total cases and total deaths by state, colored by cluster
-    helperBarDeathsCases(dfPlot, 
-                         numVars=c("cases", "deaths"), 
-                         title=paste0("Coronavirus impact by state through ", thruLabel), 
-                         xVar=c("state"), 
-                         fillVar=c("cluster")
-                         )
-    
-    # Plot cases per million and deaths per million by state, colored by cluster
-    helperBarDeathsCases(dfPlot, 
-                         numVars=c("cpm", "dpm"), 
-                         title=paste0("Coronavirus impact by state through ", thruLabel), 
-                         xVar=c("state"), 
-                         fillVar=c("cluster")
-                         )
+        # Plot cases per million and deaths per million by state, colored by cluster
+        helperBarDeathsCases(dfPlot, 
+                             numVars=c("cpm", "dpm"), 
+                             title=paste0("Coronavirus impact by state through ", thruLabel), 
+                             xVar=c("state"), 
+                             fillVar=c("cluster")
+                             )
+    }
     
     # Plot last-30 vs total for cases per million by state, colored by cluster
     p7 <- helperRecentvsTotal(dfPlot, 
@@ -1154,38 +1178,44 @@ assessClusters <- function(clusters,
         print(p7); print(p8)
     }
     
-    # Plot the cases per million on a free y-scale and a fixed y-scale
-    p9 <- helperTotalvsElements(dfPlot, 
-                                keyVar="cpm7", 
-                                title="Cases per million, 7-day rolling mean", 
-                                printPlot=FALSE
-                                )
-    p10 <- helperTotalvsElements(dfPlot, 
-                                 keyVar="cpm7", 
-                                 title="Cases per million, 7-day rolling mean", 
-                                 facetScales="fixed", 
-                                 printPlot=FALSE
-                                 )
+    # These are currently only helpful for states (update later to make more useful for counties)
+    if (!isCounty) {
     
-    # Plot the deaths per million on a free y-scale and a fixed y-scale
-    p11 <- helperTotalvsElements(dfPlot, 
-                                 keyVar="dpm7", 
-                                 title="Deaths per million, 7-day rolling mean", 
-                                 printPlot=FALSE
-                                 )
-    p12 <- helperTotalvsElements(dfPlot, 
-                                 keyVar="dpm7", 
-                                 title="Deaths per million, 7-day rolling mean", 
-                                 facetScales="fixed", 
-                                 printPlot=FALSE
-                                 )
+        # Plot the cases per million on a free y-scale and a fixed y-scale
+        p9 <- helperTotalvsElements(dfPlot, 
+                                    keyVar="cpm7", 
+                                    title="Cases per million, 7-day rolling mean", 
+                                    printPlot=FALSE
+                                    )
+        p10 <- helperTotalvsElements(dfPlot, 
+                                     keyVar="cpm7", 
+                                     title="Cases per million, 7-day rolling mean", 
+                                     facetScales="fixed", 
+                                     printPlot=FALSE
+                                     )
     
-    if (isTRUE(clusterAggTogether)) {
-        gridExtra::grid.arrange(p9, p11, nrow=1)
-        gridExtra::grid.arrange(p10, p12, nrow=1)
-    } else {
-        print(p9); print(p10); print(p11); print(p12)
+        # Plot the deaths per million on a free y-scale and a fixed y-scale
+        p11 <- helperTotalvsElements(dfPlot, 
+                                     keyVar="dpm7", 
+                                     title="Deaths per million, 7-day rolling mean", 
+                                     printPlot=FALSE
+                                     )
+        p12 <- helperTotalvsElements(dfPlot, 
+                                     keyVar="dpm7", 
+                                     title="Deaths per million, 7-day rolling mean", 
+                                     facetScales="fixed", 
+                                     printPlot=FALSE
+                                     )
+    
+        if (isTRUE(clusterAggTogether)) {
+            gridExtra::grid.arrange(p9, p11, nrow=1)
+            gridExtra::grid.arrange(p10, p12, nrow=1)
+        } else {
+            print(p9); print(p10); print(p11); print(p12)
+        }
+        
     }
+    
     # Return the plotting data frame
     dfPlot
 
@@ -3306,5 +3336,139 @@ burdenUS %>%
 ```
   
 There is a very different slope of deaths vs. cases that seems to be consistent across counties, particularly for the segment that was hit early and hard.  There is a significant difference in the median county-level burden and the overall segment-level burden, suggestive that heavier outbreaks in larger counties may play a role.  Notably, the southern states that have been hit late have similar metrics whether reported as the median by county or aggregate by segment, potentially suggestive of a lesser population-driven impact in this segment.
+  
+With some modifications, the clusterStates() function can be used to cluster the county-level data:  
+  
+1.  Set the countyFIPS variable as 'state' and keep only fields date, state, dpm, cpm  
+2.  Convert the county-level data to daily totals rather than cumulative daily counts  
+3.  Restrict to counties with population of at least x (likely in the range of 25k)  
+  
+The existing code that calls the kmeans clustering is copied below for reference:  
+```{r}
+
+# Test clusters that weight deaths heavily vs. cases and that weight shape more highly than total
+# Using kmeans and testing for 1-10 clusters
+# testCluster_km5 <- clusterStates(cvFilteredPerCapita, 
+#                                  minShape=3, 
+#                                  ratioDeathvsCase = 5, 
+#                                  ratioTotalvsShape = 0.5, 
+#                                  minDeath=100, 
+#                                  minCase=10000, 
+#                                  hierarchical=FALSE, 
+#                                  nCenters=5,
+#                                  testCenters=1:10, 
+#                                  iter.max=20,
+#                                  nstart=10, 
+#                                  returnList=TRUE, 
+#                                  seed=2008261400
+#                                  )
+
+# Check how 5 clusters look
+# clustVec_km5 <- testCluster_km5$objCluster$cluster
+
+# Create the cluster assessments
+# plotData_km5 <- assessClusters(clustVec_km5)
 
 
+# STEP 1: Select only desired variables from burdenUS
+countyCumPerCapita <- burdenUS %>%
+    select(state=countyFIPS, date, cpm=cumCasesPer, dpm=cumDeathPer, population) %>%
+    arrange(state, date)
+
+# STEP 1a: Confirm that there are no duplicates and that every county has the same dates
+# This should be 1 provided that there are no duplicates
+countyCumPerCapita %>% 
+    count(state, date) %>% 
+    pull(n) %>% 
+    max()
+
+# This should have no standard deviation if the same number of records exist on every day
+countyCumPerCapita %>%
+    mutate(n=1) %>%
+    group_by(date) %>%
+    summarize(n=sum(n), population=sum(population)) %>%
+    summarize_at(vars(all_of(c("n", "population"))), .funs=list(min=min, max=max))
+
+# STEP 2: Convert to daily new totals rather than cumulative data
+countyDailyPerCapita <- countyCumPerCapita %>%
+    group_by(state) %>%
+    arrange(date) %>%
+    mutate_at(vars(all_of(c("cpm", "dpm"))), ~ifelse(row_number()==1, ., .-lag(.))) %>%
+    ungroup()
+
+# STEP 2a: Add rolling 7 aggregates and total cases/deaths
+countyDailyPerCapita <- countyDailyPerCapita %>%
+    arrange(state, date) %>%
+    group_by(state) %>%
+    helperRollingAgg(origVar="cpm", newName="cpm7", k=7) %>%
+    helperRollingAgg(origVar="dpm", newName="dpm7", k=7) %>%
+    ungroup() %>%
+    mutate(cases=cpm*population/1000000, deaths=dpm*population/1000000)
+
+# STEP 3: Create the clusters based on a population-limited subset of countyDailyPerCapita
+# Use only population >= 25000 and date in August or earlier
+# Ensure that 'state' (which holds countyFIPS) is not summed as a double
+countyFiltered <- countyDailyPerCapita %>%
+    filter(population >= 25000, date <= as.Date("2020-08-31")) %>%
+    mutate(state=as.character(state))
+
+# Check number of counties that will fail the test for 100 deaths per million or 5000 cases per million
+is0 <- function(x) mean(x==0)
+isltn <- function(x, n) mean(x<n)
+islt100 <- function(x) isltn(x, n=100)
+islt5000 <- function(x) isltn(x, n=5000)
+
+countyFiltered %>% 
+    group_by(state) %>% 
+    summarize_at(c("cpm", "dpm"), sum) %>% 
+    ungroup() %>%
+    summarize_at(vars(all_of(c("cpm", "dpm"))), 
+                 .funs=list(mean_is0=is0, mean_lt100=islt100, mean_lt5000=islt5000)
+                 )
+
+```
+  
+A significant portion of the data will fall below the total burden thresholds (25% of counties have under 100 deaths per million, 14% of counties have under 5000 cases per million).  These will tend to cluster together in a "lower burden" cluster which may be desirable.  Per previous, deaths is the primary variable of interest, with both absolute and relative (shape by month) burden considered important:  
+```{r}
+
+# Run county-level clusters
+countyCluster_km_test <- clusterStates(countyFiltered,
+                                       minShape=3,
+                                       ratioDeathvsCase = 5,
+                                       ratioTotalvsShape = 0.5,
+                                       minDeath=100,
+                                       minCase=5000,
+                                       hierarchical=FALSE,
+                                       nCenters=5,
+                                       testCenters=1:25,
+                                       iter.max=20,
+                                       nstart=10,
+                                       returnList=TRUE,
+                                       seed=2009081450
+                                       )
+
+```
+  
+There is no obvious break-point in the elbow plot or silhouette plot.  Running with 5 clusters provides a segment with very high disease early, a segment with high disease late, two segments with mild-moderate disease (one early, one late), and one segment with low disease.
+  
+The assessClusters() function has been updated to (in a klunky manner) accept county-level data and produce basic charts:  
+```{r}
+
+# Check how 5 clusters look
+clustVec_county_km_test <- countyCluster_km_test$objCluster$cluster
+plotData_county_km_test <- assessClusters(clustVec_county_km_test, 
+                                          dfState=countyFiltered %>% 
+                                              group_by(state) %>% 
+                                              summarize(pop=mean(population)) %>% 
+                                              ungroup(), 
+                                          dfBurden=select(countyFiltered, -population), 
+                                          thruLabel="Sep 3, 2020", 
+                                          isCounty=TRUE, 
+                                          plotsTogether=TRUE
+                                          )
+
+```
+  
+A handful of counties with under 10% of the US population were hit very hard and early with high per-capita deaths rates.  While there have been surges in other counties, peaks in daily deaths per capita are roughly 25% or less of what the early-hard segment experienced.
+
+Next steps are to further customize assessClusters() to allow for plotting the elements of county-level data (the line per county, as used with states, is messy and uninformative; an aggregate statistic such as 90% range is needed for sensible plotting).
