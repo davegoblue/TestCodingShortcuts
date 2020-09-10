@@ -927,6 +927,7 @@ helperRecentvsTotal <- function(df,
                                 recencyDays=30, 
                                 ablineSlope=0.5, 
                                 mapper=varMapper, 
+                                labelPlot=TRUE,
                                 printPlot=TRUE
                                 ) {
     
@@ -938,6 +939,7 @@ helperRecentvsTotal <- function(df,
     # recencyDays: number of days to consider as recent
     # ablineSlope: dashed line will be drawn with this slope and intercept 0
     # mapper: mapping file to convert x/y variables to descriptive axes (named vector "variable"="label")
+    # labelPlot: boolean, whether to show the labels for each point
     # printPlot: boolean, whether to display the plot (if FALSE, plot object is returned)
     
     # Get the most date cutoff
@@ -955,7 +957,6 @@ helperRecentvsTotal <- function(df,
         summarize_if(is.numeric, .funs=sum) %>%
         ungroup() %>%
         ggplot(aes_string(x=xVar, y=yVar)) + 
-        geom_text(aes(color=cluster, label=state)) + 
         labs(x=mapper[xVar], 
              y=mapper[yVar], 
              title=title, 
@@ -970,6 +971,10 @@ helperRecentvsTotal <- function(df,
         lims(x=c(0, NA), y=c(0, NA)) + 
         theme(legend.position = "bottom")
     
+    # Add the appropriate geom (scatterplot if labelPlot is FALSE)
+    if (labelPlot) p1 <- p1 + geom_text(aes(color=cluster, label=state))
+    else p1 <- p1 + geom_point(aes(color=cluster), alpha=0.5)
+    
     if (isTRUE(printPlot)) {
         print(p1)
     } else {
@@ -983,7 +988,9 @@ helperRecentvsTotal <- function(df,
 helperTotalvsElements <- function(df, 
                                   keyVar, 
                                   title,
-                                  aggFunc=median, 
+                                  aggAndTotal=TRUE,
+                                  pctRibbon=0.8,
+                                  aggFunc=if(aggAndTotal) median else mean, 
                                   mapper=varMapper, 
                                   facetScales="free_y", 
                                   printPlot=TRUE
@@ -993,6 +1000,8 @@ helperTotalvsElements <- function(df,
     # df: the data frame containing n-day rolling averages
     # keyVar: the variable to be plotted
     # title: the plot title
+    # aggAndTotal: boolean, whether to plot every individual observation along with the cluster aggregate
+    # pctRibbon: if aggAndTotal is FALSE, a ribbon covering this percentage of the data will be plotted
     # aggFunc: how to aggregate the elements to the segment
     #          CAUTION that this is an aggregate of averages, rather than a population-weighted aggregate
     # mapper: the variable mapping file to get the appropriate label for keyVar
@@ -1007,6 +1016,13 @@ helperTotalvsElements <- function(df,
     } else {
         "Update subtitle code in function helperTotalvsElements"
     }
+
+    # Create an appropriate caption
+    caption <- if(aggAndTotal) {
+        "Cluster aggregate is median, weighting each observation equally\n(NOT population-weighted)"
+    } else {
+        paste0("1. Cluster aggregate is mean over all observations (NOT population-weighted)\n2. Ribbons reflect range covering ", round(pctRibbon*100), "% of observations")
+    }
     
     # Create the plots for segment-level data
     p1 <- df %>%
@@ -1015,18 +1031,41 @@ helperTotalvsElements <- function(df,
         summarize_at(vars(all_of(keyVar)), .funs=aggFunc) %>%
         ungroup() %>%
         filter(!is.na(get(keyVar))) %>%
-        ggplot(aes_string(x="date", y=keyVar)) + 
-        geom_line(data=~filter(., state != "cluster"), aes(group=state), alpha=0.25) + 
-        geom_line(data=~filter(., state == "cluster"), aes(group=state, color=cluster), lwd=1.5) + 
+        ggplot(aes_string(x="date")) + 
+        geom_line(data=~filter(., state == "cluster"), 
+                  aes(y=get(keyVar), group=state, color=cluster), 
+                  lwd=1.5
+                  ) + 
         facet_wrap(~cluster, scales=facetScales) + 
         labs(x="", 
              y=mapper[keyVar], 
              title=title, 
              subtitle=subtitle,
-             caption="Cluster-level aggregates weight each state equally\n(NOT population-weighted)"
+             caption=caption
              ) + 
         ylim(c(0, NA)) + 
         theme(legend.position="bottom")
+    
+    # Add an appropriate individual metric (either every observation or quantiles)
+    if (aggAndTotal) {
+        p1 <- p1 + 
+            geom_line(data=~filter(., state != "cluster"), 
+                      aes(y=get(keyVar), group=state), 
+                      alpha=0.25
+                      )
+    } else {
+        dfRibbon <- df %>%
+            filter(!is.na(get(keyVar))) %>%
+            group_by(cluster, date) %>%
+            summarize(ylow=quantile(get(keyVar), 0.5-0.5*pctRibbon), 
+                      yhigh=quantile(get(keyVar), 0.5+0.5*pctRibbon)
+                      )
+        p1 <- p1 + 
+            geom_ribbon(data=dfRibbon, 
+                        aes(ymin=ylow, ymax=yhigh), 
+                        alpha=0.25
+                        )
+    }
     
     # Print plot if requested, otherwise return it
     if (isTRUE(printPlot)) {
@@ -1101,7 +1140,7 @@ assessClusters <- function(clusters,
         inner_join(dfBurden, by="state") %>%
         tibble::as_tibble()
     
-    # Plot the rolling 7-day mean dialy disease burden by cluster
+    # Plot the rolling 7-day mean daily disease burden by cluster
     p3 <- dfPlot %>%        
         select(date, cluster, cases=cpm7, deaths=dpm7) %>%
         pivot_longer(-c(date, cluster)) %>%
@@ -1155,11 +1194,13 @@ assessClusters <- function(clusters,
                              )
     }
     
+    # County-level plots will be point-only; state-level plots will be labelled
     # Plot last-30 vs total for cases per million by state, colored by cluster
     p7 <- helperRecentvsTotal(dfPlot, 
                               xVar="cpm", 
                               yVar="newcpm", 
                               title=paste0("Coronavirus burden through ", thruLabel), 
+                              labelPlot=!isCounty,
                               printPlot=FALSE
                               )
     
@@ -1168,6 +1209,7 @@ assessClusters <- function(clusters,
                               xVar="dpm", 
                               yVar="newdpm", 
                               title=paste0("Coronavirus burden through ", thruLabel), 
+                              labelPlot=!isCounty,
                               printPlot=FALSE
                               )
     
@@ -1179,41 +1221,41 @@ assessClusters <- function(clusters,
     }
     
     # These are currently only helpful for states (update later to make more useful for counties)
-    if (!isCounty) {
+    # Plot the cases per million on a free y-scale and a fixed y-scale
+    p9 <- helperTotalvsElements(dfPlot, 
+                                keyVar="cpm7", 
+                                aggAndTotal=!isCounty,
+                                title="Cases per million, 7-day rolling mean", 
+                                printPlot=FALSE
+                                )
+    p10 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="cpm7", 
+                                 aggAndTotal=!isCounty,
+                                 title="Cases per million, 7-day rolling mean", 
+                                 facetScales="fixed", 
+                                 printPlot=FALSE
+                                 )
     
-        # Plot the cases per million on a free y-scale and a fixed y-scale
-        p9 <- helperTotalvsElements(dfPlot, 
-                                    keyVar="cpm7", 
-                                    title="Cases per million, 7-day rolling mean", 
-                                    printPlot=FALSE
-                                    )
-        p10 <- helperTotalvsElements(dfPlot, 
-                                     keyVar="cpm7", 
-                                     title="Cases per million, 7-day rolling mean", 
-                                     facetScales="fixed", 
-                                     printPlot=FALSE
-                                     )
+    # Plot the deaths per million on a free y-scale and a fixed y-scale
+    p11 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="dpm7", 
+                                 aggAndTotal=!isCounty,
+                                 title="Deaths per million, 7-day rolling mean", 
+                                 printPlot=FALSE
+                                 )
+    p12 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="dpm7", 
+                                 aggAndTotal=!isCounty,
+                                 title="Deaths per million, 7-day rolling mean", 
+                                 facetScales="fixed", 
+                                 printPlot=FALSE
+                                 )
     
-        # Plot the deaths per million on a free y-scale and a fixed y-scale
-        p11 <- helperTotalvsElements(dfPlot, 
-                                     keyVar="dpm7", 
-                                     title="Deaths per million, 7-day rolling mean", 
-                                     printPlot=FALSE
-                                     )
-        p12 <- helperTotalvsElements(dfPlot, 
-                                     keyVar="dpm7", 
-                                     title="Deaths per million, 7-day rolling mean", 
-                                     facetScales="fixed", 
-                                     printPlot=FALSE
-                                     )
-    
-        if (isTRUE(clusterAggTogether)) {
-            gridExtra::grid.arrange(p9, p11, nrow=1)
-            gridExtra::grid.arrange(p10, p12, nrow=1)
-        } else {
-            print(p9); print(p10); print(p11); print(p12)
-        }
-        
+    if (isTRUE(clusterAggTogether)) {
+        gridExtra::grid.arrange(p9, p11, nrow=1)
+        gridExtra::grid.arrange(p10, p12, nrow=1)
+    } else {
+        print(p9); print(p10); print(p11); print(p12)
     }
     
     # Return the plotting data frame
@@ -2141,6 +2183,7 @@ dfRaw_20200830 %>%
                           mapper=c("tpm7"="Tests per million per day (7-day rolling mean"), 
                           facetScales="free_y"
                           )
+
 ```
   
 Testing appears to have grown rapidly in all segments, though with a significant decline in testing in the "late spike" states that is associated with the same timing as the fall in cases in "late spike" states.
@@ -3472,3 +3515,5 @@ plotData_county_km_test <- assessClusters(clustVec_county_km_test,
 A handful of counties with under 10% of the US population were hit very hard and early with high per-capita deaths rates.  While there have been surges in other counties, peaks in daily deaths per capita are roughly 25% or less of what the early-hard segment experienced.
 
 Next steps are to further customize assessClusters() to allow for plotting the elements of county-level data (the line per county, as used with states, is messy and uninformative; an aggregate statistic such as 90% range is needed for sensible plotting).
+
+The function has been updated, and is now incorporated in the results above.  Next steps are to further explore the attributes of the county-level segments and impact of different numbers of segments.
