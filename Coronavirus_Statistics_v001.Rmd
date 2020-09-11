@@ -3517,3 +3517,411 @@ A handful of counties with under 10% of the US population were hit very hard and
 Next steps are to further customize assessClusters() to allow for plotting the elements of county-level data (the line per county, as used with states, is messy and uninformative; an aggregate statistic such as 90% range is needed for sensible plotting).
 
 The function has been updated, and is now incorporated in the results above.  Next steps are to further explore the attributes of the county-level segments and impact of different numbers of segments.
+
+Two preliminary steps will help for running multiple scenarios with county-level segments:  
+  
+1.  Create a helper function for calling assessClusters() from county-level inputs  
+2.  Update assessClusters() such that its components are each themselves a separate function (and can then be called using boolean arguments)  
+  
+First, the helper function is created:  
+```{r}
+
+# Function for calling assessClusters() for county-level segments
+helperAssessCountyClusters <- function(vecCluster, 
+                                       dfPop, 
+                                       dfBurden, 
+                                       dfPopGeoVar="state", 
+                                       dfPopPopVar="population", 
+                                       ...
+                                       ) {
+    
+    # FUNCTION ARGUMENTS:
+    # vecCluster: the named cluster vector
+    # dfPop: the data frame containing the population data
+    # dfBurden: the data frame containing the burden statistics by county and date
+    # ...: other arguments to pass to assessClusters()
+
+    # Run the process    
+    plotAssess <- assessClusters(vecCluster, 
+                                 dfState=dfPop %>% 
+                                     group_by_at(dfPopGeoVar) %>% 
+                                     summarize(pop=mean(get(dfPopPopVar))) %>% 
+                                     ungroup(), 
+                                 dfBurden=select(dfBurden, -population), 
+                                 isCounty=TRUE, 
+                                 ...
+                                 )
+    
+    # Return the plot object
+    plotAssess
+    
+}
+
+# Test the function on the same data as before
+helperACC_test <- helperAssessCountyClusters(countyCluster_km_test$objCluster$cluster, 
+                                             dfPop=countyFiltered, 
+                                             dfBurden=countyFiltered, 
+                                             thruLabel="Sep 3, 2020", 
+                                             plotsTogether=TRUE
+                                             )
+
+# Confirm that outputs are the same
+identical(plotData_county_km_test, helperACC_test)
+
+```
+  
+Next, an updated version of assessClusters() is written such that the components can be called individually on request rather than as a group:  
+```{r}
+
+# Helper function to make the overall cluster summary statistics
+helperClusterSummaryPlots <- function(dfState, 
+                                      dfPlot,
+                                      showMap, 
+                                      clusterPlotsTogether, 
+                                      mapLevel="states"
+                                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfState: contains the state/county-level data
+    # dfPlot: contains the joined data for plotting
+    # showMap: boolean for whether to create a map (if FALSE, segment membership counts are shown instead)
+    # clusterPlotsTogether: boolean, whether to put all four plots on the same page
+    # mapLevel: the level to be used on the map
+    
+    # Plot the segments on a map or show segment membership
+    if (showMap) {
+        if (mapLevel=="counties") {
+            dfMap <- dfState %>%
+                mutate(fips=stringr::str_pad(state, width=5, side="left", pad="0")) %>%
+                select(fips, cluster)
+        } else {
+            dfMap <- dfState
+        }
+        p1 <- usmap::plot_usmap(regions=mapLevel, data=dfMap, values="cluster") + 
+            scale_fill_discrete("cluster") + 
+            theme(legend.position="right")
+    } else {
+        p1 <- dfState %>%
+            count(cluster) %>%
+            ggplot(aes(x=fct_rev(cluster), y=n)) + 
+            geom_col(aes(fill=cluster)) +
+            geom_text(aes(y=n/2, label=n)) +
+            coord_flip() + 
+            labs(x="", y="# Counties", title="Membership by segment")
+    }
+    
+    # Plot the population totals by segment
+    # Show population totals by cluster
+    p2 <- dfState %>%
+        group_by(cluster) %>%
+        summarize(pop=sum(pop)/1000000) %>%
+        ggplot(aes(x=fct_rev(cluster), y=pop)) + 
+        geom_col(aes(fill=cluster)) + 
+        geom_text(aes(y=pop/2, label=round(pop))) + 
+        labs(y="2015 population (millions)", x="Cluster", title="Population by cluster (millions)") +
+        coord_flip()
+    
+    # Plot the rolling 7-day mean daily disease burden by cluster
+    p3 <- dfPlot %>%        
+        select(date, cluster, cases=cpm7, deaths=dpm7) %>%
+        pivot_longer(-c(date, cluster)) %>%
+        filter(!is.na(value)) %>%
+        group_by(date, cluster, name) %>%
+        summarize(value=median(value)) %>%
+        ggplot(aes(x=date, y=value)) +
+        geom_line(aes(group=cluster, color=cluster)) +
+        facet_wrap(~name, scales="free_y") +
+        labs(x="",
+             y="Rolling 7-day mean, per million",
+             title="Rolling 7-day mean daily disease burden, per million",
+             subtitle="Median per day for states assigned to cluster"
+             )
+    
+    # Plot the total cases and total deaths by cluster
+    p4 <- dfPlot %>%
+        group_by(cluster) %>%
+        summarize(cases=sum(cases), deaths=sum(deaths)) %>%
+        pivot_longer(-cluster) %>%
+        ggplot(aes(x=fct_rev(cluster), y=value/1000)) + 
+        geom_col(aes(fill=cluster)) + 
+        geom_text(aes(y=value/2000, label=round(value/1000))) +
+        coord_flip() + 
+        facet_wrap(~varMapper[name], scales="free_x") + 
+        labs(x="Cluster", y="Burden (000s)", title="Total cases and deaths by segment")
+
+    # Place the plots together if plotsTogether is TRUE, otherwise just print
+    if (isTRUE(clusterPlotsTogether)) {
+        gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2, ncol=2)
+    } else {
+        print(p1); print(p2); print(p3); print(p4)
+    }
+    
+}
+
+
+
+# Helper function to make total and per capita by state (calls its own helper function)
+helperCallTotalPerCapita <- function(dfPlot, 
+                                     thruLabel
+                                     ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPlot: the plotting data frame
+    # thruLabel: the date that data are through
+    
+    # Plot total cases and total deaths by state, colored by cluster
+    helperBarDeathsCases(dfPlot, 
+                         numVars=c("cases", "deaths"), 
+                         title=paste0("Coronavirus impact by state through ", thruLabel), 
+                         xVar=c("state"), 
+                         fillVar=c("cluster")
+                         )
+    
+    # Plot cases per million and deaths per million by state, colored by cluster
+    helperBarDeathsCases(dfPlot, 
+                         numVars=c("cpm", "dpm"), 
+                         title=paste0("Coronavirus impact by state through ", thruLabel), 
+                         xVar=c("state"), 
+                         fillVar=c("cluster")
+                         )
+    
+}
+
+
+
+# Helper function to make recent vs. total plots
+helperCallRecentvsTotal <- function(dfPlot, 
+                                    thruLabel, 
+                                    labelPoints, 
+                                    recentTotalTogether
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPlot: the plotting data frame
+    # thruLabel: the date that data are through
+    # labelPoints: boolean, whether to label the individual points
+    # recentTotalTogether: boolean, whether to put these plots together on one page
+    
+    # Plot last-30 vs total for cases per million by state, colored by cluster
+    p7 <- helperRecentvsTotal(dfPlot, 
+                              xVar="cpm", 
+                              yVar="newcpm", 
+                              title=paste0("Coronavirus burden through ", thruLabel), 
+                              labelPlot=labelPoints,
+                              printPlot=FALSE
+                              )
+    
+    # Plot last-30 vs total for deaths per million by state, colored by cluster
+    p8 <- helperRecentvsTotal(dfPlot, 
+                              xVar="dpm", 
+                              yVar="newdpm", 
+                              title=paste0("Coronavirus burden through ", thruLabel), 
+                              labelPlot=labelPoints,
+                              printPlot=FALSE
+                              )
+    
+    # Print the plots either as a single page or separately
+    if (isTRUE(recentTotalTogether)) {
+        gridExtra::grid.arrange(p7, p8, nrow=1)
+    } else {
+        print(p7); print(p8)
+    }    
+    
+}
+
+
+
+# Helper function to create total vs. elements plots
+helperCallTotalvsElements <- function(dfPlot, 
+                                      aggAndTotal, 
+                                      clusterAggTogether,
+                                      ...
+                                      ) {
+
+    # FUNCTION ARGUMENTS:
+    # dfPlot: the plotting data frame
+    # aggAndTotal: boolean, should each individual line be plotted (if FALSE an 80% CI is plotted instead)
+    # clusterAggTogether: boolean, whether to print the plots all on a single page
+    # ...: any other arguments to pass to helperTotalvsElements (especially pctRibbon or aggFunc)
+    
+    # Plot the cases per million on a free y-scale and a fixed y-scale
+    p9 <- helperTotalvsElements(dfPlot, 
+                                keyVar="cpm7", 
+                                aggAndTotal=aggAndTotal,
+                                title="Cases per million, 7-day rolling mean", 
+                                printPlot=FALSE, 
+                                ...
+                                )
+    p10 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="cpm7", 
+                                 aggAndTotal=aggAndTotal,
+                                 title="Cases per million, 7-day rolling mean", 
+                                 facetScales="fixed", 
+                                 printPlot=FALSE, 
+                                 ...
+                                 )
+    
+    # Plot the deaths per million on a free y-scale and a fixed y-scale
+    p11 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="dpm7", 
+                                 aggAndTotal=aggAndTotal,
+                                 title="Deaths per million, 7-day rolling mean", 
+                                 printPlot=FALSE, 
+                                 ...
+                                 )
+    p12 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="dpm7", 
+                                 aggAndTotal=aggAndTotal,
+                                 title="Deaths per million, 7-day rolling mean", 
+                                 facetScales="fixed", 
+                                 printPlot=FALSE, 
+                                 ...
+                                 )
+    
+    if (isTRUE(clusterAggTogether)) {
+        gridExtra::grid.arrange(p9, p11, nrow=1)
+        gridExtra::grid.arrange(p10, p12, nrow=1)
+    } else {
+        print(p9); print(p10); print(p11); print(p12)
+    }
+    
+}
+
+
+
+# Updated function for cluster assessment
+# Main function creates the required data and calls helper functions
+# 1. Call helper to create overall cluster summary
+# 2. Call helper function for totals and per capita by state
+# 3. Call helper for recent vs. overall cases
+# 4. Call helper for evolution of segment aggregate and individual components
+assessClusters <- function(clusters, 
+                           dfState=stateData, 
+                           dfBurden=cvFilteredPerCapita,
+                           thruLabel="Aug 20, 2020",
+                           isCounty=FALSE,
+                           plotsTogether=FALSE, 
+                           clusterPlotsTogether=plotsTogether,
+                           recentTotalTogether=plotsTogether, 
+                           clusterAggTogether=plotsTogether, 
+                           makeSummaryPlots=TRUE, 
+                           makeTotalvsPerCapitaPlots=!isCounty, 
+                           makeRecentvsTotalPlots=TRUE, 
+                           makeTotalvsElementPlots=TRUE, 
+                           showMap=!isCounty
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # clusters: the named vector containing the clusters by state
+    # dfState: the file containing the states and populations
+    # dfBurden: the data containing the relevant per capita burden statistics by state-date
+    # thruLabel: label for plots for 'data through'
+    # isCounty: boolean, is this a plot of county-level data that have been named 'state'?
+    #           FALSE means that it is normal state-level data
+    # plotsTogether: boolean, should plots be consolidated on fewer pages?
+    # clusterPlotsTogether: boolean, should plots p1-p4 be consolidated?
+    # recentTotalTogether: boolean, should recent total plots p7-p8 be consolidated?
+    # clusterAggTogether: boolean, should aggregate plots p9/p11 and p10/p12 be consolidated?
+    # makeSummaryPlots: boolean, should the summary plots be made?
+    # makeTotalvsPerCapitaPlots: boolean, should the total and per capita plots be produced?
+    # makeRecentvsTotalPlots: boolean, should the recent vs. total plots be created?
+    # makeTotalvsElementPlots: boolean, should the total vs. element plots be created?
+    # showMap: boolean, whether to create a map colored by cluster (will show segment counts otherwise)
+    
+    # Attach the clusters to the state population data
+    dfState <- as.data.frame(clusters) %>%
+        set_names("cluster") %>%
+        rownames_to_column("state") %>%
+        inner_join(dfState, by="state") %>%
+        mutate(cluster=factor(cluster))
+    
+    # Plot the rolling 7-day mean dialy disease burden by cluster
+    dfPlot <- dfState %>%
+        inner_join(dfBurden, by="state") %>%
+        tibble::as_tibble()
+    
+    # Call the helper function to make the overall summary statistics
+    if (makeSummaryPlots) {
+        helperClusterSummaryPlots(dfState=dfState, 
+                                  dfPlot=dfPlot, 
+                                  showMap=showMap, 
+                                  clusterPlotsTogether=clusterPlotsTogether, 
+                                  mapLevel=if(isCounty) "counties" else "states"
+                                  )
+    }
+
+    # These are primarily useful for state-level data and default to FALSE when isCounty is TRUE
+    if (makeTotalvsPerCapitaPlots) {
+        helperCallTotalPerCapita(dfPlot=dfPlot, thruLabel=thruLabel)
+    }
+    
+    # Call the helper function to make recent vs. total plots
+    if (makeRecentvsTotalPlots) {
+        helperCallRecentvsTotal(dfPlot=dfPlot, 
+                                thruLabel=thruLabel, 
+                                labelPoints=!isCounty, 
+                                recentTotalTogether = recentTotalTogether
+                                )
+    }
+    
+    # Call the total vs. elements helper function
+    if (makeTotalvsElementPlots) {
+        helperCallTotalvsElements(dfPlot=dfPlot, 
+                                  aggAndTotal=!isCounty, 
+                                  clusterAggTogether=clusterPlotsTogether
+                                  )
+    }
+    
+    # Return the plotting data frame
+    dfPlot
+
+}
+
+```
+  
+The updated function is then run on the existing data:  
+```{r}
+
+# Test the function on the same data as before
+helperACC_test_02 <- helperAssessCountyClusters(countyCluster_km_test$objCluster$cluster, 
+                                                dfPop=countyFiltered, 
+                                                dfBurden=countyFiltered, 
+                                                thruLabel="Sep 3, 2020", 
+                                                plotsTogether=TRUE
+                                                )
+
+# Confirm that outputs are the same
+identical(plotData_county_km_test, helperACC_test_02)
+
+```
+  
+The updated function is tested for producing only the main summary, and for creating a county-level plot:  
+```{r}
+
+# Test the function on the same data as before, but for only the overall summary
+helperACC_test_03 <- helperAssessCountyClusters(countyCluster_km_test$objCluster$cluster, 
+                                                dfPop=countyFiltered, 
+                                                dfBurden=countyFiltered, 
+                                                thruLabel="Sep 3, 2020", 
+                                                plotsTogether=TRUE, 
+                                                makeTotalvsPerCapitaPlots=FALSE, 
+                                                makeRecentvsTotalPlots=FALSE, 
+                                                makeTotalvsElementPlots=FALSE
+                                                )
+
+# Test the function on the same data as before, with the plots each on their own page
+helperACC_test_04 <- helperAssessCountyClusters(countyCluster_km_test$objCluster$cluster, 
+                                                dfPop=countyFiltered, 
+                                                dfBurden=countyFiltered, 
+                                                thruLabel="Sep 3, 2020", 
+                                                plotsTogether=TRUE, 
+                                                makeTotalvsPerCapitaPlots=FALSE, 
+                                                makeRecentvsTotalPlots=FALSE, 
+                                                makeTotalvsElementPlots=FALSE, 
+                                                showMap=TRUE, 
+                                                clusterPlotsTogether=FALSE
+                                                )
+
+```
+  
+The functions are now prepared to more easily handle multiple scenarios of clustering, which is the next step.
