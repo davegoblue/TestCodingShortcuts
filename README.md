@@ -2082,4 +2082,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 explores county-level disease burden by state cluster  
 * Coronavirus_Statistics_v001 creates county-level segments  
 * Coronavirus_Statistics_v001 updates assessClusters() to handle counties in all plots  
+* Coronavirus_Statistics_v001 updates assessClusters() to be more modular  
   
