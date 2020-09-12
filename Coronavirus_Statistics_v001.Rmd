@@ -3577,7 +3577,8 @@ Next, an updated version of assessClusters() is written such that the components
 helperClusterSummaryPlots <- function(dfState, 
                                       dfPlot,
                                       showMap, 
-                                      clusterPlotsTogether, 
+                                      clusterPlotsTogether,
+                                      weightedMean=TRUE,
                                       mapLevel="states"
                                       ) {
     
@@ -3586,6 +3587,7 @@ helperClusterSummaryPlots <- function(dfState,
     # dfPlot: contains the joined data for plotting
     # showMap: boolean for whether to create a map (if FALSE, segment membership counts are shown instead)
     # clusterPlotsTogether: boolean, whether to put all four plots on the same page
+    # weightedMean: boolean, whether to create weighted mean by segment (if FALSE, median by segment is taken)
     # mapLevel: the level to be used on the map
     
     # Plot the segments on a map or show segment membership
@@ -3622,20 +3624,24 @@ helperClusterSummaryPlots <- function(dfState,
         coord_flip()
     
     # Plot the rolling 7-day mean daily disease burden by cluster
+    # Create the p3Data to be either median of all elements in cluster or weighted mean
     p3 <- dfPlot %>%        
-        select(date, cluster, cases=cpm7, deaths=dpm7) %>%
-        pivot_longer(-c(date, cluster)) %>%
+        select(date, cluster, cases=cpm7, deaths=dpm7, pop) %>%
+        pivot_longer((-c(date, cluster, pop))) %>%
         filter(!is.na(value)) %>%
         group_by(date, cluster, name) %>%
-        summarize(value=median(value)) %>%
-        ggplot(aes(x=date, y=value)) +
+        summarize(mdnValue=median(value), wtdValue=sum(pop*value)/sum(pop)) %>%
+        ggplot(aes(x=date, y=if(weightedMean) wtdValue else mdnValue)) +
         geom_line(aes(group=cluster, color=cluster)) +
         facet_wrap(~name, scales="free_y") +
         labs(x="",
              y="Rolling 7-day mean, per million",
              title="Rolling 7-day mean daily disease burden, per million",
-             subtitle="Median per day for states assigned to cluster"
-             )
+             subtitle=paste0(if(weightedMean) "Weighted mean" else "Median", 
+                             " per day for states assigned to cluster"
+                             )
+             ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b")
     
     # Plot the total cases and total deaths by cluster
     p4 <- dfPlot %>%
@@ -3925,3 +3931,142 @@ helperACC_test_04 <- helperAssessCountyClusters(countyCluster_km_test$objCluster
 ```
   
 The functions are now prepared to more easily handle multiple scenarios of clustering, which is the next step.
+
+Neither the elbow plot nor the silhouette plot had any obvious break points suggesting an optimal number of clusters.  Suppose that kmeans from 2-8 clusters is run, with the assessment being only the single-page summary:  
+```{r}
+
+# Clustering amounts to test
+testN <- 2:8
+
+# Create a container to hold the clustering object
+county_km_list <- vector("list", length(testN))
+names(county_km_list) <- paste0("nCenters", stringr::str_pad(testN, width=2, side="left", pad="0"))
+
+# Run county-level clusters for each element in testN
+nRun <- 1
+for (nCenters in testN) {
+
+    county_km_list[[nRun]] <- clusterStates(countyFiltered,
+                                            minShape=3,
+                                            ratioDeathvsCase = 5,
+                                            ratioTotalvsShape = 0.5,
+                                            minDeath=100,
+                                            minCase=5000,
+                                            hierarchical=FALSE,
+                                            nCenters=nCenters,
+                                            iter.max=20,
+                                            nstart=10,
+                                            returnList=TRUE,
+                                            seed=2009111335
+                                            )
+    nRun <- nRun + 1
+
+}
+
+
+# Takes a list and creates the desired plot
+assessFunction <- function(x) {
+    helperAssessCountyClusters(x$objCluster$cluster, 
+                               dfPop=countyFiltered, 
+                               dfBurden=countyFiltered, 
+                               thruLabel="Sep 3, 2020", 
+                               plotsTogether=TRUE, 
+                               makeTotalvsPerCapitaPlots=FALSE, 
+                               makeRecentvsTotalPlots=FALSE, 
+                               makeTotalvsElementPlots=FALSE, 
+                               showMap=FALSE
+                               )
+}
+
+# Run the single-page assessment for each element of county_km_list
+# Output will be meaningless; run just for the side-effects (plotting)
+discardThis <- sapply(county_km_list, FUN=assessFunction)
+
+```
+  
+While k-means results are highly dependent on starting conditions (seed), some general trends are observed:  
+  
+* The first cluster (n=2) breaks apart the counties with very high and early deaths from all other counties.  There are ~200 counties with ~20% of the US population that account for ~60% of the deaths through August  
+* The third cluster breaks apart the "lower disease" counties in to a group that experienced a (relatively) small surge in deaths late and a group that experienced a (relatively) small surge in deaths early  
+* The fourth cluster separates counties that have consistently had very few deaths per capita  
+* The fifth cluster separates counties that have had relatively sustained deaths both early and late  
+* Clusters 6-8 are rather noisy and challenging to classify in a sentence or two; consistently, the coutnies hit heavy and early get split in to a smaller group with a bigger spike as segments increase  
+
+Five segments appears to be a sweet spot qualitatively:  
+  
+* Counties with early, high death per capita  
+* Counties with early, moderate death per capita  
+* Counties with sustained, moderate death per capita  
+* Counties with late, moderate death per capita  
+* Counties with low death per capita  
+  
+Of interest, there does not appear to be a segment with late an high death.  The small number of populous counties hit early tend to be the primary locations with the highest death rates.
+
+Suppose that two additional plots are created to show cumulative disease burden per capita by segment:  
+```{r}
+
+# Test the function on the same data as before, with the plots each on their own page
+helperACC_test_04 <- helperAssessCountyClusters(countyCluster_km_test$objCluster$cluster, 
+                                                dfPop=countyFiltered, 
+                                                dfBurden=countyFiltered, 
+                                                thruLabel="Sep 3, 2020", 
+                                                plotsTogether=TRUE, 
+                                                makeTotalvsPerCapitaPlots=FALSE, 
+                                                makeRecentvsTotalPlots=FALSE, 
+                                                makeTotalvsElementPlots=FALSE, 
+                                                showMap=TRUE, 
+                                                clusterPlotsTogether=TRUE
+                                                )
+
+helperACC_test_04 %>%
+    select(cluster, date, pop, cases, deaths) %>%
+    group_by(cluster, date) %>%
+    summarize_if(is.numeric, sum, na.rm=TRUE) %>%
+    arrange(date) %>%
+    mutate(cpmcum=cumsum(cases)*1000000/pop, dpmcum=cumsum(deaths)*1000000/pop) %>%
+    ungroup() %>%
+    select(cluster, date, cases=cpmcum, deaths=dpmcum) %>%
+    pivot_longer(-c(cluster, date)) %>%
+    ggplot(aes(x=date, y=value, color=cluster)) + 
+    geom_line(size=1) + 
+    geom_text(data=~filter(., date==max(date)), 
+              aes(x=date+lubridate::days(2), label=round(value)), 
+              size=3, 
+              hjust=0
+              ) +
+    labs(x="", title="Cumulative burden per million people by segment", y="") +
+    facet_wrap(~c("cases"="Cases per million", "deaths"="Deaths per million")[name], scales="free_y") + 
+    scale_x_date(date_breaks="1 months", date_labels="%b", expand=expand_scale(c(0, 0.1)))
+
+```
+  
+The segments have had very different experienced with the disease, ranging from 100 deaths per million in counties covering ~20% of US population to 1000-2000 deaths per million in counties covering ~15% and ~10% respectively of US population.  The remaining counties covering ~60% of US population have ~400 deaths per million.
+
+How well do the county segments explain some of the differences observed by state?  For example, NY/NJ had heavy and early disease, LA has had sustained disease, and FL/GA has had moderate and late disease:  
+```{r}
+
+stateCombos <- list(c("NY", "NJ", "CT", "RI", "VT", "MA", "NH", "PA"), c("LA"), c("FL", "GA", "AL"))
+fipsCounty <- helperACC_test_04 %>%
+    mutate(state=stringr::str_pad(state, width=5, side="left", pad="0")) %>%
+    count(state, cluster) %>%
+    select(fips=state, cluster)
+
+for (x in stateCombos) {
+    
+    p1 <- usmap::plot_usmap(regions="counties", include=x, values="cluster", data=fipsCounty) + 
+        scale_fill_discrete("Cluster", limits=c(1:5)) + 
+        labs(title=paste0("County clusters for states: ", paste0(x, collapse=", ")))
+    print(p1)
+    
+}
+
+```
+  
+* Florida stands out as having a few populaous counties in the "sustained" segment while most of the other counties are late.  Georgia by contrast has a meaningful number of populous coutnies that fall in the early but moderate segment, consistent with Georgia having seen less of a late spike in deaths than Florida  
+* Most counties in Louisiana have had sustained disease, consistent with the state as a whole  
+* The northeast and especially New York stands out for significant geographical variation  
+* Counties close to NYC are almost all early and hard, while NYS counties outside the NYC metro area are almost exclusively a mix of early and moderate or sustained low death rates
+* By contrast, NJ outside the NYC metro and MA both have primarily counties that have experienced sustained, moderate disease  
+* The Philadelphia area counties have experienced sustained, moderate disease while the rest of the PA looks much like the non-NYC-metro portions of NYS  
+  
+Next steps are to explore the evolution of deaths by state and cluster.
