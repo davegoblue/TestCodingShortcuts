@@ -4070,3 +4070,158 @@ for (x in stateCombos) {
 * The Philadelphia area counties have experienced sustained, moderate disease while the rest of the PA looks much like the non-NYC-metro portions of NYS  
   
 Next steps are to explore the evolution of deaths by state and cluster.
+
+Suppose that NYS is examined for coronavirus burden by segment:  
+```{r}
+
+# Helper function for pretty labeling and position of bar chart labels
+helperTextLabel <- function(vrbl, 
+                            groupVar=NULL, 
+                            groupValue=NULL, 
+                            divBy=1, 
+                            roundTo=0, 
+                            pctMin=0.1,
+                            pctOut=0.025, 
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS
+    # vrbl: the variable to be plotted
+    # groupVar: the grouping variable for deciding whether to use middle of the bar or outside
+    #           NULL means no grouping variable
+    # groupValue: the value to be used for groupVar
+    # divBy: the amount to divide the variable by (e.g., 1000 means y-axis will be in 000s)
+    # roundTo: the amount to round the displayed totals to
+    # pctMin: any amount above this will be centered, any amount below this will be outside
+    # pctOut: amounts on the outside will be this amount of maximum outside
+    # ...: any other arguments to pass "as is" to geom_text
+    
+    # Create a relevant geom_text object
+    # 1. label should be vrbl/divBy, rounded to roundTo and using commas as needed
+    # 2. y position should be centered midpoint OR left-justified end of bar
+    
+    geom_text(data=if(!is.null(groupVar)) ~filter(., get(groupVar) %in% groupValue) else ~., 
+              aes(y=ifelse(get(vrbl)>=pctMin*max(get(vrbl)), 
+                           get(vrbl)/2/divBy, 
+                           get(vrbl)/divBy + pctOut*max(get(vrbl))/divBy
+                           ), 
+                  label=scales::comma(get(vrbl)/divBy, accuracy=10**-roundTo), 
+                  hjust=ifelse(get(vrbl)>=pctMin*max(get(vrbl)), NA, 0)
+                  ), 
+              ...
+              )
+    
+}
+
+
+# Create an appropriate database for analysis
+# Get the clusters, including adding the unassigned cluster
+fullClusterData <- helperACC_test_04 %>%
+    filter(date==max(date)) %>%
+    select(fipsCounty=state, cluster) %>%
+    mutate(fipsCounty=stringr::str_pad(fipsCounty, width=5, side="left", pad="0")) %>%
+    right_join(select(usmap::countypop, fipsCounty=fips, state=abbr, countyName=county, pop=pop_2015)) %>%
+    mutate(cluster=factor(ifelse(is.na(cluster), 999, cluster)))
+
+# Merge in the disease data
+fullStateData <- countyDailyPerCapita %>%
+    mutate(fipsCounty=stringr::str_pad(state, width=5, side="left", pad="0")) %>%
+    select(-state, -population) %>%
+    right_join(fullClusterData)
+
+
+# Function to run the data for a given state(s)
+stateCountySummary <- function(states, 
+                               df=fullStateData, 
+                               keyDate=as.Date("2020-08-31"), 
+                               returnData=FALSE
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # states: the states to include in the analysis
+    # df: the data frame or tibble to use
+    # keyDate: date to use for getting cluster and population by county
+    # returnData: boolean, should the data frame be returned?
+    
+    # Filter for states
+    filteredStateData <- df %>%
+        arrange(fipsCounty, date) %>%
+        group_by(fipsCounty) %>%
+        mutate(cumDeaths=cumsum(deaths)) %>%
+        filter(state %in% c(states)) %>%
+        group_by(cluster, date) %>%
+        summarize(n=n(), dpm7=sum(dpm7*pop)/sum(pop), cumDeaths=sum(cumDeaths), pop=sum(pop)) %>%
+        ungroup()
+    
+    # Plot 1: Number of counties in cluster
+    p1 <- filteredStateData %>%
+        filter(date==keyDate) %>%
+        ggplot(aes(x=fct_rev(cluster), y=n, fill=cluster)) + 
+        geom_col() + 
+        geom_text(aes(y=n/2, label=n)) +
+        coord_flip() + 
+        labs(x="Cluster", y="# Counties", title="Counties by Cluster")
+
+    # Plot 2: Total population and average population by cluster
+    p2 <- filteredStateData %>%
+        filter(date==keyDate) %>%
+        mutate(popPer=pop/n) %>%
+        select(cluster, pop, popPer) %>%
+        pivot_longer(-cluster) %>%
+        ggplot(aes(x=fct_rev(cluster), y=value/1000, fill=cluster)) + 
+        geom_col() + 
+        helperTextLabel("value", divBy=1000, groupVar="name", groupValue="popPer", pctMin=0.2, size=3.5) +
+        helperTextLabel("value", divBy=1000, groupVar="name", groupValue="pop", pctMin=0.2, size=3.5) + 
+        coord_flip() + 
+        facet_wrap(~c("pop"="Population", "popPer"="Population per county")[name], scales="free_x") +
+        labs(x="Cluster", y="Population (000)", title="Population by Cluster")
+
+    # Plot 3: Deaths and deaths per million (total) by cluster
+    p3 <- filteredStateData %>%
+        filter(date==keyDate) %>%
+        mutate(dpm=1000000*cumDeaths/pop) %>%
+        select(cluster, cumDeaths, dpm) %>%
+        pivot_longer(-cluster) %>%
+        ggplot(aes(x=fct_rev(cluster), y=value, fill=cluster)) + 
+        geom_col() + 
+        helperTextLabel("value", groupVar="name", groupValue="cumDeaths", pctMin=0.2, size=3.5) +
+        helperTextLabel("value", groupVar="name", groupValue="dpm", pctMin=0.2, size=3.5) + 
+        coord_flip() + 
+        facet_wrap(~c("cumDeaths"="1. Total deaths", "dpm"="2. Deaths per million")[name], scales="free_x") +
+        labs(x="Cluster", y="", title="Deaths (total and per million) by cluster")
+
+    # Plot 4: Evolution of deaths by time
+    p4 <- filteredStateData %>%
+        filter(!is.na(dpm7)) %>%
+        ggplot(aes(x=date, y=dpm7, group=cluster, color=cluster)) + 
+        geom_line(size=1) + 
+        labs(x="", y="Deaths per million", title="Deaths per million, 7-day rolling mean") + 
+        scale_x_date(date_breaks="1 months", date_labels="%b", expand=expand_scale(c(0, 0.1)))
+
+    # Create a 2x2 summary of the state
+    gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2, top=paste0("States: ", paste0(states, collapse=", ")))
+    
+    # Return the state data file if requested
+    if (returnData) filteredStateData
+    
+}
+
+
+
+# Run for NY
+stateCountySummary(states=c("NY"))
+
+# Run for FL-GA
+stateCountySummary(states=c("FL", "GA"))
+
+# Run for LA-MS-AL
+stateCountySummary(states=c("LA", "MS", "AL"))
+
+# Run for East North Central region
+stateCountySummary(usmap::.east_north_central)
+
+```
+  
+The population differences by segment are consistent with the general trends observed by state.  Next steps are to add the cumulative deaths per million curve.
+
+
