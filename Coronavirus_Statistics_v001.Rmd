@@ -4134,6 +4134,9 @@ fullStateData <- countyDailyPerCapita %>%
 stateCountySummary <- function(states, 
                                df=fullStateData, 
                                keyDate=as.Date("2020-08-31"), 
+                               showQuadrants=TRUE,
+                               showCumulative=FALSE,
+                               facetCumulativeByState=FALSE,
                                returnData=FALSE
                                ) {
     
@@ -4141,68 +4144,111 @@ stateCountySummary <- function(states,
     # states: the states to include in the analysis
     # df: the data frame or tibble to use
     # keyDate: date to use for getting cluster and population by county
+    # showQuadrants: boolean, whether to create and show the four-quadrants of p1-p4
+    # showCumulative: boolean, whether to show the cumulative deaths per capita by segment
+    # facetCumulativeByState: boolean, whether to facet by state for the cumulative plot
     # returnData: boolean, should the data frame be returned?
     
-    # Filter for states
-    filteredStateData <- df %>%
+    # Create a base data frame
+    baseStateData <-df %>%
         arrange(fipsCounty, date) %>%
         group_by(fipsCounty) %>%
         mutate(cumDeaths=cumsum(deaths)) %>%
-        filter(state %in% c(states)) %>%
+        filter(state %in% c(states))
+    
+    # Create a frame by state and cluster
+    stateClusterData <- baseStateData %>%
+        group_by(state, cluster, date) %>%
+        summarize(n=n(), dpm7=sum(dpm7*pop)/sum(pop), cumDeaths=sum(cumDeaths), pop=sum(pop)) %>%
+        ungroup()
+    
+    # Create a frame by cluster
+    clusterData <- baseStateData %>%
         group_by(cluster, date) %>%
         summarize(n=n(), dpm7=sum(dpm7*pop)/sum(pop), cumDeaths=sum(cumDeaths), pop=sum(pop)) %>%
         ungroup()
     
-    # Plot 1: Number of counties in cluster
-    p1 <- filteredStateData %>%
-        filter(date==keyDate) %>%
-        ggplot(aes(x=fct_rev(cluster), y=n, fill=cluster)) + 
-        geom_col() + 
-        geom_text(aes(y=n/2, label=n)) +
-        coord_flip() + 
-        labs(x="Cluster", y="# Counties", title="Counties by Cluster")
+    # Create and show p1-p4 if requested
+    if (showQuadrants) {
+        
+        # Plot 1: Number of counties in cluster
+        p1 <- clusterData %>%
+            filter(date==keyDate) %>%
+            ggplot(aes(x=fct_rev(cluster), y=n, fill=cluster)) + 
+            geom_col() + 
+            geom_text(aes(y=n/2, label=n)) +
+            coord_flip() + 
+            labs(x="Cluster", y="# Counties", title="Counties by Cluster")
 
-    # Plot 2: Total population and average population by cluster
-    p2 <- filteredStateData %>%
-        filter(date==keyDate) %>%
-        mutate(popPer=pop/n) %>%
-        select(cluster, pop, popPer) %>%
-        pivot_longer(-cluster) %>%
-        ggplot(aes(x=fct_rev(cluster), y=value/1000, fill=cluster)) + 
-        geom_col() + 
-        helperTextLabel("value", divBy=1000, groupVar="name", groupValue="popPer", pctMin=0.2, size=3.5) +
-        helperTextLabel("value", divBy=1000, groupVar="name", groupValue="pop", pctMin=0.2, size=3.5) + 
-        coord_flip() + 
-        facet_wrap(~c("pop"="Population", "popPer"="Population per county")[name], scales="free_x") +
-        labs(x="Cluster", y="Population (000)", title="Population by Cluster")
+        # Plot 2: Total population and average population by cluster
+        p2 <- clusterData %>%
+            filter(date==keyDate) %>%
+            mutate(popPer=pop/n) %>%
+            select(cluster, pop, popPer) %>%
+            pivot_longer(-cluster) %>%
+            ggplot(aes(x=fct_rev(cluster), y=value/1000, fill=cluster)) + 
+            geom_col() + 
+            helperTextLabel("value", divBy=1000, groupVar="name", groupValue="popPer", pctMin=0.2, size=3.5) +
+            helperTextLabel("value", divBy=1000, groupVar="name", groupValue="pop", pctMin=0.2, size=3.5) + 
+            coord_flip() + 
+            facet_wrap(~c("pop"="Population", "popPer"="Population per county")[name], scales="free_x") +
+            labs(x="Cluster", y="Population (000)", title="Population by Cluster")
 
-    # Plot 3: Deaths and deaths per million (total) by cluster
-    p3 <- filteredStateData %>%
-        filter(date==keyDate) %>%
-        mutate(dpm=1000000*cumDeaths/pop) %>%
-        select(cluster, cumDeaths, dpm) %>%
-        pivot_longer(-cluster) %>%
-        ggplot(aes(x=fct_rev(cluster), y=value, fill=cluster)) + 
-        geom_col() + 
-        helperTextLabel("value", groupVar="name", groupValue="cumDeaths", pctMin=0.2, size=3.5) +
-        helperTextLabel("value", groupVar="name", groupValue="dpm", pctMin=0.2, size=3.5) + 
-        coord_flip() + 
-        facet_wrap(~c("cumDeaths"="1. Total deaths", "dpm"="2. Deaths per million")[name], scales="free_x") +
-        labs(x="Cluster", y="", title="Deaths (total and per million) by cluster")
+        # Plot 3: Deaths and deaths per million (total) by cluster
+        p3 <- clusterData %>%
+            filter(date==keyDate) %>%
+            mutate(dpm=1000000*cumDeaths/pop) %>%
+            select(cluster, cumDeaths, dpm) %>%
+            pivot_longer(-cluster) %>%
+            ggplot(aes(x=fct_rev(cluster), y=value, fill=cluster)) + 
+            geom_col() + 
+            helperTextLabel("value", groupVar="name", groupValue="cumDeaths", pctMin=0.2, size=3.5) +
+            helperTextLabel("value", groupVar="name", groupValue="dpm", pctMin=0.2, size=3.5) + 
+            coord_flip() + 
+            facet_wrap(~c("cumDeaths"="1. Total deaths", "dpm"="2. Deaths per million")[name], 
+                       scales="free_x"
+                       ) +
+            labs(x="Cluster", y="", title="Deaths (total and per million) by cluster")
 
-    # Plot 4: Evolution of deaths by time
-    p4 <- filteredStateData %>%
-        filter(!is.na(dpm7)) %>%
-        ggplot(aes(x=date, y=dpm7, group=cluster, color=cluster)) + 
-        geom_line(size=1) + 
-        labs(x="", y="Deaths per million", title="Deaths per million, 7-day rolling mean") + 
-        scale_x_date(date_breaks="1 months", date_labels="%b", expand=expand_scale(c(0, 0.1)))
+        # Plot 4: Evolution of deaths by time
+        p4 <- clusterData %>%
+            filter(!is.na(dpm7)) %>%
+            ggplot(aes(x=date, y=dpm7, group=cluster, color=cluster)) + 
+            geom_line(size=1) + 
+            labs(x="", y="Deaths per million", title="Deaths per million, 7-day rolling mean") + 
+            scale_x_date(date_breaks="1 months", date_labels="%b")
 
-    # Create a 2x2 summary of the state
-    gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2, top=paste0("States: ", paste0(states, collapse=", ")))
+        # Create a 2x2 summary of the cluster data
+        gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2, top=paste0("States: ", paste0(states, collapse=", ")))
+
+    }
+
+    # If requested, create a cumulative deaths per capita curve
+    if (showCumulative) {
+        
+        p5 <- (if (facetCumulativeByState) stateClusterData else clusterData) %>%
+            mutate(cumdpm=1000000*cumDeaths/pop) %>%
+            ggplot(aes(x=date, y=cumdpm)) +
+            geom_line(aes(group=cluster, color=cluster), lwd=1) + 
+            geom_text(data=~filter(., date==max(date)), 
+                      aes(x=date+lubridate::days(3), label=scales::comma(cumdpm, accuracy=1), color=cluster), 
+                      size=3, 
+                      hjust=0
+                      ) + 
+            labs(x="", 
+                 y="Cumulative deaths per million", 
+                 title=paste0("Cumulative deaths per million for: ", paste0(states, collapse=", "))
+                 ) + 
+            scale_x_date(date_breaks="1 months", date_labels="%b", expand=expand_scale(c(0, 0.1)))
+        if (facetCumulativeByState) p5 <- p5 + facet_wrap(~state)
+        print(p5)
+        
+    }
     
-    # Return the state data file if requested
-    if (returnData) filteredStateData
+    # Return the data file if requested (by state-cluster if facetCumulativeByState, by cluster otherwise)
+    if (returnData) {
+        if (facetCumulativeByState) stateClusterData else stateClusterData
+    }
     
 }
 
@@ -4224,4 +4270,33 @@ stateCountySummary(usmap::.east_north_central)
   
 The population differences by segment are consistent with the general trends observed by state.  Next steps are to add the cumulative deaths per million curve.
 
+The function has been updated to optionally show cumulative deaths by segment:  
+```{r}
 
+# Create cumulative for NY
+stateCountySummary(states=c("NY"), showQuadrants=FALSE, showCumulative=TRUE)
+
+# Create cumulative for FL-GA
+stateCountySummary(states=c("FL", "GA"), 
+                   showQuadrants=FALSE, 
+                   showCumulative=TRUE, 
+                   facetCumulativeByState=TRUE
+                   )
+
+# Create cumulative for LA-MS-AL
+stateCountySummary(states=c("LA", "MS", "AL"), 
+                   showQuadrants=FALSE, 
+                   showCumulative=TRUE, 
+                   facetCumulativeByState = TRUE
+                   )
+
+# Run for East North Central region
+stateCountySummary(states=usmap::.east_north_central, 
+                   showQuadrants=FALSE, 
+                   showCumulative=TRUE, 
+                   facetCumulativeByState = TRUE
+                   )
+
+```
+  
+Next steps are to control the color palette so the same colors are used even when a level of the factor is not present in the data.
