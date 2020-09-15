@@ -2088,4 +2088,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 14-SEP-2020  
 * Coronavirus_Statistics_v001 includes cumulative deaths by county segment by state  
+* Coronavirus_Statistics_v001 reorders factors for more conssitent colors and legends  
   
