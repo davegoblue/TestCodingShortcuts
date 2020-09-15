@@ -4137,6 +4137,7 @@ stateCountySummary <- function(states,
                                showQuadrants=TRUE,
                                showCumulative=FALSE,
                                facetCumulativeByState=FALSE,
+                               showAllFactorLevels=FALSE,
                                returnData=FALSE
                                ) {
     
@@ -4147,6 +4148,7 @@ stateCountySummary <- function(states,
     # showQuadrants: boolean, whether to create and show the four-quadrants of p1-p4
     # showCumulative: boolean, whether to show the cumulative deaths per capita by segment
     # facetCumulativeByState: boolean, whether to facet by state for the cumulative plot
+    # showAllFactorLevels: boolean, whether to show all factor levels in the plot legend
     # returnData: boolean, should the data frame be returned?
     
     # Create a base data frame
@@ -4179,7 +4181,8 @@ stateCountySummary <- function(states,
             geom_text(aes(y=n/2, label=n)) +
             coord_flip() + 
             labs(x="Cluster", y="# Counties", title="Counties by Cluster")
-
+        if (showAllFactorLevels) p1 <- p1 + scale_fill_discrete(drop=FALSE)
+        
         # Plot 2: Total population and average population by cluster
         p2 <- clusterData %>%
             filter(date==keyDate) %>%
@@ -4193,7 +4196,8 @@ stateCountySummary <- function(states,
             coord_flip() + 
             facet_wrap(~c("pop"="Population", "popPer"="Population per county")[name], scales="free_x") +
             labs(x="Cluster", y="Population (000)", title="Population by Cluster")
-
+        if (showAllFactorLevels) p2 <- p2 + scale_fill_discrete(drop=FALSE)
+        
         # Plot 3: Deaths and deaths per million (total) by cluster
         p3 <- clusterData %>%
             filter(date==keyDate) %>%
@@ -4209,7 +4213,8 @@ stateCountySummary <- function(states,
                        scales="free_x"
                        ) +
             labs(x="Cluster", y="", title="Deaths (total and per million) by cluster")
-
+        if (showAllFactorLevels) p3 <- p3 + scale_fill_discrete(drop=FALSE)
+        
         # Plot 4: Evolution of deaths by time
         p4 <- clusterData %>%
             filter(!is.na(dpm7)) %>%
@@ -4217,7 +4222,8 @@ stateCountySummary <- function(states,
             geom_line(size=1) + 
             labs(x="", y="Deaths per million", title="Deaths per million, 7-day rolling mean") + 
             scale_x_date(date_breaks="1 months", date_labels="%b")
-
+        if (showAllFactorLevels) p4 <- p4 + scale_color_discrete(drop=FALSE)
+        
         # Create a 2x2 summary of the cluster data
         gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2, top=paste0("States: ", paste0(states, collapse=", ")))
 
@@ -4225,12 +4231,11 @@ stateCountySummary <- function(states,
 
     # If requested, create a cumulative deaths per capita curve
     if (showCumulative) {
-        
         p5 <- (if (facetCumulativeByState) stateClusterData else clusterData) %>%
             mutate(cumdpm=1000000*cumDeaths/pop) %>%
             ggplot(aes(x=date, y=cumdpm)) +
             geom_line(aes(group=cluster, color=cluster), lwd=1) + 
-            geom_text(data=~filter(., date==max(date)), 
+            geom_text(data=~filter(., date==max(date, na.rm=TRUE)), 
                       aes(x=date+lubridate::days(3), label=scales::comma(cumdpm, accuracy=1), color=cluster), 
                       size=3, 
                       hjust=0
@@ -4239,8 +4244,9 @@ stateCountySummary <- function(states,
                  y="Cumulative deaths per million", 
                  title=paste0("Cumulative deaths per million for: ", paste0(states, collapse=", "))
                  ) + 
-            scale_x_date(date_breaks="1 months", date_labels="%b", expand=expand_scale(c(0, 0.1)))
+            scale_x_date(date_breaks="1 months", date_labels="%b", expand=expand_scale(c(0, 0.15)))
         if (facetCumulativeByState) p5 <- p5 + facet_wrap(~state)
+        if (showAllFactorLevels) p5 <- p5 + scale_color_discrete(drop=FALSE)
         print(p5)
         
     }
@@ -4300,3 +4306,133 @@ stateCountySummary(states=usmap::.east_north_central,
 ```
   
 Next steps are to control the color palette so the same colors are used even when a level of the factor is not present in the data.
+
+The option drop=FALSE inside the scale_*_discrete(drop=FALSE) appears to achieve this.  Further, it would be useful to convert the levels of the factor so that they consistently go from most to least disease on a cumulative basis.  The refactoring can be performed as:  
+```{r}
+
+# Function to reorder and relabel factors
+changeOrderLabel <- function(df, 
+                             fctVar="cluster",
+                             grpVars=c(),
+                             burdenVar="dpm", 
+                             wgtVar="pop",
+                             exclfct="999"
+                             ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: the data frame
+    # fctVar: the factor variable
+    # grpVars: the variable that the data are aurrently at (e.g., "fipsCounty" for county-level in df)
+    # burdenVar: the disease burden variable for sorting
+    # wgtVar: the weight variable for sorting
+    # exclfct: the factor lele to be excluded from analysis
+    
+    # General approach
+    # 1. Data are aggregated to c(fctVar, grpVars) as x=sum(burdenVar*wgtVar) and y=mean(wgtVar)
+    # 2. Data are aggregated to fctVar as z=sum(x)/sum(y)
+    # 3. Factors are reordered from high to low on z, with the excluded factor added back last (if it exists)
+    
+    # Check if exclfct exists in the factor variable
+    fctDummy <- exclfct %in% levels(df[, fctVar, drop=TRUE])
+    
+    # Create the summary of impact by segment
+    newLevels <- df %>%
+        filter(get(fctVar) != exclfct) %>%
+        group_by_at(vars(all_of(c(fctVar, grpVars)))) %>%
+        summarize(x=sum(get(burdenVar)*get(wgtVar)), y=mean(get(wgtVar))) %>%
+        group_by_at(vars(all_of(fctVar))) %>%
+        summarize(z=sum(x)/sum(y)) %>%
+        arrange(-z) %>%
+        pull(fctVar) %>%
+        as.character()
+    
+    # Add back the dummy factor at the end (if it exists)
+    if (fctDummy) newLevels <- c(newLevels, exclfct)
+    
+    # Reassign the levels in df
+    df %>% 
+        mutate(!!fctVar:=factor(get(fctVar), levels=newLevels, labels=newLevels))
+    
+}
+
+```
+  
+And, the plots can use all factor levels by enforcing drop=FALSE inside an appropriate scale_color_ or scale_fill_ object.  This has been updated for:  
+  
+* stateCountySummary()  
+  
+And, the evaluation process can be run using the updated functions:  
+```{r}
+
+# Run for select upper midwest states
+stateCountySummary(states=c("MN", "ND", "SD", "WI"),
+                   df=changeOrderLabel(fullStateData, grpVars="fipsCounty"),
+                   showQuadrants=TRUE, 
+                   showCumulative=TRUE, 
+                   facetCumulativeByState = TRUE, 
+                   showAllFactorLevels = TRUE
+                   )
+
+```
+  
+And since the reordering makes for easier plot interpretation, the other summaries are also re-run:  
+```{r}
+
+# Create cumulative for NY
+stateCountySummary(states=c("NY"), 
+                   df=changeOrderLabel(fullStateData, grpVars="fipsCounty"),
+                   showQuadrants=TRUE, 
+                   showCumulative=TRUE
+                   )
+
+# Create cumulative for FL-GA
+stateCountySummary(states=c("FL", "GA"), 
+                   df=changeOrderLabel(fullStateData, grpVars="fipsCounty"),
+                   showQuadrants=TRUE, 
+                   showCumulative=TRUE, 
+                   facetCumulativeByState=TRUE
+                   )
+
+# Create cumulative for LA-MS-AL
+stateCountySummary(states=c("LA", "MS", "AL"), 
+                   df=changeOrderLabel(fullStateData, grpVars="fipsCounty"),
+                   showQuadrants=TRUE, 
+                   showCumulative=TRUE, 
+                   facetCumulativeByState = TRUE
+                   )
+
+# Run for East North Central region
+stateCountySummary(states=usmap::.east_north_central, 
+                   df=changeOrderLabel(fullStateData, grpVars="fipsCounty"),
+                   showQuadrants=TRUE, 
+                   showCumulative=TRUE, 
+                   facetCumulativeByState = TRUE
+                   )
+
+```
+  
+And, the main cluster summary plots are reproduced also, with the factors reordered:  
+```{r}
+
+# Get the desired cluster order
+clustOrder <- changeOrderLabel(fullStateData, grpVars="fipsCounty") %>% 
+    filter(cluster!=999) %>% 
+    pull(cluster) %>% 
+    fct_drop() %>% 
+    levels()
+
+# Test the function on the same data as before, with the plots each on their own page
+dummy_Data_NotUse <- helperAssessCountyClusters(factor(countyCluster_km_test$objCluster$cluster, 
+                                                       levels=clustOrder
+                                                       ), 
+                                                dfPop=countyFiltered, 
+                                                dfBurden=countyFiltered, 
+                                                thruLabel="Sep 3, 2020", 
+                                                plotsTogether=TRUE, 
+                                                showMap=FALSE
+                                                )
+
+```
+  
+This requires using an output as an input as a workaround.  Next steps are to update assessClusters() and ancillary functions to include arguments for auto-creation of proper cluster levels as part of the routine.
+  
