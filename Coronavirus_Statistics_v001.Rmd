@@ -3590,6 +3590,11 @@ helperClusterSummaryPlots <- function(dfState,
     # weightedMean: boolean, whether to create weighted mean by segment (if FALSE, median by segment is taken)
     # mapLevel: the level to be used on the map
     
+    # Reorder the cluster levels in dfState to match dfPlot
+    # Convert factor order to match dfPlot (can be reordered by argument to the calling function)
+    dfState <- dfState %>%
+        mutate(cluster=factor(cluster, levels=levels(dfPlot$cluster)))
+    
     # Plot the segments on a map or show segment membership
     if (showMap) {
         if (mapLevel=="counties") {
@@ -3599,6 +3604,7 @@ helperClusterSummaryPlots <- function(dfState,
         } else {
             dfMap <- dfState
         }
+        # Create the map
         p1 <- usmap::plot_usmap(regions=mapLevel, data=dfMap, values="cluster") + 
             scale_fill_discrete("cluster") + 
             theme(legend.position="right")
@@ -3814,7 +3820,8 @@ assessClusters <- function(clusters,
                            makeTotalvsPerCapitaPlots=!isCounty, 
                            makeRecentvsTotalPlots=TRUE, 
                            makeTotalvsElementPlots=TRUE, 
-                           showMap=!isCounty
+                           showMap=!isCounty, 
+                           orderCluster=FALSE
                            ) {
     
     # FUNCTION ARGUMENTS:
@@ -3833,6 +3840,9 @@ assessClusters <- function(clusters,
     # makeRecentvsTotalPlots: boolean, should the recent vs. total plots be created?
     # makeTotalvsElementPlots: boolean, should the total vs. element plots be created?
     # showMap: boolean, whether to create a map colored by cluster (will show segment counts otherwise)
+    # orderCluster: boolean, whether to order the clusters based on disease burden
+    # ...: any additional arguments passed from a calling function
+    #      most common would be orderCluster=TRUE, a request for the clusters to be ordered by disease burden
     
     # Attach the clusters to the state population data
     dfState <- as.data.frame(clusters) %>%
@@ -3845,6 +3855,11 @@ assessClusters <- function(clusters,
     dfPlot <- dfState %>%
         inner_join(dfBurden, by="state") %>%
         tibble::as_tibble()
+    
+    # Reorder the clusters if requested
+    if (orderCluster) {
+        dfPlot <- changeOrderLabel(dfPlot, grpVars="state")
+    }
     
     # Call the helper function to make the overall summary statistics
     if (makeSummaryPlots) {
@@ -4436,3 +4451,71 @@ dummy_Data_NotUse <- helperAssessCountyClusters(factor(countyCluster_km_test$obj
   
 This requires using an output as an input as a workaround.  Next steps are to update assessClusters() and ancillary functions to include arguments for auto-creation of proper cluster levels as part of the routine.
   
+The assessClusters() function has been updated to allow for ordering of clusters by deaths per million.  Updated summaries are produced with the relevant argument:  
+```{r}
+
+helperACC_test_05 <- helperAssessCountyClusters(countyCluster_km_test$objCluster$cluster, 
+                                                dfPop=countyFiltered, 
+                                                dfBurden=countyFiltered, 
+                                                thruLabel="Sep 3, 2020", 
+                                                plotsTogether=TRUE, 
+                                                showMap=TRUE, 
+                                                clusterPlotsTogether=TRUE, 
+                                                orderCluster=TRUE
+                                                )
+
+```
+  
+The clusters are now in a consistent order from highest to lowest aggregate disease burden.
+
+Further, a function is written to create the integrated county data for plotting in the stateCountySummary() function:  
+```{r}
+
+# Create the cluster-state data
+helperMakeClusterStateData <- function(dfPlot, 
+                                       dfPop=usmap::countypop,
+                                       dfBurden=countyDailyPerCapita, 
+                                       orderCluster=FALSE
+                                       ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPlot: the raw plotting data (which can have factors already reordered)
+    # dfPop: source for full county data with population
+    # dfBurden: source for disease burden by geography
+    # orderCluster: boolean, whether to order the cluster factor order by burden
+
+    # Merge in the counties that were previously excluded from segmentation
+    df <- dfPlot %>%
+        filter(date==max(date)) %>%
+        select(fipsCounty=state, cluster) %>%
+        mutate(fipsCounty=stringr::str_pad(fipsCounty, width=5, side="left", pad="0")) %>%
+        right_join(select(dfPop, fipsCounty=fips, state=abbr, countyName=county, pop=pop_2015)) %>%
+        mutate(cluster=factor(ifelse(is.na(cluster), 999, as.character(cluster))))
+    
+    # Merge in the disease data
+    df <- dfBurden %>%
+        mutate(fipsCounty=stringr::str_pad(state, width=5, side="left", pad="0")) %>%
+        select(-state, -population) %>%
+        right_join(df)
+    
+    # Order if requested
+    if (orderCluster) df <- changeOrderLabel(df, grpVars="fipsCounty")
+    
+    # Return the relevant frame
+    df
+    
+}
+
+clusterStateData <- helperMakeClusterStateData(helperACC_test_05, orderCluster=TRUE)
+
+# Run for East North Central region
+stateCountySummary(states=usmap::.east_north_central, 
+                   df=clusterStateData,
+                   showQuadrants=TRUE, 
+                   showCumulative=TRUE, 
+                   facetCumulativeByState = TRUE
+                   )
+
+```
+  
+Next steps are to download the latest data and apply to the existing segments.
