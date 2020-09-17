@@ -2090,4 +2090,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 includes cumulative deaths by county segment by state  
 * Coronavirus_Statistics_v001 reorders factors for more consistent colors and legends  
 * Coronavirus_Statistics_v001 reorders factors prior to assessClusters()  
+* Coronavirus_Statistics_v001 includes functional form for reading and converting data  
   
