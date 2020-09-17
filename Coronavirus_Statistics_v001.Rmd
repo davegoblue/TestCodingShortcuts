@@ -4518,4 +4518,257 @@ stateCountySummary(states=usmap::.east_north_central,
 
 ```
   
-Next steps are to download the latest data and apply to the existing segments.
+Next steps are to download the latest data and apply to the existing segments.  New data are downloaded, and a function written to convert the downloaded data in to a file for analysis:  
+```{r}
+
+# Helper function to read and convert 
+helperReadConvert <- function(file, 
+                              valueName
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # file: the file for reading and converting
+    # valueName: name for the values column of the pivoted data
+    
+    # Read file
+    df <- readr::read_csv(file)
+    glimpse(df)
+
+    # Conversion of the raw data
+    dfPivot <- df %>%
+        rename(countyName=`County Name`, state=State) %>%
+        pivot_longer(-c(countyFIPS, countyName, state, stateFIPS), 
+                     names_to="date", 
+                     values_to=valueName
+                     ) %>%
+        mutate(date=lubridate::mdy(date))
+    glimpse(dfPivot)
+
+    # Conversion of the pivoted data
+    dfConverted <- countyLevelEvolution(dfPivot, 
+                                        burdenVar=valueName, 
+                                        inclStates=NULL, 
+                                        topN=5,
+                                        printPlot=FALSE, 
+                                        returnData=TRUE
+                                        )
+
+    # Return the converted file
+    dfConverted
+    
+}
+
+
+
+# Function to read and convert raw data from USA Facts
+readUSAFacts <- function(caseFile, 
+                         deathFile, 
+                         stateClusters=NULL
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # caseFile: the location of the downloaded cases dataset
+    # deathsFile: the location of the downloaded deaths dataset
+    # stateClusters: a field 'cluster' will be created from this named vector (if NULL, 'cluster' will be NA)
+    
+    # Read cases file
+    cnvCases <- helperReadConvert(caseFile, valueName="cumCases")
+    
+    # Read deaths file
+    cnvDeaths <- helperReadConvert(deathFile, valueName="cumDeaths")
+
+    # Join the files so there is countyFIPS-county-population-date and cumCases cumDeaths
+    # Also, add the state segments as 'cluster' if requested
+    dfBurden <- cnvDeaths %>% 
+        select(-countyName.x, -countyName.y, -bold, cumDeathPer=burden) %>%
+        inner_join(cnvCases %>% 
+                       select(-countyName.x, -countyName.y, -bold, cumCasesPer=burden), 
+                   by=c("countyFIPS", "stateFIPS", "county", "state", "date", "population")
+                   ) %>%
+    mutate(cluster=if(is.null(stateClusters)) NA else stateClusters[state])
+    
+    # Return the burdens file
+    dfBurden
+    
+}
+
+
+# Get the clusters used previously in burdenUS
+oldClusters <- burdenUS %>%
+    count(state, cluster) %>%
+    select(-n)
+oldcvec <- pull(oldClusters, cluster)
+names(oldcvec) <- oldClusters$state
+
+# File read in from previous data
+burden_20200903 <- readUSAFacts(
+    caseFile="./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20200903.csv", 
+    deathFile="./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20200903.csv", 
+    stateClusters=oldcvec
+    )
+
+# Comparison of components
+burden_20200903 %>% 
+    anti_join(select(burdenUS, countyFIPS)) %>% 
+    count(state, county)
+table(rowSums((burden_20200903 %>% semi_join(select(burdenUS, countyFIPS)) != burdenUS)))
+
+```
+  
+The files are identical, with the exception that burden_20200903 includes the county names that are mismatched to usmap::countypop.  A function is written to analyze the burden data:  
+```{r}
+
+# Function to plot the burden by cluster
+plotBurdenData <- function(df, 
+                           maxDate, 
+                           minPop
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the burden data
+    # maxDate: the maximum date
+    # minPop: the minimum population
+
+    # Create a date label
+    dateLabel <- format(as.Date(maxDate), "%b %d, %Y")
+    
+    # Plot the data as of maxDate
+    p1 <- df %>%
+        filter(date==maxDate, population>=minPop) %>%
+        ggplot(aes(x=cumCasesPer, y=cumDeathPer)) + 
+        geom_point(aes(size=log10(population), color=factor(cluster)), alpha=0.25) + 
+        geom_smooth(method="lm", se=FALSE, aes(weight=population, color=factor(cluster))) +
+        scale_size_continuous("log10\nCounty\nPop") + 
+        labs(x=paste0("Cases per million as of ", dateLabel), 
+             y=paste0("Deaths per million as of ", dateLabel), 
+             title=paste0("County-level per-capita coronavirus burden as of ", dateLabel), 
+             subtitle=paste0("Filtered to counties with population of at least ", minPop)
+             ) + 
+        facet_wrap(~cluster)
+    print(p1)
+    
+    # Further, the total burden by cluster is plotted
+    p2 <- burdenUS %>%
+        filter(date==maxDate, population>=0) %>%
+        group_by(cluster) %>%
+        summarize(population=sum(population), 
+                  cumCases=sum(cumCases), 
+                  cumDeath=sum(cumDeaths), 
+                  mdn_CasesPer=median(cumCasesPer), 
+                  mdn_DeathPer=median(cumDeathPer)
+                  ) %>%
+        mutate(mean_CasesPer=1000000*cumCases/population, mean_DeathPer=1000000*cumDeath/population) %>%
+        select(cluster, starts_with("mdn"), starts_with("mean")) %>%
+        pivot_longer(-cluster) %>%
+        mutate(aggType=stringr::str_replace(name, "_.*", ""), 
+               metType=stringr::str_replace(name, ".*_", "")
+               ) %>%
+        pivot_wider(c(cluster, aggType), names_from="metType", values_from="value") %>%
+        ggplot(aes(x=CasesPer, y=DeathPer)) + 
+        geom_point(aes(color=factor(cluster)), size=5) + 
+        labs(x=paste0("Cases per million as of ", dateLabel), 
+             y=paste0("Deaths per million as of ", dateLabel), 
+             title=paste0("Cluster-level per-capita coronavirus burden as of ", dateLabel), 
+             subtitle="State-level clusters based on hierarchical (method=`complete`)"
+             ) + 
+        scale_color_discrete("Cluster") +
+        ylim(c(0, NA)) + 
+        xlim(c(0, NA)) + 
+        facet_wrap(~c("mdn"="Median of all counties in segment", "mean"="Segment-level metric")[aggType])
+    print(p2)
+
+}
+
+plotBurdenData(burden_20200903, maxDate="2020-09-01", minPop=10000)
+
+```
+  
+And a function is written to create the file used for further analysis:  
+```{r}
+
+# Create the filtered county data frame
+createCountyFiltered <- function(df, 
+                                 maxDate, 
+                                 minPop
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame with the burden data
+    # maxDate: the last date to use
+    # minPop: the minimum population to use
+    
+    # STEP 1: Select only desired variables from df
+    df <- df %>%
+        select(state=countyFIPS, date, cpm=cumCasesPer, dpm=cumDeathPer, population) %>%
+        arrange(state, date)
+    
+    # STEP 1a: Confirm that there are no duplicates and that every county has the same dates
+    # This should be 1 provided that there are no duplicates
+    cat("\nThis should be 1, otherwise there are duplicates\n")
+    df %>% 
+        count(state, date) %>% 
+        pull(n) %>% 
+        max() %>%
+        print()
+    cat("\n\n\n")
+
+    # This should have no standard deviation if the same number of records exist on every day
+    cat("\nMin and max should be the same if there are records everywhere on every day\n")
+    df %>%
+        mutate(n=1) %>%
+        group_by(date) %>%
+        summarize(n=sum(n), population=sum(population)) %>%
+        summarize_at(vars(all_of(c("n", "population"))), .funs=list(min=min, max=max)) %>%
+        print()
+    cat("\n\n\n")
+    
+    # STEP 2: Convert to daily new totals rather than cumulative data
+    dfDaily <- df %>%
+        group_by(state) %>%
+        arrange(date) %>%
+        mutate_at(vars(all_of(c("cpm", "dpm"))), ~ifelse(row_number()==1, ., .-lag(.))) %>%
+        ungroup()
+
+    # STEP 2a: Add rolling 7 aggregates and total cases/deaths
+    dfDaily <- dfDaily %>%
+        arrange(state, date) %>%
+        group_by(state) %>%
+        helperRollingAgg(origVar="cpm", newName="cpm7", k=7) %>%
+        helperRollingAgg(origVar="dpm", newName="dpm7", k=7) %>%
+        ungroup() %>%
+        mutate(cases=cpm*population/1000000, deaths=dpm*population/1000000)
+
+    # STEP 3: Filter the data frame for date and minimum population
+    # Ensure that 'state' (which holds countyFIPS) is not summed as a double
+    dfFiltered <- dfDaily %>%
+        filter(population >= minPop, date <= as.Date(maxDate)) %>%
+        mutate(state=as.character(state))
+
+    # Check number of counties that will fail the test for 100 deaths per million or 5000 cases per million
+    is0 <- function(x) mean(x==0)
+    isltn <- function(x, n) mean(x<n)
+    islt100 <- function(x) isltn(x, n=100)
+    islt5000 <- function(x) isltn(x, n=5000)
+
+    dfFiltered %>% 
+        group_by(state) %>% 
+        summarize_at(c("cpm", "dpm"), sum) %>% 
+        ungroup() %>%
+        summarize_at(vars(all_of(c("cpm", "dpm"))), 
+                     .funs=list(mean_is0=is0, mean_lt100=islt100, mean_lt5000=islt5000)
+                     ) %>%
+        print()
+    
+    # Return the data file
+    dfFiltered
+    
+}
+
+countyFiltered_20200903 <- createCountyFiltered(burden_20200903, maxDate="2020-08-31", minPop=25000)
+all.equal(countyFiltered_20200903, countyFiltered)
+
+```
+  
+With the functions in place, the next step is to download new data and run it through the preparatory functions.
+  
+
