@@ -2092,4 +2092,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 reorders factors prior to assessClusters()  
 * Coronavirus_Statistics_v001 includes functional form for reading and converting data  
 * Coronavirus_Statistics_v001 reads in more recent data  
+* Coronavirus_Statistics_v001 explores relationships in trends for cases and deaths  
   
