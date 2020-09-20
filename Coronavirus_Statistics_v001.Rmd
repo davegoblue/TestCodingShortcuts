@@ -4858,4 +4858,91 @@ There are significant differences in behavior with early epidemic and late epide
   
 Next steps are to begin quantifying the lag factor and ratio, focused for now on the cluster-level data  
   
+Suppose that the "early pandemic" is defined as March-May and an attempt is made to best line up the shapes of the curves during that time period:  
+```{r}
+
+clusterNorm %>%
+    select(cluster, date, caseNorm, deathNorm) %>%
+    pivot_longer(-c(cluster, date)) %>%
+    filter(!is.na(value), date>="2020-03-01", date<="2020-05-31") %>%
+    ggplot(aes(x=date, 
+               y=value, 
+               color=c("deathNorm"="Normalized Death", "caseNorm"="Normalized Cases")[name], 
+               group=name
+               )
+           ) + 
+    geom_line() + 
+    facet_wrap(~cluster) + 
+    scale_color_discrete("Metric") + 
+    scale_x_date(date_breaks="1 months", date_labels="%m") + 
+    labs(x="2020", 
+         y="Normalized Burden", 
+         title="Burden by Segment (March 1 - May 31)", 
+         subtitle="Normalized (100 is segment maximum for metric)"
+         )
+
+clusterMarchMay <- clusterNorm %>%
+    select(cluster, date, cpm7, dpm7) %>%
+    filter(!is.na(cpm7), !is.na(dpm7), date>="2020-03-01", date<="2020-05-31")
+
+helperCorrel <- function(lagDays, df=clusterMarchMay, x="cpm7", y="dpm7") {
+    df %>%
+        group_by(cluster) %>%
+        arrange(date) %>%
+        mutate(xlag=lag(get(x), lagDays)) %>%
+        summarize(corr=cor(xlag, get(y), use="complete.obs")) %>%
+        mutate(lag=lagDays) %>%
+        ungroup()
+}
+
+corrLagEarly <- map_dfr(.x=0:30, .f=helperCorrel) 
+
+corrLagEarly %>%
+    ggplot(aes(x=lag, y=corr)) +
+    geom_line(aes(group=cluster, color=cluster)) + 
+    facet_wrap(~cluster)
+
+```
+  
+The two segments with early disease show stronger correlations between deaths and cases with a bit of a lag.  The best lag time for each cluster is identified:  
+```{r}
+
+bestLag <- corrLagEarly %>%
+    group_by(cluster) %>%
+    filter(corr==max(corr)) %>%
+    ungroup()
+
+bestLag
+
+```
+  
+There is roughly a 1-week lag between cases and deaths in the early pandemic.  The ratio of deaths to cases can then be calculated on the lag data:  
+```{r}
+
+clusterMarchMay %>%
+    inner_join(bestLag, by="cluster") %>%
+    group_by(cluster) %>%
+    arrange(date) %>%
+    mutate(cpmlag=lag(cpm7, min(lag))) %>%
+    filter(!is.na(cpmlag)) %>%
+    mutate(ratCur=dpm7/cpmlag, ratCum=cumsum(dpm7)/cumsum(cpmlag)) %>%
+    ggplot(aes(x=date, group=cluster, color=cluster)) + 
+    geom_line(aes(y=ratCum)) +
+    geom_line(aes(y=ratCur), lty=2) + 
+    labs(x="", 
+         y="Cumulative Death vs. Case Ratio", 
+         title="Deaths vs. Cases with Lag (Early Pandemic)", 
+         subtitle="Solid line is cumulative, dashed line is current time period"
+         ) + 
+    geom_text(data=~filter(., date==max(date)), 
+              aes(label=paste0(round(100*ratCum, 1), "%"), y=ratCum+0.02)
+              ) +
+    facet_wrap(~cluster)
+
+```
+  
+In the heavier hit early clusters, there was roughly a one-week lag between cases and deaths, and deaths ran between 5% and 10% of cases.  The segments that were not hit as heavy generally showed a lower number of deaths relative to cases.
+
+Next steps are to generalize the approach so that it can be applied to different geographies and timings.
+  
 
