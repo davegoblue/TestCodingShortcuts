@@ -4943,6 +4943,194 @@ clusterMarchMay %>%
   
 In the heavier hit early clusters, there was roughly a one-week lag between cases and deaths, and deaths ran between 5% and 10% of cases.  The segments that were not hit as heavy generally showed a lower number of deaths relative to cases.
 
-Next steps are to generalize the approach so that it can be applied to different geographies and timings.
-  
+Next steps are to generalize the approach so that it can be applied to different geographies and timings:  
+```{r}
 
+# Helper function to make normalized data for cases and deaths
+helperMakeNormData <- function(df, 
+                               aggBy="cluster", 
+                               plotData=TRUE
+                               ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble
+    # aggBy: variable for aggregation for the normalized data
+    # plotData: boolean, whether to plot the data
+    
+    # Create the normalized data
+    normData <- df %>%
+        group_by_at(vars(all_of(c(aggBy, "date")))) %>%
+        summarize(cpm7=sum(pop*cpm7)/sum(pop), dpm7=sum(pop*dpm7)/sum(pop), pop=sum(pop)) %>%
+        group_by_at(vars(all_of(aggBy))) %>%
+        mutate(caseNorm=100*cpm7/max(cpm7, na.rm=TRUE), deathNorm=100*dpm7/max(dpm7, na.rm=TRUE)) %>%
+        ungroup()
+    
+    # Plot the normalized data (if requested)
+    if (plotData) {
+        # Create the plotting object
+        p1 <- normData %>%
+            select(all_of(aggBy), date, caseNorm, deathNorm) %>%
+            pivot_longer(-c(all_of(aggBy), "date")) %>%
+            filter(!is.na(value)) %>%
+            ggplot(aes(x=date, 
+                       y=value, 
+                       color=c("deathNorm"="Normalized Death", "caseNorm"="Normalized Cases")[name], 
+                       group=name
+                       )
+                   ) + 
+            geom_line() + 
+            facet_wrap(~get(aggBy)) + 
+            scale_color_discrete("Metric") + 
+            scale_x_date(date_breaks="1 months", date_labels="%m") + 
+            labs(x="2020", 
+                 y="Normalized Burden", 
+                 title="Burden by Segment", 
+                 subtitle="Normalized (100 is segment maximum for metric)"
+                 )
+        print(p1)
+    }
+
+    # Return the normalized data
+    normData
+    
+}
+
+cNorm_002 <- helperMakeNormData(helper_test_20200917)
+identical(cNorm_002, clusterNorm)
+
+```
+  
+Subsets of the data can then be taken, with lags calculated:  
+```{r}
+
+# Helper function to assess the correlations by lag
+helperCorrel <- function(lagDays, df, aggBy="cluster", x="cpm7", y="dpm7") {
+    df %>%
+        group_by_at(vars(all_of(aggBy))) %>%
+        arrange(date) %>%
+        mutate(xlag=lag(get(x), lagDays)) %>%
+        summarize(corr=cor(xlag, get(y), use="complete.obs")) %>%
+        mutate(lag=lagDays) %>%
+        ungroup()
+}
+
+
+
+# Function to test lags and produce subsetted frame
+helperTestLags <- function(df,
+                           minDate=NULL, 
+                           maxDate=NULL,
+                           aggBy="cluster", 
+                           plotData=TRUE
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble
+    # minDate: the minimum date to use for analysis (NULL means use data minimum)
+    # maxDate: the maximum date to use for analysis (NULL means use data minimum)
+    # aggBy: the aggregation level for the input data in df
+    # plotData: boolean, whether to plot the subset of the data
+    
+    # Get the minimum and/or maximum date from the data if passed as NULL
+    if (is.null(minDate)) minDate <- df %>% pull(date) %>% min(na.rm=TRUE) else minDate <- as.Date(minDate)
+    if (is.null(maxDate)) maxDate <- df %>% pull(date) %>% max(na.rm=TRUE) else maxDate <- as.Date(maxDate)
+    
+    # Filter the data to only the desired columns and time periods
+    filterData <- df %>%
+        select(all_of(aggBy), date, cpm7, dpm7) %>%
+        filter(!is.na(cpm7), !is.na(dpm7), date>=minDate, date<=maxDate)
+
+    # Create the plot data if requested
+    if (plotData) {
+        p1 <- filterData %>%
+            pivot_longer(-c(all_of(aggBy), date)) %>%
+            group_by_at(vars(all_of(c(aggBy, "name")))) %>%
+            mutate(normValue=100*value/max(value)) %>%
+            filter(!is.na(normValue)) %>%
+            ggplot(aes(x=date, 
+                       y=normValue, 
+                       color=c("dpm7"="Normalized Death", "cpm7"="Normalized Cases")[name], 
+                       group=name
+                       )
+                   ) + 
+            geom_line() + 
+            facet_wrap(~get(aggBy)) + 
+            scale_color_discrete("Metric") + 
+            scale_x_date(date_breaks="1 months", date_labels="%m") + 
+            labs(x="2020", 
+                 y="Normalized Burden", 
+                 title=paste0("Burden by Segment (", 
+                              format(minDate, "%b %d"), 
+                              " - ", 
+                              format(maxDate, "%b %d"),
+                              ")"
+                              ), 
+                 subtitle="Normalized (100 is segment maximum for metric during time period)"
+                 )
+        print(p1)
+    }
+
+    # Test the various lags for correlations
+    corrLagEarly <- map_dfr(.x=0:30, .f=helperCorrel, df=filterData)
+    
+    # Plot of correlations
+    p2 <- corrLagEarly %>%
+        ggplot(aes(x=lag, y=corr)) +
+        geom_line(aes(group=get(aggBy), color=get(aggBy))) + 
+        facet_wrap(~get(aggBy)) + 
+        labs(x="Lag (days) for cases", 
+             y="Correlation to deaths", 
+             title="Correlation of lagged cases and deaths"
+             )
+    print(p2)
+
+    # Find the best lags for each aggBy
+    bestLag <- corrLagEarly %>%
+        group_by_at(vars(all_of(aggBy))) %>%
+        filter(corr==max(corr)) %>%
+        ungroup()
+
+    cat("\nThe best lags are:\n")
+    print(bestLag)
+
+    # Create the lagged database
+    lagData <- filterData %>%
+        inner_join(bestLag, by=aggBy) %>%
+        group_by_at(vars(all_of(aggBy))) %>%
+        arrange(date) %>%
+        mutate(cpmlag=lag(cpm7, min(lag)))
+    
+    # Create the plot of the lagged database
+    p3 <- lagData %>%
+        filter(!is.na(cpmlag)) %>%
+        mutate(ratCur=dpm7/cpmlag, ratCum=cumsum(dpm7)/cumsum(cpmlag)) %>%
+        ggplot(aes(x=date, group=get(aggBy), color=get(aggBy))) + 
+        geom_line(aes(y=ratCum)) +
+        geom_line(aes(y=ratCur), lty=2) + 
+        labs(x="", 
+             y="Cumulative Death vs. Case Ratio", 
+             title="Deaths vs. Cases with Lag (Early Pandemic)", 
+             subtitle="Solid line is cumulative, dashed line is current time period"
+             ) + 
+        geom_text(data=~filter(., date==max(date)), 
+                  aes(label=paste0(round(100*ratCum, 1), "%"), y=ratCum+0.02, x=date-lubridate::days(10))
+                  ) +
+        facet_wrap(~get(aggBy))
+    print(p3)
+    
+    # Return the lagged data
+    lagData
+    
+}
+
+# Create for early pandemic
+lagData_early_002 <- helperTestLags(cNorm_002, minDate="2020-03-01", maxDate="2020-05-31")
+
+# Create for late pandemic
+lagData_late_002 <- helperTestLags(cNorm_002, minDate="2020-06-01", maxDate="2020-08-31")
+
+```
+  
+Lags for segments with late disease appear to be in the 3-week range, suggestive that cases may be diagnosed earlier in the late pandemic.  Fatality rates are generally much lower in the 'late disease' segments also, in the 1%-2% range rather than the previously observed 5%-10% range.  This is consistent with expanded testing finding more cases of mild disease, a hypothesis that has been piublicly floated.
+
+Next steps are to drill down to various levels such as specific counties.
