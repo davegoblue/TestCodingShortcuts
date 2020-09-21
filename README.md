@@ -2095,3 +2095,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 explores relationships in trends for cases and deaths  
 * Coronavirus_Statistics_v001 explores lag for cases and deaths in early pandemic  
   
+### Expansions week of 21-SEP-2020  
+* Coronavirus_Statistics_v001 converts lag exploration to functional form  
+  
