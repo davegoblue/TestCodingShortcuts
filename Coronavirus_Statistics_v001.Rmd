@@ -5021,6 +5021,8 @@ helperTestLags <- function(df,
                            minDate=NULL, 
                            maxDate=NULL,
                            aggBy="cluster", 
+                           maxRatio=1,
+                           minRatio=-0.05,
                            plotData=TRUE
                            ) {
     
@@ -5029,6 +5031,8 @@ helperTestLags <- function(df,
     # minDate: the minimum date to use for analysis (NULL means use data minimum)
     # maxDate: the maximum date to use for analysis (NULL means use data minimum)
     # aggBy: the aggregation level for the input data in df
+    # maxRatio: the maximum ratio of deaths to cases (flat-line at this ratio if above)
+    # minRatio: the minimum ratio of deaths to cases (flat-line at this ratio if below)
     # plotData: boolean, whether to plot the subset of the data
     
     # Get the minimum and/or maximum date from the data if passed as NULL
@@ -5071,7 +5075,7 @@ helperTestLags <- function(df,
     }
 
     # Test the various lags for correlations
-    corrLagEarly <- map_dfr(.x=0:30, .f=helperCorrel, df=filterData)
+    corrLagEarly <- map_dfr(.x=0:30, .f=helperCorrel, df=filterData, aggBy=aggBy)
     
     # Plot of correlations
     p2 <- corrLagEarly %>%
@@ -5103,18 +5107,30 @@ helperTestLags <- function(df,
     # Create the plot of the lagged database
     p3 <- lagData %>%
         filter(!is.na(cpmlag)) %>%
-        mutate(ratCur=dpm7/cpmlag, ratCum=cumsum(dpm7)/cumsum(cpmlag)) %>%
+        mutate(ratCur=pmax(minRatio, pmin(maxRatio, dpm7/cpmlag)), 
+               ratCum=pmax(minRatio, pmin(maxRatio, cumsum(dpm7)/cumsum(cpmlag)))
+               ) %>%
         ggplot(aes(x=date, group=get(aggBy), color=get(aggBy))) + 
         geom_line(aes(y=ratCum)) +
         geom_line(aes(y=ratCur), lty=2) + 
         labs(x="", 
              y="Cumulative Death vs. Case Ratio", 
-             title="Deaths vs. Cases with Lag (Early Pandemic)", 
-             subtitle="Solid line is cumulative, dashed line is current time period"
+             title="Deaths vs. Cases with Lag (Subsetted Time Period)", 
+             subtitle="Solid line is cumulative, dashed line is current time period",
+             caption=paste0("Ratio of death to cases capped between ", 
+                            round(maxRatio, 3), 
+                            " and ", 
+                            round(minRatio, 3),
+                            " for plotting")
              ) + 
         geom_text(data=~filter(., date==max(date)), 
-                  aes(label=paste0(round(100*ratCum, 1), "%"), y=ratCum+0.02, x=date-lubridate::days(10))
+                  aes(label=paste0(round(100*ratCum, 1), "%"), 
+                      y=ratCum, 
+                      x=date+lubridate::days(3)
+                      ), 
+                  hjust=0
                   ) +
+        scale_x_date(date_breaks="1 months", date_labels="%m", expand=expand_scale(mult=c(0, 0.2))) + 
         facet_wrap(~get(aggBy))
     print(p3)
     
@@ -5133,4 +5149,60 @@ lagData_late_002 <- helperTestLags(cNorm_002, minDate="2020-06-01", maxDate="202
   
 Lags for segments with late disease appear to be in the 3-week range, suggestive that cases may be diagnosed earlier in the late pandemic.  Fatality rates are generally much lower in the 'late disease' segments also, in the 1%-2% range rather than the previously observed 5%-10% range.  This is consistent with expanded testing finding more cases of mild disease, a hypothesis that has been piublicly floated.
 
-Next steps are to drill down to various levels such as specific counties.
+Next steps are to drill down to various levels such as specific counties:  
+  
+1.  Restrict analysis to counties of 100k+ people  
+2.  Pull top-3 counties for deaths per million by cluster  
+3.  Restrict data to this group and analyze  
+  
+```{r}
+
+# Extract a list of the heaviest hit counties with population 1000k+
+keyCounties <- helper_test_20200917 %>%
+    mutate(state=str_pad(state, width=5, side="left", pad="0")) %>%
+    filter(pop >= 100000) %>%
+    group_by(state, cluster) %>%
+    summarize(dpm=sum(dpm), pop=mean(pop)) %>%
+    group_by(cluster) %>%
+    top_n(n=3, wt=dpm) %>%
+    ungroup() %>%
+    arrange(cluster, -dpm) %>%
+    inner_join(select(usmap::countypop, -pop_2015), by=c("state"="fips")) %>%
+    mutate(countyName=paste0(cluster, " - ", stringr::str_replace(county, "County", "("), abbr, ")")) %>%
+    select(-abbr, -county)
+
+```
+  
+The data can then be run through the functional process:  
+```{r}
+
+# Keep only the key counties
+cNorm_keyCounties <- helper_test_20200917 %>%
+    mutate(state=str_pad(state, width=5, side="left", pad="0")) %>%
+    inner_join(select(keyCounties, state, countyName), by=c("state"="state")) %>%
+    helperMakeNormData(aggBy=c("countyName", "state", "cluster"))
+
+# Create lags for early pandemic
+lagData_early_keycounties <- helperTestLags(cNorm_keyCounties, 
+                                            minDate="2020-03-01", 
+                                            maxDate="2020-05-31", 
+                                            aggBy=c("countyName", "state", "cluster"), 
+                                            maxRatio=0.25
+                                            )
+
+# Create lags for late pandemic
+lagData_late_keycounties <- helperTestLags(cNorm_keyCounties, 
+                                           minDate="2020-06-01", 
+                                           maxDate="2020-08-31", 
+                                           aggBy=c("countyName", "state", "cluster"), 
+                                           maxRatio=0.25
+                                           )
+
+```
+  
+Data by county are much noisier than data by cluster, with particular impact from specific timing of data subtractions and additions.  At a glance, similar patterns are observed as at the cluster-level:  
+  
+* Lags between cases and deaths are longer in the later pandemic  
+* Death rates as a function of lagged cases are lower in the later pandemic
+  
+Next steps are to make assessments specifically for counties within several of the states that are broadly reflective of the early pandemic and late pandemic archetypes.
