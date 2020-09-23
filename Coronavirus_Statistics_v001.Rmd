@@ -5205,4 +5205,124 @@ Data by county are much noisier than data by cluster, with particular impact fro
 * Lags between cases and deaths are longer in the later pandemic  
 * Death rates as a function of lagged cases are lower in the later pandemic
   
-Next steps are to make assessments specifically for counties within several of the states that are broadly reflective of the early pandemic and late pandemic archetypes.
+Next steps are to make assessments specifically for counties within several of the states that are broadly reflective of the early pandemic and late pandemic archetypes:  
+```{r}
+
+# Explore the top-n counties by population in a subset of states
+exploreTopCounties <- function(df, 
+                               minDate, 
+                               maxDate,
+                               minPop=100000, 
+                               states=state.abb, 
+                               nVar="pop",
+                               nKey=9
+                               ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble containing county (as variable 'state'), cluster, pop, date, dpm, cpm
+    # minDate: minimum date for lags
+    # maxDate: maximum date for lags
+    # states: the states for filtering
+    # minPop: minimum population for including as a top county
+    # nVar: the variable to use for top-n (should be "pop" or "dpm")
+    # nKey: the number of counties to pull for top-N
+    
+    minDate <- as.Date(minDate)
+    maxDate <- as.Date(maxDate)
+    
+    # Extract a list of the heaviest hit counties with population 1000k+
+    ctyFilter <- df %>%
+        mutate(state=str_pad(state, width=5, side="left", pad="0")) %>%
+        inner_join(select(usmap::countypop, -pop_2015), by=c("state"="fips")) %>%
+        mutate(countyName=paste0(cluster, " - ", stringr::str_replace(county, "County", "("), abbr, ")")) %>%
+        filter(pop >= minPop, abbr %in% states) %>%
+        group_by(state, cluster, countyName) %>%
+        summarize(dpm=sum(dpm), pop=mean(pop)) %>%
+        ungroup() %>%
+        top_n(n=nKey, wt=get(nVar)) %>%
+        arrange(desc(get(nVar)))
+
+    # Display the list of key counties
+    cat("\n*** KEY COUNTIES INCLUDE: ***\n")
+    print(ctyFilter)
+    
+    # Keep only the key counties and normalize the data
+    cNorm_key <- df %>%
+        mutate(state=str_pad(state, width=5, side="left", pad="0")) %>%
+        inner_join(select(ctyFilter, state, countyName), by=c("state"="state")) %>%
+        helperMakeNormData(aggBy=c("countyName", "state", "cluster"))
+
+    # Create lags for given time period
+    lag_key <- helperTestLags(cNorm_key, 
+                              minDate=minDate, 
+                              maxDate=maxDate, 
+                              aggBy=c("countyName", "state", "cluster"), 
+                              maxRatio=0.25
+                              )
+
+    # Return the lagged data
+    lag_key
+    
+}
+
+# Run for top-12 counties early
+exploreTopCounties(helper_test_20200917, minDate="2020-03-01", maxDate="2020-05-31", nVar="pop", nKey=12)
+
+# Run for top-12 counties late
+exploreTopCounties(helper_test_20200917, minDate="2020-06-15", maxDate="2020-09-15", nVar="pop", nKey=12)
+
+```
+  
+Findings are broadly consistent with previous, including greater lags and lower ratios of deaths vs. cases in the later pandemic.  Cook (IL) stands out as having negative correlation between cases and deaths in the late pandemic, driven by declining deaths even as cases rise.  Arguably, the early pandemic in Cook had not ended by June 15, so the odd correlations may be driven by selection of time period.
+
+Suppose that the analysis is filtered to NY-NJ-CT-MA:  
+```{r}
+
+# Run for top-12 counties early
+exploreTopCounties(helper_test_20200917, 
+                   minDate="2020-03-01", 
+                   maxDate="2020-05-31", 
+                   states=c("NY", "NJ", "MA", "CT"),
+                   nVar="pop", 
+                   nKey=12
+                   )
+
+```
+  
+Curves are broadly consistent with an early epidemic region.  There is roughly a 5-10 day lag between cases and deaths, and death rates as a proportion of cases are in the 5%-15% range.
+
+The data are then explored for the late pandemic:  
+```{r}
+
+# Run for top-12 counties late
+exploreTopCounties(helper_test_20200917, 
+                   minDate="2020-06-15", 
+                   maxDate="2020-09-15", 
+                   states=c("NY", "NJ", "MA", "CT"),
+                   nVar="pop", 
+                   nKey=12
+                   )
+
+```
+  
+Curves are broadly consistent with an early epidemic region.  There is generally a low correlation between cases and deaths, and it appears to be driven by spiking counts (potentially data restatements) for a week in late June or early July.  Deaths as a proportion of cases are much lower.
+
+Suppose that the region is assessed over the full pandemic time period:  
+```{r}
+
+# Run for top-12 counties full
+exploreTopCounties(helper_test_20200917, 
+                   minDate="2020-03-01", 
+                   maxDate="2020-09-15", 
+                   states=c("NY", "NJ", "MA", "CT"),
+                   nVar="pop", 
+                   nKey=12
+                   )
+
+```
+  
+Consistent with a region dominated by early epidemic, findings for the full time period closely match findings for the early-pandemic time period.
+
+Next steps are to explore states that fall in the late pandemic segment and the consistent pandemic segment.
+
+
