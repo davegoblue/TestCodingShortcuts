@@ -2099,4 +2099,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 converts lag exploration to functional form  
 * Coronavirus_Statistics_v001 explores relationships between cases and deaths by county  
 * Coronavirus_Statistics_v001 explores lags for early pandemic states  
+* Coronavirus_Statistics_v001 explores lags for late pandemic states  
   
