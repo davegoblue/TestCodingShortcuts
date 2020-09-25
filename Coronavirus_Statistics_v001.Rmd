@@ -5367,4 +5367,251 @@ The individual counties of Louisiana appear to be a mix of those hit earlier, th
 
 Next steps are to explore in more detail the "excess deaths" available from the CDC, and to see how that relates to the cases and deaths data.
 
+The CDC maintain public data for all-cause deaths by week and jurisdiction, available at [CDC Weekly Deaths by Jurisdiction](https://catalog.data.gov/dataset/weekly-counts-of-deaths-by-jurisdiction-and-age-group).  
 
+These data are known to have a lag between death and reporting, and the CDC back-correct to report deaths at the time the death occurred even if the death is reported in following weeks.  This means totals for recent weeks tend to run low (lag), and the CDC run a projection of the expected total number of deaths given the historical lag times.  Per other analysts on the internet, there is currently significant supra-lag, with lag times much longer than historical averages causing CDC projected deaths for recent weeks to be low.
+
+The file has been downloaded and has data through the week ending 12-SEP-2020.  Fields include:  
+  
+* Jurisdiction (state)  
+* Week Ending  
+* State Abbreviation  
+* Year  
+* Week (week of year, starts at 1)  
+* Age Group (bucketed)  
+* Number of Deaths  
+* Time Period (2015-2019 or 2020)  
+* Type (Predicted (weighted) or Unweighted)  
+* Suppress (whether data are suppressed and not reported)  
+* Note  
+  
+The data are read in, with names modified and data types wrangled as appropriate:  
+```{r}
+
+fName <- "./RInputFiles/Coronavirus/Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20200923.csv"
+
+cdcRaw <- readr::read_csv(fName, col_types="ccciicdcccc")
+glimpse(cdcRaw)
+
+cdcRenamed <- cdcRaw %>%
+    rename(weekEnding=`Week Ending Date`, 
+           state=`State Abbreviation`, 
+           year=Year, 
+           week=Week, 
+           age=`Age Group`, 
+           deaths=`Number of Deaths`, 
+           period=`Time Period`, 
+           type=Type
+           ) %>%
+    mutate(weekEnding=lubridate::mdy(weekEnding))
+glimpse(cdcRenamed)
+
+```
+  
+Next, key fields are examined for which values they contain:  
+```{r}
+
+helperCDCFields <- function(x, df=cdcRenamed) {
+    
+    df %>%
+        group_by_at(x) %>%
+        summarize(n=n(), n_deaths_na=sum(is.na(deaths)), deaths=sum(deaths, na.rm=TRUE))
+    
+}
+
+
+helperCDCFields("age")
+helperCDCFields(c("period", "year", "type"))
+helperCDCFields(c("period", "Suppress"))
+helperCDCFields(c("period", "Note"))
+helperCDCFields(c("state", "Jurisdiction")) %>% 
+    arrange(-deaths) %>% 
+    as.data.frame()
+helperCDCFields(c("year", "week")) %>% 
+    ggplot(aes(x=week, y=deaths, group=factor(year), color=factor(year))) + 
+    geom_line() + 
+    ylim(c(0, NA))
+
+```
+  
+A number of follow-up steps are identified:  
+  
+* Age should be converted to a factor, with levels of ascending age  
+* Year should be converted to a factor  
+* Period should be converted to a factor  
+* Data should be limited to type "Predicted (weighted)"  
+* Data should be limited to 2015-2019 and 2020 through week 30 (potential incompleteness afterwards)  
+* The records that are listed as suppressed should be checked  
+* The records for full US and Puerto Rico should be deleted, and the record for YC (New York City) should be investigated to see if it is part of NY (New York) or a standalone  
+* Remaining data should be double-checked against an external reference for total death counts  
+  
+First, variables are converted to factors:  
+```{r}
+
+cdcFactored <- cdcRenamed %>%
+    mutate(age=factor(age, levels=c("Under 25 years", "25-44 years", "45-64 years", 
+                                    "65-74 years", "75-84 years", "85 years and older"
+                                    )
+                      ), 
+           period=factor(period, levels=c("2015-2019", "2020")), 
+           year=factor(year, levels=2015:2020)
+           )
+glimpse(cdcFactored)
+
+```
+  
+Next, data are limited to "Predicted (weighted)" and up through 2020 week 30:  
+```{r}
+
+cdcFiltered <- cdcFactored %>%
+    filter(type=="Predicted (weighted)", period=="2015-2019" | week <= 30)
+glimpse(cdcFiltered)
+
+cdcFiltered %>%
+    filter(!is.na(Suppress) | is.na(deaths))
+
+```
+  
+The data suppressions all fell in weeks that have been excluded.  The remaining issue is PR, YC, NY, and US:  
+```{r}
+
+cdcFiltered %>%
+    mutate(newState=ifelse(state %in% c("US", "PR", "NY", "YC"), state, "Other")) %>%
+    group_by(newState) %>%
+    summarize(deaths=sum(deaths)) %>%
+    arrange(deaths) %>%
+    mutate(cumDeaths=cumsum(deaths))
+
+```
+  
+Adding the deaths of all sub-elements (including PR, NY, YC) prodices 15.931 million deaths while US reports 15.815 million deaths, for a small discrepancy.  Is this 1% gap constant by year?  
+```{r}
+
+cdcFiltered %>%
+    mutate(newState=ifelse(state=="US", "US", "Other")) %>%
+    group_by(year, newState) %>%
+    summarize(deaths=sum(deaths)) %>%
+    pivot_wider(year, names_from="newState", values_from="deaths") %>%
+    mutate(ratOthUS=Other/US)
+
+```
+  
+Consistently, the sum of the parts is about 1% greater than the whole.  All of the potentially questionable parts (PR, NY, YC) make up more than 1% of the total and are not obvious explanatory components.  This analysis will continue by 1) excluding US and PR, and 2) adding YC to NY for comparisons to NY in other data:  
+```{r}
+
+cdcProcessed <- cdcFiltered %>%
+    filter(!(state %in% c("US", "PR"))) %>%
+    mutate(state=ifelse(state=="YC", "NY", state), 
+           Jurisdiction=ifelse(state %in% c("NY", "YC"), "New York State (NY plus YC)", Jurisdiction)
+           ) %>%
+    group_by(Jurisdiction, weekEnding, state, year, week, age, period, type, Suppress, Note) %>%
+    summarize(n=n(), deaths=sum(deaths)) %>%
+    ungroup()
+glimpse(cdcProcessed)
+
+cdcProcessed %>%
+    select(-n, -deaths) %>%
+    anyDuplicated()
+
+```
+  
+The file has been made unique and in theory contains all deaths from US states plus DC for 2015 through week 30 of 2020.  Total deaths counts by year are:  
+```{r}
+
+cdcProcessed %>%
+    group_by(year) %>%
+    summarize(deaths=sum(deaths)) %>%
+    ggplot(aes(x=year, y=deaths/1000)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=deaths/2000, label=round(deaths/1000))) + 
+    labs(title="CDC Deaths for 50 states plus DC", 
+         x="", 
+         y="Deaths (000s)", 
+         subtitle="Through week 30 of 2020"
+         )
+
+```
+  
+Published data suggest the US had 2.712 million deaths in 2015 and 2.813 million deaths in 2017.  The data for this analysis are about 1% under, at least partly driven by the exclusion of Puerto Rico.  Given the many other uncertainties in the analysis, the data appear sufficiently accurate for exploration.
+
+As a starting point, deaths across all jurisdictions are explored by year, in total and then facetted by age:  
+```{r}
+
+cdcProcessed %>%
+    group_by(year, week) %>%
+    summarize(deaths=sum(deaths)) %>%
+    ungroup() %>%
+    ggplot(aes(x=week, y=deaths, group=year, color=year)) + 
+    geom_line() +
+    ylim(c(0, NA)) + 
+    labs(x="Week of Year", y="Deaths", title="US deaths per week by year")
+
+cdcProcessed %>%
+    group_by(year, week, age) %>%
+    summarize(deaths=sum(deaths)) %>%
+    ungroup() %>%
+    ggplot(aes(x=week, y=deaths, group=year, color=year)) + 
+    geom_line() +
+    ylim(c(0, NA)) + 
+    facet_wrap(~age) +
+    labs(x="Week of Year", y="Deaths", title="US deaths per week by year")
+
+```
+  
+The first wave of the virus is clear on the plots, with the early part of the second wave showing and more data needed to see the extent to which deaths above historical norms are associated with the same timing as this wave.
+
+Of interest, there is a visible impact of increased deaths around the same time as the first wave in all age groups with the exception of "Under 25 years".  Consistent with published report, the bulk of the absolute death increase is in the elderly population, especially the 75-84 year and 85+ year populations.
+
+The same analysis can be run using the segments created previously for states:  
+```{r}
+
+cdcProcessed %>%
+    mutate(cluster=clustVec[state]) %>%
+    group_by(year, week, cluster) %>%
+    summarize(deaths=sum(deaths)) %>%
+    ungroup() %>%
+    ggplot(aes(x=week, y=deaths, group=year, color=year)) + 
+    geom_line() +
+    ylim(c(0, NA)) + 
+    facet_wrap(~cluster) +
+    labs(x="Week of Year", 
+         y="Deaths", 
+         title="US deaths per week by year", 
+         subtitle="Facetted by state cluster"
+         )
+
+```
+  
+The data are broadly consistent with previous observations for the clusters:  
+  
+* An "early" cluster that has very high deaths in the early pandemic that declines back to baseline  
+* An "early" cluster that has moderate deaths increases in the early pandemic, declining to a plateau above basline  
+* A "late" cluster that has moderate deaths in the late pandemic (CDC all-cause data not yet able to show a peak or decline, if any)  
+* Two clusters that have had relatively mild impact from virus, though deaths above baseline are observed in these segments also  
+  
+To a first order, the deaths from coronavirus appear associated with increases in all-cause deaths from the same geographies.
+
+Suppose that deaths by cluster in 2020 are assessed by age group:  
+```{r}
+
+cdcProcessed %>%
+    mutate(cluster=clustVec[state]) %>%
+    filter(year==2020) %>%
+    group_by(year, age, week, cluster) %>%
+    summarize(deaths=sum(deaths)) %>%
+    ungroup() %>%
+    ggplot(aes(x=week, y=deaths, fill=age)) + 
+    geom_col(position="stack") +
+    ylim(c(0, NA)) + 
+    facet_wrap(~cluster) +
+    labs(x="Week of Year", 
+         y="Deaths", 
+         title="US deaths per week by year", 
+         subtitle="Facetted by state cluster"
+         )
+
+```
+  
+Withouth the 2015-2019 baseline, three of the clusters show an obvious pandemic surge, while the increase is more subtle (slight summer increase when historically there is a slight summer decrease) in the remaining two segments.
+
+Next steps are to further explore the "excess deaths" by component and compare to the published deaths due to coronavirus.
