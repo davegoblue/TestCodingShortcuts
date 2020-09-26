@@ -5615,3 +5615,177 @@ cdcProcessed %>%
 Withouth the 2015-2019 baseline, three of the clusters show an obvious pandemic surge, while the increase is more subtle (slight summer increase when historically there is a slight summer decrease) in the remaining two segments.
 
 Next steps are to further explore the "excess deaths" by component and compare to the published deaths due to coronavirus.
+
+Given a set of death data from 2015-2019, an estimate can be made for expected deaths in 2020.  Broadly, there are two components:  
+  
+1.  Deaths per year may be tending to increase or decrease over time  
+2.  Deaths by year generally occur in a seasonal manner, with higher deaths in the winter than in the summer  
+  
+Deaths in the winter are also generally subject to greater fluctuations, potentially driven among other things by severity in that season's influenza strain.
+
+As an example, suppose that the full US data is explored for the 65-74 year old cohort:  
+```{r}
+
+# All deaths by week and year for the 65-74 cohort
+allDeath_6574 <- cdcProcessed %>%
+    filter(age=="65-74 years") %>%
+    group_by(year, week) %>%
+    summarize(deaths=sum(deaths)) %>%
+    ungroup() %>%
+    mutate(weekfct=factor(week), yearint=as.integer(as.character(year)))
+allDeath_6574
+
+# Plot of all deaths for the 65-74 cohort by week and year
+allDeath_6574 %>%
+    ggplot(aes(x=week, y=deaths, color=year, group=year)) + 
+    geom_line() + 
+    ylim(c(0, NA)) + 
+    labs(x="Week", y="Deaths", title="All-cause deaths for 65-74 year old cohort")
+
+```
+  
+Suppose that only the 2015-2019 data were used, with a goal of understanding the mean and spread of the historcal data:  
+```{r}
+
+p1 <- allDeath_6574 %>%
+    filter(year != 2020) %>%
+    group_by(week) %>%
+    summarize(mean=mean(deaths), sd=sd(deaths)) %>%
+    ggplot(aes(x=week)) + 
+    geom_line(aes(y=mean), color="red", size=2) + 
+    geom_ribbon(aes(ymin=mean-sd, ymax=mean+sd), fill="pink", alpha=0.5) +
+    labs(x="Week", 
+         y="Deaths", 
+         title="2015-2019 all-cause deaths (65-74 years)", 
+         subtitle="Line is 2015-2019 annual mean deaths, ribbon is +/- 1 standard deviation"
+         ) + 
+    ylim(c(0, NA))
+p1
+
+```
+  
+Suppose that a simple linear regression is used to estimate the deaths by month for 2020.  The assumption is that the shape follows the mean shape while the height is a linear model of height changes from 2015-2019:  
+  
+Deaths = f(Week as factor, Year as integer) with no intercept since the week component will drive this  
+  
+```{r}
+
+# Very basic linear model for deaths vs. week and year
+lm6574 <- allDeath_6574 %>%
+    filter(year != 2020) %>%
+    lm(deaths ~ weekfct + I(yearint-2015) + 0, data=.)
+
+# Prediction for 2020
+allDeath_6574 %>%
+    mutate(pred=predict(lm6574, newdata=.)) %>%
+    ggplot(aes(x=week)) + 
+    geom_line(data=~filter(., year != 2020), aes(y=deaths, color=year, group=year)) + 
+    geom_line(data=~filter(., year == 2020), aes(y=pred), lty=2, size=1) +
+    ylim(c(0, NA)) + 
+    labs(x="Week", 
+         y="Deaths", 
+         title="All-cause deaths for 65-74 year old cohort", 
+         subtitle="Solid lines are actual 2015-2019, dashed line is predicted 2020"
+         )
+
+```
+  
+Of note, 2018 had an unusually high death rate for 65-74 year olds in the first five weeks of the year.  For the remainder of the year, 2018 broadly had more deaths than 2015 and fewer than 2019.  As such, the baseline prediction is for fewer deaths in 2020 early in the year than occurred in 2018, though with significant uncertainty given that the flu season (or other factors) could be severe or mild or anywhere in between.
+
+Predictions are available for each year, and it is known and expected that the predictions will be inaccurate, particularly in the winter.  Facetted plots are produced to see the impact:  
+```{r}
+
+# Predictions and deltas for 2015-2020
+allPred_6574 <- allDeath_6574 %>%
+    mutate(pred=predict(lm6574, newdata=.), delta=(deaths-pred)) %>%
+    group_by(year) %>%
+    arrange(week) %>%
+    mutate(cumDelta=cumsum(delta), cumPred=cumsum(pred)) %>%
+    ungroup()
+allPred_6574
+
+# Plot of predictions and actuals facetted by year
+allPred_6574 %>%
+    select(year, week, deaths, pred) %>%
+    pivot_longer(c(deaths, pred)) %>%
+    mutate(name=ifelse(name=="deaths", "Actual", "Predicted")) %>%
+    ggplot(aes(x=week)) + 
+    geom_line(aes(y=value, color=name, group=name)) + 
+    ylim(c(0, NA)) + 
+    facet_wrap(~year) + 
+    labs(x="Week", 
+         y="Deaths", 
+         title="All-cause deaths for 65-74 year old cohort", 
+         subtitle="Predictions are based on a simple linear model for 2015-2019 data"
+         ) + 
+    scale_color_discrete("Deaths")
+
+```
+  
+The predictions are generally close to the actuals for 2015-2019, with some misses early in the year for 2018 (higher deaths) and 2016 (lower deaths).  The excess deaths in 2020 are obvious by comparison, and occur around the same time as the coronavirus outbreak.  This is suggestive that coronavirus (including disease and response to disease) may be a significant driver of these excess deaths in the 65-74 year old cohort.
+
+A look at the percentage of deaths vs. predictions can also be taken:  
+```{r}
+
+# Plot of predictions and actuals facetted by year
+allPred_6574 %>%
+    mutate(rat=deaths/pred) %>%
+    ggplot(aes(x=week)) + 
+    geom_line(aes(y=rat)) + 
+    facet_wrap(~year) + 
+    geom_hline(yintercept=1, lty=2) +
+    labs(x="Week", 
+         y="Ratio (Actual vs. Predicted Deaths)", 
+         title="Actual vs. predicted deaths for 65-74 year old cohort", 
+         subtitle="Predictions are based on a simple linear model for 2015-2019 data"
+         )
+
+```
+  
+Using 2015-2019 as the baseline, it appears normal to have swings of 5%-10% in deaths vs. predicted during the very early and very late weeks of the year (winter).  During the remainder of the year, predicted and actual deaths are usually fairly tightly aligned.  This suggests that area under the curve starting at around week 10 may be a good gauge for excess deaths in 2020, excluding any impact of the early 2020 flu season (or other wintry factors).
+
+The cumulative proportion of death vs. prediction can also be plotted:  
+```{r}
+
+# Plot of cumulative predictions and actuals facetted by year
+allPred_6574 %>%
+    mutate(rat=cumDelta/cumPred) %>%
+    ggplot(aes(x=week)) + 
+    geom_line(aes(y=rat)) + 
+    facet_wrap(~year) + 
+    geom_hline(yintercept=0, lty=2) +
+    labs(x="Week", 
+         y="Excess deaths vs. prediction (cumulative, as %)", 
+         title="Cumulative excess deaths as percentage of cumulative prediction for 65-74 year old cohort", 
+         subtitle="Predictions are based on a simple linear model for 2015-2019 data"
+         )
+
+```
+  
+The impact of winter can again be seen.  The 2020 data stand out as moving away from the 0% line as the year proceeds, in contrast to 2015-2019 where the trend is for predicted and actual deaths to fairly closely align as the year proceeds.  Among the 65-74 year old cohort, there appear to be ~10% more deaths than expected through week 30 of 2020, with a possible uptick (need more data) occurring between weeks 25-30.
+
+As a very basic heuristic, the change in cumulative deaths from week 9 onwards can be defined as the amount of excess deaths absent the impact of winter.  How does this look for the 65-74 year old cohort?  
+```{r}
+
+allPred_6574 %>%
+    select(-cumDelta, -cumPred) %>%
+    filter(week >= 9) %>%
+    group_by(year) %>%
+    arrange(week) %>%
+    mutate(cumDelta=cumsum(delta)) %>%
+    ggplot(aes(x=week)) + 
+    geom_line(aes(y=cumDelta)) + 
+    facet_wrap(~year) + 
+    geom_hline(yintercept=0, lty=2) +
+    labs(x="Week", 
+         y="Excess deaths vs. prediction (cumulative after week 8)", 
+         title="Cumulative excess deaths after week 8 for 65-74 year old cohort", 
+         subtitle="Predictions are based on a simple linear model for 2015-2019 data"
+         )
+
+
+```
+  
+In previous years, predictions have generally been accurate to within +/- 5000 deaths.  In 2020 so far, the prediction is low by about 40,000 deaths.  An estimate of 40,000 +/- 5000 excess deaths among the 65-74 year old cohort through week 30 of 2020 seems like a plausible initial stake in the ground.
+
+This process can be converted to functional form and repeated to make estimates for the other age cohorts, which is the next step.
