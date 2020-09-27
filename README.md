@@ -2102,4 +2102,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 explores lags for late pandemic states  
 * Coronavirus_Statistics_v001 explores CDC 2015-2020 all-cause US death data  
 * Coronavirus_Statistics_v001 explores age 65-74 cohort in CDC 2015-2020 all-cause US death data  
+* Coronavirus_Statistics_v001 includes functional form for cohort exploration  
   
