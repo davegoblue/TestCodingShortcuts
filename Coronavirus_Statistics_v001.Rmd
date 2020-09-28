@@ -6038,4 +6038,133 @@ cdcPredictedvsActual(allPred_65plus, cohortName="65+ years old")
 
 ```
   
-Next steps are to combine the functions so that all of the steps can be run with a single call.
+Next steps are to combine the functions so that all of the steps can be run with a single call:  
+```{r}
+
+# Integrated function with all steps
+cdcCohortAnalysis <- function(cohortName, 
+                              df=cdcProcessed, 
+                              critFilter=vector("list", 0), 
+                              plotTitle=NULL, 
+                              curYear=2020, 
+                              startYear=2015,
+                              prevYears=paste0(startYear, "-", curYear-1), 
+                              startWeek=9, 
+                              showSubsetPlots=TRUE, 
+                              showPredActualPlots=TRUE
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # cohortName: the name of the cohort
+    # df: the processed CDC death data
+    # critFilter: the filtering criteria in the form of a named list "variable"=c("possibleValues")
+    # plotTitle: title to be used for plot in subsetCDC()
+    # curYear: the current year for the death data
+    # startYear: the starting year for the death data
+    # prevYears: the previous years for the death data (used for making predictions)
+    # startWeek: the starting week for counting excess deaths
+    # showSubsetPlots: boolean, whether to show the two plots in subsetCDC()
+    # showPredActualPlots: boolean, whether to show the four plots in cdcPredictedvsActual()
+    
+    # Subset the data (will show both plots by default)
+    allDeath_cohort <- subsetCDC(df=df, 
+                                 critFilter=critFilter,
+                                 showPlot=showSubsetPlots,
+                                 plotTitle=plotTitle, 
+                                 curYear=curYear,
+                                 prevYears=prevYears
+                                 )
+
+    # Create the linear model for the subsetted data
+    lm_cohort <- cdcRegression(df=allDeath_cohort, curYear=curYear, startYear=startYear)
+
+    # Apply the predictions to the data
+    allPred_cohort <- cdcPrediction(df=allDeath_cohort, lmReg=lm_cohort)
+
+    # Plots for predicted vs. actual (will show all plots by default)
+    cdcPredictedvsActual(df=allPred_cohort, 
+                         cohortName=cohortName, 
+                         curYear=curYear,
+                         prevYears=prevYears,
+                         startWeek=startWeek, 
+                         showCurrentPredvsPrev=showPredActualPlots,
+                         showActualsvsPred=showPredActualPlots,
+                         showActualsvsPredRatio=showPredActualPlots,
+                         showExcessDeaths=showPredActualPlots
+                         )
+
+    # Return a list containing the lm model and the filtered data
+    list(lmReg=lm_cohort, preds=allPred_cohort)
+    
+}
+
+
+# Test the function for the 65+ years old cohort
+list_65plus <- cdcCohortAnalysis(cohortName="65+ years old", 
+                                 critFilter=list("age"=c("65-74 years", 
+                                                         "75-84 years", 
+                                                         "85 years and older"
+                                                         )
+                                                 ), 
+                                 plotTitle="All-cause deaths for 65+ years old cohort"
+                                 )
+
+# Test the function for the under 25 years old cohort
+list_under25 <- cdcCohortAnalysis(cohortName="Under 25 years old", 
+                                  critFilter=list("age"=c("Under 25 years")), 
+                                  plotTitle="All-cause deaths for under 25 years old cohort"
+                                  )
+
+# Test the function for the 25-64 years old cohort
+list_25to64 <- cdcCohortAnalysis(cohortName="25-64 years old", 
+                                 critFilter=list("age"=c("25-44 years", "45-64 years")), 
+                                 plotTitle="All-cause deaths for 25-64 years old cohort"
+                                 )
+
+```
+  
+Findings are broadly as would be expected based on published data about coronavirus (note that due to the cutoff of incomplete CDC data, these findings are broadly through the end of July 2020):  
+  
+* Around 1,000 excess deaths in the 0-24 years old cohort, and with a large standard error on this estimate since deaths in this cohort tend to be small in number and highly variable in percentage each year  
+* Around 50,000 excess deaths in the 25-64 years old cohort, in contrast to a typical year that sees under 10,000 deaths difference between predictions and actuals  
+* Around 150,000 excess deaths in the 65+ years old cohort, in contrast to a typical year that sees under 10,000 deaths difference between predictions and actuals  
+  
+Combining the cohorts, these data suggest that roughly 200,000 more Americans died through July 2020 than would have been expected given a linear projection (including seasonality) of deaths from 2015-2019.  
+
+This excess is greater than the number of reported coronavirus deaths through July 2020.  Among the publicized hypotheses are 1) some coronavirus deaths may have been missed due to no diagnosis, and 2) some deaths may be due to reactions to coronavirus (e.g., deferred medical care for other conditions, deaths of despair, etc.)  
+  
+For comparison, the analysis is run using the full nation as the cohort.  It is known and expected that an analysis like this will not have the sum of the parts equal the whole, though findings should be broadly consistent:  
+```{r}
+
+# Test the function for the full US
+list_allUS <- cdcCohortAnalysis(cohortName="all ages, all states", 
+                                plotTitle="All-cause US total deaths"
+                                )
+
+```
+  
+As hoped for, the findings of the all-US analysis are that there are roughly 200,000 excess deaths through July 2020, and where a typical year would be within 10,000 deaths of predicted through July.  The impact of the pandemic is clear visually, as are the two waves (arguably, there is a first wave at different times in norther and southern geographies).
+
+The analysis is also extended to look at a handful of the early-pandemic states and late pandemic states:  
+```{r}
+
+# Test the function for a few states that were hit early and hard
+list_early <- cdcCohortAnalysis(cohortName="all ages, NY/NJ/CT/MA", 
+                                critFilter=list("state"=c("NY", "NJ", "CT", "MA")),
+                                plotTitle="All-cause total deaths for NY/NJ/CT/MA"
+                                )
+
+# Test the function for a few states that were hit late and hard
+list_late <- cdcCohortAnalysis(cohortName="all ages, AZ/TX/MS/FL", 
+                               critFilter=list("state"=c("AZ", "TX", "MS", "FL")),
+                               plotTitle="All-cause total deaths for AZ/TX/MS/FL"
+                               )
+
+```
+  
+* Four early-pandemic states (NY, NJ, CT, MA) have roughly 70,000 excess deaths as of July 2020, and curves that suggest death rates have returned to predictions (historical norms) by the end of July 2020.  This is broadly consistent with the shape of the reported coronavirus deaths in these states  
+  
+* Four late-pandemic states (AZ, TX, MS, FL) have roughly 30,000 excess deaths as of July 2020, and curves that suggest death rates remain elevated as of the end of July 2020.  There is evidence of impact in the early pandemic as the normal post-winter decline in deaths was not observed in 2020.  There is strong evidence of the late pandemic impact on excess deaths starting around week 25 (late June).  More recent data will be needed to see if the all-cause deaths for these states mirror the reported coronavirus deaths  
+  
+Next steps are to pull the data for additional cohorts by state, and to compare the all-causes excess deaths data to the reported coronavirus deaths and cases for those same states.
+  
