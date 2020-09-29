@@ -5938,7 +5938,8 @@ cdcPredictedvsActual <- function(df,
                                  showCurrentPredvsPrev=TRUE, 
                                  showActualsvsPred=TRUE,
                                  showActualsvsPredRatio=TRUE, 
-                                 showExcessDeaths=TRUE
+                                 showExcessDeaths=TRUE, 
+                                 predActualPlotsOnePage=FALSE
                                  ) {
     
     # FUNCTION ARGUMENTS:
@@ -5951,6 +5952,7 @@ cdcPredictedvsActual <- function(df,
     # showActualsvsPred: boolean, whether to plot actuals vs. predictions by year
     # showActualsvsPredRatio: boolean, whether to plot actuals vs. predictions ratios by yrea
     # showExcessDeaths: boolean, whether to plot estimated excess deaths
+    # predActualPlotsOnePage: boolean, whether to place the predicted vs. actual plots all on one page
     
     if (showCurrentPredvsPrev) {
         # Current year predictions vs. previous year actuals
@@ -5968,7 +5970,7 @@ cdcPredictedvsActual <- function(df,
                                  curYear
                                  )
                  )
-        print(p1)
+        if (!predActualPlotsOnePage) print(p1)
     }
     
     if (showActualsvsPred) {
@@ -5987,7 +5989,7 @@ cdcPredictedvsActual <- function(df,
                  subtitle=paste0("Predictions are based on a simple linear model for ", prevYears, " data")
                  ) + 
             scale_color_discrete("Deaths")
-        print(p2)
+        if (!predActualPlotsOnePage) print(p2)
     }
     
     if (showActualsvsPredRatio) {
@@ -6003,7 +6005,7 @@ cdcPredictedvsActual <- function(df,
                  title=paste0("Actual vs. predicted deaths for ", cohortName, " cohort"), 
                  subtitle=paste0("Predictions are based on a simple linear model for ", prevYears, " data")
                  )
-        print(p3)
+        if (!predActualPlotsOnePage) print(p3)
     }
     
     if (showExcessDeaths) {
@@ -6028,7 +6030,16 @@ cdcPredictedvsActual <- function(df,
                               ), 
                  subtitle=paste0("Predictions are based on a simple linear model for ", prevYears, " data")
                  )
-        print(p4)
+        if (!predActualPlotsOnePage) print(p4)
+    }
+    
+    # Create a one-page summary
+    if (predActualPlotsOnePage) {
+        if (!exists("p1", inherits=FALSE)) p1 <- ggplot()
+        if (!exists("p2", inherits=FALSE)) p2 <- ggplot()
+        if (!exists("p3", inherits=FALSE)) p3 <- ggplot()
+        if (!exists("p4", inherits=FALSE)) p4 <- ggplot()
+        gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2)
     }
 
 }
@@ -6051,7 +6062,8 @@ cdcCohortAnalysis <- function(cohortName,
                               prevYears=paste0(startYear, "-", curYear-1), 
                               startWeek=9, 
                               showSubsetPlots=TRUE, 
-                              showPredActualPlots=TRUE
+                              showPredActualPlots=TRUE, 
+                              predActualPlotsOnePage=FALSE
                               ) {
     
     # FUNCTION ARGUMENTS:
@@ -6065,6 +6077,7 @@ cdcCohortAnalysis <- function(cohortName,
     # startWeek: the starting week for counting excess deaths
     # showSubsetPlots: boolean, whether to show the two plots in subsetCDC()
     # showPredActualPlots: boolean, whether to show the four plots in cdcPredictedvsActual()
+    # predActualPlotsOnePage: boolean, whether to place the predicted vs. actual plots all on one page
     
     # Subset the data (will show both plots by default)
     allDeath_cohort <- subsetCDC(df=df, 
@@ -6090,7 +6103,8 @@ cdcCohortAnalysis <- function(cohortName,
                          showCurrentPredvsPrev=showPredActualPlots,
                          showActualsvsPred=showPredActualPlots,
                          showActualsvsPredRatio=showPredActualPlots,
-                         showExcessDeaths=showPredActualPlots
+                         showExcessDeaths=showPredActualPlots, 
+                         predActualPlotsOnePage=predActualPlotsOnePage
                          )
 
     # Return a list containing the lm model and the filtered data
@@ -6168,3 +6182,148 @@ list_late <- cdcCohortAnalysis(cohortName="all ages, AZ/TX/MS/FL",
   
 Next steps are to pull the data for additional cohorts by state, and to compare the all-causes excess deaths data to the reported coronavirus deaths and cases for those same states.
   
+The death estimation methodology requires a certain level of deaths such that signal dominates over noise.  For example, how well does the methodology work for Wyoming?  
+```{r}
+
+# Test the function for the smallest state (WY)
+list_wy <- cdcCohortAnalysis(cohortName="all ages, WY", 
+                             critFilter=list("state"=c("WY")),
+                             plotTitle="All-cause total deaths for WY"
+                             )
+
+```
+  
+There are not many expected deaths in a typical week in Wyoming, thus it is common for some high percentage fluctuations to occur even in the absence of pandemic.  Despite that, there are signs that there has been very limited impact of virus in Wyoming so far in 2020.
+
+Suppose instead that the methodology is applied to Nebraska (3x the size of Wyoming)?
+```{r}
+
+# Test the function for a small-mid sized state (NE)
+list_ne <- cdcCohortAnalysis(cohortName="all ages, NE", 
+                             critFilter=list("state"=c("NE")),
+                             plotTitle="All-cause total deaths for NE"
+                             )
+
+```
+  
+There is still a fair bit of noise, and also evidence that there has been limited impact of coronavirus on excess deaths through July 2020.
+
+Suppose that a state of similar size that was hit early is explored?
+```{r}
+
+# Test the function for a small-mid sized state (NM)
+list_nm <- cdcCohortAnalysis(cohortName="all ages, NM", 
+                             critFilter=list("state"=c("NM")),
+                             plotTitle="All-cause total deaths for NM"
+                             )
+
+```
+  
+While the noise issue remains the same, there is a clear signal for pandemic in 2020, with roughly 1000 excess deaths by the end of 2020 where the random fluctuations in a typical year would produce +/- 200 excess deaths.
+
+Suppose then that the methodology is run by segment, using the segments produced previously by state:  
+```{r}
+
+listClusters <- vector("list", 5)
+
+for (cluster in 1:5) {
+    clusterStates <- names(clustVec[clustVec==cluster])
+    listClusters[[cluster]] <- cdcCohortAnalysis(cohortName=paste0("all ages, cluster ", cluster), 
+                                                 critFilter=list("state"=clusterStates),
+                                                 plotTitle=paste0("All-cause total deaths for cluster ",
+                                                                  cluster
+                                                                  ), 
+                                                 showSubsetPlots=FALSE,
+                                                 predActualPlotsOnePage=TRUE
+                                                 )
+}
+
+```
+  
+Predictions by cluster are reasonably smooth, and there is reason for optimism that predictions are plausibly in range for deaths by cluster that might have occurred in 2020 had it stayed on trend with 2015-2019.
+
+The "excess deaths" by cluster can then be compared with the "coronavirus deaths" by cluster to see the relationships.  First, the "excess deaths" data files are consolidated:  
+```{r}
+
+# Create the excess cluster file
+excessCluster <- map_dfr(.x=listClusters, .f=function(x) { x[["preds"]] }, .id="cluster") %>%
+    mutate(cluster=as.integer(cluster))
+excessCluster
+
+# Attach population by cluster
+excessCluster <- stateData %>%
+    mutate(cluster=clustVec[state]) %>%
+    group_by(cluster) %>%
+    summarize(pop=sum(pop)) %>%
+    right_join(excessCluster, by="cluster") %>%
+    mutate(cluster=as.character(cluster))
+excessCluster
+
+# Plot of excess deaths by week by cluster
+excessCluster %>%
+    filter(year==2020) %>%
+    ggplot(aes(x=week, y=delta)) + 
+    geom_line(aes(group=cluster, color=cluster)) + 
+    labs(title="Actual minus predicted deaths by cluster and week (2020)", 
+         x="Week", 
+         y="Actual minus predicted deaths"
+         ) + 
+    scale_color_discrete("Cluster")
+
+# Plot of excess deaths per million by week by cluster
+excessCluster %>%
+    filter(year==2020) %>%
+    ggplot(aes(x=week, y=1000000*delta/pop)) + 
+    geom_line(aes(group=cluster, color=cluster)) + 
+    labs(title="Actual minus predicted deaths by cluster and week (2020)", 
+         subtitle="Per million people, per week",
+         x="Week", 
+         y="Actual minus predicted deaths (per million people)"
+         ) + 
+    scale_color_discrete("Cluster") + 
+    geom_hline(aes(yintercept=0), lty=2)
+
+```
+  
+The coronavirus death data by cluster can be transformed to week and compared against the excess all-cause deaths by week:  
+```{r}
+
+# Explore the conversion of week by week ending data in the raw CDC data
+cdcRaw %>% 
+    filter(Year==2020) %>% 
+    count(Week, `Week Ending Date`) %>%
+    as.data.frame()
+
+# Pull the cluster-level data and create a CDC week number
+fullDeathData <- consolidatedPlotData_20200830 %>%
+    filter(name=="deaths", state=="cluster") %>%
+    ungroup() %>%
+    mutate(week=lubridate::epiweek(date), cluster=as.character(cluster)) %>%
+    group_by(cluster, week) %>%
+    summarize(cvDeaths=sum(value)) %>%
+    ungroup() %>%
+    right_join(excessCluster, by=c("cluster", "week")) %>%
+    mutate(cvDeaths=ifelse(is.na(cvDeaths), 0, cvDeaths))
+fullDeathData
+
+```
+  
+The death totals can then be compared:  
+```{r}
+
+# Plot for total excess deaths and reported coronavirus deaths by cluster by week
+fullDeathData %>%
+    filter(year==2020) %>%
+    select(cluster, week, cvDeaths, pop, delta) %>%
+    pivot_longer(-c(cluster, week, pop), names_to="source", values_to="deaths") %>%
+    ggplot(aes(x=week, y=deaths)) + 
+    geom_line(aes(group=source, color=c("cvDeaths"="Reported COVID", "delta"="Excess All-Cause")[source])) + 
+    facet_wrap(~cluster) + 
+    scale_color_discrete("Deaths")
+
+```
+  
+Among the three clusters with spikes, it appears that excess all-cause deaths start earlier and peak higher than reported COVID deaths.  The cause for this delta is not discernible from this simple look at the data.  Shapes of the all-cause excess deaths curve and the COVID death curves are generally similar, with each cluster looking much more like itself than like the other clusters.  This is suggestive, though not dispositive, that coronavirus deaths are a meaningful component of excess all-cause deaths.
+  
+Next steps are to explore further by state to see if the trend (earlier state, higher peak) is common across states or driven by a subset of states.
+
