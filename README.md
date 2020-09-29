@@ -2106,4 +2106,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 28-SEP-2020  
 * Coronavirus_Statistics_v001 explores 2020 excess deaths by segment and nationally  
+* Coronavirus_Statistics_v001 explores all-cause deaths vs. coronavirus deaths by segment  
   
