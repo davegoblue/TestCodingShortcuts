@@ -6327,3 +6327,187 @@ Among the three clusters with spikes, it appears that excess all-cause deaths st
   
 Next steps are to explore further by state to see if the trend (earlier state, higher peak) is common across states or driven by a subset of states.
 
+The methodology is now run by state:  
+```{r}
+
+listStates_v001 <- vector("list", 51)
+
+for (abbState in names(clustVec)) {
+    listStates_v001[[abbState]] <- cdcCohortAnalysis(cohortName=paste0("all ages, state ", abbState), 
+                                                     critFilter=list("state"=abbState),
+                                                     plotTitle=paste0("All-cause total deaths for state ",
+                                                                      abbState
+                                                                      ), 
+                                                     showSubsetPlots=FALSE,
+                                                     showPredActualPlots=FALSE
+                                                     )
+}
+
+```
+  
+The deaths data are consolidated to a single file:  
+```{r}
+
+# Create the excess cluster file
+excessState_v001 <- map_dfr(.x=listStates_v001, .f=function(x) { x[["preds"]] }, .id="state")
+excessState_v001
+
+```
+  
+Excess deaths by state in 2020 can be plotted:  
+```{r}
+
+excessState_v001 %>%
+    filter(year==2020) %>%
+    mutate(quarter=factor(paste0("Q", ceiling(week/13), "-20"))) %>%
+    group_by(state, quarter) %>%
+    summarize(excess=sum(delta)) %>%
+    ggplot(aes(x=fct_reorder(state, excess, .fun=sum), y=excess/1000, fill=fct_rev(quarter))) + 
+    geom_col(position="stack") + 
+    coord_flip() + 
+    labs(x="State", 
+         y="Excess Deaths (000s)", 
+         title="All-cause excess deaths in 2020", 
+         subtitle="CDC data through July 2020 (Q3 incomplete)"
+         ) +
+    scale_fill_discrete("Quarter")
+
+```
+  
+Many states appear to have been running slightly under on excess deaths in the first quarter, a trend which reversed in many locations around the same time as coronavirus deaths began to peak (Q2-20).
+
+The same plot can be created on a per-capita basis:  
+```{r}
+
+excessState_v001 %>%
+    filter(year==2020) %>%
+    mutate(quarter=factor(paste0("Q", ceiling(week/13), "-20"))) %>%
+    group_by(state, quarter) %>%
+    summarize(excess=sum(delta)) %>%
+    ungroup() %>%
+    left_join(select(usmap::statepop, abbr, pop_2015), by=c("state"="abbr")) %>%
+    mutate(excesspm=excess*1000000/pop_2015) %>%
+    ggplot(aes(x=fct_reorder(state, excesspm, .fun=sum), y=excesspm, fill=fct_rev(quarter))) + 
+    geom_col(position="stack") + 
+    coord_flip() + 
+    labs(x="State", 
+         y="Excess Deaths (per million people)", 
+         title="All-cause excess deaths per million people in 2020", 
+         subtitle="CDC data through July 2020 (Q3 incomplete)"
+         ) +
+    scale_fill_discrete("Quarter")
+
+```
+  
+The data can also be plotted per month, starting with March:  
+```{r}
+
+pes_001 <- excessState_v001 %>%
+    filter(year==2020, week>=10) %>%
+    mutate(quarter=factor(paste0("Q", ceiling(week/13), "-20")), 
+           month=factor(case_when(week <= 13 ~ "Mar", 
+                                  week <= 18 ~ "Apr", 
+                                  week <= 22 ~ "May", 
+                                  week <= 26 ~ "Jun", 
+                                  week <= 31 ~ "Jul", 
+                                  TRUE ~ "Error"), 
+                        levels=c("Mar", "Apr", "May", "Jun", "Jul", "Error")
+                        )
+           ) %>%
+    group_by(state, month) %>%
+    summarize(excess=sum(delta)) %>%
+    ungroup() %>%
+    left_join(select(usmap::statepop, abbr, pop_2015), by=c("state"="abbr")) %>%
+    mutate(excesspm=excess*1000000/pop_2015) %>%
+    ggplot(aes(x=fct_reorder(state, excesspm, .fun=sum))) + 
+    geom_col(aes(y=excesspm, fill=fct_rev(month)), position="stack") + 
+    coord_flip() + 
+    labs(x="State", 
+         y="Excess Deaths (per million people)", 
+         title="All-cause excess deaths per million people in 2020", 
+         subtitle="CDC data through July 2020", 
+         caption="Epi Week to Month: Mar (10-13), Apr (14-18), May (19-22), Jun (23-26), Jul (27-31)"
+         ) +
+    scale_fill_discrete("Month")
+pes_001
+
+```
+  
+Further, coronavirus deaths by state (through July and through) can be added to the plot:  
+```{r}
+
+cumDeathState_001 <- consolidatedPlotData_20200830 %>% 
+    filter(name=="deaths", state != "cluster") %>% 
+    group_by(state) %>% 
+    mutate(cumdpm=cumsum(vpm)) %>%
+    filter(date %in% c(as.Date("2020-07-31"), max(date)))
+
+pes_001 + 
+    geom_point(data=filter(cumDeathState_001, date==as.Date("2020-07-31")), aes(x=state, y=cumdpm), size=2) + 
+    labs(title="Deaths per million people using data through July 2020", 
+         subtitle="Bars based on CDC all-cause deaths, points are reported coronavirus deaths", 
+         y="Deaths (per million people) through July 2020"
+         )
+
+```
+  
+Of interest, reported coronavirus deaths through July 2020 are a very different percentage of all-cause excess deaths as estimated using CDC data for some states.  There is a clear correlation where most states with a high number of excess all-cause deaths also report a high number of coronavirus deaths per capita.
+
+Suppose that the ratio is of interest:  
+```{r}
+
+excessState_v001 %>%
+    filter(year==2020, week >= 10) %>%
+    group_by(state) %>%
+    summarize(delta=sum(delta)) %>%
+    left_join(select(usmap::statepop, abbr, pop_2015), by=c("state"="abbr")) %>%
+    mutate(deltapm=delta*1000000/pop_2015) %>%
+    inner_join(select(filter(cumDeathState_001, date==as.Date("2020-07-31")), state, cumdpm)) %>%
+    mutate(rat=deltapm/cumdpm) %>%
+    ggplot(aes(x=fct_reorder(state, rat), y=rat)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=rat/2, label=paste0(round(100*rat), "%"))) + 
+    coord_flip() + 
+    labs(x="State", 
+         y="Ratio of estimated all-cause excess deaths to reported coronavirus deaths", 
+         title="Ratio of estimated all-cause excess deaths to reported coronavirus deaths", 
+         subtitle="All data through July 2020"
+         ) + 
+    ylim(c(0, NA)) + 
+    geom_hline(aes(yintercept=1), lty=2)
+
+```
+  
+The states with the most extreme ratios tend to be small, raising the question of whether there is just a methodology error for smaller locales.  The state of Hawaii has had negative estimated excess deaths and its ratio of nearly -200% is not plotted.
+
+A few states of interest are assessed using plots:  
+```{r}
+
+for (abbState in c("HI", "VT", "WY", "WV", "OR", "TX")) {
+    cdcCohortAnalysis(cohortName=paste0("all ages, state ", abbState), 
+                      critFilter=list("state"=abbState),
+                      plotTitle=paste0("All-cause total deaths for state ", abbState), 
+                      showSubsetPlots=FALSE,
+                      showPredActualPlots=TRUE,
+                      predActualPlotsOnePage=TRUE
+                      )
+}
+
+```
+  
+Findings include:  
+  
+* Texas appears to have meaningful excess deaths starting around week 15 and then spiking around week 25; the methodology for estimating excess all-cause deaths seems reasonable for Texas; there may be more coronavirus impact in Texas through July 2020 than is captured in coronavirus deaths reported in Texas through July 2020  
+  
+* Oregon all-cause excess deaths have historically been noisy, particularly in 2018 and 2019; there appears to be an increase in 2020, but the signal to noise ratio is low and these could just be normal fluctuations  
+  
+* West Virginia appears to be showing an increase in 2020 all-cause deaths that is above the level of fluctuations that have been observed in previous years  
+  
+* Wyoming all-cause excess deaths have historically been noisy and there is no obvious pattern in 2020 that stands out as aberrant in comparison to previous years; the general direction, as almost everywhere, is up, but any standard error estimate would likely be at least as large as the increase  
+  
+* Vermont all-cause death data is historically noisy, but there is a clear 2020 signal that dominates the noise and is fairly consistent throughout the year; while Vermont deaths by week in 2015-2019 tend to be 100% +/- 10% of expected, in 2020 they appear to be 115% +/- 10% of expected; there may be more coronavirus impact in Vermont through July 2020 than is reflected solely in the coronavirus deaths data  
+  
+* Hawaii all-cause death data is historically noisy and the 2020 all-cause deaths are in line with patterns seen in 2015-2019; the null hypothesis of no trend change for all-cause deaths in Hawaii would likely survive any statistical tests based solely on these data  
+  
+Next steps are to look at the age demographics that make up the excess deaths in the clusters and some of the more interesting (off trend) states.
+  
