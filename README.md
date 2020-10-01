@@ -2108,4 +2108,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 explores 2020 excess deaths by segment and nationally  
 * Coronavirus_Statistics_v001 explores all-cause deaths vs. coronavirus deaths by segment  
 * Coronavirus_Statistics_v001 explores all-cause deaths vs. coronavirus deaths by state  
+* Coronavirus_Statistics_v001 explores all-cause deaths deaths by age cohort  
   
