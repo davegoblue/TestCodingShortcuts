@@ -6511,3 +6511,223 @@ Findings include:
   
 Next steps are to look at the age demographics that make up the excess deaths in the clusters and some of the more interesting (off trend) states.
   
+First, excess deaths by age group are explored:  
+```{r}
+
+listAges_v001 <- vector("list", 6)
+
+n <- 1
+for (age in levels(cdcProcessed$age)) {
+    listAges_v001[[n]] <- cdcCohortAnalysis(cohortName="", 
+                                            critFilter=list("age"=age),
+                                            plotTitle="", 
+                                            showSubsetPlots=FALSE,
+                                            showPredActualPlots=FALSE
+                                            )
+    n <- n + 1
+}
+
+names(listAges_v001) <- levels(cdcProcessed$age)
+
+```
+
+The deaths data are consolidated to a single file:  
+```{r}
+
+# Create the excess cluster file
+excessAge_v001 <- map_dfr(.x=listAges_v001, .f=function(x) { x[["preds"]] }, .id="age")
+excessAge_v001
+
+```
+  
+Excess deaths by state in 2020 can be plotted:  
+```{r}
+
+excessAge_v001 %>%
+    filter(year==2020) %>%
+    mutate(quarter=factor(paste0("Q", ceiling(week/13), "-20"))) %>%
+    group_by(age, quarter) %>%
+    summarize(excess=sum(delta)) %>%
+    ggplot(aes(x=fct_reorder(age, excess, .fun=sum), y=excess/1000, fill=fct_rev(quarter))) + 
+    geom_col(position="stack") + 
+    coord_flip() + 
+    labs(x="Age Group", 
+         y="Excess Deaths (000s)", 
+         title="All-cause excess deaths in 2020", 
+         subtitle="CDC data through July 2020 (Q3 incomplete)"
+         ) +
+    scale_fill_discrete("Quarter")
+
+```
+  
+The bulk of the excess deaths occur in the elderly population, with over 50,000 excess deaths in the 85+ bucket, over 40,000 excess deaths in the 75-84 year bucket, and roughly 40,000 excess deaths in the 45-64 year and 65-74 year buckets.
+
+Estimates for US population by age group are pulled from the dataset survival::uspop2 (should updated to census data at some point):  
+```{r}
+
+# Estimated US population by age (2020)
+usPopAge2020 <- survival::uspop2[, , "2020"] %>%
+    apply(1, FUN=sum) %>%
+    tibble::tibble(ageActual=as.integer(names(.)), pop_2020=.)
+usPopAge2020
+
+# Sums by age bucket
+usPopBucket2020 <- usPopAge2020 %>%
+    mutate(age=factor(case_when(ageActual <= 24 ~ "Under 25 years", 
+                                ageActual <= 44 ~ "25-44 years", 
+                                ageActual <= 64 ~ "45-64 years", 
+                                ageActual <= 74 ~ "65-74 years", 
+                                ageActual <= 84 ~ "75-84 years", 
+                                TRUE ~ "85 years and older"
+                                ), levels=levels(cdcProcessed$age)
+                      )
+           ) %>%
+    group_by(age) %>%
+    summarize(pop_2020=sum(pop_2020))
+usPopBucket2020
+
+```
+
+The data can also be plotted per month, starting with March:  
+```{r}
+
+pea_001 <- excessAge_v001 %>%
+    filter(year==2020, week>=10) %>%
+    mutate(quarter=factor(paste0("Q", ceiling(week/13), "-20")), 
+           month=factor(case_when(week <= 13 ~ "Mar", 
+                                  week <= 18 ~ "Apr", 
+                                  week <= 22 ~ "May", 
+                                  week <= 26 ~ "Jun", 
+                                  week <= 31 ~ "Jul", 
+                                  TRUE ~ "Error"), 
+                        levels=c("Mar", "Apr", "May", "Jun", "Jul", "Error")
+                        ), 
+           age=factor(age, levels=levels(cdcProcessed$age))
+           ) %>%
+    group_by(age, month) %>%
+    summarize(excess=sum(delta)) %>%
+    ungroup() %>%
+    inner_join(usPopBucket2020, by="age") %>%
+    mutate(excesspm=1000000*excess/pop_2020) %>%
+    ggplot(aes(x=fct_reorder(age, excesspm, .fun=sum))) + 
+    geom_col(aes(y=excesspm, fill=fct_rev(month)), position="stack") + 
+    coord_flip() + 
+    labs(x="Age Group", 
+         y="Excess Deaths (per million people)", 
+         title="All-cause excess deaths per million in 2020", 
+         subtitle="CDC data through July 2020", 
+         caption="Epi Week to Month: Mar (10-13), Apr (14-18), May (19-22), Jun (23-26), Jul (27-31)"
+         ) +
+    geom_text(data=. %>% group_by(age) %>% summarize(excesspm=sum(excesspm)), 
+              aes(y=excesspm+100, label=round(excesspm), hjust=0)
+              ) +
+    scale_fill_discrete("Month")
+pea_001
+
+```
+  
+The disparity by age is much more evident, with over 8,000 excess deaths per million (0.8%) in the 85+ year old bucket, roughly 3,000 excess deaths per million (0.3%) in the 75-84 year bucket, while persons under age 25 have an excess death rate of 11 per million (well under 0.01%).
+
+For reference, the age group projections are plotted using the 1-page summary:  
+```{r}
+
+for (age in levels(cdcProcessed$age)) {
+    cdcCohortAnalysis(cohortName=paste0("ages ", age), 
+                      critFilter=list("age"=age),
+                      plotTitle=paste0("All-cause total deaths for age ", age), 
+                      showSubsetPlots=FALSE,
+                      showPredActualPlots=TRUE,
+                      predActualPlotsOnePage=TRUE
+                      )
+}
+
+```
+  
+There is interesting variation in the shape of the excess death curves by age cohort:  
+  
+* The 85+, 75-84, and 65-74 cohorts have significant peaks early but (as of July 2020) not much of a second peak  
+* The 45-64 cohort has a somewhat more sustained rate of excess deaths starting in weeks 10-15  
+* The 25-44 cohort has a sustained rate of excess deaths starting in weeks 10-15  
+* The under 25 cohort has a modest rate of excess deaths that is similar in shape to 2016 and 2017  
+  
+Suppose that state excess deaths are broken down in to those for people 65+ and those for people under 65:  
+```{r}
+
+ageOld <- c("65-74 years", "75-84 years", "85 years and older")
+cdcTwoAge <- cdcProcessed %>%
+    mutate(ageSplit=factor(ifelse(age %in% ageOld, "65 and over", "Under 65"), 
+                           levels=c("Under 65", "65 and over")
+                           )
+           ) %>%
+    group_by(state, year, week, ageSplit) %>%
+    summarize(deaths=sum(deaths)) %>%
+    ungroup()
+cdcTwoAge
+
+
+listAgeState_v001 <- vector("list", 102)
+
+n <- 1
+for (age in levels(cdcTwoAge$ageSplit)) {
+    for (state in state.abb) {
+        listAgeState_v001[[n]] <- cdcCohortAnalysis(df=cdcTwoAge, 
+                                                    cohortName="", 
+                                                    critFilter=list("ageSplit"=age, "state"=state),
+                                                    plotTitle="", 
+                                                    showSubsetPlots=FALSE,
+                                                    showPredActualPlots=FALSE
+                                                    )
+        n <- n + 1
+    }
+}
+
+names(listAgeState_v001) <- paste(rep(levels(cdcTwoAge$ageSplit), each=51), state.abb, sep="_")
+
+# Create the excess cluster file
+excessAgeState_v001 <- map_dfr(.x=listAgeState_v001, .f=function(x) { x[["preds"]] }, .id="ageState") %>%
+    tidyr::separate(ageState, into=c("age", "state"), sep="_")
+excessAgeState_v001
+
+```
+  
+The proportion of excess deaths by state can then be assessed:  
+```{r}
+
+excessAgeState_v001 %>%
+    filter(year==2020) %>%
+    group_by(age, state) %>%
+    summarize(excess=sum(delta)) %>%
+    ggplot(aes(x=fct_reorder(state, excess, .fun=sum), y=excess/1000, fill=age)) + 
+    geom_col(position="fill") + 
+    coord_flip() + 
+    labs(x="State", 
+         y="Excess Deaths (000s)", 
+         title="All-cause excess deaths in 2020", 
+         subtitle="CDC data through July 2020 (Q3 incomplete)"
+         ) +
+    scale_fill_discrete("Age Group") + 
+    geom_hline(aes(yintercept=0.25), lty=2)
+
+```
+  
+Many of the heaviest hit states have roughly 75% of their excess deaths through July 2020 in the 65+ age cohort.  States with smaller amounts of excess deaths through July 2020 have more variability in this ratio, with a general trend that a less percentage of their excess deaths fall in the 65+ age cohort.
+
+A look at the excess death national trends for the two groups:  
+```{r}
+
+for (age in levels(cdcTwoAge$ageSplit)) {
+    cdcCohortAnalysis(df=cdcTwoAge, 
+                      cohortName=paste0("ages ", age), 
+                      critFilter=list("ageSplit"=age),
+                      plotTitle=paste0("All-cause total deaths for age ", age), 
+                      showSubsetPlots=FALSE,
+                      showPredActualPlots=TRUE,
+                      predActualPlotsOnePage=TRUE
+                      )
+}
+
+```
+  
+Patterns are consistent with those noticed previously.
+
+Next steps are to update the analysis with data through the end of September, and to plot the evolution of the state-level segments given that updated data.
