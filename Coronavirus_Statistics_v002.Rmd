@@ -1,0 +1,1548 @@
+---
+title: "Coronavirus US Data"
+author: "davegoblue"
+date: "10/1/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+```
+
+## Background
+This file is for analysis of several coronavirus data sources focused on the US in 2020.  Data include areas such as cases, hospitalizations, and deaths tracked to cornavirus, as well as all-cause deaths.
+
+The previous version of this file includes many exploratory analysis components.  This version is designed with the following portions of the previous code:  
+  
+1.  Functions  
+2.  Run key analyses  
+3.  Save and load key files  
+  
+### _COVID Tracking Project_ 
+The first section is for analysis of data from [The COVID Tracking Project](https://covidtracking.com/).  This file contains data on positive tests, hospitalizations, deaths, and the like for coronavirus cases in the US.  Downloaded data are unique by state and date.
+
+#### _Key Functions (COVID Tracking Project)_  
+The previous analysis made frequent use of the functional form.  The functions for downloading and analysizing data from the COVID Tracking Project include:  
+```{r}
+
+# Function to extract and format key state data
+getStateData <- function(df=usmap::statepop, 
+                         renameVars=c("abbr"="state", "full"="name", "pop_2015"="pop"), 
+                         keepVars=c("state", "name", "pop")
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing state data
+    # renameVars: variables to be renamed, using named list with format "originalName"="newName"
+    # keepVars: variables to be kept in the final file
+    
+    # Rename variables where appropriate
+    names(df) <- ifelse(is.na(renameVars[names(df)]), names(df), renameVars[names(df)])
+    
+    # Return file with only key variables kept
+    df %>%
+        select_at(vars(all_of(keepVars)))
+    
+}
+
+
+
+# Function to read in the raw coronavirus data file (assume it is already downloaded)
+readCVData <- function(fileName,
+                       showGlimpse=TRUE,
+                       uqVars=c("date", "state"),
+                       errDups=TRUE
+                       ) {
+
+    # FUNCTION ARGUMENTS
+    # fileName: location of the downloded CSV file from COVID Tracking Project
+    # showGlimpse: boolean, whether to run glimpse() on the file
+    # uqVars: variables that the file is expected to be unique by
+    # errDups: boolean, whether to error out if uniqueness is violated
+    
+    # Read in the file and convert the 'date' from double to date
+    cvData <- readr::read_csv(fileName) %>%
+        mutate(date=lubridate::ymd(date))
+    
+    # See a sample of the data
+    if (showGlimpse) glimpse(cvData)
+
+    # Check that the data are unique by date and state
+    nDups <- cvData %>%
+        select_at(vars(all_of(uqVars))) %>%
+        anyDuplicated()
+    
+    # Inform of the uniqueness check results
+    if (nDups==0) {
+        cat("\nFile is unique by:", uqVars, "and has dimensions:", dim(cvData), "\n")
+    } else {
+        cat("\nUniqueness check failed, file has duplicates by:", uqVars, "\n")
+        if (errDups) stop("Fix and re-run")
+    }
+    
+    # Return the file
+    cvData
+    
+}
+
+
+# Function to select relevant variables and observations, and report on control totals
+processCVData <- function(dfFull, 
+                          varsKeep=c("date", "state", "positiveIncrease", "deathIncrease"), 
+                          varsRename=c("positiveIncrease"="cases", "deathIncrease"="deaths"), 
+                          stateList=c(state.abb, "DC")
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # dfFull: the full data file originally loaded
+    # varsKeep: variables to keep from the full file
+    # varsRename: variables to be renamed, using a named vector of form originalName=newName
+    # stateList: variables for filtering state (NULL means do not run any filters)
+    
+    # Select only the key variables
+    df <- dfFull %>%
+        select_at(vars(all_of(varsKeep)))
+    
+    # Apply the renaming of variables
+    names(df) <- ifelse(is.na(varsRename[names(df)]), names(df), varsRename[names(df)])
+
+    # Designate each record as being either a valid state or not
+    if (!is.null(stateList)) {
+        df <- df %>%
+            mutate(validState=state %in% stateList)
+    } else {
+        df <- df %>%
+            mutate(validState=TRUE)
+    }
+    
+    # Summarize the control totals for the data, based on whether the state is valid
+    cat("\n\nControl totals - note that validState other than TRUE will be discarded\n\n")
+    df %>%
+        mutate(n=1) %>%
+        group_by(validState) %>%
+        summarize_if(is.numeric, sum) %>%
+        print()
+    
+    # Return the file, filtered to where validState is TRUE, and deleting variable validState
+    df %>%
+        filter(validState) %>%
+        select(-validState)
+
+}
+
+
+
+# Helper function to create per capita metrics
+helperPerCapita <- function(df, 
+                            origVar, 
+                            newName,
+                            byVar="state",
+                            popVar="pop",
+                            popData=stateData,
+                            mult=1000000
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame currently being processed
+    # origVar: the variables to be converted to per capita
+    # newName: the new per capita variable name
+    # byVar: the variable that will be merged by
+    # popVar: the name of the population variable in the popData file
+    # popData: the file containing the population data
+    # mult: the multiplier, so that the metric is "per mult people"
+    
+    # Create the per capita variable
+    df %>%
+        inner_join(select_at(popData, vars(all_of(c(byVar, popVar)))), by=byVar) %>%
+        mutate(!!newName:=mult*get(origVar)/get(popVar)) %>%
+        select(-all_of(popVar))
+    
+}
+
+
+# Helper function to create rolling aggregates
+helperRollingAgg <- function(df, 
+                             origVar, 
+                             newName,
+                             func=zoo::rollmean,
+                             k=7, 
+                             fill=NA, 
+                             ...
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the data
+    # origVar: the original data column name
+    # newName: the new variable column name
+    # func: the function to be applied (zoo::rollmean will be by far the most common)
+    # k: the periodicity (k=7 is rolling weekly data)
+    # fill: how to fill leading.trailing data to maintain the same vector lengths
+    # ...: any other arguments to be passed to func
+    
+    # Create the appropriate variable
+    df %>%
+        mutate(!!newName:=func(get(origVar), k=k, fill=fill, ...))
+    
+}
+
+
+
+# Function to add per capita and rolling to the base data frame
+# Updated function to take an arbitrary number of variables and convert them
+helperMakePerCapita <- function(df, 
+                                mapVars=c("cases"="cpm", "deaths"="dpm"),
+                                popData=stateData,
+                                k=7
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the initial data frame for conversion
+    # mapVars: named vector of variables to be converted 'original name'='converted name'
+    # k: the rolling time period to use
+    
+    # Create the variables for per capita
+    for (origVar in names(mapVars)) {
+        df <- df %>% 
+            helperPerCapita(origVar=origVar, newName=mapVars[origVar], popData=popData)
+    }
+    # Arrange the data by date in preparation for rolling aggregations
+    df <- df %>% 
+        group_by(state) %>% 
+        arrange(date)
+    # Create the rolling variables
+    for (newVar in mapVars) {
+        df <- df %>% 
+            helperRollingAgg(origVar=newVar, newName=paste0(newVar, k), k=k)
+    }
+
+    # Return the updated data frame, ungrouped
+    df %>%
+        ungroup()
+    
+}
+
+
+
+# Function to create side-by-side plots for a deaths and cases metric
+# Data in df will be aggregated to be unique by byVar using aggFunc
+helperBarDeathsCases <- function(df, 
+                                 numVars,
+                                 title="",
+                                 xVar="state",
+                                 fillVar=NULL,
+                                 aggFunc=sum, 
+                                 mapper=varMapper
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the data
+    # numVars: the relevant numeric variables for plotting
+    # title: plot title, default is nothing
+    # xVar: the x-axis variable for plotting
+    # fillVar: the variable that will color the bars in the final plot (NULL means use "lightblue" for all)
+    # aggFunc: the aggregate function (will be applied to create data unique by byVar)
+    # mapper: mapping file to convert x/y variables to descriptive axes (named vector "variable"="label")
+    
+    # OVERALL FUNCTION PROCESS:
+    # 1.  Variables in numVar are aggregated by aggFunc to be unique by c(xVar, fillVar)
+    # 2.  Data are pivoted longer
+    # 3.  Bar charts are created, with coloring by fillVar if provided
+    
+    # Create the byVar for summing
+    byVar <- xVar
+    if (!is.null(fillVar)) { byVar <- c(byVar, fillVar) }
+    
+    # Process the data and create the plot
+    p1 <- df %>%
+        select_at(vars(all_of(c(byVar, numVars)))) %>%
+        group_by_at(vars(all_of(byVar))) %>%
+        summarize_all(aggFunc) %>%
+        pivot_longer(-all_of(byVar)) %>%
+        ggplot(aes(x=fct_reorder(get(xVar), value, .fun=min), y=value)) + 
+        coord_flip() + 
+        facet_wrap(~mapper[name], scales="free_x") + 
+        labs(x="", y="", title=title) + 
+        if (is.null(fillVar)) geom_col(fill="lightblue") else geom_col(aes_string(fill=fillVar))
+    
+    # Print the plot
+    print(p1)
+    
+}
+
+
+
+# Function to assess state data (no segments created yet)
+assessStateData <- function(df, 
+                            titleStem="Coronavirus burden by state", 
+                            cfrEst=0.005,
+                            mapper=varMapper
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the state-level data
+    # titleStem: the main title description, with (total) or (per capita) appended
+    # cfrEst: the estimated case fatality rate (CFR); a dashed abline will be plotted at this slope
+    # mapper: mapping file to convert x/y variables to descriptive axes (named vector "variable"="label")
+    
+    # Plot cases and deaths by state, once for overall and once per capita
+    helperBarDeathsCases(df, numVars=c("deaths", "cases"), title=paste0(titleStem, " (total)"))
+    helperBarDeathsCases(df, numVars=c("dpm", "cpm"), title=paste0(titleStem, " (per capita)"))
+
+    # Disease burden by state, per capita
+    p1 <- df %>%
+        group_by(state) %>%
+        summarize(cpm=sum(cpm), dpm=sum(dpm)) %>%
+        ggplot(aes(x=cpm, y=dpm)) +
+        geom_text(aes(label=state)) + 
+        labs(x=mapper["cpm"], 
+             y=mapper["dpm"], 
+             title="Deaths vs. cases by state (per million people)", 
+             subtitle=paste0("Dashed line is a CFR of ", 
+                             round(100*cfrEst, 1), 
+                             "% (states far from this may have case counting issues)"
+                             )
+             ) + 
+        geom_abline(slope=cfrEst, lty=2)
+    print(p1)
+    
+    # Total disease burden nationally by day, not using functional form
+    p2 <- df %>%
+        select(date, cases, deaths) %>%
+        group_by(date) %>%
+        summarize_if(is.numeric, sum) %>%
+        ungroup() %>%
+        helperRollingAgg(origVar="cases", newName="casesroll7") %>%
+        helperRollingAgg(origVar="deaths", newName="deathsroll7") %>%
+        select(-cases, -deaths) %>%
+        pivot_longer(-date) %>%
+        filter(!is.na(value)) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line() +
+        facet_wrap(~varMapper[name], scales="free_y") + 
+        labs(x="", 
+             y="",
+             title=titleStem
+             )
+    print(p2)
+    
+}
+
+
+
+# Function to create an elbow plot for various numbers of clusters in the data
+helperElbow <- function(mtx, 
+                        testCenters, 
+                        iter.max, 
+                        nstart, 
+                        silhouette=FALSE
+                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # mtx: a numeric matrix, or an object that can be coerced to a numeric matrix (no character fields)
+    # testCenters: integer vector for the centers to be tested
+    # iter.max: parameter passed to kmeans
+    # nstart: parameter passed to kmeans
+    # silhouette: whether to calculate the silhouette score
+    
+    # Create an object for storing tot.withinss and silhouetteScore
+    totWithin <- vector("numeric", length(testCenters))
+    silhouetteScore <- vector("numeric", length(testCenters))
+    
+    # Create the distancing data (required for silhouette score)
+    if (silhouette) distData <- dist(mtx)
+    
+    # Run k-means for every value in testCenters, and store $tot.withinss (and silhouetteScore, if requested)
+    n <- 1
+    for (k in testCenters) {
+        km <- kmeans(mtx, centers=k, iter.max=iter.max, nstart=nstart)
+        totWithin[n] <- km$tot.withinss
+        if (silhouette & (k > 1)) silhouetteScore[n] <- mean(cluster::silhouette(km$cluster, distData)[, 3])
+        n <- n + 1
+    }
+    
+    # Create the elbow plot
+    p1 <- tibble::tibble(n=testCenters, wss=totWithin) %>%
+        ggplot(aes(x=n, y=wss)) + 
+        geom_point() + 
+        geom_line() + 
+        geom_text(aes(y=wss + 0.05*max(totWithin), x=n+0.2, label=round(wss, 1))) + 
+        labs(x="Number of segments", y="Total Within Sum-Squares", title="Elbow plot") + 
+        ylim(c(0, NA))
+    
+    # Create the silhouette plot if requested
+    if (silhouette) {
+        p2 <- tibble::tibble(n=testCenters, ss=silhouetteScore) %>%
+            ggplot(aes(x=n, y=ss)) + 
+            geom_point() + 
+            geom_line() + 
+            geom_text(aes(y=ss + 0.05*max(silhouetteScore), x=n+0.2, label=round(ss, 1))) + 
+            labs(x="Number of segments", y="Mean silhouette width", title="Silhouette plot") + 
+            ylim(c(-1, NA))
+        gridExtra::grid.arrange(p1, p2, nrow=1)
+    } else {
+        print(p1)
+    }
+    
+}
+
+
+# Function to create clusters for the state data (requires all data from same year, as currently true)
+clusterStates <- function(df, 
+                          caseVar="cpm", 
+                          deathVar="dpm",
+                          shapeFunc=lubridate::month, 
+                          minShape=NULL, 
+                          minDeath=0,
+                          minCase=0,
+                          ratioTotalvsShape=1, 
+                          ratioDeathvsCase=1, 
+                          hierarchical=TRUE, 
+                          hierMethod="complete", 
+                          nCenters=3, 
+                          iter.max=10,
+                          nstart=1,
+                          testCenters=NULL,
+                          returnList=FALSE, 
+                          seed=NULL
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing cases and deaths data
+    # caseVar: the variable containing the cases per capita data
+    # deathVar: the variable containing the deaths per capita data
+    # shapeFunc: the function to be used for creating the shape of the curve
+    # minShape: the minimum value to be used for shape (to avoid very small amounts of data in Jan/Feb)
+    #           NULL means keep everything
+    # minDeath: use this value as a floor for the death metric when calculating shape
+    # minCase: use this metric as a floor for the case metric when calculating shape
+    # ratioTotalvsShape: amount of standard deviation to be kept in total variable vs shape variables
+    # ratioDeathvsCase: amount of standard deviation to be kept in deaths vs cases 
+    #                   (total death data will be scaled to have sd this many times higher than cases)
+    #                   (death percentages by time period will be scaled directly by this amount)
+    # hierarchical: boolean, if TRUE run hierarchical clustering, otherwise run k-means clustering
+    #               only hierarchical clustering is currently implemented
+    # hierMethod: the method for hierarchical clustering (e.g., 'complete' or 'single')
+    # nCenters: the number of centers to use for kmeans clustering
+    # testCenters: integer vector of centers to test (will create an elbow plot); NULL means do not test
+    # iter.max: maximumum number of kmeans iterations (default in kmeans algorithm is 10)
+    # nstart: number of random sets chosen for kmeans (default in kmeans algorithm is 1)
+    # returnList: boolean, if FALSE just the cluster object is returned
+    #                      if TRUE, a list is returned with dfCluster and the cluster object
+    # seed: set the seed to this value (NULL means no seed)
+    
+    # Extract key information (aggregates and by shapeFunc for each state)
+    df <- df %>%
+        select_at(vars(all_of(c("date", "state", caseVar, deathVar)))) %>%
+        purrr::set_names(c("date", "state", "cases", "deaths")) %>%
+        mutate(timeBucket=shapeFunc(date)) %>%
+        group_by(state, timeBucket) %>%
+        summarize(cases=sum(cases), deaths=sum(deaths)) %>%
+        ungroup()
+    
+    # Limit to only relevant time buckets if requested
+    if (!is.null(minShape)) {
+        df <- df %>%
+            filter(timeBucket >= minShape)
+    }
+    
+    # Extract an aggregate by state, scaled so that they have the proper ratio
+    dfAgg <- df %>%
+        group_by(state) %>%
+        summarize(totalCases=sum(cases), totalDeaths=sum(deaths)) %>%
+        ungroup() %>%
+        mutate(totalDeaths=ratioDeathvsCase*totalDeaths*sd(totalCases)/sd(totalDeaths))
+    
+    # Extract the percentages (shapes) by month, scaled so that they have the proper ratio
+    dfShape <- df %>%
+        pivot_longer(-c(state, timeBucket)) %>%
+        group_by(state, name) %>%
+        mutate(tot=pmax(sum(value), ifelse(name=="deaths", minDeath, minCase)), 
+               value=ifelse(name=="deaths", ratioDeathvsCase, 1) * value / tot) %>%
+        select(-tot) %>%
+        pivot_wider(state, names_from=c(name, timeBucket), values_from=value) %>%
+        ungroup()
+    
+    # Function to calculate SD of a subset of columns
+    calcSumSD <- function(df) {
+        df %>% 
+            ungroup() %>% 
+            select(-state) %>% 
+            summarize_all(.funs=sd) %>% 
+            as.vector() %>% 
+            sum()
+    }
+    
+    # Down-weight the aggregate data so that there is the proper sum of sd in aggregates and shapes
+    aggSD <- calcSumSD(dfAgg)
+    shapeSD <- calcSumSD(dfShape)
+    dfAgg <- dfAgg %>%
+        mutate_if(is.numeric, ~. * ratioTotalvsShape * shapeSD / aggSD)
+
+    # Combine so there is one row per state
+    dfCluster <- dfAgg %>%
+        inner_join(dfShape, by="state")
+    
+    # convert 'state' to rowname
+    keyData <- dfCluster %>% column_to_rownames("state")
+    
+    # Create hierarchical segments or kmeans segments
+    if (hierarchical) {
+        objCluster <-  hclust(dist(keyData), method=hierMethod)
+        plot(objCluster)
+    } else {
+        # Create an elbow plot if testCenters is not NULL
+        if (!is.null(testCenters)) {
+            helperElbow(keyData, testCenters=testCenters, iter.max=iter.max, nstart=nstart, silhouette=TRUE)
+        }
+        # Create the kmeans cluster object, setting a seed if requested
+        if (!is.null(seed)) set.seed(seed)
+        objCluster <- kmeans(keyData, centers=nCenters, iter.max=iter.max, nstart=nstart)
+        cat("\nCluster means and counts\n")
+        n=objCluster$size %>% cbind(objCluster$centers) %>% round(2) %>% t() %>% print()
+    }
+
+    # Return the data and object is a list if returnList is TRUE, otherwise return only the clustering object
+    if (!isTRUE(returnList)) {
+        objCluster
+    } else {
+        list(objCluster=objCluster, dfCluster=dfCluster)
+    }
+    
+}
+
+
+
+# Helper function to assess 30-day change vs. total
+helperRecentvsTotal <- function(df, 
+                                xVar, 
+                                yVar,
+                                title,
+                                recencyDays=30, 
+                                ablineSlope=0.5, 
+                                mapper=varMapper, 
+                                labelPlot=TRUE,
+                                printPlot=TRUE
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the tibble containing data by state by day
+    # xVar: the x-variable
+    # yVar: the y-variable
+    # title: the plot title
+    # recencyDays: number of days to consider as recent
+    # ablineSlope: dashed line will be drawn with this slope and intercept 0
+    # mapper: mapping file to convert x/y variables to descriptive axes (named vector "variable"="label")
+    # labelPlot: boolean, whether to show the labels for each point
+    # printPlot: boolean, whether to display the plot (if FALSE, plot object is returned)
+    
+    # Get the most date cutoff
+    dateCutoff <- df %>% pull(date) %>% max() - recencyDays + 1
+    cat("\nRecency is defined as", format(dateCutoff, "%Y-%m-%d"), "through current\n")
+    
+    # Create the plot
+    p1 <- df %>%
+        mutate(newCases=ifelse(date >= dateCutoff, cases, 0), 
+               newDeaths=ifelse(date >= dateCutoff, deaths, 0), 
+               newcpm=ifelse(date >= dateCutoff, cpm, 0), 
+               newdpm=ifelse(date >= dateCutoff, dpm, 0)
+               ) %>%
+        group_by(state, cluster) %>%
+        summarize_if(is.numeric, .funs=sum) %>%
+        ungroup() %>%
+        ggplot(aes_string(x=xVar, y=yVar)) + 
+        labs(x=mapper[xVar], 
+             y=mapper[yVar], 
+             title=title, 
+             subtitle=paste0("Dashed line represents ", 
+                             round(100*ablineSlope), 
+                             "% of total is new in last ", 
+                             recencyDays,
+                             " days"
+                             )
+             ) + 
+        geom_abline(lty=2, slope=ablineSlope) + 
+        lims(x=c(0, NA), y=c(0, NA)) + 
+        theme(legend.position = "bottom")
+    
+    # Add the appropriate geom (scatterplot if labelPlot is FALSE)
+    if (labelPlot) p1 <- p1 + geom_text(aes(color=cluster, label=state))
+    else p1 <- p1 + geom_point(aes(color=cluster), alpha=0.5)
+    
+    if (isTRUE(printPlot)) {
+        print(p1)
+    } else {
+        p1
+    }
+
+}
+
+
+# Function to plot cluster vs. individual elements on a key metric
+helperTotalvsElements <- function(df, 
+                                  keyVar, 
+                                  title,
+                                  aggAndTotal=TRUE,
+                                  pctRibbon=0.8,
+                                  aggFunc=if(aggAndTotal) median else mean, 
+                                  mapper=varMapper, 
+                                  facetScales="free_y", 
+                                  printPlot=TRUE
+                                  ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing n-day rolling averages
+    # keyVar: the variable to be plotted
+    # title: the plot title
+    # aggAndTotal: boolean, whether to plot every individual observation along with the cluster aggregate
+    # pctRibbon: if aggAndTotal is FALSE, a ribbon covering this percentage of the data will be plotted
+    # aggFunc: how to aggregate the elements to the segment
+    #          CAUTION that this is an aggregate of averages, rather than a population-weighted aggregate
+    # mapper: the variable mapping file to get the appropriate label for keyVar
+    # facetScales: the scaling for the facets - "free_y" to let them all float, "fixed" to have them the same
+    # printPlot: boolean, if TRUE print the plot (otherwise return the plot object)
+
+    # Create an appropriate subtitle
+    subtitle <- if(facetScales=="free_y") {
+        "Caution that each facet has its own y axis with different scales"
+    } else if (facetScales=="fixed") { 
+        "All facets are on the same scale"
+    } else {
+        "Update subtitle code in function helperTotalvsElements"
+    }
+
+    # Create an appropriate caption
+    caption <- if(aggAndTotal) {
+        "Cluster aggregate is median, weighting each observation equally\n(NOT population-weighted)"
+    } else {
+        paste0("1. Cluster aggregate is mean over all observations (NOT population-weighted)\n2. Ribbons reflect range covering ", round(pctRibbon*100), "% of observations")
+    }
+    
+    # Create the plots for segment-level data
+    p1 <- df %>%
+        rbind(mutate(., state="cluster")) %>%
+        group_by(state, cluster, date) %>%
+        summarize_at(vars(all_of(keyVar)), .funs=aggFunc) %>%
+        ungroup() %>%
+        filter(!is.na(get(keyVar))) %>%
+        ggplot(aes_string(x="date")) + 
+        geom_line(data=~filter(., state == "cluster"), 
+                  aes(y=get(keyVar), group=state, color=cluster), 
+                  lwd=1.5
+                  ) + 
+        facet_wrap(~cluster, scales=facetScales) + 
+        labs(x="", 
+             y=mapper[keyVar], 
+             title=title, 
+             subtitle=subtitle,
+             caption=caption
+             ) + 
+        ylim(c(0, NA)) + 
+        theme(legend.position="bottom")
+    
+    # Add an appropriate individual metric (either every observation or quantiles)
+    if (aggAndTotal) {
+        p1 <- p1 + 
+            geom_line(data=~filter(., state != "cluster"), 
+                      aes(y=get(keyVar), group=state), 
+                      alpha=0.25
+                      )
+    } else {
+        dfRibbon <- df %>%
+            filter(!is.na(get(keyVar))) %>%
+            group_by(cluster, date) %>%
+            summarize(ylow=quantile(get(keyVar), 0.5-0.5*pctRibbon), 
+                      yhigh=quantile(get(keyVar), 0.5+0.5*pctRibbon)
+                      )
+        p1 <- p1 + 
+            geom_ribbon(data=dfRibbon, 
+                        aes(ymin=ylow, ymax=yhigh), 
+                        alpha=0.25
+                        )
+    }
+    
+    # Print plot if requested, otherwise return it
+    if (isTRUE(printPlot)) {
+        print(p1)
+    } else {
+        p1
+    }
+    
+}
+
+
+
+# Function to assess clusters
+assessClusters <- function(clusters, 
+                           dfState=stateData, 
+                           dfBurden=cvFilteredPerCapita,
+                           thruLabel="Aug 20, 2020",
+                           isCounty=FALSE,
+                           plotsTogether=FALSE, 
+                           clusterPlotsTogether=plotsTogether,
+                           recentTotalTogether=plotsTogether, 
+                           clusterAggTogether=plotsTogether
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # clusters: the named vector containing the clusters by state
+    # dfState: the file containing the states and populations
+    # dfBurden: the data containing the relevant per capita burden statistics by state-date
+    # thruLabel: label for plots for 'data through'
+    # isCounty: boolean, is this a plot of county-level data that have been named 'state'?
+    #           FALSE means that it is normal state-level data
+    # plotsTogether: boolean, should plots be consolidated on fewer pages?
+    # clusterPlotsTogether: boolean, should plots p1-p4 be consolidated?
+    # recentTotalTogether: boolean, should recent total plots p7-p8 be consolidated?
+    # clusterAggTogether: boolean, should aggregate plots p9/p11 and p10/p12 be consolidated?
+    
+    # Attach the clusters to the state population data
+    dfState <- as.data.frame(clusters) %>%
+        set_names("cluster") %>%
+        rownames_to_column("state") %>%
+        inner_join(dfState, by="state") %>%
+        mutate(cluster=factor(cluster))
+    
+    # Plot the segments on a state map (only if !isCounty)
+    if (isCounty) {
+        p1 <- dfState %>%
+            count(cluster) %>%
+            ggplot(aes(x=fct_rev(cluster), y=n)) + 
+            geom_col(aes(fill=cluster)) +
+            geom_text(aes(y=n/2, label=n)) +
+            coord_flip() + 
+            labs(x="", y="# Counties", title="Membership by segment")
+    } else {
+        p1 <- usmap::plot_usmap(regions="states", data=dfState, values="cluster") + 
+            scale_fill_discrete("cluster") + 
+            theme(legend.position="right")
+    }
+    
+    # Plot the population totals by segment
+    # Show population totals by cluster
+    p2 <- dfState %>%
+        group_by(cluster) %>%
+        summarize(pop=sum(pop)/1000000) %>%
+        ggplot(aes(x=fct_rev(cluster), y=pop)) + 
+        geom_col(aes(fill=cluster)) + 
+        geom_text(aes(y=pop/2, label=round(pop))) + 
+        labs(y="2015 population (millions)", x="Cluster", title="Population by cluster (millions)") +
+        coord_flip()
+    
+    # Plot the rolling 7-day mean dialy disease burden by cluster
+    dfPlot <- dfState %>%
+        inner_join(dfBurden, by="state") %>%
+        tibble::as_tibble()
+    
+    # Plot the rolling 7-day mean daily disease burden by cluster
+    p3 <- dfPlot %>%        
+        select(date, cluster, cases=cpm7, deaths=dpm7) %>%
+        pivot_longer(-c(date, cluster)) %>%
+        filter(!is.na(value)) %>%
+        group_by(date, cluster, name) %>%
+        summarize(value=median(value)) %>%
+        ggplot(aes(x=date, y=value)) +
+        geom_line(aes(group=cluster, color=cluster)) +
+        facet_wrap(~name, scales="free_y") +
+        labs(x="",
+             y="Rolling 7-day mean, per million",
+             title="Rolling 7-day mean daily disease burden, per million",
+             subtitle="Median per day for states assigned to cluster"
+             )
+    
+    # Plot the total cases and total deaths by cluster
+    p4 <- dfPlot %>%
+        group_by(cluster) %>%
+        summarize(cases=sum(cases), deaths=sum(deaths)) %>%
+        pivot_longer(-cluster) %>%
+        ggplot(aes(x=fct_rev(cluster), y=value/1000)) + 
+        geom_col(aes(fill=cluster)) + 
+        geom_text(aes(y=value/2000, label=round(value/1000))) +
+        coord_flip() + 
+        facet_wrap(~varMapper[name], scales="free_x") + 
+        labs(x="Cluster", y="Burden (000s)", title="Total cases and deaths by segment")
+
+    # Place the plots together if plotsTogether is TRUE, otherwise just print
+    if (isTRUE(clusterPlotsTogether)) {
+        gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2, ncol=2)
+    } else {
+        print(p1); print(p2); print(p3); print(p4)
+    }
+
+    # These are relevant and useful only for state-level data
+    if (!isCounty) {
+        # Plot total cases and total deaths by state, colored by cluster
+        helperBarDeathsCases(dfPlot, 
+                             numVars=c("cases", "deaths"), 
+                             title=paste0("Coronavirus impact by state through ", thruLabel), 
+                             xVar=c("state"), 
+                             fillVar=c("cluster")
+                             )
+    
+        # Plot cases per million and deaths per million by state, colored by cluster
+        helperBarDeathsCases(dfPlot, 
+                             numVars=c("cpm", "dpm"), 
+                             title=paste0("Coronavirus impact by state through ", thruLabel), 
+                             xVar=c("state"), 
+                             fillVar=c("cluster")
+                             )
+    }
+    
+    # County-level plots will be point-only; state-level plots will be labelled
+    # Plot last-30 vs total for cases per million by state, colored by cluster
+    p7 <- helperRecentvsTotal(dfPlot, 
+                              xVar="cpm", 
+                              yVar="newcpm", 
+                              title=paste0("Coronavirus burden through ", thruLabel), 
+                              labelPlot=!isCounty,
+                              printPlot=FALSE
+                              )
+    
+    # Plot last-30 vs total for deaths per million by state, colored by cluster
+    p8 <- helperRecentvsTotal(dfPlot, 
+                              xVar="dpm", 
+                              yVar="newdpm", 
+                              title=paste0("Coronavirus burden through ", thruLabel), 
+                              labelPlot=!isCounty,
+                              printPlot=FALSE
+                              )
+    
+    # Print the plots either as a single page or separately
+    if (isTRUE(recentTotalTogether)) {
+        gridExtra::grid.arrange(p7, p8, nrow=1)
+    } else {
+        print(p7); print(p8)
+    }
+    
+    # These are currently only helpful for states (update later to make more useful for counties)
+    # Plot the cases per million on a free y-scale and a fixed y-scale
+    p9 <- helperTotalvsElements(dfPlot, 
+                                keyVar="cpm7", 
+                                aggAndTotal=!isCounty,
+                                title="Cases per million, 7-day rolling mean", 
+                                printPlot=FALSE
+                                )
+    p10 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="cpm7", 
+                                 aggAndTotal=!isCounty,
+                                 title="Cases per million, 7-day rolling mean", 
+                                 facetScales="fixed", 
+                                 printPlot=FALSE
+                                 )
+    
+    # Plot the deaths per million on a free y-scale and a fixed y-scale
+    p11 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="dpm7", 
+                                 aggAndTotal=!isCounty,
+                                 title="Deaths per million, 7-day rolling mean", 
+                                 printPlot=FALSE
+                                 )
+    p12 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="dpm7", 
+                                 aggAndTotal=!isCounty,
+                                 title="Deaths per million, 7-day rolling mean", 
+                                 facetScales="fixed", 
+                                 printPlot=FALSE
+                                 )
+    
+    if (isTRUE(clusterAggTogether)) {
+        gridExtra::grid.arrange(p9, p11, nrow=1)
+        gridExtra::grid.arrange(p10, p12, nrow=1)
+    } else {
+        print(p9); print(p10); print(p11); print(p12)
+    }
+    
+    # Return the plotting data frame
+    dfPlot
+
+}
+
+
+
+# Function to create plots of the number hospitalized by state and cluster
+plotHospitalized <- function(df, 
+                             clusterVector,
+                             dfState=stateData, 
+                             subT=""
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a data frame or tibble containing 'state', 'date', 'hospitalizedCurrently'
+    # clusterVector: a named vector of form 'state'='cluster'
+    # dfState: a state-level population file containing 'state' and 'pop'
+    # subT: a subtitle for the plot
+    
+    # Create the key plotting data
+    plotData <- df %>% 
+        inner_join(dfState, by="state") %>% 
+        mutate(cluster=factor(clusterVector[state])) %>% 
+        filter(!is.na(hospitalizedCurrently)) %>% 
+        select(date, state, cluster, hospitalizedCurrently, pop) %>%
+        rbind(mutate(., state="Total")) %>%
+        group_by(state, cluster, date) %>% 
+        summarize(n=n(), 
+                  hospitalizedCurrently=sum(hospitalizedCurrently), 
+                  pop=sum(pop)
+                  ) %>% 
+        mutate(hpm=1000000*hospitalizedCurrently/pop) %>%
+        helperRollingAgg(origVar="hpm", newName="hpm7") %>%
+        ungroup()
+    
+    # Create the plot
+    p1 <- plotData %>%
+        filter(!is.na(hpm7)) %>%
+        ggplot(aes(x=date, y=hpm7)) + 
+        geom_line(data=~filter(., state != "Total"), aes(group=state), alpha=0.25) +
+        geom_line(data=~filter(., state == "Total"), aes(group=state, color=cluster), lwd=1.5) + 
+        facet_wrap(~cluster, scales="fixed") + 
+        ylim(c(0, NA)) + 
+        labs(x="", 
+             y="Currently Hospitalized 7-day rolling mean (per million)", 
+             title="Hospitalized per million by cluster", 
+             subtitle=subT
+             )
+    print(p1)
+    
+    # Return the plot data
+    plotData
+
+}
+
+
+# Function to download data for COVID Tracking Project
+downloadCOVIDbyState <- function(fileName, 
+                                 api="https://api.covidtracking.com/v1/states/daily.csv", 
+                                 ovrWrite=FALSE
+                                 ) {
+    
+    # COVID Tracking Project API allows data downloads for personal, non-commercial use
+    # https://covidtracking.com/data/api
+    
+    # FUNCTION ARGUMENTS:
+    # fileName: the filename that the data will be saved to
+    # api: The API link for data downloads
+    # ovrWrite: whether to allow overwriting of the existing fileName
+    
+    # Check whether fileName already exists
+    if (file.exists(fileName)) {
+        cat("\nFile already exists at:", fileName, "\n")
+        if (ovrWrite) cat("Will over-write with current data from", api, "\n")
+        else stop("Exiting due to ovrWrite=FALSE and a duplicate fileName\n")
+    }
+    
+    # Download the file 
+    download.file(api, destfile=fileName)
+    
+    # Show statistics on downloaded file
+    file.info(fileName)
+    
+}
+
+
+
+# Function to read, convert, and sanity check a downloaded file
+readCOViDbyState <- function(fileName, 
+                             checkFile=NULL, 
+                             controlFields=c("positiveIncrease", "deathIncrease", "hospitalizedCurrently"), 
+                             controlBy=c("state")
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # fileName: the file name for reading the data
+    # checkFile: a file that can be used for comparison purposes (NULL means do not compare to anything)
+    # controlFields: fields that will be explicitly checked against checkFile
+    # controlBy: level of aggregation at which fields will be explicitly checked against checkFile
+    
+    # Helper function to check for similarity of key elements
+    helperSimilarity <- function(newData, refData, label) {
+        cat("\n\nCheckin for similarity of:", label)
+        cat("\nIn reference but not in current:", setdiff(refData, newData))
+        cat("\nIn current but not in reference:", setdiff(newData, refData))
+    }
+    
+    # Read in the file and convert the numeric date field to date using ymd format
+    df <- readr::read_csv(fileName) %>% 
+        mutate(date=lubridate::ymd(date))
+
+    # Check that the file is unique by date-state
+    if ((df %>% select(date, state) %>% anyDuplicated()) != 0) {
+        stop("\nDuplicates by date and state, investigate and fix\n")
+    } else {
+        cat("\nFile is unique by state and date\n")
+    }
+    
+    # Check for overall control totals in new file
+    cat("\n\nOverall control totals in file:\n")
+    df %>% 
+        summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>% 
+        print()
+    
+    # Get control totals by date for new file
+    dfByDate <- df %>% 
+        group_by(date) %>%
+        summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>%
+        ungroup() %>%
+        pivot_longer(-date, values_to="newValue")
+        
+    # If there is no checkFile, then just produce a plot of the key metrics
+    if (is.null(checkFile)) {
+        p1 <- dfByDate %>% 
+            ggplot(aes(x=date, y=newValue)) + 
+            geom_line() + 
+            facet_wrap(~name, nrow=1, scales="free_y") + 
+            labs(title="Control totals by date for new file (no reference file)", x="", y="Summed Value")
+        print(p1)
+    } else {
+        # Check for similarity of fields, dates, and states
+        cat("\n*** COMPARISONS TO REFERENCE FILE:", deparse(substitute(checkFile)))
+        helperSimilarity(newData=names(df), refData=names(checkFile), label="column names")
+        helperSimilarity(newData=df %>% pull(state) %>% unique(), 
+                         refData=checkFile %>% pull(state) %>% unique(), 
+                         label="states"
+                         )
+        helperSimilarity(newData=df %>% pull(date) %>% unique() %>% format("%Y-%m-%d"), 
+                         refData=checkFile %>% pull(date) %>% unique() %>% format("%Y-%m-%d"), 
+                         label="dates"
+                         )
+    
+        # Check for similarity of control totals by date in files
+        checkByDate <- checkFile %>% 
+            group_by(date) %>%
+            summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>%
+            ungroup() %>%
+            pivot_longer(-date, values_to="oldValue")
+        cat("\n\n*** Difference of at least 5 and difference is at least 1%:\n\n")
+        dfByDate %>% 
+            inner_join(checkByDate) %>%
+            filter(abs(newValue-oldValue)>=5, 
+                   pmax(newValue, oldValue)>=1.01*pmin(newValue, oldValue)
+                   ) %>%
+            as.data.frame() %>%
+            print()
+        p1 <- dfByDate %>% 
+            inner_join(checkByDate) %>%
+            pivot_longer(-c(date, name), names_to="newOld") %>%
+            ggplot(aes(x=date, y=value, group=newOld, color=newOld)) + 
+            geom_line() + 
+            facet_wrap(~name, nrow=1, scales="free_y") + 
+            labs(title="Control totals by date for new and reference file", x="", y="Summed Value")
+        print(p1)
+
+        # Check for similarity of control totals by controlBy in files
+        dfByControl <- df %>% 
+            semi_join(select(checkFile, date), by="date") %>%
+            group_by_at(vars(all_of(controlBy))) %>%
+            summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>%
+            ungroup() %>%
+            pivot_longer(-all_of(controlBy), values_to="newValue")
+        checkByControl <- checkFile %>% 
+            group_by_at(vars(all_of(controlBy))) %>%
+            summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>%
+            ungroup() %>%
+            pivot_longer(-all_of(controlBy), values_to="oldValue")
+        cat("\n\n*** Difference of at least 5 and difference is at least 1%:\n\n")
+        dfByControl %>% 
+            inner_join(checkByControl) %>%
+            filter(abs(newValue-oldValue)>=5, 
+                   pmax(newValue, oldValue)>=1.01*pmin(newValue, oldValue)
+                   ) %>%
+            as.data.frame() %>%
+            print()
+    }
+    
+    # Return the processed data file
+    df
+    
+}
+
+
+# Function to create plots of consolidated metrics
+plotConsolidatedMetrics <- function(dfMain, 
+                                    dfHosp=NULL, 
+                                    varMain=c("state", "cluster", "date", "pop", "cases", "deaths", "hosp"),
+                                    varDropHosp=c("n", "pop"), 
+                                    joinBy=c("state", "cluster", "date"), 
+                                    subT=NULL, 
+                                    nrowPlot2=1
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfMain: the main file produced by assessClusters(), containing data by state-cluster-date
+    # dfHosp: the separate file with hospital data (NULL means data already available in dfMain)
+    # varMain: variables to keep from dfMain
+    # varDropHosp: variables to drop from dfHosp
+    # joinBy: variables for joining dfMain and dfHosp
+    # subT: plot subtitle (NULL will use the defaults), 
+    # nrowPlot2: number of rows for the facetting to use on plot 2
+    
+    if (is.null(subT)) {
+        subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new)"
+    }
+    
+    # Filter dfMain to include only variables in varMain
+    dfMain <- dfMain %>%
+        select_at(vars(all_of(varMain)))
+    
+    # Left join dfMain to dfHosp unless dfHosp is NULL
+    if (!is.null(dfHosp)) {
+        dfHosp <- dfHosp %>%
+            select_at(vars(all_of(names(dfHosp)[!(names(dfHosp) %in% varDropHosp)])))
+        dfMain <- dfMain %>%
+            left_join(dfHosp, by=all_of(joinBy))
+    }
+    
+    # Check that variables state, cluster, date, pop are all available
+    if (!(c("state", "cluster", "date", "pop") %in% names(dfMain) %>% all())) {
+        stop("\nFunction requires variables state, cluster, date, and pop after processing\n")
+    }
+    
+    # Create the relevant plotting data
+    dfPlot <- dfMain %>%
+        pivot_longer(-c(state, cluster, date, pop)) %>%
+        filter(!is.na(value)) %>%
+        rbind(mutate(., state="cluster")) %>%
+        group_by_at(vars(all_of(c(joinBy, "name")))) %>%
+        summarize(value=sum(value), pop=sum(pop)) %>%
+        mutate(vpm=1000000*value/pop) %>%
+        arrange(state, cluster, name, date) %>%
+        group_by(state, cluster, name) %>%
+        helperRollingAgg(origVar="vpm", newName="vpm7")    
+
+    # Create facetted plots for totals by metric by segment
+    p1 <- dfPlot %>%
+        filter(!is.na(vpm7)) %>%
+        ggplot(aes(x=date, y=vpm7)) + 
+        geom_line(data=~filter(., state=="cluster"), aes(group=cluster, color=cluster), lwd=1.5) +
+        geom_line(data=~filter(., state!="cluster"), aes(group=state), alpha=0.25) + 
+        facet_grid(name ~ cluster, scales="free_y") + 
+        labs(x="", 
+             y="Rolling 7-day mean per million", 
+             title="Key metrics by cluster (7-day rolling mean per million)", 
+             subtitle=subT
+             ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b") + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p1)
+
+    # Create all-segment plot by metric
+    p2 <- dfPlot %>%
+        filter(!is.na(vpm7)) %>%
+        ggplot(aes(x=date, y=vpm7)) + 
+        geom_line(data=~filter(., state=="cluster"), aes(group=cluster, color=cluster), lwd=1.5) +
+        facet_wrap(~ name, scales="free_y", nrow=nrowPlot2) + 
+        labs(x="", 
+             y="Rolling 7-day mean per million", 
+             title="Key metrics by cluster (7-day rolling mean per million)", 
+             subtitle=subT
+             ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b") + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p2)
+
+    # Create all-metric plot by segment (define 100% as peak for segment-metric)
+    p3 <- dfPlot %>%
+        filter(!is.na(vpm7)) %>%
+        group_by(state, cluster, name) %>%
+        mutate(spm7=vpm7/max(vpm7)) %>%
+        ggplot(aes(x=date, y=spm7)) + 
+        geom_line(data=~filter(., state=="cluster"), aes(group=name, color=name), lwd=1) +
+        facet_wrap(~ cluster, scales="free_y") + 
+        labs(x="", 
+             y="% of Maximum", 
+             title="Key metrics by cluster (% of cluster maximum for variable)", 
+             subtitle=subT
+             ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b") + 
+        scale_color_discrete("variable") +
+        theme(axis.text.x=element_text(angle=90))
+    print(p3)
+    
+    # Return the plotting data
+    dfPlot
+    
+}
+
+
+# Function to convert a file to cumulative totals
+makeCumulative <- function(df, 
+                           typeVar="name", 
+                           typeKeep=c("cases", "deaths", "tests"), 
+                           valVar="vpm7", 
+                           groupVars=c("state", "cluster", "name"), 
+                           arrangeVars=c("date"), 
+                           newName="cum7"
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame containing the metrics
+    # typeVar: the variable holding the metric type (default is 'name')
+    # typeKeep: the values of typeVar to be kept
+    # valVar: the variable holding the metric value (default is 'vpm7')
+    # groupVars: groups for calculating cumulative sum
+    # arrangeVars: variables to be sorted by before calculating cumulative sum
+    # newName: the name for the new variable
+
+    # Create the cumulative data
+    dfCum <- df %>%
+        filter(get(typeVar) %in% typeKeep, !is.na(get(valVar))) %>%
+        arrange_at(vars(all_of(c(groupVars, arrangeVars)))) %>%
+        group_by_at(groupVars) %>%
+        mutate(!!newName:=cumsum(get(valVar))) %>%
+        ungroup()
+
+    # Return the processed data
+    dfCum
+    
+}
+
+
+# Function to find and flag states that are high on a key value or change in key value
+findFlagStates <- function(df, 
+                           keyMetricVal, 
+                           keyMetricVar="name", 
+                           cumVar="cum7", 
+                           prevDays=30, 
+                           nFlag=5
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the cumulative data
+    # keyMetricVal: the metric of interest (e.g., "deaths", "cases", "tests")
+    # keyMetricVar: the variable name for the column containing the metric of interest
+    # cumVar: variable containing the cumulative totals
+    # prevDays: the number of days previous to use for defining growth
+    # nFlag: the number of states to flag for either total or growth (top-n of each)
+    
+    # Find top-5 in either total or recent increase
+    dfFlag <- df %>%
+        filter(get(keyMetricVar)==keyMetricVal, state!="cluster") %>%
+        select_at(vars(all_of(c("state", "date", cumVar)))) %>%
+        group_by(state) %>%
+        summarize(maxVal=max(get(cumVar)), 
+                  tminus=sum(ifelse(date==max(date)-lubridate::days(prevDays), get(cumVar), 0))
+                  ) %>%
+        ungroup() %>%
+        mutate(growth=maxVal-tminus, 
+               rkTotal=min_rank(-maxVal), 
+               rkGrowth=min_rank(-growth), 
+               flag=ifelse(pmin(rkTotal, rkGrowth)<=nFlag, 1, 0)
+               ) %>%
+        arrange(-flag, rkTotal)
+
+    # Return the top values as a vector of states
+    dfFlag %>%
+        filter(flag==1) %>%
+        pull(state)
+    
+}
+
+
+# Function to plot cumulative data
+plotCumulativeData <- function(df, 
+                               keyMetricp2,
+                               flagsp2,
+                               p2Desc=keyMetricp2,
+                               keyVar="cum7", 
+                               makep1=FALSE, 
+                               makep2=TRUE
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame of cumulative data
+    # keyMetricp2: the key metric to be plotted in the second plot (e.g., "deaths", "cases", "tests")
+    # flagsp2: states to be treated as flagged in the second plot
+    # p2Desc: the description to be used in plot 2
+    # keyVar: the key variable to plot
+    # makep1: boolean, whether to make the first plot
+    # makep2: boolean, whether to make the second plot
+    
+    # Plot the cumulative data by cluster (if flag is set for producing this)
+    if (isTRUE(makep1)) {
+        p1 <- df %>%
+            filter(state=="cluster") %>%
+            ggplot(aes(x=date, y=get(keyVar))) + 
+            geom_line(aes(group=cluster, color=cluster)) + 
+            facet_wrap(~name, nrow=1, scales="free_y") + 
+            scale_x_date(date_breaks="1 months", date_labels="%m") + 
+            labs(x="Month", 
+                 y="Cumulative Burden (per million)", 
+                 title="Cumulative burden by segment (per million)"
+                 )
+        print(p1)
+    }
+    
+    
+    # Plot the cumulative totals over time for one metric, and flag the highest
+    if (isTRUE(makep2)) {
+        p2 <- df %>%
+            filter(state!="cluster", name==keyMetricp2) %>%
+            mutate(bold=ifelse(state %in% flagsp2, 1, 0)) %>%
+            ggplot(aes(x=date, y=get(keyVar))) + 
+            geom_line(aes(group=state, color=cluster, alpha=0.4+0.6*bold, size=0.5+0.5*bold)) + 
+            geom_text(data=~filter(., bold==1, date==max(date)), 
+                      aes(x=date+lubridate::days(10), 
+                          label=paste0(state, ": ", round(get(keyVar), 0)), 
+                          color=cluster
+                          ), 
+                      size=3, 
+                      fontface="bold"
+                      ) +
+            scale_x_date(date_breaks="1 months", date_labels="%m") + 
+            scale_alpha_identity() +
+            scale_size_identity() +
+            labs(x="Month", 
+                 y=paste0("Cumulative ", p2Desc, " (per million)"), 
+                 title=paste0("Cumulative coronavirus ", p2Desc, " by state (per million)"), 
+                 subtitle="Top 5 states for total and growth rate are bolded and labelled"
+                 )
+        print(p2)
+    }
+    
+}
+
+
+```
+
+### _Running Key Analyses (COVID Tracking Project)_  
+The data from COVID Tracking Project can be loaded and analyzed using the functions above, a variable mapping file, and a main function that calls the other functions and returns a list:  
+```{r cache=TRUE}
+
+# STEP 0: Create a variable mapping file
+varMapper <- c("cases"="Cases", 
+               "newCases"="Increase in cases, most recent 30 days",
+               "casesroll7"="Rolling 7-day mean cases", 
+               "deaths"="Deaths", 
+               "newDeaths"="Increase in deaths, most recent 30 days",
+               "deathsroll7"="Rolling 7-day mean deaths", 
+               "cpm"="Cases per million",
+               "cpm7"="Cases per day (7-day rolling mean) per million", 
+               "newcpm"="Increase in cases, most recent 30 days, per million",
+               "dpm"="Deaths per million", 
+               "dpm7"="Deaths per day (7-day rolling mean) per million", 
+               "newdpm"="Increase in deaths, most recent 30 days, per million", 
+               "hpm7"="Currently Hospitalized per million (7-day rolling mean)", 
+               "tpm"="Tests per million", 
+               "tpm7"="Tests per million per day (7-day rolling mean)"
+               )
+
+
+# Function to download/load, process, segment, and analyze data from COVID Tracking Project
+readRunCOVIDTrackingProject <- function(thruLabel, 
+                                        downloadTo=NULL, 
+                                        readFrom=downloadTo, 
+                                        compareFile=NULL,
+                                        dfPerCapita=NULL,
+                                        useClusters=NULL,
+                                        hierarchical=TRUE,
+                                        returnList=!hierarchical, 
+                                        kCut=6,
+                                        reAssignState=vector("list", 0),
+                                        makeCumulativePlots=TRUE,
+                                        ...
+                                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # thruLabel: the label for when the data are through (e.g., "Aug 30, 2020")
+    # donwloadTo: download the most recent COVID Tracking Project data to this location
+    #             NULL means do not download any data
+    # readFrom: location for reading in the COVID Tracking Project data (defaults to donwloadTo)
+    # compareFile: name of the file to use for comparisons when reading in raw data (NULL means no comparison)
+    # dfPerCapita: file can be passed directly, which bypasses the loading and processing steps
+    # useClusters: file containing clusters by state (NULL means make the clusters from the data)
+    # hierarchical: boolean, should hierarchical clusters be produced (if FALSE, will be k-means)?
+    # returnList: boolean, should a list be returned or just the cluster object?
+    # kCut: number of segments when cutting the hierarchical tree
+    # reAssignState: mapping file for assigning a state to another state's cluster
+    #                format list("stateToChange"="stateClusterToAssign")
+    # makeCumulativePlots: whether to make plots of cumulative metrics
+    # ...: arguments to be passed to clusterStates(), will be used only if useClusters is NULL
+    
+    
+    # STEP 1: Get state data
+    stateData <- getStateData()
+    
+    
+    # STEPS 2-4 are run only if dfPerCapita does not exist
+    if (is.null(dfPerCapita)) {
+        
+        # STEP 2a: Download latest COVID Tracking Project data (if requested)
+        if (!is.null(downloadTo)) downloadCOVIDbyState(fileName=downloadTo)
+    
+        # STEP 2b: Read-in COVID Tracking Project data
+        dfRaw <- readCOViDbyState(readFrom, checkFile=compareFile)
+        glimpse(dfRaw)
+    
+        # STEP 3: Process the data so that it includes all requested key variables
+        varsFilter <- c("date", "state", "positiveIncrease", "deathIncrease", 
+                        "hospitalizedCurrently", "totalTestResultsIncrease"
+                        )
+        dfFiltered <- processCVData(dfRaw, 
+                                    varsKeep=varsFilter, 
+                                    varsRename=c(positiveIncrease="cases", 
+                                                 deathIncrease="deaths", 
+                                                 hospitalizedCurrently="hosp", 
+                                                 totalTestResultsIncrease="tests"
+                                                 )
+                                    )
+        glimpse(dfFiltered)
+    
+        # STEP 4: Convert to per capita
+        dfPerCapita <- helperMakePerCapita(dfFiltered, 
+                                           mapVars=c("cases"="cpm", "deaths"="dpm", 
+                                                     "hosp"="hpm", "tests"="tpm"
+                                                     ), 
+                                           popData=stateData
+                                           )
+        glimpse(dfPerCapita)
+        
+    } else {
+        dfRaw <- NULL
+        dfFiltered <- NULL
+    }
+    
+    
+    # STEP 5: Create the clusters (if they have not been passed)
+    if (is.null(useClusters)) {
+        # Run the clustering process
+        clData <- clusterStates(df=dfPerCapita, hierarchical=hierarchical, returnList=returnList, ...)
+        # If hierarchical clusters, cut the tree, otherwise use the output object directly
+        if (hierarchical) {
+            useClusters <- cutree(clData, k=kCut)
+        } else {
+            useClusters <- clData$objCluster$cluster
+        }
+        # If requested, manually assign clusters to the cluster for another state
+        for (xNum in seq_len(length(reAssignState))) {
+            useClusters[names(reAssignState)[xNum]] <- useClusters[reAssignState[[xNum]]]
+        }
+
+    }
+    
+    
+    # STEP 6: Create the cluster assessments
+    plotData <- assessClusters(useClusters, 
+                               dfState=stateData, 
+                               dfBurden=dfPerCapita,
+                               thruLabel=thruLabel,
+                               plotsTogether=TRUE
+                               )
+
+    
+    # STEP 7: Plot the consolidated metrics
+    subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new), Tests: new tests"
+    consolidatedPlotData <- plotConsolidatedMetrics(plotData, 
+                                                    varMain=c("state", "cluster", "date", "pop",
+                                                              "cases", "deaths", "hosp", "tests"
+                                                              ), 
+                                                    subT=subT, 
+                                                    nrowPlot2=2
+                                                    )
+    
+    # STEP 8: Create cumulative metrics if requested
+    if (makeCumulativePlots) {
+        consPos <- consolidatedPlotData %>%
+            ungroup() %>%
+            select(state, cluster, date, name, vpm7) %>%
+            arrange(state, cluster, date, name) %>%
+            pivot_wider(-vpm7, names_from="name", values_from="vpm7") %>%
+            mutate(pctpos=cases/tests) %>%
+            pivot_longer(-c(state, cluster, date), values_to="vpm7") %>%
+            filter(!is.na(vpm7))
+        clCum <- makeCumulative(consPos)
+        plotCumulativeData(clCum, 
+                           keyMetricp2="", 
+                           flagsp2="", 
+                           makep1=TRUE, 
+                           makep2=FALSE
+                           )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="deaths", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "deaths")
+                           )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="cases", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "cases")
+                           )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="tests", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "tests")
+                           )
+    } else {
+        clCum <- NULL
+    }
+    
+    
+    # STEP 9: Return a list of the key data
+    list(stateData=stateData, 
+         dfRaw=dfRaw, 
+         dfFiltered=dfFiltered, 
+         dfPerCapita=dfPerCapita, 
+         useClusters=useClusters, 
+         plotData=plotData, 
+         consolidatedPlotData=consolidatedPlotData, 
+         clCum=clCum
+         )
+    
+    
+}
+
+
+# Test function for hierarchical clustering with Vermont reassigned to New Hampshire
+test_hier5 <- readRunCOVIDTrackingProject(thruLabel="Aug 20, 2020", 
+                                          readFrom="./RInputFiles/Coronavirus/CV_downloaded_200820.csv", 
+                                          hierarchical=TRUE,
+                                          kCut=6, 
+                                          reAssignState=list("VT"="NH"), 
+                                          minShape=3, 
+                                          ratioDeathvsCase = 5, 
+                                          ratioTotalvsShape = 0.5, 
+                                          minDeath=100, 
+                                          minCase=10000
+                                          )
+
+
+# Test function for k-means clustering using the per capita data file previously created
+test_km5 <- readRunCOVIDTrackingProject(thruLabel="Aug 20, 2020", 
+                                        dfPerCapita=test_hier5$dfPerCapita,
+                                        hierarchical=FALSE,
+                                        makeCumulativePlots=FALSE,
+                                        minShape=3, 
+                                        ratioDeathvsCase = 5, 
+                                        ratioTotalvsShape = 0.5, 
+                                        minDeath=100, 
+                                        minCase=10000, 
+                                        nCenters=5,
+                                        testCenters=1:10, 
+                                        iter.max=20,
+                                        nstart=10, 
+                                        seed=2008261400
+                                        )
+
+  
+# Run in a session that has access to the old data files
+# identical(test_hier5$useClusters, clustVec)  # TRUE
+# identical(test_km5$useClusters, testCluster_km5$objCluster$cluster)  # TRUE
+
+```
+  
+Cluster files produced using the new functions and the existing August 20, 2020 data are identical to 'clustVec' and 'testCluster_km5' produced in the _v001 code.
+  
+Further, new data is downloaded that is current through September 30, 2020, and the test_hier5 clusters are used for analysis:  
+```{r cache=TRUE}
+
+# Test function for hierarchical clustering with Vermont reassigned to New Hampshire
+locDownload <- "./RInputFiles/Coronavirus/CV_downloaded_201001.csv"
+test_hier5_201001 <- readRunCOVIDTrackingProject(thruLabel="Sep 30, 2020", 
+                                                 readFrom=locDownload, 
+                                                 compareFile=test_hier5$dfRaw,
+                                                 useClusters=test_hier5$useClusters
+                                                 )
+
+```
+  
+Segments appear to be on trend with previous analysis, with what was previously called "late pandemic" having peaked and the segments that had smaller deaths per million showing higher percentage increases.
+  
+
