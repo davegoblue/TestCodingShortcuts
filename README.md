@@ -2109,4 +2109,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v001 explores all-cause deaths vs. coronavirus deaths by segment  
 * Coronavirus_Statistics_v001 explores all-cause deaths vs. coronavirus deaths by state  
 * Coronavirus_Statistics_v001 explores all-cause deaths deaths by age cohort  
+* Coronavirus_Statistics_v002 created to contain main components from _v001  
+* Coronavirus_Statistics_v002 contains code for COVID Tracking Project data  
   
