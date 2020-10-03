@@ -1546,3 +1546,1826 @@ test_hier5_201001 <- readRunCOVIDTrackingProject(thruLabel="Sep 30, 2020",
 Segments appear to be on trend with previous analysis, with what was previously called "late pandemic" having peaked and the segments that had smaller deaths per million showing higher percentage increases.
   
 
+### _USA Facts_ 
+The second section is for analysis of data from [USA Facts](https://usafacts.org/visualizations/coronavirus-covid-19-spread-map/).  This site contains county-level data for the US focused on coronavirus cases and deaths.  Data are provided with one row per county and one column for each date, and are thus unique by county.  There are differences in state and US totals for coronavirus cases and deaths when reported by COVID Tracking Project and USA Facts, though trends, timing, and relative magnitudes are generally in agreement between the two sources.
+  
+#### _Key Functions (USA Facts)_  
+Functions for reading and analyzing data from USA Facts include:  
+```{r}
+
+# Function to plot per capita data by county
+plotCountyPerCapita <- function(dfDisease, 
+                                burdenVar,
+                                useDate,
+                                plotTitle="",
+                                inclStates=NULL,
+                                dfCounty=filter(pop_usafacts, countyFIPS!=0), 
+                                popVar="population", 
+                                highColor="darkblue", 
+                                maxPerCap=NULL,
+                                printPlot=TRUE, 
+                                returnData=!printPlot
+                                ) {
+    
+    # FUNCTION ARGUMENTS
+    # dfDisease: file containing disease data
+    # burdenVar: variable for disease burden (cumulative) on date
+    # useDate: date for the analysis
+    # plotTitle: title for the plot
+    # inclStates: states to include (NULL means include all)
+    # dfCounty: data for county-level population
+    # popVar: variable for population in the dfCounty file
+    # maxPerCap: the maximum amount to be used for per capita (everything at or above shaded the same)
+    # highColor: the color to be used for high disease burden
+    # printPlot: boolean, whether to print the plot
+    # returnData: boolean, whether to return the underlying data (if FALSE, the plot object is returned)
+    
+    # Create the relevant data frame
+    dfData <- dfDisease %>% 
+        left_join(dfCounty, by=c("countyFIPS", "state")) %>% 
+        filter(date %in% useDate, countyFIPS!=0, population>0) %>% 
+        mutate(burden=1000000*get(burdenVar)/get(popVar))
+
+    # Modify inclStates to be every state (if needed due to NULL)
+    if (is.null(inclStates)) inclStates <- dfData %>% pull(state) %>% unique() %>% sort()
+    
+    # Create the relevant plot (this is necessary if printPlot is TRUE or returnData is FALSE)
+    if (printPlot | !returnData) {
+        p1 <- dfData %>%
+            mutate(burden=if(is.null(maxPerCap)) burden else pmin(burden, maxPerCap)) %>%
+            select(fips=countyFIPS, burden) %>% 
+            usmap::plot_usmap(regions="counties", data=., values="burden", include=inclStates)
+        if (is.null(maxPerCap)) 
+            p1 <- p1 + scale_fill_continuous(plotTitle, low="white", high=highColor)
+        else {
+            p1 <- p1 + 
+                scale_fill_continuous(plotTitle, low="white", high=highColor, limits=c(0, maxPerCap)) + 
+                labs(caption=paste0("Values at/above ", maxPerCap, " plotted as ", maxPerCap))
+        }
+    }
+    
+    # Print the plot if requested
+    if (printPlot) print(p1)
+    
+    # Return the data if requested, otherwise return the plot object
+    if (returnData) dfData %>% filter(state %in% inclStates) else p1
+    
+}
+
+
+# Function to make the cases and deaths by county plot
+casesDeathsByCounty <- function(useDate,
+                                inclStates=NULL,
+                                caseData=pvtCases_20200903, 
+                                deathData=pvtDeaths_20200903, 
+                                highCaseColor="darkblue", 
+                                highDeathColor="darkred", 
+                                highCaseAmount=NULL, 
+                                highDeathAmount=NULL,
+                                mainTitle=NULL
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # useDate: the date to be plotted
+    # inclStates: the states to be included (NULL means all)
+    # caseData: the frame containing the cases date
+    # deathData: the frame containing the death data
+    # highCaseColor: color for the highest level of cases in a county
+    # highDeathColor: color for the highest level of deaths in a county
+    # highCaseAmount: cases at/above this level will be the same color (NULL means leave as-is)
+    # highDeathAmount: deaths at/above this level will be the same color (NULL means leave as-is)
+    # mainTitle: main title for the grid.arrange (NULL means useDate will be used)
+
+    # Convert useDate to date if not already in that format
+    if (!("Date") %in% class(useDate)) useDate <- as.Date(useDate)
+    
+    # Convert inclStates to be all states if not specified
+    if (is.null(inclStates)) inclStates <- caseData %>% pull(state) %>% unique() %>% sort()
+    
+    # Create mainTitle if not passed
+    if (is.null(mainTitle)) 
+        mainTitle <- paste0("Per capita coronavirus burden as of ", format(useDate, "%B %d, %Y"))
+    
+    # Create the plot for deaths    
+    deathPlot <- plotCountyPerCapita(deathData, 
+                                     burdenVar="cumDeaths", 
+                                     useDate=useDate, 
+                                     plotTitle="Deaths\nper million", 
+                                     inclStates=inclStates, 
+                                     highColor=highDeathColor, 
+                                     maxPerCap=highDeathAmount,
+                                     printPlot=FALSE, 
+                                     returnData=FALSE
+                                     )
+
+    # Create the plot for cases
+    casesPlot <- plotCountyPerCapita(caseData, 
+                                     burdenVar="cumCases", 
+                                     useDate=useDate, 
+                                     plotTitle="Cases\nper million", 
+                                     inclStates=inclStates, 
+                                     highColor=highCaseColor, 
+                                     maxPerCap=highCaseAmount,
+                                     printPlot=FALSE, 
+                                     returnData=FALSE
+                                     )
+
+    # Print the combined plot object
+    gridExtra::grid.arrange(casesPlot, 
+                            deathPlot, 
+                            nrow=1, 
+                            top=grid::textGrob(mainTitle, 
+                                               gp=grid::gpar(fontface=2, fontsize=12),
+                                               hjust=0, 
+                                               x=0.05
+                                               )
+                            )
+
+}
+
+
+# Function to plot evolution of county-level burdens
+countyLevelEvolution <- function(dfBurden, 
+                                 burdenVar, 
+                                 inclStates=NULL, 
+                                 topN=10, 
+                                 topNDate=NULL, 
+                                 printPlot=TRUE, 
+                                 returnData=TRUE, 
+                                 plotTitle=NULL, 
+                                 countyPopFloor=0, 
+                                 subT=NULL
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfBurden: file containing the relevant per-capita burden data
+    # burdenVar: the name of the variable containing the burden per-capita data
+    # inclStates: states to be included (default NULL means include all)
+    # topN: integer, number of counties to flag as "top"
+    # topNDate: the data to use as the topN cutpoint (NULL means most recent)
+    # printPlot: boolean, whether to print the plot
+    # returnData: boolean, if TRUE return the per-capita data file, otherwise return the plot object
+    # plotTitle: title for the plot (NULL means assume from burdenVar)
+    # countyPopFloor: floor for county population for the county to be plotted
+    # subT: subtitle for the chart (NULL means none)
+    
+    # Adjust inclStates if NULL
+    if (is.null(inclStates)) inclStates <- dfBurden %>% count(state) %>% pull(state)
+    
+    # Create plotTitle if needed
+    if (is.null(plotTitle)) {
+        plotTitle <- if(stringr::str_detect(string=stringr::str_to_lower(burdenVar), pattern="deaths")) {
+            "Cumulative per-capita deaths by county" 
+        } else {
+            "Cumulative per-capita cases by county"
+        }
+    }
+    
+    # Get all possible dates
+    allDates <- dfBurden %>% count(date) %>% pull(date)
+    
+    # Get the data for the counties in the relevant states (return data only and do not plot)
+    perCapData <- plotCountyPerCapita(dfBurden, 
+                                      burdenVar=burdenVar, 
+                                      useDate=allDates, 
+                                      inclStates=inclStates, 
+                                      printPlot=FALSE, 
+                                      returnData=TRUE
+                                      )
+
+    # Get the relevant top-N date and convert to Date if not already of that type
+    if (is.null(topNDate)) topNDate <- perCapData %>% pull(date) %>% max()
+    if (!("Date" %in% class(topNDate))) topNDate <- as.Date(topNDate)
+    
+    # Get the top-n counties by burdenVar
+    # Top 10 counties hit by FIPS, counting only those that exceed the population floor
+    topN <- perCapData %>%
+        filter(date==topNDate, population>=countyPopFloor) %>%
+        arrange(-burden) %>%
+        head(topN) %>%
+        pull(countyFIPS)
+
+    # Update perCapData with easy-read county name and bolding instructions
+    perCapData <- perCapData %>%
+        mutate(county=paste0(str_replace(countyName.x, " County", ""), " (", state, ")"), 
+               bold=ifelse(countyFIPS %in% topN, 1, 0)
+               ) %>%
+        arrange(date)
+    
+    # Create the plot of all counties with the topN flagged
+    # Evolution of per capita deaths by date in the northeast
+    p1 <- perCapData %>%
+        filter(population>=countyPopFloor) %>%
+        ggplot(aes(x=date, y=burden)) + 
+        geom_line(aes(group=countyFIPS, color=state, alpha=0.25 + 0.75*bold, size=0.5+0.5*bold)) + 
+        scale_alpha_identity() + 
+        scale_size_identity() + 
+        geom_text(data=~filter(., bold==1, date==max(date)), 
+                  aes(x=date+lubridate::days(2), label=paste0(county, ": ", round(burden)), color=state), 
+                  size=3, 
+                  fontface="bold", 
+                  hjust=0
+              ) +
+        scale_x_date(date_breaks="1 months", date_labels="%m", expand=expand_scale(mult=c(0, 0.4))) + 
+        labs(x="", y="Burden per million people", title=plotTitle) + 
+        theme(legend.position="bottom")
+    
+    # Add the subtitle if passed
+    if (!is.null(subT)) p1 <- p1 + labs(subtitle=subT)
+
+    # Print the plot if requested
+    if (printPlot) print(p1)
+    
+    # Return the relevant object
+    if (returnData) perCapData else p1
+    
+}
+
+
+
+# Function for calling assessClusters() for county-level segments
+helperAssessCountyClusters <- function(vecCluster, 
+                                       dfPop, 
+                                       dfBurden, 
+                                       dfPopGeoVar="state", 
+                                       dfPopPopVar="population", 
+                                       ...
+                                       ) {
+    
+    # FUNCTION ARGUMENTS:
+    # vecCluster: the named cluster vector
+    # dfPop: the data frame containing the population data
+    # dfBurden: the data frame containing the burden statistics by county and date
+    # ...: other arguments to pass to assessClusters()
+
+    # Run the process    
+    plotAssess <- assessClusters(vecCluster, 
+                                 dfState=dfPop %>% 
+                                     group_by_at(dfPopGeoVar) %>% 
+                                     summarize(pop=mean(get(dfPopPopVar))) %>% 
+                                     ungroup(), 
+                                 dfBurden=select(dfBurden, -population), 
+                                 isCounty=TRUE, 
+                                 ...
+                                 )
+    
+    # Return the plot object
+    plotAssess
+    
+}
+
+
+
+# Helper function to make the overall cluster summary statistics
+helperClusterSummaryPlots <- function(dfState, 
+                                      dfPlot,
+                                      showMap, 
+                                      clusterPlotsTogether,
+                                      weightedMean=TRUE,
+                                      mapLevel="states"
+                                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfState: contains the state/county-level data
+    # dfPlot: contains the joined data for plotting
+    # showMap: boolean for whether to create a map (if FALSE, segment membership counts are shown instead)
+    # clusterPlotsTogether: boolean, whether to put all four plots on the same page
+    # weightedMean: boolean, whether to create weighted mean by segment (if FALSE, median by segment is taken)
+    # mapLevel: the level to be used on the map
+    
+    # Reorder the cluster levels in dfState to match dfPlot
+    # Convert factor order to match dfPlot (can be reordered by argument to the calling function)
+    dfState <- dfState %>%
+        mutate(cluster=factor(cluster, levels=levels(dfPlot$cluster)))
+    
+    # Plot the segments on a map or show segment membership
+    if (showMap) {
+        if (mapLevel=="counties") {
+            dfMap <- dfState %>%
+                mutate(fips=stringr::str_pad(state, width=5, side="left", pad="0")) %>%
+                select(fips, cluster)
+        } else {
+            dfMap <- dfState
+        }
+        # Create the map
+        p1 <- usmap::plot_usmap(regions=mapLevel, data=dfMap, values="cluster") + 
+            scale_fill_discrete("cluster") + 
+            theme(legend.position="right")
+    } else {
+        p1 <- dfState %>%
+            count(cluster) %>%
+            ggplot(aes(x=fct_rev(cluster), y=n)) + 
+            geom_col(aes(fill=cluster)) +
+            geom_text(aes(y=n/2, label=n)) +
+            coord_flip() + 
+            labs(x="", y="# Counties", title="Membership by segment")
+    }
+    
+    # Plot the population totals by segment
+    # Show population totals by cluster
+    p2 <- dfState %>%
+        group_by(cluster) %>%
+        summarize(pop=sum(pop)/1000000) %>%
+        ggplot(aes(x=fct_rev(cluster), y=pop)) + 
+        geom_col(aes(fill=cluster)) + 
+        geom_text(aes(y=pop/2, label=round(pop))) + 
+        labs(y="2015 population (millions)", x="Cluster", title="Population by cluster (millions)") +
+        coord_flip()
+    
+    # Plot the rolling 7-day mean daily disease burden by cluster
+    # Create the p3Data to be either median of all elements in cluster or weighted mean
+    p3 <- dfPlot %>%        
+        select(date, cluster, cases=cpm7, deaths=dpm7, pop) %>%
+        pivot_longer((-c(date, cluster, pop))) %>%
+        filter(!is.na(value)) %>%
+        group_by(date, cluster, name) %>%
+        summarize(mdnValue=median(value), wtdValue=sum(pop*value)/sum(pop)) %>%
+        ggplot(aes(x=date, y=if(weightedMean) wtdValue else mdnValue)) +
+        geom_line(aes(group=cluster, color=cluster)) +
+        facet_wrap(~name, scales="free_y") +
+        labs(x="",
+             y="Rolling 7-day mean, per million",
+             title="Rolling 7-day mean daily disease burden, per million",
+             subtitle=paste0(if(weightedMean) "Weighted mean" else "Median", 
+                             " per day for states assigned to cluster"
+                             )
+             ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b")
+    
+    # Plot the total cases and total deaths by cluster
+    p4 <- dfPlot %>%
+        group_by(cluster) %>%
+        summarize(cases=sum(cases), deaths=sum(deaths)) %>%
+        pivot_longer(-cluster) %>%
+        ggplot(aes(x=fct_rev(cluster), y=value/1000)) + 
+        geom_col(aes(fill=cluster)) + 
+        geom_text(aes(y=value/2000, label=round(value/1000))) +
+        coord_flip() + 
+        facet_wrap(~varMapper[name], scales="free_x") + 
+        labs(x="Cluster", y="Burden (000s)", title="Total cases and deaths by segment")
+
+    # Place the plots together if plotsTogether is TRUE, otherwise just print
+    if (isTRUE(clusterPlotsTogether)) {
+        gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2, ncol=2)
+    } else {
+        print(p1); print(p2); print(p3); print(p4)
+    }
+    
+}
+
+
+
+# Helper function to make total and per capita by state (calls its own helper function)
+helperCallTotalPerCapita <- function(dfPlot, 
+                                     thruLabel
+                                     ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPlot: the plotting data frame
+    # thruLabel: the date that data are through
+    
+    # Plot total cases and total deaths by state, colored by cluster
+    helperBarDeathsCases(dfPlot, 
+                         numVars=c("cases", "deaths"), 
+                         title=paste0("Coronavirus impact by state through ", thruLabel), 
+                         xVar=c("state"), 
+                         fillVar=c("cluster")
+                         )
+    
+    # Plot cases per million and deaths per million by state, colored by cluster
+    helperBarDeathsCases(dfPlot, 
+                         numVars=c("cpm", "dpm"), 
+                         title=paste0("Coronavirus impact by state through ", thruLabel), 
+                         xVar=c("state"), 
+                         fillVar=c("cluster")
+                         )
+    
+}
+
+
+
+# Helper function to make recent vs. total plots
+helperCallRecentvsTotal <- function(dfPlot, 
+                                    thruLabel, 
+                                    labelPoints, 
+                                    recentTotalTogether
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPlot: the plotting data frame
+    # thruLabel: the date that data are through
+    # labelPoints: boolean, whether to label the individual points
+    # recentTotalTogether: boolean, whether to put these plots together on one page
+    
+    # Plot last-30 vs total for cases per million by state, colored by cluster
+    p7 <- helperRecentvsTotal(dfPlot, 
+                              xVar="cpm", 
+                              yVar="newcpm", 
+                              title=paste0("Coronavirus burden through ", thruLabel), 
+                              labelPlot=labelPoints,
+                              printPlot=FALSE
+                              )
+    
+    # Plot last-30 vs total for deaths per million by state, colored by cluster
+    p8 <- helperRecentvsTotal(dfPlot, 
+                              xVar="dpm", 
+                              yVar="newdpm", 
+                              title=paste0("Coronavirus burden through ", thruLabel), 
+                              labelPlot=labelPoints,
+                              printPlot=FALSE
+                              )
+    
+    # Print the plots either as a single page or separately
+    if (isTRUE(recentTotalTogether)) {
+        gridExtra::grid.arrange(p7, p8, nrow=1)
+    } else {
+        print(p7); print(p8)
+    }    
+    
+}
+
+
+
+# Helper function to create total vs. elements plots
+helperCallTotalvsElements <- function(dfPlot, 
+                                      aggAndTotal, 
+                                      clusterAggTogether,
+                                      ...
+                                      ) {
+
+    # FUNCTION ARGUMENTS:
+    # dfPlot: the plotting data frame
+    # aggAndTotal: boolean, should each individual line be plotted (if FALSE an 80% CI is plotted instead)
+    # clusterAggTogether: boolean, whether to print the plots all on a single page
+    # ...: any other arguments to pass to helperTotalvsElements (especially pctRibbon or aggFunc)
+    
+    # Plot the cases per million on a free y-scale and a fixed y-scale
+    p9 <- helperTotalvsElements(dfPlot, 
+                                keyVar="cpm7", 
+                                aggAndTotal=aggAndTotal,
+                                title="Cases per million, 7-day rolling mean", 
+                                printPlot=FALSE, 
+                                ...
+                                )
+    p10 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="cpm7", 
+                                 aggAndTotal=aggAndTotal,
+                                 title="Cases per million, 7-day rolling mean", 
+                                 facetScales="fixed", 
+                                 printPlot=FALSE, 
+                                 ...
+                                 )
+    
+    # Plot the deaths per million on a free y-scale and a fixed y-scale
+    p11 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="dpm7", 
+                                 aggAndTotal=aggAndTotal,
+                                 title="Deaths per million, 7-day rolling mean", 
+                                 printPlot=FALSE, 
+                                 ...
+                                 )
+    p12 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="dpm7", 
+                                 aggAndTotal=aggAndTotal,
+                                 title="Deaths per million, 7-day rolling mean", 
+                                 facetScales="fixed", 
+                                 printPlot=FALSE, 
+                                 ...
+                                 )
+    
+    if (isTRUE(clusterAggTogether)) {
+        gridExtra::grid.arrange(p9, p11, nrow=1)
+        gridExtra::grid.arrange(p10, p12, nrow=1)
+    } else {
+        print(p9); print(p10); print(p11); print(p12)
+    }
+    
+}
+
+
+
+# Updated function for cluster assessment
+# Main function creates the required data and calls helper functions
+# 1. Call helper to create overall cluster summary
+# 2. Call helper function for totals and per capita by state
+# 3. Call helper for recent vs. overall cases
+# 4. Call helper for evolution of segment aggregate and individual components
+assessClusters <- function(clusters, 
+                           dfState=stateData, 
+                           dfBurden=cvFilteredPerCapita,
+                           thruLabel="Aug 20, 2020",
+                           isCounty=FALSE,
+                           plotsTogether=FALSE, 
+                           clusterPlotsTogether=plotsTogether,
+                           recentTotalTogether=plotsTogether, 
+                           clusterAggTogether=plotsTogether, 
+                           makeSummaryPlots=TRUE, 
+                           makeTotalvsPerCapitaPlots=!isCounty, 
+                           makeRecentvsTotalPlots=TRUE, 
+                           makeTotalvsElementPlots=TRUE, 
+                           showMap=!isCounty, 
+                           orderCluster=FALSE
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # clusters: the named vector containing the clusters by state
+    # dfState: the file containing the states and populations
+    # dfBurden: the data containing the relevant per capita burden statistics by state-date
+    # thruLabel: label for plots for 'data through'
+    # isCounty: boolean, is this a plot of county-level data that have been named 'state'?
+    #           FALSE means that it is normal state-level data
+    # plotsTogether: boolean, should plots be consolidated on fewer pages?
+    # clusterPlotsTogether: boolean, should plots p1-p4 be consolidated?
+    # recentTotalTogether: boolean, should recent total plots p7-p8 be consolidated?
+    # clusterAggTogether: boolean, should aggregate plots p9/p11 and p10/p12 be consolidated?
+    # makeSummaryPlots: boolean, should the summary plots be made?
+    # makeTotalvsPerCapitaPlots: boolean, should the total and per capita plots be produced?
+    # makeRecentvsTotalPlots: boolean, should the recent vs. total plots be created?
+    # makeTotalvsElementPlots: boolean, should the total vs. element plots be created?
+    # showMap: boolean, whether to create a map colored by cluster (will show segment counts otherwise)
+    # orderCluster: boolean, whether to order the clusters based on disease burden
+    # ...: any additional arguments passed from a calling function
+    #      most common would be orderCluster=TRUE, a request for the clusters to be ordered by disease burden
+    
+    # Attach the clusters to the state population data
+    dfState <- as.data.frame(clusters) %>%
+        set_names("cluster") %>%
+        rownames_to_column("state") %>%
+        inner_join(dfState, by="state") %>%
+        mutate(cluster=factor(cluster))
+    
+    # Plot the rolling 7-day mean dialy disease burden by cluster
+    dfPlot <- dfState %>%
+        inner_join(dfBurden, by="state") %>%
+        tibble::as_tibble()
+    
+    # Reorder the clusters if requested
+    if (orderCluster) {
+        dfPlot <- changeOrderLabel(dfPlot, grpVars="state")
+    }
+    
+    # Call the helper function to make the overall summary statistics
+    if (makeSummaryPlots) {
+        helperClusterSummaryPlots(dfState=dfState, 
+                                  dfPlot=dfPlot, 
+                                  showMap=showMap, 
+                                  clusterPlotsTogether=clusterPlotsTogether, 
+                                  mapLevel=if(isCounty) "counties" else "states"
+                                  )
+    }
+
+    # These are primarily useful for state-level data and default to FALSE when isCounty is TRUE
+    if (makeTotalvsPerCapitaPlots) {
+        helperCallTotalPerCapita(dfPlot=dfPlot, thruLabel=thruLabel)
+    }
+    
+    # Call the helper function to make recent vs. total plots
+    if (makeRecentvsTotalPlots) {
+        helperCallRecentvsTotal(dfPlot=dfPlot, 
+                                thruLabel=thruLabel, 
+                                labelPoints=!isCounty, 
+                                recentTotalTogether = recentTotalTogether
+                                )
+    }
+    
+    # Call the total vs. elements helper function
+    if (makeTotalvsElementPlots) {
+        helperCallTotalvsElements(dfPlot=dfPlot, 
+                                  aggAndTotal=!isCounty, 
+                                  clusterAggTogether=clusterPlotsTogether
+                                  )
+    }
+    
+    # Return the plotting data frame
+    dfPlot
+
+}
+
+
+
+# Takes a list and creates the desired plot
+assessFunction <- function(x) {
+    helperAssessCountyClusters(x$objCluster$cluster, 
+                               dfPop=countyFiltered, 
+                               dfBurden=countyFiltered, 
+                               thruLabel="Sep 3, 2020", 
+                               plotsTogether=TRUE, 
+                               makeTotalvsPerCapitaPlots=FALSE, 
+                               makeRecentvsTotalPlots=FALSE, 
+                               makeTotalvsElementPlots=FALSE, 
+                               showMap=FALSE
+                               )
+}
+
+
+
+# Helper function for pretty labeling and position of bar chart labels
+helperTextLabel <- function(vrbl, 
+                            groupVar=NULL, 
+                            groupValue=NULL, 
+                            divBy=1, 
+                            roundTo=0, 
+                            pctMin=0.1,
+                            pctOut=0.025, 
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS
+    # vrbl: the variable to be plotted
+    # groupVar: the grouping variable for deciding whether to use middle of the bar or outside
+    #           NULL means no grouping variable
+    # groupValue: the value to be used for groupVar
+    # divBy: the amount to divide the variable by (e.g., 1000 means y-axis will be in 000s)
+    # roundTo: the amount to round the displayed totals to
+    # pctMin: any amount above this will be centered, any amount below this will be outside
+    # pctOut: amounts on the outside will be this amount of maximum outside
+    # ...: any other arguments to pass "as is" to geom_text
+    
+    # Create a relevant geom_text object
+    # 1. label should be vrbl/divBy, rounded to roundTo and using commas as needed
+    # 2. y position should be centered midpoint OR left-justified end of bar
+    
+    geom_text(data=if(!is.null(groupVar)) ~filter(., get(groupVar) %in% groupValue) else ~., 
+              aes(y=ifelse(get(vrbl)>=pctMin*max(get(vrbl)), 
+                           get(vrbl)/2/divBy, 
+                           get(vrbl)/divBy + pctOut*max(get(vrbl))/divBy
+                           ), 
+                  label=scales::comma(get(vrbl)/divBy, accuracy=10**-roundTo), 
+                  hjust=ifelse(get(vrbl)>=pctMin*max(get(vrbl)), NA, 0)
+                  ), 
+              ...
+              )
+    
+}
+
+
+
+# Function to run the data for a given state(s)
+stateCountySummary <- function(states, 
+                               df=fullStateData, 
+                               keyDate=as.Date("2020-08-31"), 
+                               showQuadrants=TRUE,
+                               showCumulative=FALSE,
+                               facetCumulativeByState=FALSE,
+                               showAllFactorLevels=FALSE,
+                               returnData=FALSE
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # states: the states to include in the analysis
+    # df: the data frame or tibble to use
+    # keyDate: date to use for getting cluster and population by county
+    # showQuadrants: boolean, whether to create and show the four-quadrants of p1-p4
+    # showCumulative: boolean, whether to show the cumulative deaths per capita by segment
+    # facetCumulativeByState: boolean, whether to facet by state for the cumulative plot
+    # showAllFactorLevels: boolean, whether to show all factor levels in the plot legend
+    # returnData: boolean, should the data frame be returned?
+    
+    # Create a base data frame
+    baseStateData <-df %>%
+        arrange(fipsCounty, date) %>%
+        group_by(fipsCounty) %>%
+        mutate(cumDeaths=cumsum(deaths)) %>%
+        filter(state %in% c(states))
+    
+    # Create a frame by state and cluster
+    stateClusterData <- baseStateData %>%
+        group_by(state, cluster, date) %>%
+        summarize(n=n(), dpm7=sum(dpm7*pop)/sum(pop), cumDeaths=sum(cumDeaths), pop=sum(pop)) %>%
+        ungroup()
+    
+    # Create a frame by cluster
+    clusterData <- baseStateData %>%
+        group_by(cluster, date) %>%
+        summarize(n=n(), dpm7=sum(dpm7*pop)/sum(pop), cumDeaths=sum(cumDeaths), pop=sum(pop)) %>%
+        ungroup()
+    
+    # Create and show p1-p4 if requested
+    if (showQuadrants) {
+        
+        # Plot 1: Number of counties in cluster
+        p1 <- clusterData %>%
+            filter(date==keyDate) %>%
+            ggplot(aes(x=fct_rev(cluster), y=n, fill=cluster)) + 
+            geom_col() + 
+            geom_text(aes(y=n/2, label=n)) +
+            coord_flip() + 
+            labs(x="Cluster", y="# Counties", title="Counties by Cluster")
+        if (showAllFactorLevels) p1 <- p1 + scale_fill_discrete(drop=FALSE)
+        
+        # Plot 2: Total population and average population by cluster
+        p2 <- clusterData %>%
+            filter(date==keyDate) %>%
+            mutate(popPer=pop/n) %>%
+            select(cluster, pop, popPer) %>%
+            pivot_longer(-cluster) %>%
+            ggplot(aes(x=fct_rev(cluster), y=value/1000, fill=cluster)) + 
+            geom_col() + 
+            helperTextLabel("value", divBy=1000, groupVar="name", groupValue="popPer", pctMin=0.2, size=3.5) +
+            helperTextLabel("value", divBy=1000, groupVar="name", groupValue="pop", pctMin=0.2, size=3.5) + 
+            coord_flip() + 
+            facet_wrap(~c("pop"="Population", "popPer"="Population per county")[name], scales="free_x") +
+            labs(x="Cluster", y="Population (000)", title="Population by Cluster")
+        if (showAllFactorLevels) p2 <- p2 + scale_fill_discrete(drop=FALSE)
+        
+        # Plot 3: Deaths and deaths per million (total) by cluster
+        p3 <- clusterData %>%
+            filter(date==keyDate) %>%
+            mutate(dpm=1000000*cumDeaths/pop) %>%
+            select(cluster, cumDeaths, dpm) %>%
+            pivot_longer(-cluster) %>%
+            ggplot(aes(x=fct_rev(cluster), y=value, fill=cluster)) + 
+            geom_col() + 
+            helperTextLabel("value", groupVar="name", groupValue="cumDeaths", pctMin=0.2, size=3.5) +
+            helperTextLabel("value", groupVar="name", groupValue="dpm", pctMin=0.2, size=3.5) + 
+            coord_flip() + 
+            facet_wrap(~c("cumDeaths"="1. Total deaths", "dpm"="2. Deaths per million")[name], 
+                       scales="free_x"
+                       ) +
+            labs(x="Cluster", y="", title="Deaths (total and per million) by cluster")
+        if (showAllFactorLevels) p3 <- p3 + scale_fill_discrete(drop=FALSE)
+        
+        # Plot 4: Evolution of deaths by time
+        p4 <- clusterData %>%
+            filter(!is.na(dpm7)) %>%
+            ggplot(aes(x=date, y=dpm7, group=cluster, color=cluster)) + 
+            geom_line(size=1) + 
+            labs(x="", y="Deaths per million", title="Deaths per million, 7-day rolling mean") + 
+            scale_x_date(date_breaks="1 months", date_labels="%b")
+        if (showAllFactorLevels) p4 <- p4 + scale_color_discrete(drop=FALSE)
+        
+        # Create a 2x2 summary of the cluster data
+        gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2, top=paste0("States: ", paste0(states, collapse=", ")))
+
+    }
+
+    # If requested, create a cumulative deaths per capita curve
+    if (showCumulative) {
+        p5 <- (if (facetCumulativeByState) stateClusterData else clusterData) %>%
+            mutate(cumdpm=1000000*cumDeaths/pop) %>%
+            ggplot(aes(x=date, y=cumdpm)) +
+            geom_line(aes(group=cluster, color=cluster), lwd=1) + 
+            geom_text(data=~filter(., date==max(date, na.rm=TRUE)), 
+                      aes(x=date+lubridate::days(3), label=scales::comma(cumdpm, accuracy=1), color=cluster), 
+                      size=3, 
+                      hjust=0
+                      ) + 
+            labs(x="", 
+                 y="Cumulative deaths per million", 
+                 title=paste0("Cumulative deaths per million for: ", paste0(states, collapse=", "))
+                 ) + 
+            scale_x_date(date_breaks="1 months", date_labels="%b", expand=expand_scale(c(0, 0.15)))
+        if (facetCumulativeByState) p5 <- p5 + facet_wrap(~state)
+        if (showAllFactorLevels) p5 <- p5 + scale_color_discrete(drop=FALSE)
+        print(p5)
+        
+    }
+    
+    # Return the data file if requested (by state-cluster if facetCumulativeByState, by cluster otherwise)
+    if (returnData) {
+        if (facetCumulativeByState) stateClusterData else stateClusterData
+    }
+    
+}
+
+
+
+# Function to reorder and relabel factors
+changeOrderLabel <- function(df, 
+                             fctVar="cluster",
+                             grpVars=c(),
+                             burdenVar="dpm", 
+                             wgtVar="pop",
+                             exclfct="999"
+                             ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: the data frame
+    # fctVar: the factor variable
+    # grpVars: the variable that the data are aurrently at (e.g., "fipsCounty" for county-level in df)
+    # burdenVar: the disease burden variable for sorting
+    # wgtVar: the weight variable for sorting
+    # exclfct: the factor lele to be excluded from analysis
+    
+    # General approach
+    # 1. Data are aggregated to c(fctVar, grpVars) as x=sum(burdenVar*wgtVar) and y=mean(wgtVar)
+    # 2. Data are aggregated to fctVar as z=sum(x)/sum(y)
+    # 3. Factors are reordered from high to low on z, with the excluded factor added back last (if it exists)
+    
+    # Check if exclfct exists in the factor variable
+    fctDummy <- exclfct %in% levels(df[, fctVar, drop=TRUE])
+    
+    # Create the summary of impact by segment
+    newLevels <- df %>%
+        filter(get(fctVar) != exclfct) %>%
+        group_by_at(vars(all_of(c(fctVar, grpVars)))) %>%
+        summarize(x=sum(get(burdenVar)*get(wgtVar)), y=mean(get(wgtVar))) %>%
+        group_by_at(vars(all_of(fctVar))) %>%
+        summarize(z=sum(x)/sum(y)) %>%
+        arrange(-z) %>%
+        pull(fctVar) %>%
+        as.character()
+    
+    # Add back the dummy factor at the end (if it exists)
+    if (fctDummy) newLevels <- c(newLevels, exclfct)
+    
+    # Reassign the levels in df
+    df %>% 
+        mutate(!!fctVar:=factor(get(fctVar), levels=newLevels, labels=newLevels))
+    
+}
+
+
+
+# Create the cluster-state data
+helperMakeClusterStateData <- function(dfPlot, 
+                                       dfPop=usmap::countypop,
+                                       dfBurden=countyDailyPerCapita, 
+                                       orderCluster=FALSE
+                                       ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPlot: the raw plotting data (which can have factors already reordered)
+    # dfPop: source for full county data with population
+    # dfBurden: source for disease burden by geography
+    # orderCluster: boolean, whether to order the cluster factor order by burden
+
+    # Merge in the counties that were previously excluded from segmentation
+    df <- dfPlot %>%
+        filter(date==max(date)) %>%
+        select(fipsCounty=state, cluster) %>%
+        mutate(fipsCounty=stringr::str_pad(fipsCounty, width=5, side="left", pad="0")) %>%
+        right_join(select(dfPop, fipsCounty=fips, state=abbr, countyName=county, pop=pop_2015)) %>%
+        mutate(cluster=factor(ifelse(is.na(cluster), 999, as.character(cluster))))
+    
+    # Merge in the disease data
+    df <- dfBurden %>%
+        mutate(fipsCounty=stringr::str_pad(state, width=5, side="left", pad="0")) %>%
+        select(-state, -population) %>%
+        right_join(df)
+    
+    # Order if requested
+    if (orderCluster) df <- changeOrderLabel(df, grpVars="fipsCounty")
+    
+    # Return the relevant frame
+    df
+    
+}
+
+
+
+# Helper function to read and convert 
+helperReadConvert <- function(file, 
+                              valueName
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # file: the file for reading and converting
+    # valueName: name for the values column of the pivoted data
+    
+    # Read file
+    df <- readr::read_csv(file)
+    glimpse(df)
+
+    # Conversion of the raw data
+    dfPivot <- df %>%
+        rename(countyName=`County Name`, state=State) %>%
+        pivot_longer(-c(countyFIPS, countyName, state, stateFIPS), 
+                     names_to="date", 
+                     values_to=valueName
+                     ) %>%
+        mutate(date=lubridate::mdy(date))
+    glimpse(dfPivot)
+
+    # Conversion of the pivoted data
+    dfConverted <- countyLevelEvolution(dfPivot, 
+                                        burdenVar=valueName, 
+                                        inclStates=NULL, 
+                                        topN=5,
+                                        printPlot=FALSE, 
+                                        returnData=TRUE
+                                        )
+
+    # Return the converted file
+    dfConverted
+    
+}
+
+
+
+# Function to read and convert raw data from USA Facts
+readUSAFacts <- function(caseFile, 
+                         deathFile, 
+                         stateClusters=NULL
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # caseFile: the location of the downloaded cases dataset
+    # deathsFile: the location of the downloaded deaths dataset
+    # stateClusters: a field 'cluster' will be created from this named vector (if NULL, 'cluster' will be NA)
+    
+    # Read cases file
+    cnvCases <- helperReadConvert(caseFile, valueName="cumCases")
+    
+    # Read deaths file
+    cnvDeaths <- helperReadConvert(deathFile, valueName="cumDeaths")
+
+    # Join the files so there is countyFIPS-county-population-date and cumCases cumDeaths
+    # Also, add the state segments as 'cluster' if requested
+    dfBurden <- cnvDeaths %>% 
+        select(-countyName.x, -countyName.y, -bold, cumDeathPer=burden) %>%
+        inner_join(cnvCases %>% 
+                       select(-countyName.x, -countyName.y, -bold, cumCasesPer=burden), 
+                   by=c("countyFIPS", "stateFIPS", "county", "state", "date", "population")
+                   ) %>%
+    mutate(cluster=if(is.null(stateClusters)) NA else stateClusters[state])
+    
+    # Return the burdens file
+    dfBurden
+    
+}
+
+
+
+# Function to plot the burden by cluster
+plotBurdenData <- function(df, 
+                           maxDate, 
+                           minPop
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the burden data
+    # maxDate: the maximum date
+    # minPop: the minimum population
+
+    # Create a date label
+    dateLabel <- format(as.Date(maxDate), "%b %d, %Y")
+    
+    # Plot the data as of maxDate
+    p1 <- df %>%
+        filter(date==maxDate, population>=minPop) %>%
+        ggplot(aes(x=cumCasesPer, y=cumDeathPer)) + 
+        geom_point(aes(size=log10(population), color=factor(cluster)), alpha=0.25) + 
+        geom_smooth(method="lm", se=FALSE, aes(weight=population, color=factor(cluster))) +
+        scale_size_continuous("log10\nCounty\nPop") + 
+        labs(x=paste0("Cases per million as of ", dateLabel), 
+             y=paste0("Deaths per million as of ", dateLabel), 
+             title=paste0("County-level per-capita coronavirus burden as of ", dateLabel), 
+             subtitle=paste0("Filtered to counties with population of at least ", minPop)
+             ) + 
+        facet_wrap(~cluster)
+    print(p1)
+    
+    # Further, the total burden by cluster is plotted
+    p2 <- df %>%
+        filter(date==maxDate, population>=0) %>%
+        group_by(cluster) %>%
+        summarize(population=sum(population), 
+                  cumCases=sum(cumCases), 
+                  cumDeath=sum(cumDeaths), 
+                  mdn_CasesPer=median(cumCasesPer), 
+                  mdn_DeathPer=median(cumDeathPer)
+                  ) %>%
+        mutate(mean_CasesPer=1000000*cumCases/population, mean_DeathPer=1000000*cumDeath/population) %>%
+        select(cluster, starts_with("mdn"), starts_with("mean")) %>%
+        pivot_longer(-cluster) %>%
+        mutate(aggType=stringr::str_replace(name, "_.*", ""), 
+               metType=stringr::str_replace(name, ".*_", "")
+               ) %>%
+        pivot_wider(c(cluster, aggType), names_from="metType", values_from="value") %>%
+        ggplot(aes(x=CasesPer, y=DeathPer)) + 
+        geom_point(aes(color=factor(cluster)), size=5) + 
+        labs(x=paste0("Cases per million as of ", dateLabel), 
+             y=paste0("Deaths per million as of ", dateLabel), 
+             title=paste0("Cluster-level per-capita coronavirus burden as of ", dateLabel), 
+             subtitle="State-level clusters based on hierarchical (method=`complete`)"
+             ) + 
+        scale_color_discrete("Cluster") +
+        ylim(c(0, NA)) + 
+        xlim(c(0, NA)) + 
+        facet_wrap(~c("mdn"="Median of all counties in segment", "mean"="Segment-level metric")[aggType])
+    print(p2)
+
+}
+
+
+
+# Create the filtered county data frame
+createCountyFiltered <- function(df, 
+                                 maxDate, 
+                                 minPop
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame with the burden data
+    # maxDate: the last date to use
+    # minPop: the minimum population to use
+    
+    # STEP 1: Select only desired variables from df
+    df <- df %>%
+        select(state=countyFIPS, date, cpm=cumCasesPer, dpm=cumDeathPer, population) %>%
+        arrange(state, date)
+    
+    # STEP 1a: Confirm that there are no duplicates and that every county has the same dates
+    # This should be 1 provided that there are no duplicates
+    cat("\nThis should be 1, otherwise there are duplicates\n")
+    df %>% 
+        count(state, date) %>% 
+        pull(n) %>% 
+        max() %>%
+        print()
+    cat("\n\n\n")
+
+    # This should have no standard deviation if the same number of records exist on every day
+    cat("\nMin and max should be the same if there are records everywhere on every day\n")
+    df %>%
+        mutate(n=1) %>%
+        group_by(date) %>%
+        summarize(n=sum(n), population=sum(population)) %>%
+        summarize_at(vars(all_of(c("n", "population"))), .funs=list(min=min, max=max)) %>%
+        print()
+    cat("\n\n\n")
+    
+    # STEP 2: Convert to daily new totals rather than cumulative data
+    dfDaily <- df %>%
+        group_by(state) %>%
+        arrange(date) %>%
+        mutate_at(vars(all_of(c("cpm", "dpm"))), ~ifelse(row_number()==1, ., .-lag(.))) %>%
+        ungroup()
+
+    # STEP 2a: Add rolling 7 aggregates and total cases/deaths
+    dfDaily <- dfDaily %>%
+        arrange(state, date) %>%
+        group_by(state) %>%
+        helperRollingAgg(origVar="cpm", newName="cpm7", k=7) %>%
+        helperRollingAgg(origVar="dpm", newName="dpm7", k=7) %>%
+        ungroup() %>%
+        mutate(cases=cpm*population/1000000, deaths=dpm*population/1000000)
+
+    # STEP 3: Filter the data frame for date and minimum population
+    # Ensure that 'state' (which holds countyFIPS) is not summed as a double
+    dfFiltered <- dfDaily %>%
+        filter(population >= minPop, date <= as.Date(maxDate)) %>%
+        mutate(state=as.character(state))
+
+    # Check number of counties that will fail the test for 100 deaths per million or 5000 cases per million
+    is0 <- function(x) mean(x==0)
+    isltn <- function(x, n) mean(x<n)
+    islt100 <- function(x) isltn(x, n=100)
+    islt5000 <- function(x) isltn(x, n=5000)
+
+    dfFiltered %>% 
+        group_by(state) %>% 
+        summarize_at(c("cpm", "dpm"), sum) %>% 
+        ungroup() %>%
+        summarize_at(vars(all_of(c("cpm", "dpm"))), 
+                     .funs=list(mean_is0=is0, mean_lt100=islt100, mean_lt5000=islt5000)
+                     ) %>%
+        print()
+    
+    # Return the data file
+    dfFiltered
+    
+}
+
+
+
+helperCorrel <- function(lagDays, df=clusterMarchMay, x="cpm7", y="dpm7") {
+    df %>%
+        group_by(cluster) %>%
+        arrange(date) %>%
+        mutate(xlag=lag(get(x), lagDays)) %>%
+        summarize(corr=cor(xlag, get(y), use="complete.obs")) %>%
+        mutate(lag=lagDays) %>%
+        ungroup()
+}
+
+
+
+# Helper function to make normalized data for cases and deaths
+helperMakeNormData <- function(df, 
+                               aggBy="cluster", 
+                               plotData=TRUE
+                               ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble
+    # aggBy: variable for aggregation for the normalized data
+    # plotData: boolean, whether to plot the data
+    
+    # Create the normalized data
+    normData <- df %>%
+        group_by_at(vars(all_of(c(aggBy, "date")))) %>%
+        summarize(cpm7=sum(pop*cpm7)/sum(pop), dpm7=sum(pop*dpm7)/sum(pop), pop=sum(pop)) %>%
+        group_by_at(vars(all_of(aggBy))) %>%
+        mutate(caseNorm=100*cpm7/max(cpm7, na.rm=TRUE), deathNorm=100*dpm7/max(dpm7, na.rm=TRUE)) %>%
+        ungroup()
+    
+    # Plot the normalized data (if requested)
+    if (plotData) {
+        # Create the plotting object
+        p1 <- normData %>%
+            select(all_of(aggBy), date, caseNorm, deathNorm) %>%
+            pivot_longer(-c(all_of(aggBy), "date")) %>%
+            filter(!is.na(value)) %>%
+            ggplot(aes(x=date, 
+                       y=value, 
+                       color=c("deathNorm"="Normalized Death", "caseNorm"="Normalized Cases")[name], 
+                       group=name
+                       )
+                   ) + 
+            geom_line() + 
+            facet_wrap(~get(aggBy)) + 
+            scale_color_discrete("Metric") + 
+            scale_x_date(date_breaks="1 months", date_labels="%m") + 
+            labs(x="2020", 
+                 y="Normalized Burden", 
+                 title="Burden by Segment", 
+                 subtitle="Normalized (100 is segment maximum for metric)"
+                 )
+        print(p1)
+    }
+
+    # Return the normalized data
+    normData
+    
+}
+
+
+
+# Helper function to assess the correlations by lag
+helperCorrel <- function(lagDays, df, aggBy="cluster", x="cpm7", y="dpm7") {
+    df %>%
+        group_by_at(vars(all_of(aggBy))) %>%
+        arrange(date) %>%
+        mutate(xlag=lag(get(x), lagDays)) %>%
+        summarize(corr=cor(xlag, get(y), use="complete.obs")) %>%
+        mutate(lag=lagDays) %>%
+        ungroup()
+}
+
+
+
+# Function to test lags and produce subsetted frame
+helperTestLags <- function(df,
+                           minDate=NULL, 
+                           maxDate=NULL,
+                           aggBy="cluster", 
+                           maxRatio=1,
+                           minRatio=-0.05,
+                           plotData=TRUE
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble
+    # minDate: the minimum date to use for analysis (NULL means use data minimum)
+    # maxDate: the maximum date to use for analysis (NULL means use data minimum)
+    # aggBy: the aggregation level for the input data in df
+    # maxRatio: the maximum ratio of deaths to cases (flat-line at this ratio if above)
+    # minRatio: the minimum ratio of deaths to cases (flat-line at this ratio if below)
+    # plotData: boolean, whether to plot the subset of the data
+    
+    # Get the minimum and/or maximum date from the data if passed as NULL
+    if (is.null(minDate)) minDate <- df %>% pull(date) %>% min(na.rm=TRUE) else minDate <- as.Date(minDate)
+    if (is.null(maxDate)) maxDate <- df %>% pull(date) %>% max(na.rm=TRUE) else maxDate <- as.Date(maxDate)
+    
+    # Filter the data to only the desired columns and time periods
+    filterData <- df %>%
+        select(all_of(aggBy), date, cpm7, dpm7) %>%
+        filter(!is.na(cpm7), !is.na(dpm7), date>=minDate, date<=maxDate)
+
+    # Create the plot data if requested
+    if (plotData) {
+        p1 <- filterData %>%
+            pivot_longer(-c(all_of(aggBy), date)) %>%
+            group_by_at(vars(all_of(c(aggBy, "name")))) %>%
+            mutate(normValue=100*value/max(value)) %>%
+            filter(!is.na(normValue)) %>%
+            ggplot(aes(x=date, 
+                       y=normValue, 
+                       color=c("dpm7"="Normalized Death", "cpm7"="Normalized Cases")[name], 
+                       group=name
+                       )
+                   ) + 
+            geom_line() + 
+            facet_wrap(~get(aggBy)) + 
+            scale_color_discrete("Metric") + 
+            scale_x_date(date_breaks="1 months", date_labels="%m") + 
+            labs(x="2020", 
+                 y="Normalized Burden", 
+                 title=paste0("Burden by Segment (", 
+                              format(minDate, "%b %d"), 
+                              " - ", 
+                              format(maxDate, "%b %d"),
+                              ")"
+                              ), 
+                 subtitle="Normalized (100 is segment maximum for metric during time period)"
+                 )
+        print(p1)
+    }
+
+    # Test the various lags for correlations
+    corrLagEarly <- map_dfr(.x=0:30, .f=helperCorrel, df=filterData, aggBy=aggBy)
+    
+    # Plot of correlations
+    p2 <- corrLagEarly %>%
+        ggplot(aes(x=lag, y=corr)) +
+        geom_line(aes(group=get(aggBy), color=get(aggBy))) + 
+        facet_wrap(~get(aggBy)) + 
+        labs(x="Lag (days) for cases", 
+             y="Correlation to deaths", 
+             title="Correlation of lagged cases and deaths"
+             )
+    print(p2)
+
+    # Find the best lags for each aggBy
+    bestLag <- corrLagEarly %>%
+        group_by_at(vars(all_of(aggBy))) %>%
+        filter(corr==max(corr)) %>%
+        ungroup()
+
+    cat("\nThe best lags are:\n")
+    print(bestLag)
+
+    # Create the lagged database
+    lagData <- filterData %>%
+        inner_join(bestLag, by=aggBy) %>%
+        group_by_at(vars(all_of(aggBy))) %>%
+        arrange(date) %>%
+        mutate(cpmlag=lag(cpm7, min(lag)))
+    
+    # Create the plot of the lagged database
+    p3 <- lagData %>%
+        filter(!is.na(cpmlag)) %>%
+        mutate(ratCur=pmax(minRatio, pmin(maxRatio, dpm7/cpmlag)), 
+               ratCum=pmax(minRatio, pmin(maxRatio, cumsum(dpm7)/cumsum(cpmlag)))
+               ) %>%
+        ggplot(aes(x=date, group=get(aggBy), color=get(aggBy))) + 
+        geom_line(aes(y=ratCum)) +
+        geom_line(aes(y=ratCur), lty=2) + 
+        labs(x="", 
+             y="Cumulative Death vs. Case Ratio", 
+             title="Deaths vs. Cases with Lag (Subsetted Time Period)", 
+             subtitle="Solid line is cumulative, dashed line is current time period",
+             caption=paste0("Ratio of death to cases capped between ", 
+                            round(maxRatio, 3), 
+                            " and ", 
+                            round(minRatio, 3),
+                            " for plotting")
+             ) + 
+        geom_text(data=~filter(., date==max(date)), 
+                  aes(label=paste0(round(100*ratCum, 1), "%"), 
+                      y=ratCum, 
+                      x=date+lubridate::days(3)
+                      ), 
+                  hjust=0
+                  ) +
+        scale_x_date(date_breaks="1 months", date_labels="%m", expand=expand_scale(mult=c(0, 0.2))) + 
+        facet_wrap(~get(aggBy))
+    print(p3)
+    
+    # Return the lagged data
+    lagData
+    
+}
+
+
+
+# Explore the top-n counties by population in a subset of states
+exploreTopCounties <- function(df, 
+                               minDate, 
+                               maxDate,
+                               minPop=100000, 
+                               states=state.abb, 
+                               nVar="pop",
+                               nKey=9
+                               ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble containing county (as variable 'state'), cluster, pop, date, dpm, cpm
+    # minDate: minimum date for lags
+    # maxDate: maximum date for lags
+    # states: the states for filtering
+    # minPop: minimum population for including as a top county
+    # nVar: the variable to use for top-n (should be "pop" or "dpm")
+    # nKey: the number of counties to pull for top-N
+    
+    minDate <- as.Date(minDate)
+    maxDate <- as.Date(maxDate)
+    
+    # Extract a list of the heaviest hit counties with population 1000k+
+    ctyFilter <- df %>%
+        mutate(state=str_pad(state, width=5, side="left", pad="0")) %>%
+        inner_join(select(usmap::countypop, -pop_2015), by=c("state"="fips")) %>%
+        mutate(countyName=paste0(cluster, " - ", 
+                                 stringr::str_replace(county, "County|Parish", "("), 
+                                 abbr, 
+                                 ")"
+                                 )
+               ) %>%
+        filter(pop >= minPop, abbr %in% states) %>%
+        group_by(state, cluster, countyName) %>%
+        summarize(dpm=sum(dpm), pop=mean(pop)) %>%
+        ungroup() %>%
+        top_n(n=nKey, wt=get(nVar)) %>%
+        arrange(desc(get(nVar)))
+
+    # Display the list of key counties
+    cat("\n*** KEY COUNTIES INCLUDE: ***\n")
+    print(ctyFilter)
+    
+    # Keep only the key counties and normalize the data
+    cNorm_key <- df %>%
+        mutate(state=str_pad(state, width=5, side="left", pad="0")) %>%
+        inner_join(select(ctyFilter, state, countyName), by=c("state"="state")) %>%
+        helperMakeNormData(aggBy=c("countyName", "state", "cluster"))
+
+    # Create lags for given time period
+    lag_key <- helperTestLags(cNorm_key, 
+                              minDate=minDate, 
+                              maxDate=maxDate, 
+                              aggBy=c("countyName", "state", "cluster"), 
+                              maxRatio=0.25
+                              )
+
+    # Return the lagged data
+    lag_key
+    
+}
+
+
+
+# Function to read and pivot input data from USA Facts
+readPivotUSAFacts <- function(popFile, 
+                              caseFile, 
+                              deathFile, 
+                              unassignedDate
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # popFile: population file
+    # caseFile: case file
+    # deathFile: deaths file
+    # unassignedDate: date to be used for extracting unassigned summaries (generally, last complete date)
+    
+    # Read population file
+    pop <- readr::read_csv(popFile) %>%
+        rename(countyName=`County Name`, state=State)    
+    
+    # Function for reading and pivoting data
+    helperReadPivot <- function(x, valueName) {
+        readr::read_csv(x) %>%
+            rename(countyName=`County Name`, state=State) %>%
+            pivot_longer(-c(countyFIPS, countyName, state, stateFIPS), 
+                         names_to="date", 
+                         values_to=valueName
+                         ) %>%
+            mutate(date=lubridate::mdy(date))
+    }
+    
+    # Read cases file
+    cases <- helperReadPivot(caseFile, valueName="cumCases")
+    
+    # Read deaths file
+    deaths <- helperReadPivot(deathFile, valueName="cumDeaths")
+
+    # Assess the extent of the unassigned data issue
+    unassigned <- cases %>%
+        mutate(unassigned=ifelse(countyFIPS==0, 1, 0)) %>%
+        group_by(state, date, unassigned) %>%
+        summarize(cases=sum(cumCases)) %>%
+        ungroup() %>%
+        full_join(deaths %>% 
+                      mutate(unassigned=ifelse(countyFIPS==0, 1, 0)) %>% 
+                      group_by(state, date, unassigned) %>% 
+                      summarize(deaths=sum(cumDeaths)) %>% 
+                      ungroup()
+                  )
+    
+    # Create plot for the unassigned data
+    p1 <- unassigned %>%
+        filter(date==unassignedDate) %>%
+        pivot_longer(c("cases", "deaths")) %>%
+        group_by(state, name) %>%
+        summarize(total=sum(value), unass=sum(value*unassigned)/sum(value)) %>%
+        ggplot(aes(x=fct_reorder(state, unass*ifelse(name=="cases", 1, 0)), y=unass)) + 
+        geom_point() + 
+        geom_text(data=~filter(., (name=="cases" & unass >= 0.02) | (name=="deaths" & unass > 0.005)), 
+                  aes(y=unass + ifelse(name=="cases", -0.0025, -0.001), 
+                      label=paste0(round(100*unass, 1), "% (", state ,")")
+                      ), 
+                  size=3, 
+                  hjust=1
+                  ) +
+        coord_flip() + 
+        labs(x="", 
+             y=paste0("% Unassigned as of ", as.character(unassignedDate)), 
+             title="Unassigned percentage by state"
+             ) +
+        facet_wrap(~name, scales="free_x")
+    print(p1)
+    
+    # Return list containing the three key files
+    list(pop=pop, cases=cases, deaths=deaths, unassigned=unassigned)
+    
+}
+
+
+
+# STEP 4: Create county-level clusters
+prepClusterCounties <- function(burdenFile, 
+                                maxDate,
+                                minPop, 
+                                hierarchical=FALSE, 
+                                returnList=!hierarchical, 
+                                ...
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # burdenFile: the pivoted file containing the burdens data
+    # maxDate: the latest date to be used from the data
+    # minPop: the smallest population for a county to be included
+    # hierarchical: whether to create hierarchical clusters (only set up for FALSE as of now)
+    # returnList: whether the clustering call returns a list (only set up for TRUE as of now)
+    # ...: other arguments to be passed to clusterStates
+    
+    # STEP 1: Select only desired variables from burden file
+    countyCumPerCapita <- burdenFile %>%
+        select(state=countyFIPS, date, cpm=cumCasesPer, dpm=cumDeathPer, population) %>%
+        arrange(state, date)
+
+    # STEP 2: Confirm that there are no duplicates and that every county has the same dates
+    # This should be 1 provided that there are no duplicates
+    countyCumPerCapita %>% 
+        count(state, date) %>% 
+        pull(n) %>% 
+        max()
+
+    # This should have no standard deviation if the same number of records exist on every day
+    countyCumPerCapita %>%
+        mutate(n=1) %>%
+        group_by(date) %>%
+        summarize(n=sum(n), population=sum(population)) %>%
+        summarize_at(vars(all_of(c("n", "population"))), .funs=list(sd=sd, min=min, max=max))
+
+    # STEP 3: Convert to daily new totals rather than cumulative data
+    countyDailyPerCapita <- countyCumPerCapita %>%
+        group_by(state) %>%
+        arrange(date) %>%
+        mutate_at(vars(all_of(c("cpm", "dpm"))), ~ifelse(row_number()==1, ., .-lag(.))) %>%
+        ungroup()
+
+    # STEP 4: Add rolling 7 aggregates and total cases/deaths
+    countyDailyPerCapita <- countyDailyPerCapita %>%
+        arrange(state, date) %>%
+        group_by(state) %>%
+        helperRollingAgg(origVar="cpm", newName="cpm7", k=7) %>%
+        helperRollingAgg(origVar="dpm", newName="dpm7", k=7) %>%
+        ungroup() %>%
+        mutate(cases=cpm*population/1000000, deaths=dpm*population/1000000)
+
+    # STEP 5: Filter the data prior to clustering
+    countyFiltered <- countyDailyPerCapita %>%
+        filter(population >= minPop, date <= as.Date(maxDate)) %>%
+        mutate(state=as.character(state))
+
+    # STEP 6: Check the implications of the filtering
+    # Check number of counties that will fail the test for 100 deaths per million or 5000 cases per million
+    is0 <- function(x) mean(x==0)
+    isltn <- function(x, n) mean(x<n)
+    islt100 <- function(x) isltn(x, n=100)
+    islt5000 <- function(x) isltn(x, n=5000)
+
+    countyFiltered %>% 
+        group_by(state) %>% 
+        summarize_at(c("cpm", "dpm"), sum) %>% 
+        ungroup() %>%
+        summarize_at(vars(all_of(c("cpm", "dpm"))), 
+                     .funs=list(mean_is0=is0, mean_lt100=islt100, mean_lt5000=islt5000)
+                     ) %>%
+        print()
+
+    # Run county-level clusters and return the output along with the intermediate data file
+    list(objCluster=clusterStates(countyFiltered, hierarchical=hierarchical, returnList=returnList, ...), 
+         countyFiltered=countyFiltered, 
+         countyDailyPerCapita=countyDailyPerCapita, 
+         countyCumPerCapita=countyCumPerCapita
+         )
+    
+}
+
+```
+  
+### _Running Key Analyses (USA Facts)_  
+The data from USA Facts can be loaded and analyzed using the functions above, a variable mapping file, and a main function that calls the other functions and returns a list:  
+```{r cache=TRUE}
+
+# STEP 1a: Define the locations for the population, cases, and deaths file
+popFile <- "./RInputFiles/Coronavirus/covid_county_population_usafacts.csv"
+caseFile <- "./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20200903.csv"
+deathFile <- "./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20200903.csv"
+maxDate <- "2020-08-31"
+
+# STEP 1b: Read and pivot data from USA Facts; extract population data file as pop_usafacts
+rawUSAFacts <- readPivotUSAFacts(popFile=popFile, 
+                                 caseFile=caseFile, 
+                                 deathFile=deathFile, 
+                                 unassignedDate=maxDate
+                                 )
+pop_usafacts <- rawUSAFacts$pop
+
+# STEP 2: Read case and death data (redundant), combine, and add population totals; no clusters by default
+burden_20200903_new <- readUSAFacts(
+    caseFile=caseFile, 
+    deathFile=deathFile, 
+    stateClusters=NULL
+    )
+
+
+# STEP 3: Explore the cases and deaths by county (can be repeated for other counties)
+casesDeathsByCounty(useDate=maxDate, 
+                    inclStates=c("FL", "GA", "SC", "AL", "MS"), 
+                    caseData=rawUSAFacts$cases, 
+                    deathData=rawUSAFacts$deaths,
+                    highCaseAmount=80000, 
+                    highDeathAmount=2000
+                    )
+
+# STEP 4: Create county-level clusters (k-means, 5 clusters, minimum county population 25k)
+clust_20200903_new <- prepClusterCounties(burdenFile=burden_20200903_new, 
+                                          maxDate=maxDate, 
+                                          minPop=25000, 
+                                          hierarchical=FALSE, 
+                                          minShape=3,
+                                          ratioDeathvsCase = 5,
+                                          ratioTotalvsShape = 0.5,
+                                          minDeath=100,
+                                          minCase=5000,
+                                          nCenters=5,
+                                          testCenters=1:25,
+                                          iter.max=20,
+                                          nstart=10,
+                                          seed=2009081450
+                                          )
+
+
+# STEP 5: Extract the clusters from the clustering object
+clustVec_county_20200903_new <- clust_20200903_new$objCluster$objCluster$cluster
+
+# STEP 6: Assess the quality of the new clusters
+helperACC_county_20200903_new <- helperAssessCountyClusters(clustVec_county_20200903_new, 
+                                                            dfPop=clust_20200903_new$countyFiltered, 
+                                                            dfBurden=clust_20200903_new$countyFiltered, 
+                                                            thruLabel="Sep 3, 2020", 
+                                                            plotsTogether=TRUE, 
+                                                            orderCluster=TRUE
+                                                            )
+
+# STEP 7: Create a plot of cumulative burden by cluster
+helperACC_county_20200903_new %>%
+    select(cluster, date, pop, cases, deaths) %>%
+    group_by(cluster, date) %>%
+    summarize_if(is.numeric, sum, na.rm=TRUE) %>%
+    arrange(date) %>%
+    mutate(cpmcum=cumsum(cases)*1000000/pop, dpmcum=cumsum(deaths)*1000000/pop) %>%
+    ungroup() %>%
+    select(cluster, date, cases=cpmcum, deaths=dpmcum) %>%
+    pivot_longer(-c(cluster, date)) %>%
+    ggplot(aes(x=date, y=value, color=cluster)) + 
+    geom_line(size=1) + 
+    geom_text(data=~filter(., date==max(date)), 
+              aes(x=date+lubridate::days(2), label=round(value)), 
+              size=3, 
+              hjust=0
+              ) +
+    labs(x="", title="Cumulative burden per million people by segment", y="") +
+    facet_wrap(~c("cases"="Cases per million", "deaths"="Deaths per million")[name], scales="free_y") + 
+    scale_x_date(date_breaks="1 months", date_labels="%b", expand=expand_scale(c(0, 0.1)))
+
+# STEP 8: Add back clusters not used for analysis (code 999) and associated disease data
+clusterStateData_20200903_new <- helperMakeClusterStateData(helperACC_county_20200903_new, 
+                                                            dfBurden=clust_20200903_new$countyDailyPerCapita,
+                                                            orderCluster=TRUE
+                                                            )
+
+# STEP 9: Run an example state-level summary (can expand to other states)
+stateCountySummary(states=c("MN", "ND", "SD", "WI"),
+                   df=changeOrderLabel(clusterStateData_20200903_new, grpVars="fipsCounty"),
+                   keyDate=maxDate,
+                   showQuadrants=TRUE, 
+                   showCumulative=TRUE, 
+                   facetCumulativeByState = TRUE, 
+                   showAllFactorLevels = TRUE
+                   )
+
+```
+  
+Next steps are to continue fleshing out the analysis component, including enabling the load of new data with existing segments and comparison of lags between cases and deaths:  
+```{r eval=FALSE}
+
+# Get the clusters used previously in burdenUS
+oldClusters <- burdenUS %>%
+    count(state, cluster) %>%
+    select(-n)
+oldcvec <- pull(oldClusters, cluster)
+names(oldcvec) <- oldClusters$state
+
+# File read in from previous data
+burden_20200903 <- readUSAFacts(
+    caseFile="./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20200903.csv", 
+    deathFile="./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20200903.csv", 
+    stateClusters=oldcvec
+    )
+
+# Comparison of components
+burden_20200903 %>% 
+    anti_join(select(burdenUS, countyFIPS)) %>% 
+    count(state, county)
+table(rowSums((burden_20200903 %>% semi_join(select(burdenUS, countyFIPS)) != burdenUS)))
+
+plotBurdenData(burden_20200903, maxDate="2020-09-01", minPop=10000)
+
+countyFiltered_20200903 <- createCountyFiltered(burden_20200903, maxDate="2020-08-31", minPop=25000)
+
+# File read in from previous data
+burden_20200917 <- readUSAFacts(
+    caseFile="./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20200917.csv", 
+    deathFile="./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20200917.csv", 
+    stateClusters=oldcvec
+    )
+
+# Comparison of total burden by date vs. previous file
+bind_rows(burden_20200903, burden_20200917, .id="source") %>%
+    mutate(source=factor(case_when(source==1 ~ "2020-09-03", source==2 ~ "2020-09-17", TRUE ~ "Unknown"), 
+                         levels=c("2020-09-17", "2020-09-03", "Unknown")
+                         )
+           ) %>%
+    group_by(source, date) %>%
+    summarize(cumDeaths=sum(cumDeaths), cumCases=sum(cumCases)) %>%
+    pivot_longer(-c(source, date)) %>%
+    ggplot(aes(x=date, y=value/1000, group=source, color=source)) + 
+    geom_line() + 
+    facet_wrap(~c("cumCases"="Cases", "cumDeaths"="Deaths")[name], scales="free_y") + 
+    scale_x_date(date_breaks="1 months", date_labels="%m") + 
+    labs(y="Burden (000s)", title="US National Coronavirus Burden by Source")
+
+# Plot burden data through 15-SEP-2020
+plotBurdenData(burden_20200917, maxDate="2020-09-15", minPop=10000)
+
+# Create filtered county data for 25k+ population using data through 15-SEP-2020
+countyFiltered_20200917 <- createCountyFiltered(burden_20200917, maxDate="2020-09-15", minPop=25000)
+
+helper_test_20200917 <- helperAssessCountyClusters(countyCluster_km_test$objCluster$cluster, 
+                                                   dfPop=countyFiltered_20200917, 
+                                                   dfBurden=countyFiltered_20200917, 
+                                                   thruLabel="Sep 15, 2020", 
+                                                   plotsTogether=TRUE, 
+                                                   showMap=TRUE, 
+                                                   clusterPlotsTogether=TRUE, 
+                                                   orderCluster=TRUE
+                                                   )
+
+clusterNorm <- helper_test_20200917 %>%
+    group_by(cluster, date) %>%
+    summarize(cpm7=sum(pop*cpm7)/sum(pop), dpm7=sum(pop*dpm7)/sum(pop), pop=sum(pop)) %>%
+    group_by(cluster) %>%
+    mutate(caseNorm=100*cpm7/max(cpm7, na.rm=TRUE), deathNorm=100*dpm7/max(dpm7, na.rm=TRUE)) %>%
+    ungroup()
+
+clusterNorm %>%
+    select(cluster, date, caseNorm, deathNorm) %>%
+    pivot_longer(-c(cluster, date)) %>%
+    filter(!is.na(value)) %>%
+    ggplot(aes(x=date, 
+               y=value, 
+               color=c("deathNorm"="Normalized Death", "caseNorm"="Normalized Cases")[name], 
+               group=name
+               )
+           ) + 
+    geom_line() + 
+    facet_wrap(~cluster) + 
+    scale_color_discrete("Metric") + 
+    scale_x_date(date_breaks="1 months", date_labels="%m") + 
+    labs(x="2020", 
+         y="Normalized Burden", 
+         title="Burden by Segment", 
+         subtitle="Normalized (100 is segment maximum for metric)"
+         )
+
+clusterNorm %>%
+    select(cluster, date, caseNorm, deathNorm) %>%
+    pivot_longer(-c(cluster, date)) %>%
+    filter(!is.na(value), date>="2020-03-01", date<="2020-05-31") %>%
+    ggplot(aes(x=date, 
+               y=value, 
+               color=c("deathNorm"="Normalized Death", "caseNorm"="Normalized Cases")[name], 
+               group=name
+               )
+           ) + 
+    geom_line() + 
+    facet_wrap(~cluster) + 
+    scale_color_discrete("Metric") + 
+    scale_x_date(date_breaks="1 months", date_labels="%m") + 
+    labs(x="2020", 
+         y="Normalized Burden", 
+         title="Burden by Segment (March 1 - May 31)", 
+         subtitle="Normalized (100 is segment maximum for metric)"
+         )
+
+clusterMarchMay <- clusterNorm %>%
+    select(cluster, date, cpm7, dpm7) %>%
+    filter(!is.na(cpm7), !is.na(dpm7), date>="2020-03-01", date<="2020-05-31")
+
+corrLagEarly <- map_dfr(.x=0:30, .f=helperCorrel) 
+
+corrLagEarly %>%
+    ggplot(aes(x=lag, y=corr)) +
+    geom_line(aes(group=cluster, color=cluster)) + 
+    facet_wrap(~cluster)
+
+bestLag <- corrLagEarly %>%
+    group_by(cluster) %>%
+    filter(corr==max(corr)) %>%
+    ungroup()
+
+bestLag
+
+clusterMarchMay %>%
+    inner_join(bestLag, by="cluster") %>%
+    group_by(cluster) %>%
+    arrange(date) %>%
+    mutate(cpmlag=lag(cpm7, min(lag))) %>%
+    filter(!is.na(cpmlag)) %>%
+    mutate(ratCur=dpm7/cpmlag, ratCum=cumsum(dpm7)/cumsum(cpmlag)) %>%
+    ggplot(aes(x=date, group=cluster, color=cluster)) + 
+    geom_line(aes(y=ratCum)) +
+    geom_line(aes(y=ratCur), lty=2) + 
+    labs(x="", 
+         y="Cumulative Death vs. Case Ratio", 
+         title="Deaths vs. Cases with Lag (Early Pandemic)", 
+         subtitle="Solid line is cumulative, dashed line is current time period"
+         ) + 
+    geom_text(data=~filter(., date==max(date)), 
+              aes(label=paste0(round(100*ratCum, 1), "%"), y=ratCum+0.02)
+              ) +
+    facet_wrap(~cluster)
+
+cNorm_002 <- helperMakeNormData(helper_test_20200917)
+
+# Create for early pandemic
+lagData_early_002 <- helperTestLags(cNorm_002, minDate="2020-03-01", maxDate="2020-05-31")
+
+# Create for late pandemic
+lagData_late_002 <- helperTestLags(cNorm_002, minDate="2020-06-01", maxDate="2020-08-31")
+
+# Extract a list of the heaviest hit counties with population 1000k+
+keyCounties <- helper_test_20200917 %>%
+    mutate(state=str_pad(state, width=5, side="left", pad="0")) %>%
+    filter(pop >= 100000) %>%
+    group_by(state, cluster) %>%
+    summarize(dpm=sum(dpm), pop=mean(pop)) %>%
+    group_by(cluster) %>%
+    top_n(n=3, wt=dpm) %>%
+    ungroup() %>%
+    arrange(cluster, -dpm) %>%
+    inner_join(select(usmap::countypop, -pop_2015), by=c("state"="fips")) %>%
+    mutate(countyName=paste0(cluster, " - ", 
+                             stringr::str_replace(county, "County|Parish", "("), 
+                             abbr, 
+                             ")"
+                             )
+           ) %>%
+    select(-abbr, -county)
+
+
+# Keep only the key counties
+cNorm_keyCounties <- helper_test_20200917 %>%
+    mutate(state=str_pad(state, width=5, side="left", pad="0")) %>%
+    inner_join(select(keyCounties, state, countyName), by=c("state"="state")) %>%
+    helperMakeNormData(aggBy=c("countyName", "state", "cluster"))
+
+# Create lags for early pandemic
+lagData_early_keycounties <- helperTestLags(cNorm_keyCounties, 
+                                            minDate="2020-03-01", 
+                                            maxDate="2020-05-31", 
+                                            aggBy=c("countyName", "state", "cluster"), 
+                                            maxRatio=0.25
+                                            )
+
+# Create lags for late pandemic
+lagData_late_keycounties <- helperTestLags(cNorm_keyCounties, 
+                                           minDate="2020-06-01", 
+                                           maxDate="2020-08-31", 
+                                           aggBy=c("countyName", "state", "cluster"), 
+                                           maxRatio=0.25
+                                           )
+
+# Run for top-12 counties early
+exploreTopCounties(helper_test_20200917, minDate="2020-03-01", maxDate="2020-05-31", nVar="pop", nKey=12)
+
+# Run for top-12 counties late
+exploreTopCounties(helper_test_20200917, minDate="2020-06-15", maxDate="2020-09-15", nVar="pop", nKey=12)
+
+
+```
+  
