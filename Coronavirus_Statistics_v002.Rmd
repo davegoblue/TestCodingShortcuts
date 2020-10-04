@@ -1789,6 +1789,7 @@ helperAssessCountyClusters <- function(vecCluster,
                                        dfBurden, 
                                        dfPopGeoVar="state", 
                                        dfPopPopVar="population", 
+                                       showCum=FALSE,
                                        ...
                                        ) {
     
@@ -1796,6 +1797,7 @@ helperAssessCountyClusters <- function(vecCluster,
     # vecCluster: the named cluster vector
     # dfPop: the data frame containing the population data
     # dfBurden: the data frame containing the burden statistics by county and date
+    # showCum: boolean, whether to create the cumulative burdens chart
     # ...: other arguments to pass to assessClusters()
 
     # Run the process    
@@ -1808,6 +1810,30 @@ helperAssessCountyClusters <- function(vecCluster,
                                  isCounty=TRUE, 
                                  ...
                                  )
+    
+    # Create the cumulative burdens chart if requested
+    if (showCum) {
+        p1 <- plotAssess %>%
+            select(cluster, date, pop, cases, deaths) %>%
+            group_by(cluster, date) %>%
+            summarize_if(is.numeric, sum, na.rm=TRUE) %>%
+            arrange(date) %>%
+            mutate(cpmcum=cumsum(cases)*1000000/pop, dpmcum=cumsum(deaths)*1000000/pop) %>%
+            ungroup() %>%
+            select(cluster, date, cases=cpmcum, deaths=dpmcum) %>%
+            pivot_longer(-c(cluster, date)) %>%
+            ggplot(aes(x=date, y=value, color=cluster)) + 
+            geom_line(size=1) + 
+            geom_text(data=~filter(., date==max(date)), 
+                      aes(x=date+lubridate::days(2), label=round(value)), 
+                      size=3, 
+                      hjust=0
+                      ) +
+            labs(x="", title="Cumulative burden per million people by segment", y="") +
+            facet_wrap(~c("cases"="Cases per million", "deaths"="Deaths per million")[name], scales="free_y") +
+            scale_x_date(date_breaks="1 months", date_labels="%b", expand=expand_scale(c(0, 0.1)))
+        print(p1)
+    }
     
     # Return the plot object
     plotAssess
@@ -2456,13 +2482,24 @@ helperReadConvert <- function(file,
 # Function to read and convert raw data from USA Facts
 readUSAFacts <- function(caseFile, 
                          deathFile, 
-                         stateClusters=NULL
+                         oldFile=NULL,
+                         showBurdenMinPop=NULL,
+                         maxDate=NULL,
+                         stateClusters=NULL, 
+                         countyClusters=NULL
                          ) {
     
     # FUNCTION ARGUMENTS:
     # caseFile: the location of the downloaded cases dataset
     # deathsFile: the location of the downloaded deaths dataset
-    # stateClusters: a field 'cluster' will be created from this named vector (if NULL, 'cluster' will be NA)
+    # oldFile: a file for comparing control totals against (NULL means do not compare)
+    # showBurdenMinPop: minimum population for showing burden by cluster (NULL means skip plot)
+    # maxDate: the date to use for the burden by cluster plot (ignored unless showBurdenMinPop is not NULL)
+    # stateClusters: a field 'cluster' will be created from state using this named vector
+    #                NULL means do not use state for finding clusters
+    # countyClusters: a field 'cluster' will be created from countyFIPS using this named vector
+    #                 NULL means do not use county for finding clusters
+    # If both stateClusters and countyClusters are passed, only stateClusters will be used
     
     # Read cases file
     cnvCases <- helperReadConvert(caseFile, valueName="cumCases")
@@ -2479,6 +2516,37 @@ readUSAFacts <- function(caseFile,
                    by=c("countyFIPS", "stateFIPS", "county", "state", "date", "population")
                    ) %>%
     mutate(cluster=if(is.null(stateClusters)) NA else stateClusters[state])
+
+    # Attach county clusters if requested and if state clusters were not attached
+    # County cluster file converted to 5-digit character
+    str_pad5 <- function(x) stringr::str_pad(x, width=5, side="left", pad="0")
+    if (is.null(stateClusters) & !is.null(countyClusters)) {
+        names(countyClusters) <- str_pad5(as.character(names(countyClusters)))
+        dfBurden <- dfBurden %>%
+            mutate(cluster=countyClusters[str_pad5(countyFIPS)])
+    }
+
+    # Compare against an old file, if requested
+    if (!is.null(oldFile)) {
+        p1 <- bind_rows(oldFile, dfBurden, .id="source") %>%
+            mutate(source=factor(case_when(source==1 ~ "Previous", source==2 ~ "New", TRUE ~ "Unknown"), 
+                                 levels=c("New", "Previous", "Unknown")
+                                 )
+                   ) %>%
+            group_by(source, date) %>%
+            summarize(cumDeaths=sum(cumDeaths), cumCases=sum(cumCases)) %>%
+            pivot_longer(-c(source, date)) %>%
+            ggplot(aes(x=date, y=value/1000, group=source, color=source)) + 
+            geom_line() + 
+            facet_wrap(~c("cumCases"="Cases", "cumDeaths"="Deaths")[name], scales="free_y") + 
+            scale_x_date(date_breaks="1 months", date_labels="%m") + 
+            labs(y="Burden (000s)", title="US National Coronavirus Burden by Source")
+        print(p1)
+    }
+    
+    if (!is.null(showBurdenMinPop)) {
+        plotBurdenData(dfBurden, maxDate=maxDate, minPop=showBurdenMinPop)
+    }
     
     # Return the burdens file
     dfBurden
@@ -2976,6 +3044,7 @@ readPivotUSAFacts <- function(popFile,
 prepClusterCounties <- function(burdenFile, 
                                 maxDate,
                                 minPop, 
+                                createClusters=TRUE,
                                 hierarchical=FALSE, 
                                 returnList=!hierarchical, 
                                 ...
@@ -2985,6 +3054,8 @@ prepClusterCounties <- function(burdenFile,
     # burdenFile: the pivoted file containing the burdens data
     # maxDate: the latest date to be used from the data
     # minPop: the smallest population for a county to be included
+    # createClusters: boolean, whether to create county-level clusters (if FALSE, object returned as NULL)
+    #                 FALSE would be for prepping and converting data only (those objects are returned)
     # hierarchical: whether to create hierarchical clusters (only set up for FALSE as of now)
     # returnList: whether the clustering call returns a list (only set up for TRUE as of now)
     # ...: other arguments to be passed to clusterStates
@@ -3045,8 +3116,15 @@ prepClusterCounties <- function(burdenFile,
                      ) %>%
         print()
 
-    # Run county-level clusters and return the output along with the intermediate data file
-    list(objCluster=clusterStates(countyFiltered, hierarchical=hierarchical, returnList=returnList, ...), 
+    # Run county-level clusters if requested, otherwise store as NULL
+    objCluster <- if(createClusters) {
+        clusterStates(countyFiltered, hierarchical=hierarchical, returnList=returnList, ...)
+    } else {
+        NULL
+    }
+    
+    # Return all of the relevant objects
+    list(objCluster=objCluster, 
          countyFiltered=countyFiltered, 
          countyDailyPerCapita=countyDailyPerCapita, 
          countyCumPerCapita=countyCumPerCapita
@@ -3062,38 +3140,38 @@ The data from USA Facts can be loaded and analyzed using the functions above, a 
 
 # STEP 1a: Define the locations for the population, cases, and deaths file
 popFile <- "./RInputFiles/Coronavirus/covid_county_population_usafacts.csv"
-caseFile <- "./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20200903.csv"
-deathFile <- "./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20200903.csv"
-maxDate <- "2020-08-31"
+caseFile_20200903 <- "./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20200903.csv"
+deathFile_20200903 <- "./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20200903.csv"
+maxDate_20200903 <- "2020-08-31"
 
 # STEP 1b: Read and pivot data from USA Facts; extract population data file as pop_usafacts
-rawUSAFacts <- readPivotUSAFacts(popFile=popFile, 
-                                 caseFile=caseFile, 
-                                 deathFile=deathFile, 
-                                 unassignedDate=maxDate
-                                 )
-pop_usafacts <- rawUSAFacts$pop
+rawUSAFacts_20200903 <- readPivotUSAFacts(popFile=popFile, 
+                                          caseFile=caseFile_20200903, 
+                                          deathFile=deathFile_20200903, 
+                                          unassignedDate=maxDate_20200903
+                                          )
+pop_usafacts <- rawUSAFacts_20200903$pop
 
 # STEP 2: Read case and death data (redundant), combine, and add population totals; no clusters by default
 burden_20200903_new <- readUSAFacts(
-    caseFile=caseFile, 
-    deathFile=deathFile, 
+    caseFile=caseFile_20200903, 
+    deathFile=deathFile_20200903, 
     stateClusters=NULL
     )
 
 
 # STEP 3: Explore the cases and deaths by county (can be repeated for other counties)
-casesDeathsByCounty(useDate=maxDate, 
+casesDeathsByCounty(useDate=maxDate_20200903, 
                     inclStates=c("FL", "GA", "SC", "AL", "MS"), 
-                    caseData=rawUSAFacts$cases, 
-                    deathData=rawUSAFacts$deaths,
+                    caseData=rawUSAFacts_20200903$cases, 
+                    deathData=rawUSAFacts_20200903$deaths,
                     highCaseAmount=80000, 
                     highDeathAmount=2000
                     )
 
 # STEP 4: Create county-level clusters (k-means, 5 clusters, minimum county population 25k)
 clust_20200903_new <- prepClusterCounties(burdenFile=burden_20200903_new, 
-                                          maxDate=maxDate, 
+                                          maxDate=maxDate_20200903, 
                                           minPop=25000, 
                                           hierarchical=FALSE, 
                                           minShape=3,
@@ -3151,51 +3229,34 @@ clusterStateData_20200903_new <- helperMakeClusterStateData(helperACC_county_202
 # STEP 9: Run an example state-level summary (can expand to other states)
 stateCountySummary(states=c("MN", "ND", "SD", "WI"),
                    df=changeOrderLabel(clusterStateData_20200903_new, grpVars="fipsCounty"),
-                   keyDate=maxDate,
+                   keyDate=maxDate_20200903,
                    showQuadrants=TRUE, 
                    showCumulative=TRUE, 
                    facetCumulativeByState = TRUE, 
                    showAllFactorLevels = TRUE
                    )
 
-```
-  
-Next steps are to continue fleshing out the analysis component, including enabling the load of new data with existing segments and comparison of lags between cases and deaths:  
-```{r eval=FALSE}
+# STEP 10a: Read in updated raw data
+caseFile_20200917 <- "./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20200917.csv"
+deathFile_20200917 <- "./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20200917.csv"
+maxDate_20200917 <- "2020-09-15"
 
-# Get the clusters used previously in burdenUS
-oldClusters <- burdenUS %>%
-    count(state, cluster) %>%
-    select(-n)
-oldcvec <- pull(oldClusters, cluster)
-names(oldcvec) <- oldClusters$state
+rawUSAFacts_20200917 <- readPivotUSAFacts(popFile=popFile, 
+                                          caseFile=caseFile_20200917, 
+                                          deathFile=deathFile_20200917, 
+                                          unassignedDate=maxDate_20200917
+                                          )
 
-# File read in from previous data
-burden_20200903 <- readUSAFacts(
-    caseFile="./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20200903.csv", 
-    deathFile="./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20200903.csv", 
-    stateClusters=oldcvec
-    )
 
-# Comparison of components
-burden_20200903 %>% 
-    anti_join(select(burdenUS, countyFIPS)) %>% 
-    count(state, county)
-table(rowSums((burden_20200903 %>% semi_join(select(burdenUS, countyFIPS)) != burdenUS)))
-
-plotBurdenData(burden_20200903, maxDate="2020-09-01", minPop=10000)
-
-countyFiltered_20200903 <- createCountyFiltered(burden_20200903, maxDate="2020-08-31", minPop=25000)
-
-# File read in from previous data
+# STEP 10b: Use existing state-level segments with updated raw data
 burden_20200917 <- readUSAFacts(
-    caseFile="./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20200917.csv", 
-    deathFile="./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20200917.csv", 
-    stateClusters=oldcvec
+    caseFile=caseFile_20200917, 
+    deathFile=deathFile_20200917,
+    stateClusters=test_hier5_201001$useClusters
     )
 
-# Comparison of total burden by date vs. previous file
-bind_rows(burden_20200903, burden_20200917, .id="source") %>%
+# STEP 11: Compare burden in old data and new data
+bind_rows(burden_20200903_new, burden_20200917, .id="source") %>%
     mutate(source=factor(case_when(source==1 ~ "2020-09-03", source==2 ~ "2020-09-17", TRUE ~ "Unknown"), 
                          levels=c("2020-09-17", "2020-09-03", "Unknown")
                          )
@@ -3209,15 +3270,30 @@ bind_rows(burden_20200903, burden_20200917, .id="source") %>%
     scale_x_date(date_breaks="1 months", date_labels="%m") + 
     labs(y="Burden (000s)", title="US National Coronavirus Burden by Source")
 
-# Plot burden data through 15-SEP-2020
-plotBurdenData(burden_20200917, maxDate="2020-09-15", minPop=10000)
+# STEP 12: Show top-level findings by segment
+plotBurdenData(burden_20200917, maxDate=maxDate_20200917, minPop=10000)
 
-# Create filtered county data for 25k+ population using data through 15-SEP-2020
-countyFiltered_20200917 <- createCountyFiltered(burden_20200917, maxDate="2020-09-15", minPop=25000)
+# STEP 13: Create county-level clusters (k-means, 5 clusters, minimum county population 25k)
+clust_20200917_new <- prepClusterCounties(burdenFile=burden_20200917, 
+                                          maxDate=maxDate_20200917, 
+                                          minPop=25000, 
+                                          hierarchical=FALSE, 
+                                          minShape=3,
+                                          ratioDeathvsCase = 5,
+                                          ratioTotalvsShape = 0.5,
+                                          minDeath=100,
+                                          minCase=5000,
+                                          nCenters=5,
+                                          testCenters=1:25,
+                                          iter.max=20,
+                                          nstart=10,
+                                          seed=2009081450
+                                          )
 
-helper_test_20200917 <- helperAssessCountyClusters(countyCluster_km_test$objCluster$cluster, 
-                                                   dfPop=countyFiltered_20200917, 
-                                                   dfBurden=countyFiltered_20200917, 
+# STEP 14: Assess the previous clusters on the updated data
+helper_test_20200917 <- helperAssessCountyClusters(vecCluster=clustVec_county_20200903_new, 
+                                                   dfPop=clust_20200917_new$countyFiltered, 
+                                                   dfBurden=clust_20200917_new$countyFiltered, 
                                                    thruLabel="Sep 15, 2020", 
                                                    plotsTogether=TRUE, 
                                                    showMap=TRUE, 
@@ -3225,101 +3301,15 @@ helper_test_20200917 <- helperAssessCountyClusters(countyCluster_km_test$objClus
                                                    orderCluster=TRUE
                                                    )
 
-clusterNorm <- helper_test_20200917 %>%
-    group_by(cluster, date) %>%
-    summarize(cpm7=sum(pop*cpm7)/sum(pop), dpm7=sum(pop*dpm7)/sum(pop), pop=sum(pop)) %>%
-    group_by(cluster) %>%
-    mutate(caseNorm=100*cpm7/max(cpm7, na.rm=TRUE), deathNorm=100*dpm7/max(dpm7, na.rm=TRUE)) %>%
-    ungroup()
+# STEP 15: Create normalized data
+cNorm_20200917 <- helperMakeNormData(helper_test_20200917)
 
-clusterNorm %>%
-    select(cluster, date, caseNorm, deathNorm) %>%
-    pivot_longer(-c(cluster, date)) %>%
-    filter(!is.na(value)) %>%
-    ggplot(aes(x=date, 
-               y=value, 
-               color=c("deathNorm"="Normalized Death", "caseNorm"="Normalized Cases")[name], 
-               group=name
-               )
-           ) + 
-    geom_line() + 
-    facet_wrap(~cluster) + 
-    scale_color_discrete("Metric") + 
-    scale_x_date(date_breaks="1 months", date_labels="%m") + 
-    labs(x="2020", 
-         y="Normalized Burden", 
-         title="Burden by Segment", 
-         subtitle="Normalized (100 is segment maximum for metric)"
-         )
+# STEP 16: Assess lags for early pandemic and late pandemic
+lagData_early_20200917 <- helperTestLags(cNorm_20200917, minDate="2020-03-01", maxDate="2020-05-31")
+lagData_late_20200917 <- helperTestLags(cNorm_20200917, minDate="2020-06-01", maxDate="2020-09-15")
 
-clusterNorm %>%
-    select(cluster, date, caseNorm, deathNorm) %>%
-    pivot_longer(-c(cluster, date)) %>%
-    filter(!is.na(value), date>="2020-03-01", date<="2020-05-31") %>%
-    ggplot(aes(x=date, 
-               y=value, 
-               color=c("deathNorm"="Normalized Death", "caseNorm"="Normalized Cases")[name], 
-               group=name
-               )
-           ) + 
-    geom_line() + 
-    facet_wrap(~cluster) + 
-    scale_color_discrete("Metric") + 
-    scale_x_date(date_breaks="1 months", date_labels="%m") + 
-    labs(x="2020", 
-         y="Normalized Burden", 
-         title="Burden by Segment (March 1 - May 31)", 
-         subtitle="Normalized (100 is segment maximum for metric)"
-         )
-
-clusterMarchMay <- clusterNorm %>%
-    select(cluster, date, cpm7, dpm7) %>%
-    filter(!is.na(cpm7), !is.na(dpm7), date>="2020-03-01", date<="2020-05-31")
-
-corrLagEarly <- map_dfr(.x=0:30, .f=helperCorrel) 
-
-corrLagEarly %>%
-    ggplot(aes(x=lag, y=corr)) +
-    geom_line(aes(group=cluster, color=cluster)) + 
-    facet_wrap(~cluster)
-
-bestLag <- corrLagEarly %>%
-    group_by(cluster) %>%
-    filter(corr==max(corr)) %>%
-    ungroup()
-
-bestLag
-
-clusterMarchMay %>%
-    inner_join(bestLag, by="cluster") %>%
-    group_by(cluster) %>%
-    arrange(date) %>%
-    mutate(cpmlag=lag(cpm7, min(lag))) %>%
-    filter(!is.na(cpmlag)) %>%
-    mutate(ratCur=dpm7/cpmlag, ratCum=cumsum(dpm7)/cumsum(cpmlag)) %>%
-    ggplot(aes(x=date, group=cluster, color=cluster)) + 
-    geom_line(aes(y=ratCum)) +
-    geom_line(aes(y=ratCur), lty=2) + 
-    labs(x="", 
-         y="Cumulative Death vs. Case Ratio", 
-         title="Deaths vs. Cases with Lag (Early Pandemic)", 
-         subtitle="Solid line is cumulative, dashed line is current time period"
-         ) + 
-    geom_text(data=~filter(., date==max(date)), 
-              aes(label=paste0(round(100*ratCum, 1), "%"), y=ratCum+0.02)
-              ) +
-    facet_wrap(~cluster)
-
-cNorm_002 <- helperMakeNormData(helper_test_20200917)
-
-# Create for early pandemic
-lagData_early_002 <- helperTestLags(cNorm_002, minDate="2020-03-01", maxDate="2020-05-31")
-
-# Create for late pandemic
-lagData_late_002 <- helperTestLags(cNorm_002, minDate="2020-06-01", maxDate="2020-08-31")
-
-# Extract a list of the heaviest hit counties with population 1000k+
-keyCounties <- helper_test_20200917 %>%
+# STEP 17: Generate a list of key counties
+keyCounties_20200917 <- helper_test_20200917 %>%
     mutate(state=str_pad(state, width=5, side="left", pad="0")) %>%
     filter(pop >= 100000) %>%
     group_by(state, cluster) %>%
@@ -3337,35 +3327,102 @@ keyCounties <- helper_test_20200917 %>%
            ) %>%
     select(-abbr, -county)
 
-
-# Keep only the key counties
-cNorm_keyCounties <- helper_test_20200917 %>%
+# STEP 18: Keep only key counties
+cNorm_keyCounties_20200917 <- helper_test_20200917 %>%
     mutate(state=str_pad(state, width=5, side="left", pad="0")) %>%
-    inner_join(select(keyCounties, state, countyName), by=c("state"="state")) %>%
+    inner_join(select(keyCounties_20200917, state, countyName), by=c("state"="state")) %>%
     helperMakeNormData(aggBy=c("countyName", "state", "cluster"))
 
-# Create lags for early pandemic
-lagData_early_keycounties <- helperTestLags(cNorm_keyCounties, 
-                                            minDate="2020-03-01", 
-                                            maxDate="2020-05-31", 
-                                            aggBy=c("countyName", "state", "cluster"), 
-                                            maxRatio=0.25
-                                            )
-
-# Create lags for late pandemic
-lagData_late_keycounties <- helperTestLags(cNorm_keyCounties, 
+# STEP 19: Create early and late lags for key counties
+lagData_early_keycounties_20200917 <- helperTestLags(cNorm_keyCounties_20200917, 
+                                                     minDate="2020-03-01", 
+                                                     maxDate="2020-05-31", 
+                                                     aggBy=c("countyName", "state", "cluster"), 
+                                                     maxRatio=0.25
+                                                     )
+lagData_late_keycounties_20200917 <- helperTestLags(cNorm_keyCounties_20200917, 
                                            minDate="2020-06-01", 
-                                           maxDate="2020-08-31", 
+                                           maxDate="2020-09-15", 
                                            aggBy=c("countyName", "state", "cluster"), 
                                            maxRatio=0.25
                                            )
 
-# Run for top-12 counties early
+# STEP 20: Run for only key counties
 exploreTopCounties(helper_test_20200917, minDate="2020-03-01", maxDate="2020-05-31", nVar="pop", nKey=12)
-
-# Run for top-12 counties late
 exploreTopCounties(helper_test_20200917, minDate="2020-06-15", maxDate="2020-09-15", nVar="pop", nKey=12)
-
 
 ```
   
+The process is further converted to functional form as follows:  
+  
+1.  Capability to either start the process from scratch or to leverage existing clusters at the state or county level  
+2.  Add the capability to compare a newly read file to an existing file  
+3.  Add the capability to show burden by existing segment after reading in an existing file  
+4.  Add the capability to prepare the data (create countyFiltered) without running the clustering proces  
+5.  Add the cumulative burden chart to helperAssessCountyClusters  
+  
+New data are downloaed from 2020-10-03, and the updated code includes:  
+```{r}
+
+# STEP 1a: Define the locations for the population, cases, and deaths file
+popFile <- "./RInputFiles/Coronavirus/covid_county_population_usafacts.csv"
+caseFile_20201003 <- "./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20201003.csv"
+deathFile_20201003 <- "./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20201003.csv"
+maxDate_20201003 <- "2020-09-30"
+
+# STEP 1b: Read and pivot data from USA Facts; extract population data file as pop_usafacts
+rawUSAFacts_20201003 <- readPivotUSAFacts(popFile=popFile, 
+                                          caseFile=caseFile_20201003, 
+                                          deathFile=deathFile_20201003, 
+                                          unassignedDate=maxDate_20201003
+                                          )
+pop_usafacts <- rawUSAFacts_20201003$pop
+
+# STEP 2: Read case and death data (redundant), combine, and add population totals
+# Add previous clusters by county rather than by state (function readUSAFacts updated)
+burden_20201003 <- readUSAFacts(
+    caseFile=caseFile_20201003, 
+    deathFile=deathFile_20201003, 
+    oldFile=burden_20200903_new,
+    showBurdenMinPop=10000,
+    maxDate=maxDate_20201003,
+    stateClusters=NULL, 
+    countyClusters=clustVec_county_20200903_new
+    )
+
+# STEP 3: Create appropriately filtered data without creating new clusters
+clust_20201003 <- prepClusterCounties(burdenFile=burden_20201003, 
+                                      maxDate=maxDate_20201003, 
+                                      minPop=25000,
+                                      createClusters=FALSE
+                                      )
+
+# STEP 4: Assess the existing clusters against the new data, including the cumulative plot
+helperACC_county_20201003 <- helperAssessCountyClusters(vecCluster=clustVec_county_20200903_new, 
+                                                        dfPop=clust_20201003$countyFiltered, 
+                                                        dfBurden=clust_20201003$countyFiltered, 
+                                                        showCum=TRUE,
+                                                        thruLabel="Sep 30, 2020", 
+                                                        plotsTogether=TRUE, 
+                                                        orderCluster=TRUE
+                                                        )
+
+# STEP 5: Add back clusters not used for analysis (code 999) and associated disease data
+clusterStateData_20201003 <- helperMakeClusterStateData(helperACC_county_20201003, 
+                                                        dfBurden=clust_20201003$countyDailyPerCapita,
+                                                        orderCluster=TRUE
+                                                        )
+
+# STEP 6: Run an example state-level summary using several of the largest states
+stateCountySummary(states=c("CA", "TX", "FL", "NY", "IL", "PA"),
+                   df=changeOrderLabel(clusterStateData_20201003, grpVars="fipsCounty"),
+                   keyDate=maxDate_20201003,
+                   showQuadrants=TRUE, 
+                   showCumulative=TRUE, 
+                   facetCumulativeByState = TRUE, 
+                   showAllFactorLevels = TRUE
+                   )
+
+```
+  
+Next steps are to add the lag process as a functional form and to update accordingly with the new data.
