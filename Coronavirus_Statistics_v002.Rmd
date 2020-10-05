@@ -2835,16 +2835,19 @@ helperTestLags <- function(df,
     # Test the various lags for correlations
     corrLagEarly <- map_dfr(.x=0:30, .f=helperCorrel, df=filterData, aggBy=aggBy)
     
-    # Plot of correlations
-    p2 <- corrLagEarly %>%
-        ggplot(aes(x=lag, y=corr)) +
-        geom_line(aes(group=get(aggBy), color=get(aggBy))) + 
-        facet_wrap(~get(aggBy)) + 
-        labs(x="Lag (days) for cases", 
-             y="Correlation to deaths", 
-             title="Correlation of lagged cases and deaths"
-             )
-    print(p2)
+    # Plot of correlations (if requested)
+    if (plotData) {
+        p2 <- corrLagEarly %>%
+            ggplot(aes(x=lag, y=corr)) +
+            geom_line(aes(group=get(aggBy), color=get(aggBy))) + 
+            facet_wrap(~get(aggBy)) + 
+            labs(x="Lag (days) for cases", 
+                 y="Correlation to deaths", 
+                 title="Correlation of lagged cases and deaths"
+                 ) + 
+            guides(color=FALSE)
+        print(p2)
+    }
 
     # Find the best lags for each aggBy
     bestLag <- corrLagEarly %>%
@@ -2863,34 +2866,37 @@ helperTestLags <- function(df,
         mutate(cpmlag=lag(cpm7, min(lag)))
     
     # Create the plot of the lagged database
-    p3 <- lagData %>%
-        filter(!is.na(cpmlag)) %>%
-        mutate(ratCur=pmax(minRatio, pmin(maxRatio, dpm7/cpmlag)), 
-               ratCum=pmax(minRatio, pmin(maxRatio, cumsum(dpm7)/cumsum(cpmlag)))
-               ) %>%
-        ggplot(aes(x=date, group=get(aggBy), color=get(aggBy))) + 
-        geom_line(aes(y=ratCum)) +
-        geom_line(aes(y=ratCur), lty=2) + 
-        labs(x="", 
-             y="Cumulative Death vs. Case Ratio", 
-             title="Deaths vs. Cases with Lag (Subsetted Time Period)", 
-             subtitle="Solid line is cumulative, dashed line is current time period",
-             caption=paste0("Ratio of death to cases capped between ", 
-                            round(maxRatio, 3), 
-                            " and ", 
-                            round(minRatio, 3),
-                            " for plotting")
-             ) + 
-        geom_text(data=~filter(., date==max(date)), 
-                  aes(label=paste0(round(100*ratCum, 1), "%"), 
-                      y=ratCum, 
-                      x=date+lubridate::days(3)
-                      ), 
-                  hjust=0
-                  ) +
-        scale_x_date(date_breaks="1 months", date_labels="%m", expand=expand_scale(mult=c(0, 0.2))) + 
-        facet_wrap(~get(aggBy))
-    print(p3)
+    if (plotData) {
+        p3 <- lagData %>%
+            filter(!is.na(cpmlag)) %>%
+            mutate(ratCur=pmax(minRatio, pmin(maxRatio, dpm7/cpmlag)), 
+                   ratCum=pmax(minRatio, pmin(maxRatio, cumsum(dpm7)/cumsum(cpmlag)))
+                   ) %>%
+            ggplot(aes(x=date, group=get(aggBy), color=get(aggBy))) + 
+            geom_line(aes(y=ratCum)) +
+            geom_line(aes(y=ratCur), lty=2) + 
+            labs(x="", 
+                 y="Cumulative Death vs. Case Ratio", 
+                 title="Deaths vs. Cases with Lag (Subsetted Time Period)", 
+                 subtitle="Solid line is cumulative, dashed line is current time period",
+                 caption=paste0("Ratio of death to cases capped between ", 
+                                round(maxRatio, 3), 
+                                " and ", 
+                                round(minRatio, 3),
+                                " for plotting")
+                 ) + 
+            geom_text(data=~filter(., date==max(date)), 
+                      aes(label=paste0(round(100*ratCum, 1), "%"), 
+                          y=ratCum, 
+                          x=date+lubridate::days(3)
+                          ), 
+                      hjust=0
+                      ) +
+            scale_x_date(date_breaks="1 months", date_labels="%m", expand=expand_scale(mult=c(0, 0.2))) + 
+            guides(color=FALSE) +
+            facet_wrap(~get(aggBy))
+        print(p3)
+    }
     
     # Return the lagged data
     lagData
@@ -2899,14 +2905,17 @@ helperTestLags <- function(df,
 
 
 
-# Explore the top-n counties by population in a subset of states
+# Explore the top-n counties by population or dpm in a subset of states and/or clusters
 exploreTopCounties <- function(df, 
                                minDate, 
                                maxDate,
                                minPop=100000, 
                                states=state.abb, 
+                               clusters=df %>% pull(cluster) %>% unique(),
+                               topNBy=c(),
                                nVar="pop",
-                               nKey=9
+                               nKey=9, 
+                               plotData=TRUE
                                ) {
 
     # FUNCTION ARGUMENTS:
@@ -2914,9 +2923,13 @@ exploreTopCounties <- function(df,
     # minDate: minimum date for lags
     # maxDate: maximum date for lags
     # states: the states for filtering
+    # clusters: the clusters to be used for filtering
+    # topNBy: variable(s) for calculating top-n (nKey by nVar) by; pass variable names quoted for group_by_at
+    #         c() means that the global top-n will be calculated (nKey by nVar)
     # minPop: minimum population for including as a top county
     # nVar: the variable to use for top-n (should be "pop" or "dpm")
     # nKey: the number of counties to pull for top-N
+    # plotData: whether to create plots for the data
     
     minDate <- as.Date(minDate)
     maxDate <- as.Date(maxDate)
@@ -2931,11 +2944,13 @@ exploreTopCounties <- function(df,
                                  ")"
                                  )
                ) %>%
-        filter(pop >= minPop, abbr %in% states) %>%
+        filter(pop >= minPop, abbr %in% states, cluster %in% clusters) %>%
         group_by(state, cluster, countyName) %>%
         summarize(dpm=sum(dpm), pop=mean(pop)) %>%
         ungroup() %>%
+        group_by_at(vars(all_of(topNBy))) %>%
         top_n(n=nKey, wt=get(nVar)) %>%
+        ungroup() %>%
         arrange(desc(get(nVar)))
 
     # Display the list of key counties
@@ -2946,14 +2961,15 @@ exploreTopCounties <- function(df,
     cNorm_key <- df %>%
         mutate(state=str_pad(state, width=5, side="left", pad="0")) %>%
         inner_join(select(ctyFilter, state, countyName), by=c("state"="state")) %>%
-        helperMakeNormData(aggBy=c("countyName", "state", "cluster"))
+        helperMakeNormData(aggBy=c("countyName", "state", "cluster"), plotData=plotData)
 
     # Create lags for given time period
     lag_key <- helperTestLags(cNorm_key, 
                               minDate=minDate, 
                               maxDate=maxDate, 
                               aggBy=c("countyName", "state", "cluster"), 
-                              maxRatio=0.25
+                              maxRatio=0.25, 
+                              plotData=plotData
                               )
 
     # Return the lagged data
@@ -3362,7 +3378,7 @@ The process is further converted to functional form as follows:
 5.  Add the cumulative burden chart to helperAssessCountyClusters  
   
 New data are downloaed from 2020-10-03, and the updated code includes:  
-```{r}
+```{r cache=TRUE}
 
 # STEP 1a: Define the locations for the population, cases, and deaths file
 popFile <- "./RInputFiles/Coronavirus/covid_county_population_usafacts.csv"
@@ -3423,6 +3439,38 @@ stateCountySummary(states=c("CA", "TX", "FL", "NY", "IL", "PA"),
                    showAllFactorLevels = TRUE
                    )
 
+# STEP 7: Assess lags for largest counties and counties with highest death rates
+# STEP 7a: Save data for top-100 counties by death rate (filtered to only counties of 100k+ population)
+top100_dpm_20201003 <- exploreTopCounties(helperACC_county_20201003, 
+                                          minDate="2020-03-01", 
+                                          maxDate="2020-09-30", 
+                                          minPop=100000,
+                                          nVar="dpm", 
+                                          nKey=100, 
+                                          plotData=FALSE
+                                          )
+glimpse(top100_dpm_20201003)
+
+# STEP 7b: Top-3 by population by cluster with plots
+exploreTopCounties(helperACC_county_20201003, 
+                   minDate="2020-03-01", 
+                   maxDate="2020-09-30", 
+                   topNBy="cluster",
+                   nVar="pop", 
+                   nKey=3, 
+                   plotData=TRUE
+                   )
+
+# STEP 7c: Top-5 by dpm by cluster with plots
+exploreTopCounties(helperACC_county_20201003, 
+                   minDate="2020-03-01", 
+                   maxDate="2020-09-30", 
+                   topNBy="cluster",
+                   nVar="dpm", 
+                   nKey=5, 
+                   plotData=TRUE
+                   )
+
 ```
   
-Next steps are to add the lag process as a functional form and to update accordingly with the new data.
+Next steps are to add the CDC all-cause death components
