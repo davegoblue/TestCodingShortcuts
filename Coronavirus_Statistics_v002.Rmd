@@ -3473,4 +3473,962 @@ exploreTopCounties(helperACC_county_20201003,
 
 ```
   
-Next steps are to add the CDC all-cause death components
+### _CDC All-Cause Deaths_ 
+The CDC maintain public data for all-cause deaths by week and jurisdiction, available at [CDC Weekly Deaths by Jurisdiction](https://catalog.data.gov/dataset/weekly-counts-of-deaths-by-jurisdiction-and-age-group).  
+
+These data are known to have a lag between death and reporting, and the CDC back-correct to report deaths at the time the death occurred even if the death is reported in following weeks.  This means totals for recent weeks tend to run low (lag), and the CDC run a projection of the expected total number of deaths given the historical lag times.  Per other analysts on the internet, there is currently significant supra-lag, with lag times much longer than historical averages causing CDC projected deaths for recent weeks to be low.
+
+#### _Key Functions (CDC All-Cause Deaths)_  
+Functions for reading and analyzing CDC all-cause deaths data include:  
+```{r}
+
+helperCDCFields <- function(x, df=cdcRenamed) {
+    
+    df %>%
+        group_by_at(x) %>%
+        summarize(n=n(), n_deaths_na=sum(is.na(deaths)), deaths=sum(deaths, na.rm=TRUE))
+    
+}
+
+
+# Function to subset CDC data
+subsetCDC <- function(df, 
+                      critFilter=vector("list", 0), 
+                      showPlot=TRUE, 
+                      plotTitle=NULL, 
+                      curYear=2020, 
+                      prevYears=paste0("2015-", curYear-1)
+                      ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the processed CDC data
+    # critFilter: a filtering list of the form variable=c(possibleValues)
+    # showPlot: boolean, whether to show plots of deaths by week and year
+    # plotTitle: the title to be used for the plot (NULL will use a default title)
+    # curYear: the current year (will be excluded from the mean and standard deviation plot)
+    
+    # Filter such that only matches to critFilter are included
+    for (xNum in seq_len(length(critFilter))) {
+        df <- df %>%
+            filter_at(vars(all_of(names(critFilter)[xNum])), ~. %in% critFilter[[xNum]])
+    }
+    
+    # Create a default title if none provided
+    if (is.null(plotTitle)) plotTitle <- "All-cause deaths for filtered cohort"
+    
+    # All deaths by week and year for the filtered cohort
+    allDeath <- df %>%
+        group_by(year, week) %>%
+        summarize(deaths=sum(deaths)) %>%
+        ungroup() %>%
+        mutate(weekfct=factor(week), yearint=as.integer(as.character(year)))
+
+    # Show plots if requested
+    if (showPlot) {
+        # Plot of all deaths for the filtered cohort by week and year
+        p1 <- allDeath %>%
+            ggplot(aes(x=week, y=deaths, color=year, group=year)) + 
+            geom_line() + 
+            ylim(c(0, NA)) + 
+            labs(x="Week", 
+                 y="Deaths", 
+                 title=plotTitle
+                 )
+        print(p1)
+        
+        # Plot of mean and standard deviation from previous years
+        p2 <- allDeath %>%
+            filter(year != curYear) %>%
+            group_by(week) %>%
+            summarize(mean=mean(deaths), sd=sd(deaths)) %>%
+            ggplot(aes(x=week)) + 
+            geom_line(aes(y=mean), color="red", size=2) + 
+            geom_ribbon(aes(ymin=mean-sd, ymax=mean+sd), fill="pink", alpha=0.5) +
+            labs(x="Week", 
+                 y="Deaths", 
+                 title=paste0(prevYears, " ", plotTitle), 
+                 subtitle=paste0("Line is ", 
+                                 prevYears, 
+                                 " annual mean deaths, ribbon is +/- 1 standard deviation"
+                                 )
+                 ) + 
+            ylim(c(0, NA))
+        print(p2)
+
+    }
+
+    # Return the processed data frame
+    allDeath
+    
+}
+
+
+# Function to run the linear model to predict CDC deaths by week and year
+cdcRegression <- function(df, 
+                          curYear=2020, 
+                          startYear=2015
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the processed CDC data
+    # curYear: the current year
+    # startYear: the year that is defined as the zero-point for the regression
+    
+    # Very basic linear model for deaths vs. week and year
+    df %>%
+        filter(year != curYear) %>%
+        lm(deaths ~ weekfct + I(yearint-startYear) + 0, data=.)
+    
+}
+
+
+# Function to make predictions based on the regression
+cdcPrediction <- function(df, 
+                          lmReg
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble containing the data
+    # lmReg: the linear regression model
+    
+    # Predictions and deltas
+    allPred <- df %>%
+        mutate(pred=predict(lmReg, newdata=.), delta=(deaths-pred)) %>%
+        group_by(year) %>%
+        arrange(week) %>%
+        mutate(cumDelta=cumsum(delta), cumPred=cumsum(pred)) %>%
+        ungroup()
+
+    # Return the predictions and deltas    
+    allPred
+
+}
+
+
+# Function to make plots of the predictions
+cdcPredictedvsActual <- function(df, 
+                                 cohortName,
+                                 curYear=2020, 
+                                 prevYears=paste0("2015-", curYear-1), 
+                                 startWeek=9, 
+                                 showCurrentPredvsPrev=TRUE, 
+                                 showActualsvsPred=TRUE,
+                                 showActualsvsPredRatio=TRUE, 
+                                 showExcessDeaths=TRUE, 
+                                 predActualPlotsOnePage=FALSE
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing actual and predicted deaths
+    # cohortName: cohort name to use for plot titles
+    # curYear: the current year
+    # prevYears: the previous years
+    # startWeek: week to use for starting the counts of cumulative excess deaths
+    # showCurrentPredvsPrev: boolean, whether to plot current year predictions vs. previous years
+    # showActualsvsPred: boolean, whether to plot actuals vs. predictions by year
+    # showActualsvsPredRatio: boolean, whether to plot actuals vs. predictions ratios by yrea
+    # showExcessDeaths: boolean, whether to plot estimated excess deaths
+    # predActualPlotsOnePage: boolean, whether to place the predicted vs. actual plots all on one page
+    
+    if (showCurrentPredvsPrev) {
+        # Current year predictions vs. previous year actuals
+        p1 <- df %>%
+            ggplot(aes(x=week)) + 
+            geom_line(data=~filter(., year != curYear), aes(y=deaths, color=year, group=year)) + 
+            geom_line(data=~filter(., year == curYear), aes(y=pred), lty=2, size=1) +
+            ylim(c(0, NA)) + 
+            labs(x="Week", 
+                 y="Deaths", 
+                 title=paste0("All-cause deaths for ", cohortName, " cohort"), 
+                 subtitle=paste0("Solid lines are actual ", 
+                                 prevYears, 
+                                 ", dashed line is predicted ", 
+                                 curYear
+                                 )
+                 )
+        if (!predActualPlotsOnePage) print(p1)
+    }
+    
+    if (showActualsvsPred) {
+        # Plot of predictions and actuals facetted by year - deaths
+        p2 <- df %>%
+            select(year, week, deaths, pred) %>%
+            pivot_longer(c(deaths, pred)) %>%
+            mutate(name=ifelse(name=="deaths", "Actual", "Predicted")) %>%
+            ggplot(aes(x=week)) + 
+            geom_line(aes(y=value, color=name, group=name)) + 
+            ylim(c(0, NA)) + 
+            facet_wrap(~year) + 
+            labs(x="Week", 
+                 y="Deaths", 
+                 title=paste0("All-cause deaths for ", cohortName, " cohort"), 
+                 subtitle=paste0("Predictions are based on a simple linear model for ", prevYears, " data")
+                 ) + 
+            scale_color_discrete("Deaths")
+        if (!predActualPlotsOnePage) print(p2)
+    }
+    
+    if (showActualsvsPredRatio) {
+        # Plot of predictions and actuals facetted by year - ratios
+        p3 <- df %>%
+            mutate(rat=deaths/pred) %>%
+            ggplot(aes(x=week)) + 
+            geom_line(aes(y=rat)) + 
+            facet_wrap(~year) + 
+            geom_hline(yintercept=1, lty=2) +
+            labs(x="Week", 
+                 y="Ratio (Actual vs. Predicted Deaths)", 
+                 title=paste0("Actual vs. predicted deaths for ", cohortName, " cohort"), 
+                 subtitle=paste0("Predictions are based on a simple linear model for ", prevYears, " data")
+                 )
+        if (!predActualPlotsOnePage) print(p3)
+    }
+    
+    if (showExcessDeaths) {
+        # Plot of excess deaths after a starting week
+        p4 <- df %>%
+            select(-cumDelta, -cumPred) %>%
+            filter(week >= startWeek) %>%
+            group_by(year) %>%
+            arrange(week) %>%
+            mutate(cumDelta=cumsum(delta)) %>%
+            ggplot(aes(x=week)) + 
+            geom_line(aes(y=cumDelta)) + 
+            facet_wrap(~year) + 
+            geom_hline(yintercept=0, lty=2) +
+            labs(x="Week", 
+                 y=paste0("Excess deaths vs. prediction (cumulative beginning week ", startWeek, ")"), 
+                 title=paste0("Cumulative estimated excess deaths starting week ", 
+                              startWeek, 
+                              " for ", 
+                              cohortName, 
+                              " cohort"
+                              ), 
+                 subtitle=paste0("Predictions are based on a simple linear model for ", prevYears, " data")
+                 )
+        if (!predActualPlotsOnePage) print(p4)
+    }
+    
+    # Create a one-page summary
+    if (predActualPlotsOnePage) {
+        if (!exists("p1", inherits=FALSE)) p1 <- ggplot()
+        if (!exists("p2", inherits=FALSE)) p2 <- ggplot()
+        if (!exists("p3", inherits=FALSE)) p3 <- ggplot()
+        if (!exists("p4", inherits=FALSE)) p4 <- ggplot()
+        gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2)
+    }
+
+}
+
+
+# Integrated function with all steps
+cdcCohortAnalysis <- function(cohortName, 
+                              df=cdcProcessed, 
+                              critFilter=vector("list", 0), 
+                              plotTitle=NULL, 
+                              curYear=2020, 
+                              startYear=2015,
+                              prevYears=paste0(startYear, "-", curYear-1), 
+                              startWeek=9, 
+                              showSubsetPlots=TRUE, 
+                              showPredActualPlots=TRUE, 
+                              predActualPlotsOnePage=FALSE
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # cohortName: the name of the cohort
+    # df: the processed CDC death data
+    # critFilter: the filtering criteria in the form of a named list "variable"=c("possibleValues")
+    # plotTitle: title to be used for plot in subsetCDC()
+    # curYear: the current year for the death data
+    # startYear: the starting year for the death data
+    # prevYears: the previous years for the death data (used for making predictions)
+    # startWeek: the starting week for counting excess deaths
+    # showSubsetPlots: boolean, whether to show the two plots in subsetCDC()
+    # showPredActualPlots: boolean, whether to show the four plots in cdcPredictedvsActual()
+    # predActualPlotsOnePage: boolean, whether to place the predicted vs. actual plots all on one page
+    
+    # Subset the data (will show both plots by default)
+    allDeath_cohort <- subsetCDC(df=df, 
+                                 critFilter=critFilter,
+                                 showPlot=showSubsetPlots,
+                                 plotTitle=plotTitle, 
+                                 curYear=curYear,
+                                 prevYears=prevYears
+                                 )
+
+    # Create the linear model for the subsetted data
+    lm_cohort <- cdcRegression(df=allDeath_cohort, curYear=curYear, startYear=startYear)
+
+    # Apply the predictions to the data
+    allPred_cohort <- cdcPrediction(df=allDeath_cohort, lmReg=lm_cohort)
+
+    # Plots for predicted vs. actual (will show all plots by default)
+    cdcPredictedvsActual(df=allPred_cohort, 
+                         cohortName=cohortName, 
+                         curYear=curYear,
+                         prevYears=prevYears,
+                         startWeek=startWeek, 
+                         showCurrentPredvsPrev=showPredActualPlots,
+                         showActualsvsPred=showPredActualPlots,
+                         showActualsvsPredRatio=showPredActualPlots,
+                         showExcessDeaths=showPredActualPlots, 
+                         predActualPlotsOnePage=predActualPlotsOnePage
+                         )
+
+    # Return a list containing the lm model and the filtered data
+    list(lmReg=lm_cohort, preds=allPred_cohort)
+    
+}
+
+
+# Function to read and process raw CDC all-cause deaths data
+readProcessCDC <- function(fName, 
+                           weekThru,
+                           periodKeep="2015-2019",
+                           fDir="./RInputFiles/Coronavirus/",
+                           col_types="ccciicdcccc", 
+                           renameVars=c("Week Ending Date"="weekEnding", 
+                                       "State Abbreviation"="state", 
+                                       "Year"="year", 
+                                       "Week"="week", 
+                                       "Age Group"="age", 
+                                       "Number of Deaths"="deaths", 
+                                       "Time Period"="period", 
+                                       "Type"="type"
+                                       )
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # fName: name of the downloaded CDC data file
+    # weekThru: any record where week is less than or equal to weekThru will be kept
+    # periodKeep: any record where period is in periodKeep will be kept
+    # fDir: directory name for the downloaded CDC data file
+    # col_types: variable type by column in the CDC data (passed to readr::read_csv())
+    # renameVars: named vector for variable renaming of type c("Existing Name"="New Name")
+    
+    # STEP 1: Read the CSV data
+    cdcRaw <- readr::read_csv(paste0(fDir, fName), col_types=col_types)
+    glimpse(cdcRaw)
+    
+    # STEP 2: Rename the variables for easier interpretation
+    cdcRenamed <- cdcRaw
+    names(cdcRenamed) <- ifelse(is.na(renameVars[names(cdcRenamed)]), 
+                                names(cdcRenamed), 
+                                renameVars[names(cdcRenamed)]
+                                )
+    cdcRenamed <- cdcRenamed %>%
+        mutate(weekEnding=lubridate::mdy(weekEnding))
+    glimpse(cdcRenamed)
+
+    # STEP 2a: Check control levels for key variables in renamed file
+    cat("\nCheck Control Levels and Record Counts for Renamed Data:\n")
+    helperCDCFields("age", df=cdcRenamed) %>% print()
+    helperCDCFields(c("period", "year", "type"), df=cdcRenamed) %>% print()
+    helperCDCFields(c("period", "Suppress"), df=cdcRenamed) %>% print()
+    helperCDCFields(c("period", "Note"), df=cdcRenamed) %>% print()
+    helperCDCFields(c("state", "Jurisdiction"), df=cdcRenamed) %>% 
+        arrange(-deaths) %>% 
+        as.data.frame() %>% 
+        print()
+    p1 <- helperCDCFields(c("year", "week"), df=cdcRenamed) %>% 
+        ggplot(aes(x=week, y=deaths, group=factor(year), color=factor(year))) + 
+        geom_line() + 
+        labs(y="Deaths (multiple counting on several dimensions", x="Epidemiological Week") + 
+        scale_color_discrete("Year") +
+        ylim(c(0, NA))
+    print(p1)
+
+    # STEP 3: Convert to factored data
+    cdcFactored <- cdcRenamed %>%
+        mutate(age=factor(age, levels=c("Under 25 years", "25-44 years", "45-64 years", 
+                                        "65-74 years", "75-84 years", "85 years and older"
+                                        )
+                          ), 
+               period=factor(period, levels=c("2015-2019", "2020")), 
+               year=factor(year, levels=2015:2020)
+               )
+    glimpse(cdcFactored)
+    
+    # STEP 4: Filter the data to include only weighted deaths and only through the desired time period
+    cdcFiltered <- cdcFactored %>%
+        filter(type=="Predicted (weighted)", period %in% periodKeep | week <= weekThru)
+    glimpse(cdcFiltered)
+    
+    # STEP 4a: Check that all suppressed data and NA deaths have been eliminated
+    cat("\nConfirm that data suppressions and NA deaths have been aliminated:\n")
+    cdcFiltered %>%
+        filter(!is.na(Suppress) | is.na(deaths)) %>%
+        print()
+
+    # STEP 5: Delete the US record and convert YC to be part of NY
+    cdcProcessed <- cdcFiltered %>%
+        filter(!(state %in% c("US", "PR"))) %>%
+        mutate(state=ifelse(state=="YC", "NY", state), 
+               Jurisdiction=ifelse(state %in% c("NY", "YC"), "New York State (NY plus YC)", Jurisdiction)
+               ) %>%
+        group_by(Jurisdiction, weekEnding, state, year, week, age, period, type, Suppress) %>%
+        arrange(!is.na(Note)) %>%
+        summarize(n=n(), deaths=sum(deaths), Note=first(Note)) %>%
+        ungroup()
+    glimpse(cdcProcessed)
+
+    # STEP 5a: Confirm that there are no duplicates in the final data file
+    firstDup <- cdcProcessed %>%
+        select(state, year, week, age) %>%
+        anyDuplicated()
+    cat("\nFirst duplicate is in row number (0 means no duplicates):", firstDup)
+
+    # STEP 6: Return the processed data file
+    cdcProcessed
+    
+}
+
+
+# Basic plots of the CDC data, including by a state-level cluster (passed as argument)
+cdcBasicPlots <- function(df, 
+                          weekThru=NULL, 
+                          curYear=NULL, 
+                          clustVec=NULL
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a processed CDC data file
+    # weekThru: week of the current year that data are thru (NULL means infer from data)
+    # curYear: current year (NULL means infer from data)
+    # clustVec: clustering vector with names as state abbreviations (NULL means no plots by cluster)
+    
+    # Get the week and year if passed as NULL
+    if (is.null(curYear)) { curYear <- df %>% pull(year) %>% as.character() %>% as.integer() %>% max() }
+    if (is.null(weekThru)) { weekThru <- df %>% filter(year==curYear) %>% pull(week) %>% max() }
+    
+    # Plot of total deaths by year (50 states plus DC)
+    p1 <- df %>%
+        group_by(year) %>%
+        summarize(deaths=sum(deaths)) %>%
+        ggplot(aes(x=year, y=deaths/1000)) + 
+        geom_col(fill="lightblue") + 
+        geom_text(aes(y=deaths/2000, label=round(deaths/1000))) + 
+        labs(title="CDC Deaths for 50 states plus DC", 
+             x="", 
+             y="Deaths (000s)", 
+             subtitle=paste0("Through week ", weekThru, " of ", curYear)
+             )
+    print(p1)
+
+    # Plot of total deaths by week by year
+    p2 <- df %>%
+        group_by(year, week) %>%
+        summarize(deaths=sum(deaths)) %>%
+        ungroup() %>%
+        ggplot(aes(x=week, y=deaths, group=year, color=year)) + 
+        geom_line() +
+        ylim(c(0, NA)) + 
+        labs(x="Week of Year", y="Deaths", title="US deaths per week by year")
+    print(p2)
+    
+    # Plot of total deaths by year by age cohort
+    p3 <- df %>%
+        group_by(year, week, age) %>%
+        summarize(deaths=sum(deaths)) %>%
+        ungroup() %>%
+        ggplot(aes(x=week, y=deaths, group=year, color=year)) + 
+        geom_line() +
+        ylim(c(0, NA)) + 
+        facet_wrap(~age) +
+        labs(x="Week of Year", y="Deaths", title="US deaths per week by year")
+    print(p3)
+
+    # Plots of total deaths by week by year by cluster
+    if (!is.null(clustVec)) {
+        p4 <- df %>%
+            mutate(cluster=clustVec[state]) %>%
+            group_by(year, week, cluster) %>%
+            summarize(deaths=sum(deaths)) %>%
+            ungroup() %>%
+            ggplot(aes(x=week, y=deaths, group=year, color=year)) + 
+            geom_line() +
+            ylim(c(0, NA)) + 
+            facet_wrap(~cluster) +
+            labs(x="Week of Year", 
+                 y="Deaths", 
+                 title="US deaths per week by year", 
+                 subtitle="Facetted by state cluster"
+                 )
+        print(p4)
+        
+        p5 <- df %>%
+            mutate(cluster=clustVec[state]) %>%
+            filter(year==curYear) %>%
+            group_by(year, age, week, cluster) %>%
+            summarize(deaths=sum(deaths)) %>%
+            ungroup() %>%
+            ggplot(aes(x=week, y=deaths, fill=age)) + 
+            geom_col(position="stack") +
+            ylim(c(0, NA)) + 
+            facet_wrap(~cluster) +
+            labs(x="Week of Year", 
+                 y="Deaths", 
+                 title=paste0("US deaths per week (Year ", curYear, ")"), 
+                 subtitle="Facetted by state cluster"
+                 )
+        print(p5)
+    }
+    
+}
+
+
+```
+  
+### _Running Key Analyses (CDC All-Cause Deaths)_  
+The CDC data can be loaded and analyzed:  
+```{r}
+
+# Read and process the CDC data
+cdc20200923 <- readProcessCDC("Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20200923.csv", 
+                              weekThru=30
+                              )
+
+# Generate plots of the processed CDC data
+cdcBasicPlots(cdc20200923, clustVec=test_hier5$useClusters)
+
+
+# Example cohort analysis for age 65+
+list_65plus <- cdcCohortAnalysis(cohortName="65+ years old", 
+                                 df=cdc20200923,
+                                 critFilter=list("age"=c("65-74 years", 
+                                                         "75-84 years", 
+                                                         "85 years and older"
+                                                         )
+                                                 ), 
+                                 curYear=2020, 
+                                 startYear=2015,
+                                 startWeek=9,
+                                 plotTitle="All-cause deaths for 65+ years old cohort", 
+                                 predActualPlotsOnePage=TRUE
+                                 )
+
+# Example cohort analysis for full US
+list_allUS <- cdcCohortAnalysis(cohortName="all ages, all states", 
+                                df=cdc20200923,
+                                curYear=2020, 
+                                startYear=2015,
+                                startWeek=9,
+                                plotTitle="All-cause US total deaths",
+                                predActualPlotsOnePage=TRUE
+                                )
+
+# Example cohort analysis for handful of state hit early
+list_early <- cdcCohortAnalysis(cohortName="all ages, NY/NJ/CT/MA", 
+                                df=cdc20200923,
+                                critFilter=list("state"=c("NY", "NJ", "CT", "MA")),
+                                curYear=2020, 
+                                startYear=2015,
+                                startWeek=9,
+                                plotTitle="All-cause total deaths for NY/NJ/CT/MA",
+                                predActualPlotsOnePage=TRUE
+                                )
+
+```
+  
+Next steps are to continue with the CDC aggregates function (analyze by cluster or age or state ot etc.):  
+```{r eval=FALSE}
+
+# Function to create data and plots for an aggregate (cluster in this case)
+cdcAggregateSummary <- function(df, 
+                                critVar, 
+                                critSubsets, 
+                                startWeek,
+                                idVarName=critVar,
+                                curYear=2020, 
+                                startYear=2015,
+                                showPlots=TRUE
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the processed CDC all-cause deaths data
+    # critVar: the main variable supplied to critFilter
+    # critSubsets: the subsets used for critVar
+    # startWeek: the starting week for analysis (will assume no excess deaths prior to startWeek or curYear)
+    # idVarName: name to be used for the identifying variable when excess deaths data are combined
+    # curYear: current year of CDC deaths data
+    # startYear: starting year of CDC deaths data
+    # showPlots: boolean, whether to show a 1-page plot summary for each element of critSubsets
+    
+    tmpList <- vector("list", length(critSubsets))
+    
+    for (ctr in seq_along(critSubsets)) {
+        critUse <- list(critSubsets[[ctr]])
+        names(critUse) <- critVar
+        tmpList[[ctr]] <- cdcCohortAnalysis(cohortName=paste0("Iteration: ", ctr), 
+                                            df=df, 
+                                            critFilter=critUse, 
+                                            plotTitle="",
+                                            curYear=curYear,
+                                            startYear=startYear,
+                                            startWeek=startWeek, 
+                                            showSubsetPlots=FALSE, 
+                                            showPredActualPlots=showPlots,
+                                            predActualPlotsOnePage=showPlots
+                                            )
+    }
+    
+    # Create the excess file
+    excessFull <- map_dfr(.x=tmpList, .f=function(x) { x[["preds"]] }, .id=idVarName)
+    excessFull
+
+    
+}
+
+cdcAggregateSummary(df=cdc20200923, critVar="state", critSubsets=list(c("NY", "NJ"), c("FL", "GA")), startWeek=9, idVarName="cluster")
+
+
+# Attach population by cluster
+excessCluster <- stateData %>%
+    mutate(cluster=clustVec[state]) %>%
+    group_by(cluster) %>%
+    summarize(pop=sum(pop)) %>%
+    right_join(excessCluster, by="cluster") %>%
+    mutate(cluster=as.character(cluster))
+excessCluster
+
+# Plot of excess deaths by week by cluster
+excessCluster %>%
+    filter(year==2020) %>%
+    ggplot(aes(x=week, y=delta)) + 
+    geom_line(aes(group=cluster, color=cluster)) + 
+    labs(title="Actual minus predicted deaths by cluster and week (2020)", 
+         x="Week", 
+         y="Actual minus predicted deaths"
+         ) + 
+    scale_color_discrete("Cluster")
+
+# Plot of excess deaths per million by week by cluster
+excessCluster %>%
+    filter(year==2020) %>%
+    ggplot(aes(x=week, y=1000000*delta/pop)) + 
+    geom_line(aes(group=cluster, color=cluster)) + 
+    labs(title="Actual minus predicted deaths by cluster and week (2020)", 
+         subtitle="Per million people, per week",
+         x="Week", 
+         y="Actual minus predicted deaths (per million people)"
+         ) + 
+    scale_color_discrete("Cluster") + 
+    geom_hline(aes(yintercept=0), lty=2)
+
+
+# Explore the conversion of week by week ending data in the raw CDC data
+cdcRaw %>% 
+    filter(Year==2020) %>% 
+    count(Week, `Week Ending Date`) %>%
+    as.data.frame()
+
+# Pull the cluster-level data and create a CDC week number
+fullDeathData <- consolidatedPlotData_20200830 %>%
+    filter(name=="deaths", state=="cluster") %>%
+    ungroup() %>%
+    mutate(week=lubridate::epiweek(date), cluster=as.character(cluster)) %>%
+    group_by(cluster, week) %>%
+    summarize(cvDeaths=sum(value)) %>%
+    ungroup() %>%
+    right_join(excessCluster, by=c("cluster", "week")) %>%
+    mutate(cvDeaths=ifelse(is.na(cvDeaths), 0, cvDeaths))
+fullDeathData
+
+# Plot for total excess deaths and reported coronavirus deaths by cluster by week
+fullDeathData %>%
+    filter(year==2020) %>%
+    select(cluster, week, cvDeaths, pop, delta) %>%
+    pivot_longer(-c(cluster, week, pop), names_to="source", values_to="deaths") %>%
+    ggplot(aes(x=week, y=deaths)) + 
+    geom_line(aes(group=source, color=c("cvDeaths"="Reported COVID", "delta"="Excess All-Cause")[source])) + 
+    facet_wrap(~cluster) + 
+    scale_color_discrete("Deaths")
+
+
+listStates_v001 <- vector("list", 51)
+
+for (abbState in names(clustVec)) {
+    listStates_v001[[abbState]] <- cdcCohortAnalysis(cohortName=paste0("all ages, state ", abbState), 
+                                                     critFilter=list("state"=abbState),
+                                                     plotTitle=paste0("All-cause total deaths for state ",
+                                                                      abbState
+                                                                      ), 
+                                                     showSubsetPlots=FALSE,
+                                                     showPredActualPlots=FALSE
+                                                     )
+}
+
+# Create the excess cluster file
+excessState_v001 <- map_dfr(.x=listStates_v001, .f=function(x) { x[["preds"]] }, .id="state")
+excessState_v001
+
+
+excessState_v001 %>%
+    filter(year==2020) %>%
+    mutate(quarter=factor(paste0("Q", ceiling(week/13), "-20"))) %>%
+    group_by(state, quarter) %>%
+    summarize(excess=sum(delta)) %>%
+    ggplot(aes(x=fct_reorder(state, excess, .fun=sum), y=excess/1000, fill=fct_rev(quarter))) + 
+    geom_col(position="stack") + 
+    coord_flip() + 
+    labs(x="State", 
+         y="Excess Deaths (000s)", 
+         title="All-cause excess deaths in 2020", 
+         subtitle="CDC data through July 2020 (Q3 incomplete)"
+         ) +
+    scale_fill_discrete("Quarter")
+
+excessState_v001 %>%
+    filter(year==2020) %>%
+    mutate(quarter=factor(paste0("Q", ceiling(week/13), "-20"))) %>%
+    group_by(state, quarter) %>%
+    summarize(excess=sum(delta)) %>%
+    ungroup() %>%
+    left_join(select(usmap::statepop, abbr, pop_2015), by=c("state"="abbr")) %>%
+    mutate(excesspm=excess*1000000/pop_2015) %>%
+    ggplot(aes(x=fct_reorder(state, excesspm, .fun=sum), y=excesspm, fill=fct_rev(quarter))) + 
+    geom_col(position="stack") + 
+    coord_flip() + 
+    labs(x="State", 
+         y="Excess Deaths (per million people)", 
+         title="All-cause excess deaths per million people in 2020", 
+         subtitle="CDC data through July 2020 (Q3 incomplete)"
+         ) +
+    scale_fill_discrete("Quarter")
+
+pes_001 <- excessState_v001 %>%
+    filter(year==2020, week>=10) %>%
+    mutate(quarter=factor(paste0("Q", ceiling(week/13), "-20")), 
+           month=factor(case_when(week <= 13 ~ "Mar", 
+                                  week <= 18 ~ "Apr", 
+                                  week <= 22 ~ "May", 
+                                  week <= 26 ~ "Jun", 
+                                  week <= 31 ~ "Jul", 
+                                  TRUE ~ "Error"), 
+                        levels=c("Mar", "Apr", "May", "Jun", "Jul", "Error")
+                        )
+           ) %>%
+    group_by(state, month) %>%
+    summarize(excess=sum(delta)) %>%
+    ungroup() %>%
+    left_join(select(usmap::statepop, abbr, pop_2015), by=c("state"="abbr")) %>%
+    mutate(excesspm=excess*1000000/pop_2015) %>%
+    ggplot(aes(x=fct_reorder(state, excesspm, .fun=sum))) + 
+    geom_col(aes(y=excesspm, fill=fct_rev(month)), position="stack") + 
+    coord_flip() + 
+    labs(x="State", 
+         y="Excess Deaths (per million people)", 
+         title="All-cause excess deaths per million people in 2020", 
+         subtitle="CDC data through July 2020", 
+         caption="Epi Week to Month: Mar (10-13), Apr (14-18), May (19-22), Jun (23-26), Jul (27-31)"
+         ) +
+    scale_fill_discrete("Month")
+pes_001
+
+cumDeathState_001 <- consolidatedPlotData_20200830 %>% 
+    filter(name=="deaths", state != "cluster") %>% 
+    group_by(state) %>% 
+    mutate(cumdpm=cumsum(vpm)) %>%
+    filter(date %in% c(as.Date("2020-07-31"), max(date)))
+
+pes_001 + 
+    geom_point(data=filter(cumDeathState_001, date==as.Date("2020-07-31")), aes(x=state, y=cumdpm), size=2) + 
+    labs(title="Deaths per million people using data through July 2020", 
+         subtitle="Bars based on CDC all-cause deaths, points are reported coronavirus deaths", 
+         y="Deaths (per million people) through July 2020"
+         )
+
+excessState_v001 %>%
+    filter(year==2020, week >= 10) %>%
+    group_by(state) %>%
+    summarize(delta=sum(delta)) %>%
+    left_join(select(usmap::statepop, abbr, pop_2015), by=c("state"="abbr")) %>%
+    mutate(deltapm=delta*1000000/pop_2015) %>%
+    inner_join(select(filter(cumDeathState_001, date==as.Date("2020-07-31")), state, cumdpm)) %>%
+    mutate(rat=deltapm/cumdpm) %>%
+    ggplot(aes(x=fct_reorder(state, rat), y=rat)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=rat/2, label=paste0(round(100*rat), "%"))) + 
+    coord_flip() + 
+    labs(x="State", 
+         y="Ratio of estimated all-cause excess deaths to reported coronavirus deaths", 
+         title="Ratio of estimated all-cause excess deaths to reported coronavirus deaths", 
+         subtitle="All data through July 2020"
+         ) + 
+    ylim(c(0, NA)) + 
+    geom_hline(aes(yintercept=1), lty=2)
+
+for (abbState in c("HI", "VT", "WY", "WV", "OR", "TX")) {
+    cdcCohortAnalysis(cohortName=paste0("all ages, state ", abbState), 
+                      critFilter=list("state"=abbState),
+                      plotTitle=paste0("All-cause total deaths for state ", abbState), 
+                      showSubsetPlots=FALSE,
+                      showPredActualPlots=TRUE,
+                      predActualPlotsOnePage=TRUE
+                      )
+}
+
+
+listAges_v001 <- vector("list", 6)
+
+n <- 1
+for (age in levels(cdcProcessed$age)) {
+    listAges_v001[[n]] <- cdcCohortAnalysis(cohortName="", 
+                                            critFilter=list("age"=age),
+                                            plotTitle="", 
+                                            showSubsetPlots=FALSE,
+                                            showPredActualPlots=FALSE
+                                            )
+    n <- n + 1
+}
+
+names(listAges_v001) <- levels(cdcProcessed$age)
+
+# Create the excess cluster file
+excessAge_v001 <- map_dfr(.x=listAges_v001, .f=function(x) { x[["preds"]] }, .id="age")
+excessAge_v001
+
+excessAge_v001 %>%
+    filter(year==2020) %>%
+    mutate(quarter=factor(paste0("Q", ceiling(week/13), "-20"))) %>%
+    group_by(age, quarter) %>%
+    summarize(excess=sum(delta)) %>%
+    ggplot(aes(x=fct_reorder(age, excess, .fun=sum), y=excess/1000, fill=fct_rev(quarter))) + 
+    geom_col(position="stack") + 
+    coord_flip() + 
+    labs(x="Age Group", 
+         y="Excess Deaths (000s)", 
+         title="All-cause excess deaths in 2020", 
+         subtitle="CDC data through July 2020 (Q3 incomplete)"
+         ) +
+    scale_fill_discrete("Quarter")
+
+# Estimated US population by age (2020)
+usPopAge2020 <- survival::uspop2[, , "2020"] %>%
+    apply(1, FUN=sum) %>%
+    tibble::tibble(ageActual=as.integer(names(.)), pop_2020=.)
+usPopAge2020
+
+# Sums by age bucket
+usPopBucket2020 <- usPopAge2020 %>%
+    mutate(age=factor(case_when(ageActual <= 24 ~ "Under 25 years", 
+                                ageActual <= 44 ~ "25-44 years", 
+                                ageActual <= 64 ~ "45-64 years", 
+                                ageActual <= 74 ~ "65-74 years", 
+                                ageActual <= 84 ~ "75-84 years", 
+                                TRUE ~ "85 years and older"
+                                ), levels=levels(cdcProcessed$age)
+                      )
+           ) %>%
+    group_by(age) %>%
+    summarize(pop_2020=sum(pop_2020))
+usPopBucket2020
+
+pea_001 <- excessAge_v001 %>%
+    filter(year==2020, week>=10) %>%
+    mutate(quarter=factor(paste0("Q", ceiling(week/13), "-20")), 
+           month=factor(case_when(week <= 13 ~ "Mar", 
+                                  week <= 18 ~ "Apr", 
+                                  week <= 22 ~ "May", 
+                                  week <= 26 ~ "Jun", 
+                                  week <= 31 ~ "Jul", 
+                                  TRUE ~ "Error"), 
+                        levels=c("Mar", "Apr", "May", "Jun", "Jul", "Error")
+                        ), 
+           age=factor(age, levels=levels(cdcProcessed$age))
+           ) %>%
+    group_by(age, month) %>%
+    summarize(excess=sum(delta)) %>%
+    ungroup() %>%
+    inner_join(usPopBucket2020, by="age") %>%
+    mutate(excesspm=1000000*excess/pop_2020) %>%
+    ggplot(aes(x=fct_reorder(age, excesspm, .fun=sum))) + 
+    geom_col(aes(y=excesspm, fill=fct_rev(month)), position="stack") + 
+    coord_flip() + 
+    labs(x="Age Group", 
+         y="Excess Deaths (per million people)", 
+         title="All-cause excess deaths per million in 2020", 
+         subtitle="CDC data through July 2020", 
+         caption="Epi Week to Month: Mar (10-13), Apr (14-18), May (19-22), Jun (23-26), Jul (27-31)"
+         ) +
+    geom_text(data=. %>% group_by(age) %>% summarize(excesspm=sum(excesspm)), 
+              aes(y=excesspm+100, label=round(excesspm), hjust=0)
+              ) +
+    scale_fill_discrete("Month")
+pea_001
+
+for (age in levels(cdcProcessed$age)) {
+    cdcCohortAnalysis(cohortName=paste0("ages ", age), 
+                      critFilter=list("age"=age),
+                      plotTitle=paste0("All-cause total deaths for age ", age), 
+                      showSubsetPlots=FALSE,
+                      showPredActualPlots=TRUE,
+                      predActualPlotsOnePage=TRUE
+                      )
+}
+
+ageOld <- c("65-74 years", "75-84 years", "85 years and older")
+cdcTwoAge <- cdcProcessed %>%
+    mutate(ageSplit=factor(ifelse(age %in% ageOld, "65 and over", "Under 65"), 
+                           levels=c("Under 65", "65 and over")
+                           )
+           ) %>%
+    group_by(state, year, week, ageSplit) %>%
+    summarize(deaths=sum(deaths)) %>%
+    ungroup()
+cdcTwoAge
+
+
+listAgeState_v001 <- vector("list", 102)
+
+n <- 1
+for (age in levels(cdcTwoAge$ageSplit)) {
+    for (state in state.abb) {
+        listAgeState_v001[[n]] <- cdcCohortAnalysis(df=cdcTwoAge, 
+                                                    cohortName="", 
+                                                    critFilter=list("ageSplit"=age, "state"=state),
+                                                    plotTitle="", 
+                                                    showSubsetPlots=FALSE,
+                                                    showPredActualPlots=FALSE
+                                                    )
+        n <- n + 1
+    }
+}
+
+names(listAgeState_v001) <- paste(rep(levels(cdcTwoAge$ageSplit), each=51), state.abb, sep="_")
+
+# Create the excess cluster file
+excessAgeState_v001 <- map_dfr(.x=listAgeState_v001, .f=function(x) { x[["preds"]] }, .id="ageState") %>%
+    tidyr::separate(ageState, into=c("age", "state"), sep="_")
+excessAgeState_v001
+
+excessAgeState_v001 %>%
+    filter(year==2020) %>%
+    group_by(age, state) %>%
+    summarize(excess=sum(delta)) %>%
+    ggplot(aes(x=fct_reorder(state, excess, .fun=sum), y=excess/1000, fill=age)) + 
+    geom_col(position="fill") + 
+    coord_flip() + 
+    labs(x="State", 
+         y="Excess Deaths (000s)", 
+         title="All-cause excess deaths in 2020", 
+         subtitle="CDC data through July 2020 (Q3 incomplete)"
+         ) +
+    scale_fill_discrete("Age Group") + 
+    geom_hline(aes(yintercept=0.25), lty=2)
+
+
+for (age in levels(cdcTwoAge$ageSplit)) {
+    cdcCohortAnalysis(df=cdcTwoAge, 
+                      cohortName=paste0("ages ", age), 
+                      critFilter=list("ageSplit"=age),
+                      plotTitle=paste0("All-cause total deaths for age ", age), 
+                      showSubsetPlots=FALSE,
+                      showPredActualPlots=TRUE,
+                      predActualPlotsOnePage=TRUE
+                      )
+}
+
+```
+  
