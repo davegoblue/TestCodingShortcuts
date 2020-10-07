@@ -4032,7 +4032,7 @@ list_early <- cdcCohortAnalysis(cohortName="all ages, NY/NJ/CT/MA",
 ```
   
 Next steps are to continue with the CDC aggregates function (analyze by cluster or age or state ot etc.):  
-```{r eval=FALSE}
+```{r}
 
 # Function to create data and plots for an aggregate (cluster in this case)
 cdcAggregateSummary <- function(df, 
@@ -4042,7 +4042,12 @@ cdcAggregateSummary <- function(df,
                                 idVarName=critVar,
                                 curYear=2020, 
                                 startYear=2015,
-                                showPlots=TRUE
+                                subListNames=NULL,
+                                popData=NULL,
+                                cvDeathData=NULL,
+                                showAllPlots=TRUE, 
+                                showStep1Plots=showAllPlots,
+                                showStep3Plots=showAllPlots
                                 ) {
     
     # FUNCTION ARGUMENTS:
@@ -4052,11 +4057,20 @@ cdcAggregateSummary <- function(df,
     # startWeek: the starting week for analysis (will assume no excess deaths prior to startWeek or curYear)
     # idVarName: name to be used for the identifying variable when excess deaths data are combined
     # curYear: current year of CDC deaths data
+    # subListNames: names to be used in place of numbers for idVarName column of excessFull
+    #               (NULL means use numbers)
     # startYear: starting year of CDC deaths data
-    # showPlots: boolean, whether to show a 1-page plot summary for each element of critSubsets
-    
+    # popData: population data file, unique and matching by idVarName (NULL means no population plots)
+    # cvDeathData: coronavirus deaths data file, unique and matching by idVarName
+    #              NULL means no plots of excess all-cause deaths vs reported coronavirus deaths
+    # showAllPlots: boolean, whether to show all the plots
+    # showStep1Plots: boolean, whether to show a 1-page plot summary for each element of critSubsets
+    # showStep3Plots: boolean, whether to show a 1-page cross-element summary
+
+    # STEP 0: Initialize list to store results for each combination of critSubsets    
     tmpList <- vector("list", length(critSubsets))
     
+    # STEP 1: Run the process for each combination of critSubsets (produce plots if showStep1Plots is TRUE)
     for (ctr in seq_along(critSubsets)) {
         critUse <- list(critSubsets[[ctr]])
         names(critUse) <- critVar
@@ -4068,134 +4082,194 @@ cdcAggregateSummary <- function(df,
                                             startYear=startYear,
                                             startWeek=startWeek, 
                                             showSubsetPlots=FALSE, 
-                                            showPredActualPlots=showPlots,
-                                            predActualPlotsOnePage=showPlots
+                                            showPredActualPlots=showStep1Plots,
+                                            predActualPlotsOnePage=showStep1Plots
                                             )
     }
     
-    # Create the excess file
+    # STEP 1a: Add names if requeated
+    if (!is.null(subListNames)) names(tmpList) <- subListNames
+    
+    # STEP 2: Create the excess file
     excessFull <- map_dfr(.x=tmpList, .f=function(x) { x[["preds"]] }, .id=idVarName)
+
+    # STEP 3: Produce a plot of excess deaths by week by idVarName
+    if (showStep3Plots) {
+        p1 <- excessFull %>%
+            filter(year==2020) %>%
+            ggplot(aes(x=week, y=delta)) + 
+            geom_line(aes_string(group=idVarName, color=idVarName)) + 
+            labs(title="Actual minus predicted deaths by cluster and week (2020)", 
+                 x="Week", 
+                 y="Actual minus predicted deaths"
+                 ) + 
+            scale_color_discrete(idVarName)
+        print(p1)
+    }
+
+    # STEP 4: Augment the data to include population (if popData is not NULL) and plot "per million"
+    if (!is.null(popData)) {
+        # Add population data to excessFull (only variables should be idVarName and pop)
+        excessFull <- excessFull %>%
+            left_join(select_at(popData, vars(all_of(c(idVarName, "pop")))), by=idVarName)
+        # Plot of excess deaths per million by week by cluster
+        p2 <- excessFull %>%
+            filter(year==curYear) %>%
+            ggplot(aes(x=week, y=1000000*delta/pop)) + 
+            geom_line(aes(group=cluster, color=cluster)) + 
+            labs(title="Actual minus predicted deaths by cluster and week (2020)", 
+                 subtitle="Per million people, per week",
+                 x="Week", 
+                 y="Actual minus predicted deaths (per million people)"
+                 ) + 
+            scale_color_discrete(idVarName) + 
+            geom_hline(aes(yintercept=0), lty=2)
+        print(p2)
+    }
+    
+    # STEP 5: Augment the data to show plot of excess all-cause deaths vs. reported coronavirus deaths
+    if (!is.null(cvDeathData)) {
+        # Add the reported coronavirus deaths total
+        excessFull <- excessFull %>%
+            left_join(select_at(cvDeathData, vars(all_of(c(idVarName, "week", "cvDeaths")))), 
+                      by=c(idVarName, "week")
+                      ) %>%
+            mutate(cvDeaths=ifelse(is.na(cvDeaths) | year != curYear, 0, cvDeaths))
+        # Plot for total excess deaths and reported coronavirus deaths by idVarName by week
+        p3 <- excessFull %>%
+            filter(year==curYear) %>%
+            select_at(vars(all_of(c(idVarName, "week", "cvDeaths", "delta")))) %>%
+            pivot_longer(c(cvDeaths, delta), names_to="source", values_to="deaths") %>%
+            ggplot(aes(x=week, y=deaths)) + 
+            geom_line(aes(group=source, 
+                          color=c("cvDeaths"="Reported COVID", "delta"="Excess All-Cause")[source])) + 
+            facet_wrap(~get(idVarName)) + 
+            scale_color_discrete("Deaths")
+        print(p3)
+    }
+    
+    # STEP n: Return the excess file
     excessFull
 
+}
+
+
+# Convert the output of a state-level clustering list to population, membership, and deaths
+helperKeyStateClusterMetrics <- function(lst) {
+
+    # FUNCTION ARGUMENTS:
+    # lst: the list containing the outputs of the state clustering routing
+    
+    # Get the population by cluster
+    pop <- lst[["consolidatedPlotData"]] %>%
+        filter(state=="cluster") %>%
+        group_by(cluster) %>%
+        summarize(pop=max(pop)) %>%
+        ungroup() %>%
+        mutate(cluster=as.character(cluster))
+    
+    # Get the cluster vector
+    clData <- lst[["useClusters"]]
+    
+    # Create a list of states by cluster
+    stateCluster <- lapply(1:5, FUN=function(x) { names(clData[clData==x]) })
+    
+    # Create reported cvDeaths by cluster
+    deaths <- lst[["consolidatedPlotData"]] %>%
+        filter(name=="deaths", state=="cluster") %>%
+        ungroup() %>%
+        mutate(week=lubridate::epiweek(date), cluster=as.character(cluster)) %>%
+        group_by(cluster, week) %>%
+        summarize(cvDeaths=sum(value)) %>%
+        ungroup()
+    
+    list(pop=pop, clData=clData, stateCluster=stateCluster, deaths=deaths)
     
 }
 
-cdcAggregateSummary(df=cdc20200923, critVar="state", critSubsets=list(c("NY", "NJ"), c("FL", "GA")), startWeek=9, idVarName="cluster")
+
+# Testing the aggregation function for cluster
+# Need to fix plot chart titles
+clusterList_hier5_201001 <- helperKeyStateClusterMetrics(test_hier5_201001)
+clusterAgg_20200923 <- cdcAggregateSummary(df=cdc20200923, 
+                                           critVar="state", 
+                                           critSubsets=clusterList_hier5_201001$stateCluster,
+                                           startWeek=9, 
+                                           popData=clusterList_hier5_201001$pop,
+                                           cvDeathData=clusterList_hier5_201001$deaths,
+                                           idVarName="cluster"
+                                           )
 
 
-# Attach population by cluster
-excessCluster <- stateData %>%
-    mutate(cluster=clustVec[state]) %>%
-    group_by(cluster) %>%
-    summarize(pop=sum(pop)) %>%
-    right_join(excessCluster, by="cluster") %>%
-    mutate(cluster=as.character(cluster))
-excessCluster
-
-# Plot of excess deaths by week by cluster
-excessCluster %>%
-    filter(year==2020) %>%
-    ggplot(aes(x=week, y=delta)) + 
-    geom_line(aes(group=cluster, color=cluster)) + 
-    labs(title="Actual minus predicted deaths by cluster and week (2020)", 
-         x="Week", 
-         y="Actual minus predicted deaths"
-         ) + 
-    scale_color_discrete("Cluster")
-
-# Plot of excess deaths per million by week by cluster
-excessCluster %>%
-    filter(year==2020) %>%
-    ggplot(aes(x=week, y=1000000*delta/pop)) + 
-    geom_line(aes(group=cluster, color=cluster)) + 
-    labs(title="Actual minus predicted deaths by cluster and week (2020)", 
-         subtitle="Per million people, per week",
-         x="Week", 
-         y="Actual minus predicted deaths (per million people)"
-         ) + 
-    scale_color_discrete("Cluster") + 
-    geom_hline(aes(yintercept=0), lty=2)
+# Testing the aggregation function for state (no plots)
+stateAgg_20200923 <- cdcAggregateSummary(df=cdc20200923, 
+                                         critVar="state", 
+                                         critSubsets=names(clusterList_hier5_201001$clData),
+                                         startWeek=9, 
+                                         idVarName="state", 
+                                         subListNames=names(clusterList_hier5_201001$clData),
+                                         showAllPlots=FALSE
+                                         )
 
 
-# Explore the conversion of week by week ending data in the raw CDC data
-cdcRaw %>% 
-    filter(Year==2020) %>% 
-    count(Week, `Week Ending Date`) %>%
-    as.data.frame()
+# Create plots for state-level excess deaths
+helperKeyStateExcessPlots <- function(df, 
+                                      subT,
+                                      curYear=2020, 
+                                      popData=select(usmap::statepop, state=abbr, pop=pop_2015)
+                                      ) {
 
-# Pull the cluster-level data and create a CDC week number
-fullDeathData <- consolidatedPlotData_20200830 %>%
-    filter(name=="deaths", state=="cluster") %>%
-    ungroup() %>%
-    mutate(week=lubridate::epiweek(date), cluster=as.character(cluster)) %>%
-    group_by(cluster, week) %>%
-    summarize(cvDeaths=sum(value)) %>%
-    ungroup() %>%
-    right_join(excessCluster, by=c("cluster", "week")) %>%
-    mutate(cvDeaths=ifelse(is.na(cvDeaths), 0, cvDeaths))
-fullDeathData
-
-# Plot for total excess deaths and reported coronavirus deaths by cluster by week
-fullDeathData %>%
-    filter(year==2020) %>%
-    select(cluster, week, cvDeaths, pop, delta) %>%
-    pivot_longer(-c(cluster, week, pop), names_to="source", values_to="deaths") %>%
-    ggplot(aes(x=week, y=deaths)) + 
-    geom_line(aes(group=source, color=c("cvDeaths"="Reported COVID", "delta"="Excess All-Cause")[source])) + 
-    facet_wrap(~cluster) + 
-    scale_color_discrete("Deaths")
-
-
-listStates_v001 <- vector("list", 51)
-
-for (abbState in names(clustVec)) {
-    listStates_v001[[abbState]] <- cdcCohortAnalysis(cohortName=paste0("all ages, state ", abbState), 
-                                                     critFilter=list("state"=abbState),
-                                                     plotTitle=paste0("All-cause total deaths for state ",
-                                                                      abbState
-                                                                      ), 
-                                                     showSubsetPlots=FALSE,
-                                                     showPredActualPlots=FALSE
-                                                     )
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the processed state-level excess deaths data
+    # subT: the subtitle to be used for the plots 9describe the vintage of the CDC data)
+    # curYear: the current year
+    # popData: a file containing only state-pop, with population by state
+    
+    # STEP 0: Create a general plotting database
+    plotData <- df %>%
+        filter(year==curYear) %>%
+        mutate(quarter=factor(paste0("Q", ceiling(week/13), "-", curYear))) %>%
+        group_by(state, quarter) %>%
+        summarize(excess=sum(delta)) %>%
+        ungroup() %>%
+        left_join(popData, by="state") %>%
+        mutate(excesspm=excess*1000000/pop)
+    
+    # STEP 1: Plot of excess deaths by quarter
+    p1 <- plotData %>%
+        ggplot(aes(x=fct_reorder(state, excess, .fun=sum), y=excess/1000, fill=fct_rev(quarter))) + 
+        geom_col(position="stack") + 
+        coord_flip() + 
+        labs(x="State", 
+             y="Excess Deaths (000s)", 
+             title=paste0("All-cause excess deaths in ", curYear), 
+             subtitle=subT
+             ) +
+        scale_fill_discrete("Quarter")
+    print(p1)
+    
+    # STEP 2: Plot of excess deaths per million by state by quarter
+    p2 <- plotData %>%
+        ggplot(aes(x=fct_reorder(state, excesspm, .fun=sum), y=excesspm, fill=fct_rev(quarter))) + 
+        geom_col(position="stack") + 
+        coord_flip() + 
+        labs(x="State", 
+             y="Excess Deaths (per million people)", 
+             title=paste0("All-cause excess deaths per million people in ", curYear), 
+             subtitle=subT
+             ) +
+        scale_fill_discrete("Quarter")
+    print(p2)
+    
 }
 
-# Create the excess cluster file
-excessState_v001 <- map_dfr(.x=listStates_v001, .f=function(x) { x[["preds"]] }, .id="state")
-excessState_v001
+# Create plots by state
+helperKeyStateExcessPlots(stateAgg_20200923, subT="CDC data through July 2020 (Q3 incomplete)")
 
-
-excessState_v001 %>%
-    filter(year==2020) %>%
-    mutate(quarter=factor(paste0("Q", ceiling(week/13), "-20"))) %>%
-    group_by(state, quarter) %>%
-    summarize(excess=sum(delta)) %>%
-    ggplot(aes(x=fct_reorder(state, excess, .fun=sum), y=excess/1000, fill=fct_rev(quarter))) + 
-    geom_col(position="stack") + 
-    coord_flip() + 
-    labs(x="State", 
-         y="Excess Deaths (000s)", 
-         title="All-cause excess deaths in 2020", 
-         subtitle="CDC data through July 2020 (Q3 incomplete)"
-         ) +
-    scale_fill_discrete("Quarter")
-
-excessState_v001 %>%
-    filter(year==2020) %>%
-    mutate(quarter=factor(paste0("Q", ceiling(week/13), "-20"))) %>%
-    group_by(state, quarter) %>%
-    summarize(excess=sum(delta)) %>%
-    ungroup() %>%
-    left_join(select(usmap::statepop, abbr, pop_2015), by=c("state"="abbr")) %>%
-    mutate(excesspm=excess*1000000/pop_2015) %>%
-    ggplot(aes(x=fct_reorder(state, excesspm, .fun=sum), y=excesspm, fill=fct_rev(quarter))) + 
-    geom_col(position="stack") + 
-    coord_flip() + 
-    labs(x="State", 
-         y="Excess Deaths (per million people)", 
-         title="All-cause excess deaths per million people in 2020", 
-         subtitle="CDC data through July 2020 (Q3 incomplete)"
-         ) +
-    scale_fill_discrete("Quarter")
+```
+  
+Next steps are to continue working through the excess deaths by state plots, then convert the excess deaths by age and age/state to functional form:  
+```{r eval=FALSE}
 
 pes_001 <- excessState_v001 %>%
     filter(year==2020, week>=10) %>%
@@ -4259,15 +4333,6 @@ excessState_v001 %>%
     ylim(c(0, NA)) + 
     geom_hline(aes(yintercept=1), lty=2)
 
-for (abbState in c("HI", "VT", "WY", "WV", "OR", "TX")) {
-    cdcCohortAnalysis(cohortName=paste0("all ages, state ", abbState), 
-                      critFilter=list("state"=abbState),
-                      plotTitle=paste0("All-cause total deaths for state ", abbState), 
-                      showSubsetPlots=FALSE,
-                      showPredActualPlots=TRUE,
-                      predActualPlotsOnePage=TRUE
-                      )
-}
 
 
 listAges_v001 <- vector("list", 6)
