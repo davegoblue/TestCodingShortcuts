@@ -2119,5 +2119,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v002 begins adding code for CDC all-cause deaths data  
 * Coronavirus_Statistics_v002 continues adding code for CDC all-cause deaths data  
 * Coronavirus_Statistics_v002 includes all code for CDC all-cause deaths data  
-* Coronavirus_Statistics_v002 fixes plot labels for CDC all-cuase deaths data  
+* Coronavirus_Statistics_v002 fixes plot labels for CDC all-cause deaths data  
   
