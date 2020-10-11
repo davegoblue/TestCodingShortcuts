@@ -451,7 +451,7 @@ Functions for reading and analyzing CDC all-cause deaths data have been sourced 
   
 ### _Running Key Analyses (CDC All-Cause Deaths)_  
 The CDC data can be loaded and analyzed:  
-```{r}
+```{r cache=TRUE}
 
 # Read and process the CDC data
 cdc20200923 <- readProcessCDC("Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20200923.csv", 
@@ -501,7 +501,7 @@ list_early <- cdcCohortAnalysis(cohortName="all ages, NY/NJ/CT/MA",
 ```
   
 Next steps are to continue with the CDC aggregates function (analyze by cluster or age or state ot etc.):  
-```{r}
+```{r cache=TRUE}
 
 # Testing the aggregation function for cluster
 # Need to fix plot chart titles
@@ -649,3 +649,120 @@ for (age in levels(cdcTwoAge$ageSplit)) {
   
 Next steps are to further clean up and integrate the functions so that the full process can be run with more recent data using fewer changes to the code.
   
+### _Running the Full Process_ 
+First, data are downloaded from COVID Tracking Project (run only once) without creating clusters (this chunk is set to eval=FALSE to avoid over-writing previously downloaded data):  
+```{r eval=FALSE}
+
+# Test function for hierarchical clustering with Vermont reassigned to New Hampshire
+locDownload <- "./RInputFiles/Coronavirus/CV_downloaded_201010.csv"
+test_hier5_201010 <- readRunCOVIDTrackingProject(thruLabel="Oct 9, 2020", 
+                                                 downloadTo=locDownload, 
+                                                 compareFile=test_hier5_201001$dfRaw,
+                                                 useClusters=test_hier5_201001$useClusters
+                                                 )
+
+
+```
+  
+The segments are recreated from the downloaded data so that evolution in segment type and membership can be explored:  
+```{r cache=TRUE}
+
+# Explore the newly downloaded data and the dendrogram if using for clusters
+locDownload <- "./RInputFiles/Coronavirus/CV_downloaded_201010.csv"
+test_hier_201010_dendonly <- readRunCOVIDTrackingProject(thruLabel="Oct 9, 2020", 
+                                                         readFrom=locDownload, 
+                                                         compareFile=test_hier5_201001$dfRaw,
+                                                         hierarchical=TRUE, 
+                                                         minShape=3, 
+                                                         ratioDeathvsCase = 5, 
+                                                         ratioTotalvsShape = 0.5, 
+                                                         minDeath=100, 
+                                                         minCase=10000, 
+                                                         skipAssessmentPlots=TRUE
+                                                         )
+
+```
+  
+The dendrogram reveals similarities in several of the main clusters - a clear early and high group (NJ, NY, CT, MA); a clear late and high group (GA, FL, SC, TX, AL, NV, AZ, MS); a clear early and medium group (MI, DE, PA, IN, IL, IN, MD); 1-2 groups that have had low death rates so far; and two groups (LA, DC, RI) and (VT, ME, CO, WA) that appear different than in previous analyses.
+
+Cutting to seven segments should allow for further exploration of the two stand-alone groups of distinct states while leaving most other states in their previous segments.  The full process is then run:  
+```{r cache=TRUE}
+
+locDownload <- "./RInputFiles/Coronavirus/CV_downloaded_201010.csv"
+test_hier7_201010 <- readRunCOVIDTrackingProject(thruLabel="Oct 9, 2020", 
+                                                 readFrom=locDownload, 
+                                                 compareFile=test_hier5_201001$dfRaw,
+                                                 hierarchical=TRUE, 
+                                                 kCut=7, 
+                                                 minShape=3, 
+                                                 ratioDeathvsCase = 5, 
+                                                 ratioTotalvsShape = 0.5, 
+                                                 minDeath=100, 
+                                                 minCase=10000
+                                                 )
+
+```
+  
+The LA, DC, RI segment does not merit being on its own.  It has a small population (6 million) and has broadly the same shape, with somewhat higher deaths, as the much larger MI, DE, PA, IN, IL, MD segment.  The number of segments can be cut back to 6 as this is the first segment that would be consolidated by that.
+
+The VT, ME, CO, WA segment also questionably merit stand-alone treatment.  It is a variation of the segment that had mild disease early, but is rather differentiated on the dendrogram and has a population (15 million) that is at least in the same order of magnitude as the other clusters.
+
+Suppose that 6 segments are created, using the parameters "as is":  
+```{r cache=TRUE}
+
+locDownload <- "./RInputFiles/Coronavirus/CV_downloaded_201010.csv"
+test_hier6_201010 <- readRunCOVIDTrackingProject(thruLabel="Oct 9, 2020", 
+                                                 readFrom=locDownload, 
+                                                 compareFile=test_hier5_201001$dfRaw,
+                                                 hierarchical=TRUE, 
+                                                 kCut=6, 
+                                                 minShape=3, 
+                                                 ratioDeathvsCase = 5, 
+                                                 ratioTotalvsShape = 0.5, 
+                                                 minDeath=100, 
+                                                 minCase=10000
+                                                 )
+
+```
+  
+The segments appear to follow reasonable patterns:  
+  
+* High impact, skewed early  
+* Medium impact, skewed early  
+* Medium impact, skewed late  
+* Small impact, skewed early (two segments are broadly in this category)  
+* Small impact, sustained  
+  
+Comparisons of segment membership can also be made:  
+```{r}
+
+# Confirm that the names 
+if (!all.equal(names(test_hier5$useClusters), names(test_hier6_201010$useClusters))) {
+    stop("\nIssue with cluster names not matching\n")
+}
+
+# Create a data frame of segment changes
+segChanges <- tibble::tibble(state=names(test_hier5$useClusters), 
+                             oldCluster=test_hier5$useClusters, 
+                             newCluster=test_hier6_201010$useClusters
+                             )
+
+# Counts of states by oldCluster and newCluster
+segChanges %>%
+    count(oldCluster, newCluster)
+
+# Print states that changed clusters
+segChanges %>%
+    filter(oldCluster != newCluster)
+
+```
+  
+What was previously one of the two low-impact segments has been split in to:  
+  
+* CO, ME, VT, WA (new segment from split); and  
+* IA, MN, NE, NH, NM, OH, VA, WI (new segment from split); and  
+* KS, KY, MO, ND, SD (consolidates to other low-impact segment that has rising cases with stable deaths)  
+  
+At a glance it seems reasonable, though the "lower impact" segments could theoretically all be consolidated without losing too much differentiation.  That said, the dendrogram built with reasonable input parameters considers the split of the lower-impact segments to be more meaningful than the split of the moderate-early and moderate-late segments.  And, the moderate-early and moderate-late split is valuable for analysis, so the decision is made to remain with the 6 hierarchical clusters as of the October 9, 2020 data.
+  
+
