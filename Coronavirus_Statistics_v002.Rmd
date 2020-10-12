@@ -345,7 +345,7 @@ The process is further converted to functional form as follows:
 4.  Add the capability to prepare the data (create countyFiltered) without running the clustering proces  
 5.  Add the cumulative burden chart to helperAssessCountyClusters  
   
-New data are downloaed from 2020-10-03, and the updated code includes:  
+New data are downloaded from 2020-10-03, and the updated code includes:  
 ```{r cache=TRUE}
 
 # STEP 1a: Define the locations for the population, cases, and deaths file
@@ -765,4 +765,174 @@ What was previously one of the two low-impact segments has been split in to:
   
 At a glance it seems reasonable, though the "lower impact" segments could theoretically all be consolidated without losing too much differentiation.  That said, the dendrogram built with reasonable input parameters considers the split of the lower-impact segments to be more meaningful than the split of the moderate-early and moderate-late segments.  And, the moderate-early and moderate-late split is valuable for analysis, so the decision is made to remain with the 6 hierarchical clusters as of the October 9, 2020 data.
   
+Next, the USA Facts process is updated to be run using a single function, including the capability to download new data:  
+```{r}
 
+# Function to run the USA Facts (US county-level coronavirus data) clustering process
+readRunUSAFacts <- function(maxDate, 
+                            popLoc, 
+                            caseLoc, 
+                            deathLoc, 
+                            dlPop=FALSE, 
+                            dlCaseDeath=FALSE, 
+                            ovrWrite=FALSE, 
+                            ovrWriteError=TRUE, 
+                            oldFile=NULL, 
+                            showBurdenMinPop=10000, 
+                            minPopCluster=25000,
+                            existingStateClusters=NULL, 
+                            existingCountyClusters=NULL, 
+                            createClusters=FALSE, 
+                            keyStates=NULL,
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # maxDate: the maximum data to use for data from the cases and deaths file
+    # popLoc: location where the county-level population data are stored
+    # caseLoc: location where the county-level cases data are stored
+    # deathLoc: location where the county-level deaths data are stored
+    # dlPop: boolean, should new population data be downloaded to popLoc
+    # dlCaseDeath: boolean, should new case data and death data be downloaded to caseLoc and deathLoc
+    # ovrWrite: boolean, if data are downloaded to an existing file, should it be over-written
+    # ovrWriteError: boolean, if ovrWrite is FALSE and an attempt to overwrite is made, should it error out?
+    # oldFile: old file for comparing metrics against (NULL means no old file for comarisons)
+    # showBurdenMinPop: minimum population for showing in burden by cluster plots (NULL means skip plot)
+    # minPopCluster: minimum population for including county in running cluster-level metrics
+    # existingStateClusters: location of an existing named vector with clusters by state (NULL means none)
+    # existingCountyClusters: location of an existing named vector with clusters by county (NULL means none)
+    #                         if existingStateClusters is not NULL, then existingCountyClusters is ignored
+    # createClusters: boolean, whether to create new clusters (only set up for kmeans)
+    # keyStates: states to use in stateCountySummary (NULL means skip)
+    # ...: other arguments that will be passed to prepClusterCounties
+
+    # STEP 1: Read in the relevant data files
+    rawUSAFacts <- readPivotUSAFacts(popFile=popLoc, 
+                                     caseFile=caseLoc, 
+                                     deathFile=deathLoc, 
+                                     unassignedDate=maxDate
+                                     )
+    pop_usafacts <- rawUSAFacts_20201003$pop
+    
+    # STEP 2: Read case and death data (redundant), combine, and add population totals and existing clusters
+    burdenData <- readUSAFacts(
+        caseFile=caseLoc, 
+        deathFile=deathLoc, 
+        oldFile=oldFile,
+        showBurdenMinPop=showBurdenMinPop,
+        maxDate=maxDate,
+        stateClusters=existingStateClusters, 
+        countyClusters=existingCountyClusters
+    )
+
+    # STEP 3: Create appropriately filtered data, and new clusters if requested
+    clusterData <- prepClusterCounties(burdenFile=burdenData, 
+                                       maxDate=maxDate, 
+                                       minPop=minPopCluster,
+                                       createClusters=createClusters, 
+                                       hierarchical=FALSE, 
+                                       ...
+                                       )
+
+    # STEP 4: Assess clusters against the new data
+    # STEP 4a: Extract the county-level clusters (new clusters if created, existing otherwise)
+    if (createClusters) clustVec <- clusterData$objCluster$objCluster$cluster
+    else clustVec <- existingCountyClusters
+    
+    # STEP 4b: Show the cumulative data, order by cluster, and keep the plots together
+    helperACC_county <- helperAssessCountyClusters(vecCluster=clustVec, 
+                                                   dfPop=clusterData$countyFiltered, 
+                                                   dfBurden=clusterData$countyFiltered, 
+                                                   showCum=TRUE,
+                                                   thruLabel=format(as.Date(maxDate), "%b %d, %Y"), 
+                                                   plotsTogether=TRUE, 
+                                                   orderCluster=TRUE
+                                                   )
+    
+    # STEP 5: Add back clusters not used for analysis (code 999) and associated disease data
+    # May want to change the approach to population data
+    clusterStateData <- helperMakeClusterStateData(dfPlot=helperACC_county, 
+                                                   dfPop=usmap::countypop,
+                                                   dfBurden=clusterData$countyDailyPerCapita,
+                                                   orderCluster=TRUE
+                                                   )
+    
+    # STEP 6: Run state-level summary if requested
+    if (!is.null(keyStates)) {
+        stateCountySummary(states=keyStates,
+                           df=changeOrderLabel(clusterStateData, grpVars="fipsCounty"),
+                           keyDate=maxDate,
+                           showQuadrants=TRUE, 
+                           showCumulative=TRUE, 
+                           facetCumulativeByState=TRUE, 
+                           showAllFactorLevels=TRUE
+                           )
+    }
+
+    # STEP 7: Assess lags for largest counties and counties with highest death rates
+    # STEP 7a: Save data for top-100 counties by death rate (filtered to only counties of 100k+ population)
+    top100_dpm <- exploreTopCounties(helperACC_county, 
+                                     minDate="2020-03-01", 
+                                     maxDate=maxDate, 
+                                     minPop=100000,
+                                     nVar="dpm", 
+                                     nKey=100, 
+                                     plotData=FALSE
+                                     )
+    glimpse(top100_dpm)
+
+    # STEP 7b: Top-3 by population by cluster with plots
+    exploreTopCounties(helperACC_county, 
+                   minDate="2020-03-01", 
+                   maxDate=maxDate, 
+                   topNBy="cluster",
+                   nVar="pop", 
+                   nKey=3, 
+                   plotData=TRUE
+                   )
+
+    # STEP 7c: Top-5 by dpm by cluster with plots
+    exploreTopCounties(helperACC_county, 
+                       minDate="2020-03-01", 
+                       maxDate=maxDate, 
+                       topNBy="cluster",
+                       nVar="dpm", 
+                       nKey=5, 
+                       plotData=TRUE
+                       )
+
+    # STEP 8: Return a list of the key files
+    list(pop=pop_usafacts, 
+         burdenData=burdenData, 
+         clusterData=clusterData, 
+         clustVec=clustVec, 
+         helperACC_county=helperACC_county, 
+         clusterStateData=clusterStateData,
+         top100_dpm=top100_dpm
+         )
+    
+}
+
+
+# Run file for existing data to confirm functionality
+tmpCty <- readRunUSAFacts(maxDate="2020-09-30", 
+                          popLoc="./RInputFiles/Coronavirus/covid_county_population_usafacts.csv", 
+                          caseLoc="./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20201003.csv", 
+                          deathLoc="./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20201003.csv", 
+                          oldFile=burden_20200903_new, 
+                          existingCountyClusters=clustVec_county_20200903_new, 
+                          keyStates=c("CA", "TX", "FL", "NY", "IL", "PA")
+                          )
+
+# Confirm that outputs are identical
+identical(tmpCty$pop, pop_usafacts)
+identical(tmpCty$burdenData, burden_20201003)
+identical(tmpCty$clusterData, clust_20201003)
+identical(tmpCty$clustVec, clustVec_county_20200903_new)
+identical(tmpCty$helperACC_county, helperACC_county_20201003)
+identical(tmpCty$clusterStateData, clusterStateData_20201003)
+identical(tmpCty$top100_dpm, top100_dpm_20201003)
+
+```
+  
+The function as written can re-create previous results using existing data.  Next steps are to enable data downloads and to create new segments using more recent data.
