@@ -2124,3 +2124,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v002 functions sourced from Coronavirus_Statistics_Functions_v002.R  
 * Coronavirus_Statistics_v002 created state-level segments with new COVID Tracking Project data  
   
+### Expansions week of 12-OCT-2020  
+* Coronavirus_Statistics_v002 consolidates code for reading and processing USA Facts data  
+  
