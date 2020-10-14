@@ -816,4 +816,166 @@ cty_20201012 <- readRunUSAFacts(maxDate="2020-10-10",
                                 )
 
 ```
+  
+
+Finally, the CDC data can be run using a single function:  
+```{r}
+
+# Function to read and run the CDC all-cause deaths analysis
+readRunCDCAllCause <- function(loc, 
+                               dir,
+                               startYear, 
+                               curYear,
+                               weekThru, 
+                               startWeek, 
+                               lst, 
+                               epiMap,
+                               agePopData,
+                               cvDeathThru,
+                               cdcPlotStartWeek=startWeek,
+                               periodKeep=paste0(startYear, "-", curYear-1)
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # loc: the CDC .csv file name (without path)
+    # dir: the CDC .csv directory (will use paste0(dir, loc) as the file location)
+    # startYear: the starting year in the CDC data
+    # curYear: the current analyis year in the CDC data
+    # weekThru: how many weeks of the current year are the data valid thru?
+    # startWeek: the starting week to use for cumulative sum of difference in expected all-cause deaths
+    # lst: a state clustering process output list
+    # epiMap: a mapping file of ew-month-quarter that mas epiweek (ew) to an appropriate month and quarter
+    # agePopData: data containing US population as age (fct) - pop (int)
+    # cvDeathThru: the date to use for pulling the CV death data
+    # cdcPlotStartWeek: start week for CDC plots (10 is March which avoids a 1-week February outlier)
+    # periodKeep: the period of previous data in the CDC all-cause deaths file (should be kept regardless)
+
+    # STEP 1: Read and process the CDC data
+    cdc <- readProcessCDC(loc, weekThru=weekThru, periodKeep=periodKeep, fDir=dir)
+
+    # STEP 2: Create the key data required for using state-level clusters
+    clusterList <- helperKeyStateClusterMetrics(lst)
+    
+    # STEP 3: Generate plots of the processed CDC data
+    cdcBasicPlots(cdc, clustVec=clusterList$clData)
+
+    # STEP 4: Full US excess deaths
+    list_allUS <- cdcCohortAnalysis(cohortName="all US", 
+                                    df=cdc,
+                                    curYear=curYear, 
+                                    startYear=startYear,
+                                    startWeek=startWeek,
+                                    plotTitle="All-cause US total deaths",
+                                    predActualPlotsOnePage=TRUE
+                                    )
+
+    # STEP 5: Generate cluster-level aggregate plots
+    clusterAgg <- cdcAggregateSummary(df=cdc, 
+                                      critVar="state", 
+                                      critSubsets=clusterList$stateCluster,
+                                      startWeek=startWeek, 
+                                      critListNames=paste0("cluster ", 1:length(clusterList$stateCluster)),
+                                      factorCritList=FALSE,
+                                      popData=clusterList$pop,
+                                      cvDeathData=clusterList$deaths,
+                                      idVarName="cluster"
+                                      )
+
+    # STEP 6: Generate state-level aggregate data, then plot
+    stateAgg <- cdcAggregateSummary(df=cdc, 
+                                    critVar="state", 
+                                    critSubsets=names(clusterList$clData),
+                                    startWeek=startWeek, 
+                                    idVarName="state", 
+                                    subListNames=names(clusterList$clData),
+                                    showAllPlots=FALSE
+                                    )
+    helperKeyStateExcessPlots(df=stateAgg, 
+                              epiMonth=epiMap,
+                              cvDeaths=lst$consolidatedPlotData,
+                              startWeek=cdcPlotStartWeek,
+                              cvDeathDate=as.Date(cvDeathThru),
+                              subT=paste0("CDC data through week ", weekThru, " of ", curYear)
+                          )
+    
+    # STEP 7: Generate age-level aggregate data, then plot
+    ageAgg <- cdcAggregateSummary(df=cdc, 
+                                  critVar="age", 
+                                  critSubsets=levels(cdc$age),
+                                  startWeek=startWeek, 
+                                  idVarName="age", 
+                                  subListNames=levels(cdc$age),
+                                  showAllPlots=TRUE
+                                  )
+    helperKeyAgeExcessPlots(df=ageAgg, 
+                            epiMonth=epiMap,
+                            cvDeaths=lst$consolidatedPlotData,
+                            popData=agePopData,
+                            startWeek=cdcPlotStartWeek,
+                            cvDeathDate=as.Date(cvDeathThru),
+                            subT=paste0("CDC data through week ", weekThru, " of ", curYear)
+                        )
+    
+    # STEP 8: Return a list of key files
+    list(cdc=cdc, 
+         clusterList=clusterList, 
+         allUSAgg=list_allUS$preds,
+         clusterAgg=clusterAgg, 
+         stateAgg=stateAgg, 
+         ageAgg=ageAgg
+         )
+    
+}
+
+
+
+# Create a mapping of epiweek to month (use 2020 for this)
+epiMonth <- tibble::tibble(dt=as.Date("2020-01-01")+0:365, 
+                           month=lubridate::month(dt),
+                           quarter=lubridate::quarter(dt),
+                           ew=lubridate::epiweek(dt)
+                           ) %>%
+    count(ew, month, quarter) %>%
+    arrange(ew, -n) %>%
+    group_by(ew) %>%
+    summarize(month=factor(month.abb[first(month)], levels=month.abb), quarter=first(quarter))
+epiMonth
+
+
+
+# Population by age bucket (estimated) for 2020
+usPopBucket2020 <- survival::uspop2[, , "2020"] %>%
+    apply(1, FUN=sum) %>%
+    tibble::tibble(ageActual=as.integer(names(.)), pop_2020=.) %>%
+    mutate(age=factor(case_when(ageActual <= 24 ~ "Under 25 years", 
+                                ageActual <= 44 ~ "25-44 years", 
+                                ageActual <= 64 ~ "45-64 years", 
+                                ageActual <= 74 ~ "65-74 years", 
+                                ageActual <= 84 ~ "75-84 years", 
+                                TRUE ~ "85 years and older"
+                                ), levels=levels(cdc20200923$age)
+                      )
+           ) %>%
+    group_by(age) %>%
+    summarize(pop=sum(pop_2020))
+usPopBucket2020
+
+
+
+# Load and process the CDC data
+cdcLoc <- "Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20200923.csv"
+cdcList_20200923 <- readRunCDCAllCause(loc=cdcLoc, 
+                                       dir="./RInputFiles/Coronavirus/",
+                                       startYear=2015, 
+                                       curYear=2020,
+                                       weekThru=30, 
+                                       startWeek=9, 
+                                       lst=test_hier5, 
+                                       epiMap=epiMonth, 
+                                       cvDeathThru="2020-07-31", 
+                                       cdcPlotStartWeek=10, 
+                                       agePopData=usPopBucket2020
+                                       )
+
+```
 
