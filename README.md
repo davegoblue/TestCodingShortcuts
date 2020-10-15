@@ -2128,4 +2128,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v002 consolidates code for reading and processing USA Facts data  
 * Coronavirus_Statistics_v002 consolidates code for downloading updated USA Facts data  
 * Coronavirus_Statistics_v002 consolidates code for reading and processing CDC all-cause deaths data  
+* Coronavirus_Statistics_v002 consolidates code for downloading updated CDC all-cause deaths data  
   
