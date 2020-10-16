@@ -18,6 +18,7 @@ readRunCOVIDTrackingProject <- function(thruLabel,
                                         kCut=6,
                                         reAssignState=vector("list", 0),
                                         makeCumulativePlots=TRUE,
+                                        skipAssessmentPlots=FALSE,
                                         ...
                                         ) {
     
@@ -31,10 +32,13 @@ readRunCOVIDTrackingProject <- function(thruLabel,
     # useClusters: file containing clusters by state (NULL means make the clusters from the data)
     # hierarchical: boolean, should hierarchical clusters be produced (if FALSE, will be k-means)?
     # returnList: boolean, should a list be returned or just the cluster object?
+    #             refers to what is returned by clusterStates(); the main function always returns a list
     # kCut: number of segments when cutting the hierarchical tree
     # reAssignState: mapping file for assigning a state to another state's cluster
     #                format list("stateToChange"="stateClusterToAssign")
     # makeCumulativePlots: whether to make plots of cumulative metrics
+    # skipAssessmentPlots: boolean to skip the plots for assessClusters()
+    #                      especially useful if just exploring dendrograms or silhouette widths
     # ...: arguments to be passed to clusterStates(), will be used only if useClusters is NULL
     
     
@@ -96,6 +100,21 @@ readRunCOVIDTrackingProject <- function(thruLabel,
             useClusters[names(reAssignState)[xNum]] <- useClusters[reAssignState[[xNum]]]
         }
         
+    }
+    
+    
+    # STEP 5a: Stop the process and return what is available if skipAssessmentPlots is TRUE
+    if (skipAssessmentPlots) {
+        return(list(stateData=stateData, 
+                    dfRaw=dfRaw, 
+                    dfFiltered=dfFiltered, 
+                    dfPerCapita=dfPerCapita, 
+                    useClusters=useClusters, 
+                    plotData=NULL, 
+                    consolidatedPlotData=NULL, 
+                    clCum=NULL
+                    )
+               )
     }
     
     
@@ -1163,7 +1182,7 @@ readCOViDbyState <- function(fileName,
             as.data.frame() %>%
             print()
         p1 <- dfByDate %>% 
-            inner_join(checkByDate) %>%
+            full_join(checkByDate) %>%
             pivot_longer(-c(date, name), names_to="newOld") %>%
             ggplot(aes(x=date, y=value, group=newOld, color=newOld)) + 
             geom_line() + 
@@ -1582,6 +1601,7 @@ casesDeathsByCounty <- function(useDate,
 # Function to plot evolution of county-level burdens
 countyLevelEvolution <- function(dfBurden, 
                                  burdenVar, 
+                                 countyPopFile,
                                  inclStates=NULL, 
                                  topN=10, 
                                  topNDate=NULL, 
@@ -1595,6 +1615,7 @@ countyLevelEvolution <- function(dfBurden,
     # FUNCTION ARGUMENTS:
     # dfBurden: file containing the relevant per-capita burden data
     # burdenVar: the name of the variable containing the burden per-capita data
+    # countyPopFile: file containing population by county
     # inclStates: states to be included (default NULL means include all)
     # topN: integer, number of counties to flag as "top"
     # topNDate: the data to use as the topN cutpoint (NULL means most recent)
@@ -1624,6 +1645,7 @@ countyLevelEvolution <- function(dfBurden,
                                       burdenVar=burdenVar, 
                                       useDate=allDates, 
                                       inclStates=inclStates, 
+                                      dfCounty=countyPopFile,
                                       printPlot=FALSE, 
                                       returnData=TRUE
     )
@@ -2337,16 +2359,22 @@ helperMakeClusterStateData <- function(dfPlot,
 
 # Helper function to read and convert 
 helperReadConvert <- function(file, 
-                              valueName
+                              valueName, 
+                              countyPopFile,
+                              glimpseRaw=TRUE, 
+                              glimpsePivot=TRUE
                               ) {
     
     # FUNCTION ARGUMENTS:
     # file: the file for reading and converting
     # valueName: name for the values column of the pivoted data
+    # countyPopFile: file containing county population data
+    # glimpseRaw: boolean, whether to show a glimpse of the raw data
+    # glimpsePivot: boolean, whether to show a glimpse of the pivoted data
     
     # Read file
     df <- readr::read_csv(file)
-    glimpse(df)
+    if (glimpseRaw) glimpse(df)
     
     # Conversion of the raw data
     dfPivot <- df %>%
@@ -2356,11 +2384,12 @@ helperReadConvert <- function(file,
                      values_to=valueName
         ) %>%
         mutate(date=lubridate::mdy(date))
-    glimpse(dfPivot)
+    if (glimpsePivot) glimpse(dfPivot)
     
     # Conversion of the pivoted data
     dfConverted <- countyLevelEvolution(dfPivot, 
                                         burdenVar=valueName, 
+                                        countyPopFile=countyPopFile,
                                         inclStates=NULL, 
                                         topN=5,
                                         printPlot=FALSE, 
@@ -2377,16 +2406,19 @@ helperReadConvert <- function(file,
 # Function to read and convert raw data from USA Facts
 readUSAFacts <- function(caseFile, 
                          deathFile, 
+                         countyPopFile=filter(pop_usafacts, countyFIPS!=0),
                          oldFile=NULL,
                          showBurdenMinPop=NULL,
                          maxDate=NULL,
                          stateClusters=NULL, 
-                         countyClusters=NULL
+                         countyClusters=NULL, 
+                         glimpseRaw=TRUE
                          ) {
     
     # FUNCTION ARGUMENTS:
     # caseFile: the location of the downloaded cases dataset
     # deathsFile: the location of the downloaded deaths dataset
+    # countyopFile: the location of the county population file
     # oldFile: a file for comparing control totals against (NULL means do not compare)
     # showBurdenMinPop: minimum population for showing burden by cluster (NULL means skip plot)
     # maxDate: the date to use for the burden by cluster plot (ignored unless showBurdenMinPop is not NULL)
@@ -2395,12 +2427,21 @@ readUSAFacts <- function(caseFile,
     # countyClusters: a field 'cluster' will be created from countyFIPS using this named vector
     #                 NULL means do not use county for finding clusters
     # If both stateClusters and countyClusters are passed, only stateClusters will be used
+    # glimpseRaw: boolean, whether to show a glimpse of the raw data when initially read in
     
     # Read cases file
-    cnvCases <- helperReadConvert(caseFile, valueName="cumCases")
+    cnvCases <- helperReadConvert(caseFile, 
+                                  valueName="cumCases", 
+                                  glimpseRaw=glimpseRaw, 
+                                  countyPopFile=countyPopFile
+                                  )
     
     # Read deaths file
-    cnvDeaths <- helperReadConvert(deathFile, valueName="cumDeaths")
+    cnvDeaths <- helperReadConvert(deathFile, 
+                                   valueName="cumDeaths", 
+                                   glimpseRaw=glimpseRaw, 
+                                   countyPopFile=countyPopFile
+                                   )
     
     # Join the files so there is countyFIPS-county-population-date and cumCases cumDeaths
     # Also, add the state segments as 'cluster' if requested
@@ -3040,6 +3081,174 @@ prepClusterCounties <- function(burdenFile,
          countyDailyPerCapita=countyDailyPerCapita, 
          countyCumPerCapita=countyCumPerCapita
     )
+    
+}
+
+
+
+# Function to run the USA Facts (US county-level coronavirus data) clustering process
+readRunUSAFacts <- function(maxDate, 
+                            popLoc, 
+                            caseLoc, 
+                            deathLoc, 
+                            dlPop=FALSE, 
+                            dlCaseDeath=FALSE, 
+                            ovrWrite=FALSE, 
+                            ovrWriteError=TRUE, 
+                            oldFile=NULL, 
+                            showBurdenMinPop=10000, 
+                            minPopCluster=25000,
+                            existingStateClusters=NULL, 
+                            existingCountyClusters=NULL, 
+                            createClusters=FALSE, 
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # maxDate: the maximum data to use for data from the cases and deaths file
+    # popLoc: location where the county-level population data are stored
+    # caseLoc: location where the county-level cases data are stored
+    # deathLoc: location where the county-level deaths data are stored
+    # dlPop: boolean, should new population data be downloaded to popLoc
+    # dlCaseDeath: boolean, should new case data and death data be downloaded to caseLoc and deathLoc
+    # ovrWrite: boolean, if data are downloaded to an existing file, should it be over-written
+    # ovrWriteError: boolean, if ovrWrite is FALSE and an attempt to overwrite is made, should it error out?
+    # oldFile: old file for comparing metrics against (NULL means no old file for comarisons)
+    # showBurdenMinPop: minimum population for showing in burden by cluster plots (NULL means skip plot)
+    # minPopCluster: minimum population for including county in running cluster-level metrics
+    # existingStateClusters: location of an existing named vector with clusters by state (NULL means none)
+    # existingCountyClusters: location of an existing named vector with clusters by county (NULL means none)
+    #                         if existingStateClusters is not NULL, then existingCountyClusters is ignored
+    # createClusters: boolean, whether to create new clusters (only set up for kmeans)
+    # keyStates: states to use in stateCountySummary (NULL means skip)
+    # ...: other arguments that will be passed to prepClusterCounties
+    
+    # STEP 0: Download new files (if requested)
+    urlCase <- "https://usafactsstatic.blob.core.windows.net/public/data/covid-19/covid_confirmed_usafacts.csv"
+    urlDeath <- "https://usafactsstatic.blob.core.windows.net/public/data/covid-19/covid_deaths_usafacts.csv"
+    urlPop <- "https://usafactsstatic.blob.core.windows.net/public/data/covid-19/covid_county_population_usafacts.csv"
+    
+    # Helper function to download a file
+    helperDownload <- function(url, loc, ovrWrite=ovrWrite, ovrWriteError=ovrWriteError) {
+        # If the file exists, mention it and proceed as per the guard checks
+        if (file.exists(loc)) {
+            cat("\nFile:", loc, "already exists\n")
+            if (!ovrWrite & ovrWriteError) stop("\nExiting due to ovrWrite=FALSE and ovrWriteError=TRUE\n")
+            if (!ovrWrite & !ovrWriteError) {
+                cat("\nFile is NOT downloaded again\n")
+                return(NULL)
+            }
+        }
+        # Download the file and change to read-only
+        download.file(url, destfile=loc, method="curl")
+        Sys.chmod(loc, mode="0555", use_umask = FALSE)
+    }
+    
+    if (dlPop) helperDownload(urlPop, loc=popLoc)
+    if (dlCaseDeath) helperDownload(urlCase, loc=caseLoc)
+    if (dlCaseDeath) helperDownload(urlDeath, loc=deathLoc)
+    
+    # STEP 1: Read in the population file
+    pop <- readr::read_csv(popLoc) %>%
+        rename(countyName=`County Name`, state=State)
+    
+    # STEP 2: Read case and death data, combine, and add population totals and existing clusters
+    burdenData <- readUSAFacts(
+        caseFile=caseLoc, 
+        deathFile=deathLoc, 
+        countyPopFile=pop,
+        oldFile=oldFile,
+        showBurdenMinPop=showBurdenMinPop,
+        maxDate=maxDate,
+        stateClusters=existingStateClusters, 
+        countyClusters=existingCountyClusters, 
+        glimpseRaw=FALSE
+    )
+    
+    # STEP 3: Create appropriately filtered data, and new clusters if requested
+    clusterData <- prepClusterCounties(burdenFile=burdenData, 
+                                       maxDate=maxDate, 
+                                       minPop=minPopCluster,
+                                       createClusters=createClusters, 
+                                       hierarchical=FALSE, 
+                                       ...
+    )
+    
+    # STEP 4: Assess clusters against the new data
+    # STEP 4a: Extract the county-level clusters (new clusters if created, existing otherwise)
+    if (createClusters) clustVec <- clusterData$objCluster$objCluster$cluster
+    else clustVec <- existingCountyClusters
+    
+    # STEP 4b: Show the cumulative data, order by cluster, and keep the plots together
+    helperACC_county <- helperAssessCountyClusters(vecCluster=clustVec, 
+                                                   dfPop=clusterData$countyFiltered, 
+                                                   dfBurden=clusterData$countyFiltered, 
+                                                   showCum=TRUE,
+                                                   thruLabel=format(as.Date(maxDate), "%b %d, %Y"), 
+                                                   plotsTogether=TRUE, 
+                                                   orderCluster=TRUE
+    )
+    
+    # STEP 5: Add back clusters not used for analysis (code 999) and associated disease data
+    # May want to change the approach to population data
+    clusterStateData <- helperMakeClusterStateData(dfPlot=helperACC_county, 
+                                                   dfPop=usmap::countypop,
+                                                   dfBurden=clusterData$countyDailyPerCapita,
+                                                   orderCluster=TRUE
+    )
+    
+    # STEP 6: Return a list of the key files
+    list(pop=pop, 
+         burdenData=burdenData, 
+         clusterData=clusterData, 
+         clustVec=clustVec, 
+         helperACC_county=helperACC_county, 
+         clusterStateData=clusterStateData,
+         maxDate=maxDate
+    )
+    
+}
+
+
+
+# Function to run state-level subsets or county-level lags
+runUSAFactsSubsets <- function(lst, 
+                               keyStates=NULL,
+                               lagMetrics=tibble::tibble(metric=character(0), 
+                                                         n=integer(0), 
+                                                         minDate=character(0), 
+                                                         maxDate=character(0)
+                               )
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a list file containing processed data from readRunUSAFacts()
+    # keyStates: states to use in stateCountySummary (NULL means skip)
+    # lagMetrics: parameters for running lag analyses
+    
+    # STEP 1: Run state-level subset summaries if requested
+    if (!is.null(keyStates)) {
+        stateCountySummary(states=keyStates,
+                           df=changeOrderLabel(lst$clusterStateData, grpVars="fipsCounty"),
+                           keyDate=lst$maxDate,
+                           showQuadrants=TRUE, 
+                           showCumulative=TRUE, 
+                           facetCumulativeByState=TRUE, 
+                           showAllFactorLevels=TRUE
+        )
+    }
+    
+    # STEP 2: Assess lags given passed parameters
+    for (ctr in seq_len(nrow(lagMetrics))) {
+        exploreTopCounties(lst$helperACC_county, 
+                           minDate=lagMetrics$minDate[ctr], 
+                           maxDate=lagMetrics$maxDate[ctr], 
+                           topNBy="cluster",
+                           nVar=lagMetrics$metric[ctr], 
+                           nKey=lagMetrics$n[ctr], 
+                           plotData=TRUE
+        )
+    }
     
 }
 
@@ -3694,7 +3903,7 @@ helperKeyStateClusterMetrics <- function(lst) {
     clData <- lst[["useClusters"]]
     
     # Create a list of states by cluster
-    stateCluster <- lapply(1:5, FUN=function(x) { names(clData[clData==x]) })
+    stateCluster <- lapply(1:length(unique(clData)), FUN=function(x) { names(clData[clData==x]) })
     
     # Create reported cvDeaths by cluster
     deaths <- lst[["consolidatedPlotData"]] %>%
@@ -3797,7 +4006,7 @@ helperKeyStateExcessPlots <- function(df,
         filter(date %in% c(cvDeathDate, max(date)))
     pes_002 <- pes_001 + 
         geom_point(data=filter(cumDeath, date==cvDeathDate), aes(x=state, y=cumdpm), size=2) + 
-        labs(title=paste0("Deaths per million people using data through ", format(cvDeathDate, "%b %Y")), 
+        labs(title=paste0("Deaths per million people using data through ", format(cvDeathDate, "%b %d, %Y")), 
              subtitle="Bars based on excess CDC all-cause deaths, points are reported coronavirus deaths", 
              y="Deaths (per million people)"
         )
@@ -3817,7 +4026,7 @@ helperKeyStateExcessPlots <- function(df,
         labs(x="State", 
              y="Ratio of estimated all-cause excess deaths to reported coronavirus deaths", 
              title="Ratio of estimated all-cause excess deaths to reported coronavirus deaths", 
-             subtitle=paste0("All data through ", format(cvDeathDate, "%b %Y"))
+             subtitle=paste0("All data through ", format(cvDeathDate, "%b %d, %Y"))
         ) + 
         ylim(c(0, NA)) + 
         geom_hline(aes(yintercept=1), lty=2)
@@ -3898,5 +4107,208 @@ helperKeyAgeExcessPlots <- function(df,
     
     # STEP 3: Return the plotting data
     plotData
+    
+}
+
+
+
+# Function to read and run the CDC all-cause deaths analysis
+readRunCDCAllCause <- function(loc, 
+                               startYear, 
+                               curYear,
+                               weekThru, 
+                               startWeek, 
+                               lst, 
+                               epiMap,
+                               agePopData,
+                               cvDeathThru,
+                               cdcPlotStartWeek=startWeek,
+                               periodKeep=paste0(startYear, "-", curYear-1), 
+                               dlData=FALSE, 
+                               ovrWrite=FALSE, 
+                               ovrWriteError=TRUE,
+                               dir="./RInputFiles/Coronavirus/"
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # loc: the CDC .csv file name (without path)
+    # startYear: the starting year in the CDC data
+    # curYear: the current analyis year in the CDC data
+    # weekThru: how many weeks of the current year are the data valid thru?
+    # startWeek: the starting week to use for cumulative sum of difference in expected all-cause deaths
+    # lst: a state clustering process output list
+    # epiMap: a mapping file of ew-month-quarter that mas epiweek (ew) to an appropriate month and quarter
+    # agePopData: data containing US population as age (fct) - pop (int)
+    # cvDeathThru: the date to use for pulling the CV death data
+    # cdcPlotStartWeek: start week for CDC plots (10 is March which avoids a 1-week February outlier)
+    # periodKeep: the period of previous data in the CDC all-cause deaths file (should be kept regardless)
+    # dir: the CDC .csv directory (will use paste0(dir, loc) as the file location)
+    
+    # STEP 0: Download CDC data if requested
+    helperDownload <- function(url, fileLoc, ow=ovrWrite, owError=ovrWriteError) {
+        # If the file exists, mention it and proceed as per the guard checks
+        if (file.exists(fileLoc)) {
+            cat("\nFile:", fileLoc, "already exists\n")
+            if (!ow & owError) stop("\nExiting due to ow=FALSE and owError=TRUE\n")
+            if (!ow & !owError) {
+                cat("\nFile is NOT downloaded again\n")
+                return(NULL)
+            }
+        }
+        # Download the file and change to read-only
+        cat("\nDownloading CDC data from", url, "to", fileLoc, "\n")
+        download.file(url, destfile=fileLoc, method="curl")
+        Sys.chmod(fileLoc, mode="0555", use_umask = FALSE)
+    }
+    
+    if (dlData) {
+        helperDownload(url="https://data.cdc.gov/api/views/y5bj-9g5w/rows.csv?accessType=DOWNLOAD", 
+                       fileLoc=paste0(dir, loc)
+        )
+    }
+    
+    # STEP 1: Read and process the CDC data
+    cdc <- readProcessCDC(loc, weekThru=weekThru, periodKeep=periodKeep, fDir=dir)
+    
+    # STEP 2: Create the key data required for using state-level clusters
+    clusterList <- helperKeyStateClusterMetrics(lst)
+    
+    # STEP 3: Generate plots of the processed CDC data
+    cdcBasicPlots(cdc, clustVec=clusterList$clData)
+    
+    # STEP 4: Full US excess deaths
+    list_allUS <- cdcCohortAnalysis(cohortName="all US", 
+                                    df=cdc,
+                                    curYear=curYear, 
+                                    startYear=startYear,
+                                    startWeek=startWeek,
+                                    plotTitle="All-cause US total deaths",
+                                    predActualPlotsOnePage=TRUE
+    )
+    
+    # STEP 5: Generate cluster-level aggregate plots
+    clusterAgg <- cdcAggregateSummary(df=cdc, 
+                                      critVar="state", 
+                                      critSubsets=clusterList$stateCluster,
+                                      startWeek=startWeek, 
+                                      critListNames=paste0("cluster ", 1:length(clusterList$stateCluster)),
+                                      factorCritList=FALSE,
+                                      popData=clusterList$pop,
+                                      cvDeathData=clusterList$deaths,
+                                      idVarName="cluster"
+    )
+    
+    # STEP 6: Generate state-level aggregate data, then plot
+    stateAgg <- cdcAggregateSummary(df=cdc, 
+                                    critVar="state", 
+                                    critSubsets=names(clusterList$clData),
+                                    startWeek=startWeek, 
+                                    idVarName="state", 
+                                    subListNames=names(clusterList$clData),
+                                    showAllPlots=FALSE
+    )
+    helperKeyStateExcessPlots(df=stateAgg, 
+                              epiMonth=epiMap,
+                              cvDeaths=lst$consolidatedPlotData,
+                              startWeek=cdcPlotStartWeek,
+                              cvDeathDate=as.Date(cvDeathThru),
+                              subT=paste0("CDC data through week ", weekThru, " of ", curYear)
+    )
+    
+    # STEP 7: Generate age-level aggregate data, then plot
+    ageAgg <- cdcAggregateSummary(df=cdc, 
+                                  critVar="age", 
+                                  critSubsets=levels(cdc$age),
+                                  startWeek=startWeek, 
+                                  idVarName="age", 
+                                  subListNames=levels(cdc$age),
+                                  showAllPlots=TRUE
+    )
+    helperKeyAgeExcessPlots(df=ageAgg, 
+                            epiMonth=epiMap,
+                            cvDeaths=lst$consolidatedPlotData,
+                            popData=agePopData,
+                            startWeek=cdcPlotStartWeek,
+                            cvDeathDate=as.Date(cvDeathThru),
+                            subT=paste0("CDC data through week ", weekThru, " of ", curYear)
+    )
+    
+    # STEP 8: Return a list of key files
+    list(cdc=cdc, 
+         clusterList=clusterList, 
+         allUSAgg=list_allUS$preds,
+         clusterAgg=clusterAgg, 
+         stateAgg=stateAgg, 
+         ageAgg=ageAgg
+    )
+    
+}
+
+
+
+# Function for saving an R object to RDS, including a check for whether the object already exists
+saveToRDS <- function(obj, 
+                      file=paste0(deparse(substitute(obj)), ".RDS"), 
+                      dir="./RInputFiles/Coronavirus/", 
+                      ovrWrite=FALSE, 
+                      ovrWriteError=TRUE,
+                      makeReadOnly=TRUE
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # obj: the R object to save
+    # file: the file name to save as
+    # dir: the directory to save in (file path will be paste0(dir, file))
+    # ovrWrite: boolean, should the file be overwritten if it already exists?
+    # ovrWriteError: boolean, should an error be thrown if an attempt is made to overwrite the file?
+    # makeReadOnly: boolean, should the output file be made read-only?
+    
+    # Create the file name
+    locFile <- paste0(dir, file)
+    
+    # Check if the file already exists and proceed as per options
+    if (file.exists(locFile)) {
+        cat("\nFile already exists:", locFile, "\n")
+        if (!ovrWrite & ovrWriteError) stop("\nAborting due to ovrWrite=FALSE and ovrWriteError=TRUE")
+        if (!ovrWrite) {
+            cat("\nNot replacing the existing file since ovrWrite=FALSE\n")
+            return(NULL)
+        }
+    }
+    
+    # Save the file and update the permissions to read-only (if flag is set)
+    saveRDS(obj, file=locFile)
+    if (makeReadOnly) Sys.chmod(locFile, mode="0555", use_umask = FALSE)
+    
+}
+
+
+
+# Function for reading an R object from RDS
+readFromRDS <- function(file, 
+                        dir="./RInputFiles/Coronavirus/", 
+                        addSuffix=".RDS", 
+                        deparseSub=FALSE
+                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # file: the file name to read in
+    # dir: the directory the file is in
+    # addSuffix: the suffix that should be added to file (file path will be paste0(dir, file, addSuffix))
+    # deparseSub: whether to deparse and substitute file (use it as the text name)
+    
+    # Convert file if needed
+    if (deparseSub) file <- deparse(substitute(file))
+    
+    # Ensure that file is of type character
+    if (!isTRUE(all.equal(class(file), "character"))) {
+        stop("\nUnable to read since file is not a character\n")
+    }
+    
+    # Create the file name
+    locFile <- paste0(dir, file, addSuffix)
+    
+    # Read the file (will be the return)
+    readRDS(locFile)
     
 }
