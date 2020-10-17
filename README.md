@@ -2131,4 +2131,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v002 consolidates code for downloading updated CDC all-cause deaths data  
 * Coronavirus_Statistics_Functions_v002.R holds updated functions for Coronavirus_Statistics_v002  
 * Coronavirus_Statistics_v002 downloads new data and creates new segments  
+* Coronavirus_Statistics_v002 downloads new data and applies against existing segments  
   
