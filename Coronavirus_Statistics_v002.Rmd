@@ -981,3 +981,135 @@ cdcList_20201015 <- readRunCDCAllCause(loc=cdcLoc,
   
 The process should be able to run in a stand-alone fashion, with any data needed available to be loaded from the saved RDS files.
   
+The process can also be run using existing data and segments:  
+```{r cache=TRUE}
+
+# Use existing segments with different data (already downloaded)
+locDownload <- "./RInputFiles/Coronavirus/CV_downloaded_201015.csv"
+test_old_201014 <- readRunCOVIDTrackingProject(thruLabel="Oct 14, 2020", 
+                                               readFrom=locDownload, 
+                                               compareFile=readFromRDS("test_hier5_201001")$dfRaw,
+                                               useClusters=readFromRDS("test_hier5_201001")$useClusters
+                                               )
+
+```
+
+A similar approach can be taken with the county data:  
+```{r cache=TRUE}
+
+# Previously downloaded data from USA Facts
+caseLoc <- "./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20201015.csv"
+deathLoc <- "./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20201015.csv"
+
+# Use existing segments with different data (already downloaded)
+old_20201015 <- readRunUSAFacts(maxDate="2020-10-13", 
+                                popLoc="./RInputFiles/Coronavirus/covid_county_population_usafacts.csv", 
+                                caseLoc=caseLoc, 
+                                deathLoc=deathLoc, 
+                                oldFile=readFromRDS("burden_20200903_new"), 
+                                existingStateClusters=readFromRDS("test_hier5_201001")$useClusters,
+                                existingCountyClusters=readFromRDS("clustVec_county_20200903_new"),
+                                createClusters=FALSE
+                                )
+
+```
+  
+A similar approach can be taken with the CDC all-cause deaths data:  
+```{r cache=TRUE}
+
+# Use data that have previously been downloaded
+cdcLoc <- "Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20201015.csv"
+cdcList_old_20201015 <- readRunCDCAllCause(loc=cdcLoc, 
+                                           startYear=2015, 
+                                           curYear=2020,
+                                           weekThru=34, 
+                                           startWeek=9, 
+                                           lst=readFromRDS("test_hier5_201001"), 
+                                           epiMap=readFromRDS("epiMonth"), 
+                                           agePopData=readFromRDS("usPopBucket2020"), 
+                                           cvDeathThru="2020-08-22", 
+                                           cdcPlotStartWeek=10
+                                           )
+
+```
+  
+The evolution of the county-level segments from September 3 to October 15 can also be explored.  Since the process is run using kmeans, segment numbers have no inherent meaning:  
+```{r}
+
+# Previous and current county clusters data
+ctyChange <- tibble::tibble(fips1=names(readFromRDS("clustVec_county_20200903_new")), 
+                            fips2=names(cty_20201015$clustVec),
+                            cluster1=readFromRDS("clustVec_county_20200903_new"), 
+                            cluster2=cty_20201015$clustVec, 
+                            mism=(fips1!=fips2), 
+                            fips=stringr::str_pad(fips1, side="left", pad="0", width=5)
+                            ) %>%
+    left_join(usmap::countypop, by="fips")
+
+# Control totals
+ctyChange %>%
+    summarize(sumMismatch=sum(mism), sumna=sum(is.na(county)), sumpop=sum(pop_2015))
+
+# Change in segments
+ctyChange %>%
+    group_by(cluster1, cluster2) %>%
+    summarize(n=n(), pop=sum(pop_2015)) %>%
+    ggplot(aes(x=factor(cluster2), y=factor(cluster1))) + 
+    geom_tile(aes(fill=pop)) + 
+    geom_text(aes(label=paste0("n=", n, "\nPop. ", round(pop/1000000, 1), " mln"))) + 
+    scale_fill_continuous("Population", high="lightgreen", low="white") + 
+    labs(x="New Cluster (Oct 15)", y="Old Cluster (Sep 3)", title="Evolution of County Clusters")
+
+```
+  
+There has been some meaningful evolution of the county-level clusters, particularly for the small cluster with a large disease burden.  The totals are examined:  
+```{r}
+
+smallCluster <- ctyChange %>%
+    count(cluster1) %>%
+    filter(n==min(n)) %>%
+    pull(cluster1)
+
+segChange <- ctyChange %>%
+    filter(cluster1==smallCluster) %>%
+    arrange(cluster2, -pop_2015) %>%
+    select(-fips1, -fips2, -mism)
+
+segChange %>%
+    filter(pop_2015 >= 250000) %>%
+    as.data.frame()
+
+segChange %>%
+    mutate(cluster2=factor(cluster2)) %>%
+    filter(pop_2015 >= 100000) %>%
+    usmap::plot_usmap(regions="counties", data=., values="cluster2") + 
+    scale_fill_discrete("New segment", na.value="white")
+
+cty_20201015$burdenData %>%
+    select(countyFIPS, date, cumDeaths, population, countyName=county) %>%
+    mutate(countyFIPS=stringr::str_pad(countyFIPS, side="left", width=5, pad="0")) %>%
+    inner_join(select(ctyChange, fips, cluster1, cluster2), by=c("countyFIPS"="fips")) %>%
+    group_by(cluster1, cluster2, date) %>%
+    summarize(cumDeaths=sum(cumDeaths), population=sum(population)) %>%
+    ggplot(aes(x=date, y=1000000*cumDeaths/population)) + 
+    geom_line(aes(color=factor(cluster2))) + 
+    facet_grid(paste0("New ", cluster2)~paste0("Old ", cluster1)) + 
+    labs(x="Date", 
+         y="Cumulative Deaths per million", 
+         title="Deaths per million by segment", 
+         subtitle="Old segment (03 SEP) and new segment (15 OCT)"
+         )
+
+```
+  
+The segmenting methodology puts a much higher weight on total burden than on shape of the curve.  So, as some of the (mostly) southern counties have had significant burden increases, the segments have been reorganizing to reflect that.
+
+Next steps are to work with the county clusters using a higher weight on shape of the curve.  It will be meaningful to have distinct early/high and late/high segments similar to what is seen with the states.  The patterns appear potentially similar to the states:  
+  
+* Early and high  
+* Early and moderate
+* Late and high  
+* Late and moderate  
+* Persistently moderate  
+* Persistently low  
+  
