@@ -1518,4 +1518,155 @@ cty_20201015_rule6 <- readRunUSAFacts(maxDate="2020-10-13",
 
 ```
   
-At a glance, the rule-based approach creates reasonable county-level segments that are generally well differentiated as far as burden and shape.  Next stes are to continue to explore the county-level segmenting approach.
+At a glance, the rule-based approach creates reasonable county-level segments that are generally well differentiated as far as burden and shape.  Next steps are to continue to explore the county-level segmenting approach.
+
+The rules-based approach pulls apart differences in both shape and magnitude, focused mainly on coronavirus deaths.  The cases data are less reliable given the significant variation in testing by locale and timing.
+
+Suppose that three archetype deaths per million by month are examined:  
+```{r}
+
+# Archetype curves for deaths by month
+archeDeaths <- tibble::tibble(mon=factor(rep(month.abb[3:9], times=3), levels=month.abb), 
+                              lvl=rep(letters[1:3], each=7), 
+                              dpm=c(0, 250, 750, 500, 250, 100, 50, 
+                                    0, 25, 200, 200, 125, 50, 50, 
+                                    0, 0, 50, 50, 50, 150, 200
+                                    )
+                              )
+
+# Plot of dpm by archetype
+p1 <- archeDeaths %>%
+    ggplot(aes(x=mon, y=dpm)) + 
+    geom_line(aes(group=lvl, color=lvl)) + 
+    labs(x="", y="Deaths per million", title="Simulated archetype deaths per million") + 
+    scale_color_discrete("Archetype")
+p1
+p1 + facet_wrap(~lvl, scales="free_y") + labs(subtitle="Each facet is on its own scale")
+
+```
+  
+The rules based segmentation will pull these apart.  Archetype a is high and early, archetype b is medium and early, archetype c is medium and late.  Any reasonable distance metric will likely separate a and c, but a further objective is to have b (very) roughly equidistant from both a and c.  The distance from a is driven by total volume and the distance from c is driven by shape.
+
+Suppose that standard euclidean distance is calculated with the burden by month completely unscaled:  
+```{r}
+
+archeDeaths %>%
+    pivot_wider(lvl, names_from=mon, values_from=dpm) %>%
+    column_to_rownames("lvl") %>%
+    dist(method="euclidean", upper=TRUE)
+
+```
+  
+As expected, a and c are the most distant from each other, but b is twice as close to c as to a based on similarity in disease burden.  This may tend to drive very different shapes in to the same segment, forcing the segmentation to be "too similar" to just a ranking by total deaths.
+
+Suppose instead that a log transformation is applied to the deaths by month:  
+```{r}
+
+archeDeaths %>%
+    mutate(logdpm=log10(pmax(dpm, 0)+1)) %>%
+    pivot_wider(lvl, names_from=mon, values_from=logdpm) %>%
+    column_to_rownames("lvl") %>%
+    dist(method="euclidean", upper=TRUE)
+
+```
+  
+This approach is encouraging and can be applied to the rules-based segmentation data:  
+```{r}
+
+ruleSegData <- cty_20201015_rule6$clusterStateData %>%
+    filter(!is.na(date)) %>%
+    mutate(mon=factor(month.abb[mon=lubridate::month(date)], levels=month.abb)) %>%
+    group_by(fipsCounty, cluster, mon) %>%
+    summarize(deaths=sum(deaths), pop=mean(pop)) %>%
+    group_by(cluster, mon) %>%
+    summarize(deaths=sum(deaths), pop=sum(pop)) %>%
+    ungroup() %>%
+    mutate(dpm=1000000*deaths/pop) %>%
+    filter(mon %in% month.abb[3:9])
+
+p2 <- ruleSegData %>%
+    ggplot(aes(x=mon, y=dpm)) + 
+    geom_line(aes(group=cluster, color=cluster)) + 
+    labs(x="", y="Deaths per million", title="Deather per million by cluster") + 
+    scale_color_discrete("Cluster")
+p2
+p2 + facet_wrap(~cluster, scales="free_y") + labs(subtitle="Each facet is on its own scale")
+
+segDist <- ruleSegData %>%
+    mutate(logdpm=log10(1+pmax(0, dpm))) %>%
+    pivot_wider(cluster, names_from=mon, values_from="logdpm") %>%
+    column_to_rownames("cluster") %>%
+    dist(method="euclidean", upper=TRUE, diag=TRUE) %>% as.matrix() %>% as.data.frame() %>%
+    rownames_to_column("clusterA") %>% pivot_longer(-clusterA, names_to="clusterB")
+
+segDist %>%
+    filter(clusterA != clusterB, clusterA != 999, clusterB != 999) %>%
+    ggplot(aes(x=clusterA, y=clusterB)) + 
+    geom_tile(aes(fill=value)) + 
+    geom_text(aes(label=round(value, 1))) + 
+    scale_fill_continuous(high="red", low="white", "Distance") + 
+    labs(x="", 
+         y="", 
+         title="Euclidean distance between cluster averages", 
+         subtitle="Calculated using log10 deaths per million by month"
+         )
+
+```
+  
+The distances seem sensible, with the methodology assigning high distance when either magnitude OR shape is different.  Suppose the methodology is applied to all counties that are not "too small" (classified as 999):  
+```{r}
+
+testSegData <- cty_20201015_rule6$clusterStateData %>%
+    filter(!is.na(date), cluster != 999) %>%
+    mutate(mon=factor(month.abb[mon=lubridate::month(date)], levels=month.abb)) %>%
+    group_by(fipsCounty, cluster, mon) %>%
+    summarize(deaths=sum(deaths), pop=mean(pop)) %>%
+    ungroup() %>%
+    mutate(dpm=1000000*deaths/pop, logdpm=log10(1+pmax(0, dpm))) %>%
+    filter(mon %in% month.abb[3:9])
+
+testDistData <- testSegData %>%
+    pivot_wider(fipsCounty, names_from=mon, values_from=logdpm) %>%
+    column_to_rownames("fipsCounty") %>%
+    dist()
+
+testHierClust <- hclust(testDistData, method="complete")
+plot(testHierClust)
+
+```
+  
+The dendrogram is encouraging, with an early split in to three, each followed by a split in two.  Suppose that 6 segments are created from this:  
+```{r}
+
+testClustVec <- cutree(testHierClust, k=6)
+
+testSegOut <- testSegData %>%
+    mutate(newCluster=testClustVec[fipsCounty])
+
+testSegOut %>%
+    group_by(fipsCounty, cluster, newCluster) %>%
+    summarize(deaths=sum(deaths), pop=mean(pop)) %>%
+    group_by(newCluster, cluster) %>%
+    summarize(n=n(), pop=sum(pop), deaths=sum(deaths)) %>%
+    ggplot(aes(x=factor(newCluster), y=cluster)) + 
+    geom_tile(aes(fill=pop/1000000)) + 
+    geom_text(aes(label=paste0(round(pop/1000000, 1), " million\n(n=", n, ")"))) + 
+    scale_fill_continuous("Pop (millions)", high="lightgreen", low="white") + 
+    labs(x="New cluster", y="Rules-based cluster", title="Change in cluster by methodology")
+
+testSegOut %>%
+    group_by(mon, cluster, newCluster) %>%
+    summarize(deaths=sum(deaths), pop=sum(pop), n=n()) %>%
+    ungroup() %>%
+    mutate(dpm=1000000*deaths/pop, newCluster=factor(newCluster)) %>%
+    ggplot(aes(x=mon, y=dpm)) + 
+    geom_line(aes(color=newCluster, group=newCluster)) + 
+    geom_text(aes(x="Jun", y=750, label=paste0("n=", n))) +
+    facet_grid(newCluster ~ cluster) +
+    labs(x="Rules-based cluster", y="New cluster", title="Deaths per million by cluster") + 
+    scale_color_discrete("New cluster")
+
+```
+  
+Further exploration is needed to understand the driver behind splitting some observations that, at a glance, look very similar.
+  
