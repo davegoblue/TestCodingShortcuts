@@ -1670,3 +1670,142 @@ testSegOut %>%
   
 Further exploration is needed to understand the driver behind splitting some observations that, at a glance, look very similar.
   
+The issue with the log10 approach is that zero and small start to become better differentiated than small and large (e.g., 0 deaths per million becomes 0, 100 deaths per million becomes 2, and 1000 deaths per million becomes 3).  So, the goal of reducing spurious differentiation among outliers on the high end (2000 is 3.3., 4000 is 3.6) has been achieved, but at the cost of losing the power to appropriately separate high, medium, and low.
+
+An additional approach could take advantage of the timing of deaths in the national curve (using only the counties that meet the population elgibility criteria:  
+```{r}
+
+ruleNationData <- cty_20201015_rule6$clusterStateData %>%
+    filter(!is.na(date)) %>%
+    mutate(mon=factor(month.abb[mon=lubridate::month(date)], levels=month.abb)) %>%
+    group_by(cluster, date) %>%
+    summarize(deaths=sum(deaths), pop=sum(pop)) %>%
+    mutate(dpm=1000000*deaths/pop)
+
+ruleNationData %>%
+    filter(cluster!=999) %>%
+    ggplot(aes(x=date, y=dpm)) + 
+    geom_line() + 
+    geom_smooth(color="red", span=0.25, method="loess") +
+    labs(x="", 
+         y="Deaths per million", 
+         title="US coronavirus deaths per million by day", 
+         subtitle="Caution that each facet has its own y scale"
+         ) + 
+    scale_x_date(date_breaks="1 month", date_labels="%b") + 
+    facet_wrap(~cluster, scales="free_y")
+
+ruleNationData %>%
+    filter(cluster!=999) %>%
+    mutate(mon=factor(month.abb[lubridate::month(date)], levels=month.abb)) %>%
+    group_by(cluster, mon) %>%
+    summarize(deaths=sum(deaths), pop=mean(pop)) %>%
+    mutate(dpm=1000000*deaths/pop) %>%
+    ggplot(aes(x=mon, y=dpm)) + 
+    geom_line(aes(group=cluster, color=cluster)) + 
+    labs(x="", 
+         y="Deaths per million", 
+         title="US coronavirus deaths per million by month", 
+         subtitle="Caution that each facet has its own y scale and October is only a partial month"
+         ) + 
+    facet_wrap(~cluster, scales="free_y")
+
+```
+  
+The rule-based segments are nicely differentiated visually, both as far as shape and maximum y-axis value.
+
+There is no meaningful spike in coronavirus until April and October is an incomplete month.  Perhaps distance metrics would better be calculated using:  
+  
+* April and earlier  
+* May-June  
+* July-August  
+* September and later  
+  
+This avoids some of the spurious zero points that emerge from treating each month in each county as a separate observation:  
+```{r}
+
+ruleNationData %>%
+    filter(cluster!=999) %>%
+    mutate(mon=factor(month.abb[lubridate::month(date)], levels=month.abb), 
+           monGroup=case_when(mon %in% c("Jan", "Feb", "Mar", "Apr") ~ "thru Apr", 
+                              mon %in% c("May", "Jun") ~ "May-Jun", 
+                              mon %in% c("Jul", "Aug") ~ "Jul-Aug", 
+                              mon %in% c("Sep", "Oct") ~ "Sep and later",
+                              TRUE ~ "Map error"
+                              ), 
+           monGroup=factor(monGroup, levels=c("thru Apr", "May-Jun", "Jul-Aug", "Sep and later", "Map error"))
+           ) %>%
+    group_by(cluster, monGroup) %>%
+    summarize(deaths=sum(deaths), pop=mean(pop)) %>%
+    mutate(dpm=1000000*deaths/pop) %>%
+    ggplot(aes(x=monGroup, y=dpm)) + 
+    geom_line(aes(group=cluster, color=cluster)) + 
+    labs(x="", 
+         y="Deaths per million", 
+         title="US coronavirus deaths per million by month", 
+         subtitle="Caution that each facet has its own y scale and October is only a partial month"
+         ) + 
+    ylim(c(0, NA)) +
+    facet_wrap(~cluster, scales="free_y")
+
+```
+
+There are now three distinct shapes of the curve:  
+  
+* Peak in Jul-Aug (one at ~800 dpm, one at ~400 dpm, one at ~100 dpm)  
+* Peak in May-Jun (one at ~400 dpm, one at ~100 dpm)  
+* Peak in thru Apr (one at ~1000 dpm)  
+  
+Arguably, the rules-based segmenting approach outperforms attempts to calculate a single distance metric between the counties.  The risk is that there may be underlying patterns in the data that are not detected by a pre-determined set of rules.
+
+Suppose that the CI for the individual counties is also plotted on the same chart:  
+```{r}
+
+allCountyRules <- cty_20201015_rule6$clusterStateData %>%
+    filter(!is.na(date)) %>%
+    mutate(mon=factor(month.abb[mon=lubridate::month(date)], levels=month.abb), 
+                      monGroup=case_when(mon %in% c("Jan", "Feb", "Mar", "Apr") ~ "thru Apr", 
+                              mon %in% c("May", "Jun") ~ "May-Jun", 
+                              mon %in% c("Jul", "Aug") ~ "Jul-Aug", 
+                              mon %in% c("Sep", "Oct") ~ "Sep and later",
+                              TRUE ~ "Map error"
+                              ), 
+           monGroup=factor(monGroup, levels=c("thru Apr", "May-Jun", "Jul-Aug", "Sep and later", "Map error"))
+           ) %>%
+    group_by(fipsCounty, countyName, state, cluster, monGroup) %>%
+    summarize(deaths=sum(deaths), pop=mean(pop)) %>%
+    ungroup() %>%
+    rbind(mutate(., state="All", countyName="All", fipsCounty="All")) %>%
+    group_by(fipsCounty, countyName, state, cluster, monGroup) %>%
+    summarize(deaths=sum(deaths), pop=sum(pop)) %>%
+    mutate(dpm=1000000*deaths/pop, moddpm=dpm*ifelse(monGroup=="Sep and later", 61/43, 1)) %>%
+    ungroup()
+
+ciData <- allCountyRules %>%
+    filter(fipsCounty != "All") %>%
+    group_by(cluster, monGroup) %>%
+    summarize(ci05=quantile(moddpm, 0.05), 
+              ci25=quantile(moddpm, 0.25), 
+              ci75=quantile(moddpm, 0.75), 
+              ci95=quantile(moddpm, 0.95)
+              ) %>%
+    ungroup()
+
+allCountyRules %>%
+    ggplot(aes(x=monGroup)) + 
+    geom_line(data=~filter(., fipsCounty=="All"), aes(y=moddpm, group=cluster, color=cluster), lwd=2) + 
+    geom_ribbon(data=ciData, aes(ymin=ci25, ymax=ci75, group=cluster), alpha=0.5) +
+    geom_ribbon(data=ciData, aes(ymin=ci05, ymax=ci95, group=cluster), fill="grey", alpha=0.5) +
+    labs(x="", 
+         y="Deaths per million (thru Oct 13*)", 
+         title="US coronavirus deaths per million tracked by county", 
+         subtitle="All facets on same y scale\nDark ribbon covers 50% of counties, light ribbon covers 90%", 
+         caption="* Data through Oct 13 ('Sep and later' scaled by 61/43 to account for shorter time period)"
+         ) + 
+    ylim(c(0, NA)) +
+    facet_wrap(~cluster)
+
+```
+  
+Tentatively, the analysis will continue with the rules-based segmentation approach to county clusters since it seems to be driving meaningful differentiation for further analysis.
+  
