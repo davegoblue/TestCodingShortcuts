@@ -2136,4 +2136,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 19-OCT-2020  
 * Coronavirus_Statistics_v002 explores other segmentation options  
+* Coronavirus_Statistics_v002 further explores county-level segmentation  
   
