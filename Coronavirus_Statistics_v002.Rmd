@@ -1808,4 +1808,147 @@ allCountyRules %>%
 ```
   
 Tentatively, the analysis will continue with the rules-based segmentation approach to county clusters since it seems to be driving meaningful differentiation for further analysis.
+
+Suppose that evolution in cases is assessed using the county-level clusters:  
+```{r}
+
+allCountyRules <- cty_20201015_rule6$clusterStateData %>%
+    filter(!is.na(date)) %>%
+    mutate(mon=factor(month.abb[mon=lubridate::month(date)], levels=month.abb), 
+                      monGroup=case_when(mon %in% c("Jan", "Feb", "Mar", "Apr") ~ "thru Apr", 
+                              mon %in% c("May", "Jun") ~ "May-Jun", 
+                              mon %in% c("Jul", "Aug") ~ "Jul-Aug", 
+                              mon %in% c("Sep", "Oct") ~ "Sep and later",
+                              TRUE ~ "Map error"
+                              ), 
+           monGroup=factor(monGroup, levels=c("thru Apr", "May-Jun", "Jul-Aug", "Sep and later", "Map error"))
+           ) %>%
+    group_by(fipsCounty, countyName, state, cluster, monGroup) %>%
+    summarize(deaths=sum(deaths), cases=sum(cases), pop=mean(pop)) %>%
+    ungroup() %>%
+    rbind(mutate(., state="All", countyName="All", fipsCounty="All")) %>%
+    group_by(fipsCounty, countyName, state, cluster, monGroup) %>%
+    summarize(deaths=sum(deaths), cases=sum(cases), pop=sum(pop)) %>%
+    mutate(dpm=1000000*deaths/pop, 
+           moddpm=dpm*ifelse(monGroup=="Sep and later", 61/43, 1), 
+           cpm=1000000*cases/pop, 
+           modcpm=cpm*ifelse(monGroup=="Sep and later", 61/43, 1)
+           ) %>%
+    ungroup()
+
+ciDataCases <- allCountyRules %>%
+    filter(fipsCounty != "All") %>%
+    group_by(cluster, monGroup) %>%
+    summarize(ci05=quantile(modcpm, 0.05), 
+              ci25=quantile(modcpm, 0.25), 
+              ci75=quantile(modcpm, 0.75), 
+              ci95=quantile(modcpm, 0.95)
+              ) %>%
+    ungroup()
+
+allCountyRules %>%
+    ggplot(aes(x=monGroup)) + 
+    geom_line(data=~filter(., fipsCounty=="All"), aes(y=modcpm, group=cluster, color=cluster), lwd=2) + 
+    geom_ribbon(data=ciDataCases, aes(ymin=ci25, ymax=ci75, group=cluster), alpha=0.5) +
+    geom_ribbon(data=ciDataCases, aes(ymin=ci05, ymax=ci95, group=cluster), fill="grey", alpha=0.5) +
+    labs(x="", 
+         y="Cases per million (thru Oct 13*)", 
+         title="US coronavirus cases per million tracked by county", 
+         subtitle="All facets on same y scale\nDark ribbon covers 50% of counties, light ribbon covers 90%", 
+         caption="* Data through Oct 13 ('Sep and later' scaled by 61/43 to account for shorter time period)"
+         ) + 
+    ylim(c(0, NA)) +
+    facet_wrap(~cluster)
+
+```
   
+The shapes are broadly consistent, with the exception that the segment with early/high deaths is fairly low on total case counts.  Suppose that county-level segments are instead created using a preponderance of cases rather than deaths:  
+```{r}
+
+# Create 3x2 clusters for hml and shape
+popLoc <- "./RInputFiles/Coronavirus/covid_county_population_usafacts.csv"
+cty_20201015_rule6_cases <- readRunUSAFacts(maxDate="2020-10-13", 
+                                            popLoc=popLoc, 
+                                            caseLoc=caseLoc, 
+                                            deathLoc=deathLoc, 
+                                            dlCaseDeath=!(file.exists(caseLoc) & file.exists(deathLoc)),
+                                            oldFile=readFromRDS("burden_20200903_new"), 
+                                            existingStateClusters=test_hier6_201014$useClusters,
+                                            createClusters=TRUE, 
+                                            hierarchical=NA,
+                                            minShape=4,
+                                            ratioDeathvsCase = 0.2,
+                                            ratioTotalvsShape = 0.25,
+                                            minDeath=100,
+                                            minCase=5000
+                                            )
+
+```
+  
+Interestingly, there is no longer a segment with high deaths early since it is not well-differemtiated by having (relatively) high cases early.  This is suggestive that deaths are a better metric than cases for tracking the historical impact of cornavirus by county (though given lags, cases are more likely to be a current leading indicator of burden).
+
+Suppose that the movements by segment are examined:  
+```{r}
+
+caseCluster <- cty_20201015_rule6_cases$clusterStateData %>%
+    count(fipsCounty, cluster) %>%
+    rename(caseCluster=cluster) %>%
+    select(-n)
+
+cty_20201015_case_death <- cty_20201015_rule6$clusterStateData %>%
+    rename(deathCluster=cluster) %>%
+    full_join(caseCluster, by="fipsCounty")
+
+cty_20201015_case_death %>%
+    group_by(fipsCounty, deathCluster, caseCluster) %>%
+    summarize(deaths=sum(deaths, na.rm=TRUE), cases=sum(cases, na.rm=TRUE), pop=mean(pop)) %>%
+    group_by(deathCluster, caseCluster) %>%
+    summarize(n=n(), pop=sum(pop), cases=sum(cases), deaths=sum(deaths)) %>%
+    ggplot(aes(y=deathCluster, x=caseCluster)) + 
+    geom_tile(aes(fill=deaths/cases)) + 
+    geom_text(aes(label=paste0("n=", n, 
+                               " (Pop: ", round(pop/1000000, 1), 
+                               ")\nCases: ", round(cases/1000, 1), 
+                               "\nDeaths: ", round(deaths/1000, 1), " (", round(100*deaths/cases, 1), "%)"
+                               )
+                  ), 
+              size=3.5
+              ) + 
+    scale_fill_continuous("CFR", low="white", high="orange") + 
+    labs(x="County cluster driven by cases", 
+         y="County cluster driven by deaths", 
+         title="County cluster comparison when driven by cases vs. deaths", 
+         subtitle="n: # counties; Pop: population (millions); Cases: cases (000); Deaths: deaths (000) (CFR)"
+         )
+
+plotData <- cty_20201015_case_death %>%
+    group_by(date, deathCluster, caseCluster) %>%
+    summarize(deaths=sum(deaths, na.rm=TRUE), cases=sum(cases, na.rm=TRUE), pop=sum(pop)) %>%
+    ungroup() %>%
+    mutate(cpm=1000000*cases/pop, dpm=1000000*deaths/pop) %>%
+    group_by(deathCluster, caseCluster) %>%
+    mutate(cpm7=zoo::rollmean(cpm, k=7, fill=NA), dpm7=zoo::rollmean(dpm, k=7, fill=NA))
+
+plotData %>%
+    ggplot(aes(x=date, y=dpm7)) + 
+    geom_line(aes(group=deathCluster, color=deathCluster)) + 
+    facet_grid(deathCluster ~ caseCluster, switch="y") +
+    labs(x="County case cluster", 
+         y="County death cluster", 
+         title="Deaths per million (7-day rolling mean) by county case cluster vs. county death cluster"
+         )
+
+plotData %>%
+    ggplot(aes(x=date, y=cpm7)) + 
+    geom_line(aes(group=caseCluster, color=caseCluster)) + 
+    facet_grid(deathCluster ~ caseCluster, switch="y") +
+    labs(x="County case cluster", 
+         y="County death cluster", 
+         title="Cases per million (7-day rolling mean) by county case cluster vs. county death cluster"
+         )
+
+```
+  
+Significant variation in case fatality rate (deaths over confirmed cases) by both geography and time drive significant changes in the segments.  Further, the "high cases" segment consists of multiple shapes, including a group that is early and a group that us late.
+
+Next steps are to explore why the death clusters seem to be better differentiated on shape than the case clusters even when plotting using cases.  Perhaps something is not working as intended when calculating distances based on shape of the curve.
