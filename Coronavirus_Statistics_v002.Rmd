@@ -1357,6 +1357,7 @@ clusterStates <- function(df,
                           deathVar="dpm",
                           shapeFunc=lubridate::month, 
                           minShape=NULL, 
+                          maxShape=NULL,
                           minDeath=0,
                           maxDeath=Inf,
                           minCase=0,
@@ -1378,8 +1379,10 @@ clusterStates <- function(df,
     # caseVar: the variable containing the cases per capita data
     # deathVar: the variable containing the deaths per capita data
     # shapeFunc: the function to be used for creating the shape of the curve
-    # minShape: the minimum value to be used for shape (to avoid very small amounts of data in Jan/Feb)
-    #           NULL means keep everything
+    # minShape: the minimum value to be used for shape (to avoid very small amounts of data in Jan/Feb/Mar)
+    #           shape is the month, so 4 means start with April data (NULL means keep everything)
+    # maxShape: the maximum value to be used for shape (to avoid very small amounts of data in a partial month)
+    #           shape is the month, so 9 means end with September data (NULL means keep everything)
     # minDeath: use this value as a floor for the death metric when calculating shape
     # maxDeath: use this value as a maximum when calculating distance using deaths 
     # minCase: use this value as a floor for the case metric when calculating shape
@@ -1414,6 +1417,10 @@ clusterStates <- function(df,
     if (!is.null(minShape)) {
         df <- df %>%
             filter(timeBucket >= minShape)
+    }
+    if (!is.null(maxShape)) {
+        df <- df %>%
+            filter(timeBucket <= maxShape)
     }
     
     # Extract an aggregate by state, scaled so that they have the proper ratio
@@ -1890,65 +1897,176 @@ Interestingly, there is no longer a segment with high deaths early since it is n
 Suppose that the movements by segment are examined:  
 ```{r}
 
-caseCluster <- cty_20201015_rule6_cases$clusterStateData %>%
-    count(fipsCounty, cluster) %>%
-    rename(caseCluster=cluster) %>%
-    select(-n)
+# Function to examine the difference in case clusters and death clusters
+examineCasevDeathClusters <- function(caseList, 
+                                      deathList, 
+                                      popMin=0, 
+                                      ctyMin=0
+                                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # caseList: the processed object using cases
+    # deathList: the processed object using deaths
+    # popMin: in the text overlap grid, include a record if it has at least this much population
+    # ctyMin: in the text overlap grid, include a record if it has at least this many counties
+    #         records will be included if they meet EITHER the popMin hurdle OR the ctyMin hurdle
+    
+    # Pull the case cluster data    
+    caseCluster <- caseList[["clusterStateData"]] %>%
+        count(fipsCounty, cluster) %>%
+        rename(caseCluster=cluster) %>%
+        select(-n)
 
-cty_20201015_case_death <- cty_20201015_rule6$clusterStateData %>%
-    rename(deathCluster=cluster) %>%
-    full_join(caseCluster, by="fipsCounty")
+    # Integrate the death cluster data
+    case_death <- deathList[["clusterStateData"]] %>%
+        rename(deathCluster=cluster) %>%
+        full_join(caseCluster, by="fipsCounty")
+    
+    # Plot the differences
+    p1 <- case_death %>%
+        group_by(fipsCounty, deathCluster, caseCluster) %>%
+        summarize(deaths=sum(deaths, na.rm=TRUE), cases=sum(cases, na.rm=TRUE), pop=mean(pop)) %>%
+        group_by(deathCluster, caseCluster) %>%
+        summarize(n=n(), pop=sum(pop), cases=sum(cases), deaths=sum(deaths)) %>%
+        filter(pop>=popMin | n >= ctyMin) %>%
+        ggplot(aes(y=deathCluster, x=caseCluster)) + 
+        geom_tile(aes(fill=deaths/cases)) + 
+        geom_text(aes(label=paste0("n=", n, 
+                                   " (Pop: ", round(pop/1000000, 1), 
+                                   ")\nCases: ", round(cases/1000, 1), 
+                                   "\nDeaths: ", round(deaths/1000, 1), " (", round(100*deaths/cases, 1), "%)"
+                                   )
+                      ), 
+                  size=3.5
+                  ) + 
+        scale_fill_continuous("CFR", low="white", high="orange") + 
+        labs(x="County cluster driven by cases", 
+             y="County cluster driven by deaths", 
+             title="County cluster comparison when driven by cases vs. deaths", 
+             subtitle="n: # counties; Pop: population (millions); Cases: cases (000); Deaths: deaths (000) (CFR)"
+             )
+    if (ctyMin > 0 & popMin > 0) { 
+        p1 <- p1 + 
+            labs(caption=paste0("Includes overlaps with at least ", 
+                                ctyMin, 
+                                " counties OR at least ", 
+                                round(popMin/1000, 0), 
+                                " thousand population"
+                                )
+                 )
+    }
+    print(p1)
+    
+    # Create a plotting data frame
+    plotData <- case_death %>%
+        group_by(date, deathCluster, caseCluster) %>%
+        summarize(deaths=sum(deaths, na.rm=TRUE), cases=sum(cases, na.rm=TRUE), pop=sum(pop), n=n()) %>%
+        ungroup() %>%
+        mutate(cpm=1000000*cases/pop, dpm=1000000*deaths/pop) %>%
+        group_by(deathCluster, caseCluster) %>%
+        mutate(cpm7=zoo::rollmean(cpm, k=7, fill=NA), dpm7=zoo::rollmean(dpm, k=7, fill=NA))
 
-cty_20201015_case_death %>%
-    group_by(fipsCounty, deathCluster, caseCluster) %>%
-    summarize(deaths=sum(deaths, na.rm=TRUE), cases=sum(cases, na.rm=TRUE), pop=mean(pop)) %>%
-    group_by(deathCluster, caseCluster) %>%
-    summarize(n=n(), pop=sum(pop), cases=sum(cases), deaths=sum(deaths)) %>%
-    ggplot(aes(y=deathCluster, x=caseCluster)) + 
-    geom_tile(aes(fill=deaths/cases)) + 
-    geom_text(aes(label=paste0("n=", n, 
-                               " (Pop: ", round(pop/1000000, 1), 
-                               ")\nCases: ", round(cases/1000, 1), 
-                               "\nDeaths: ", round(deaths/1000, 1), " (", round(100*deaths/cases, 1), "%)"
-                               )
-                  ), 
-              size=3.5
-              ) + 
-    scale_fill_continuous("CFR", low="white", high="orange") + 
-    labs(x="County cluster driven by cases", 
-         y="County cluster driven by deaths", 
-         title="County cluster comparison when driven by cases vs. deaths", 
-         subtitle="n: # counties; Pop: population (millions); Cases: cases (000); Deaths: deaths (000) (CFR)"
-         )
+    # Create plot for deaths per million trend by cluster overlap
+    p2 <- plotData %>%
+        ggplot(aes(x=date, y=dpm7)) + 
+        geom_line(aes(group=deathCluster, color=deathCluster)) + 
+        geom_text(data=~mutate(filter(., date==lubridate::round_date(max(date))), dpm7=Inf), 
+                  aes(label=paste0("n=", n), color=deathCluster), 
+                  hjust=1, vjust=1
+                  ) +
+        facet_grid(deathCluster ~ caseCluster, switch="y") +
+        labs(x="County case cluster", 
+             y="County death cluster", 
+             title="Deaths per million (7-day rolling mean) by county case cluster vs. county death cluster"
+             )
+    print(p2)
+    
+    # Create plot for cases per million trend by cluster overlap
+    p3 <- plotData %>%
+        ggplot(aes(x=date, y=cpm7)) + 
+        geom_line(aes(group=caseCluster, color=caseCluster)) + 
+        geom_text(data=~mutate(filter(., date==lubridate::round_date(max(date))), cpm7=Inf), 
+                  aes(label=paste0("n=", n), color=caseCluster), 
+                  hjust=1, vjust=1
+                  ) +
+        facet_grid(deathCluster ~ caseCluster, switch="y") +
+        labs(x="County case cluster", 
+             y="County death cluster", 
+             title="Cases per million (7-day rolling mean) by county case cluster vs. county death cluster"
+             )
+    print(p3)
+    
+    # Return a list of the two key frames
+    list(case_death=case_death, plotData=plotData)
+    
+}
 
-plotData <- cty_20201015_case_death %>%
-    group_by(date, deathCluster, caseCluster) %>%
-    summarize(deaths=sum(deaths, na.rm=TRUE), cases=sum(cases, na.rm=TRUE), pop=sum(pop)) %>%
-    ungroup() %>%
-    mutate(cpm=1000000*cases/pop, dpm=1000000*deaths/pop) %>%
-    group_by(deathCluster, caseCluster) %>%
-    mutate(cpm7=zoo::rollmean(cpm, k=7, fill=NA), dpm7=zoo::rollmean(dpm, k=7, fill=NA))
-
-plotData %>%
-    ggplot(aes(x=date, y=dpm7)) + 
-    geom_line(aes(group=deathCluster, color=deathCluster)) + 
-    facet_grid(deathCluster ~ caseCluster, switch="y") +
-    labs(x="County case cluster", 
-         y="County death cluster", 
-         title="Deaths per million (7-day rolling mean) by county case cluster vs. county death cluster"
-         )
-
-plotData %>%
-    ggplot(aes(x=date, y=cpm7)) + 
-    geom_line(aes(group=caseCluster, color=caseCluster)) + 
-    facet_grid(deathCluster ~ caseCluster, switch="y") +
-    labs(x="County case cluster", 
-         y="County death cluster", 
-         title="Cases per million (7-day rolling mean) by county case cluster vs. county death cluster"
-         )
+# Run comparisons for cases and deaths
+temp_caseDeath_001 <- examineCasevDeathClusters(caseList=cty_20201015_rule6_cases, 
+                                                deathList=cty_20201015_rule6
+                                                )
 
 ```
   
-Significant variation in case fatality rate (deaths over confirmed cases) by both geography and time drive significant changes in the segments.  Further, the "high cases" segment consists of multiple shapes, including a group that is early and a group that us late.
+Significant variation in case fatality rate (deaths over confirmed cases) by both geography and time drive significant changes in the segments.  Further, the "high cases" segment consists of multiple shapes, including a group that is early and a group that is late.
 
 Next steps are to explore why the death clusters seem to be better differentiated on shape than the case clusters even when plotting using cases.  Perhaps something is not working as intended when calculating distances based on shape of the curve.
+
+Suppose that the key clustering data is pulled, using the adjustments above such that cases have 5x the weight as deaths:  
+```{r}
+
+shapeTestData <- cty_20201015_rule6_cases$clusterData$objCluster$dfCluster
+shapeTestData %>%
+    summarize_if(is.numeric, .funs=list(sd)) %>%
+    mutate(all="all") %>%
+    pivot_longer(-all, names_to="metric", values_to="sd") %>%
+    ggplot(aes(x=fct_reorder(metric, sd), y=sd)) + 
+    geom_col(fill="lightblue") +
+    geom_text(aes(y=sd+0.01, label=round(sd, 2)), hjust=0) + 
+    coord_flip() + 
+    labs(x="", y="Standard deviation", title="Standard deviation by scaled variable, clustering by cases")
+
+```
+  
+The standard deviations appear appropriately weighted in favor of cases, though perhaps the 5:1 scaling is insufficient to overcome the significant disparities in death timing.
+
+Suppose that a very pure segmentation by cases is attempted, and using data only from April-September:  
+```{r}
+
+# Create 3x2 clusters for hml and shape
+popLoc <- "./RInputFiles/Coronavirus/covid_county_population_usafacts.csv"
+cty_20201015_rule6_caseshvy <- readRunUSAFacts(maxDate="2020-10-13", 
+                                               popLoc=popLoc, 
+                                               caseLoc=caseLoc, 
+                                               deathLoc=deathLoc, 
+                                               dlCaseDeath=!(file.exists(caseLoc) & file.exists(deathLoc)),
+                                               oldFile=readFromRDS("burden_20200903_new"), 
+                                               existingStateClusters=test_hier6_201014$useClusters,
+                                               createClusters=TRUE, 
+                                               hierarchical=NA,
+                                               minShape=4,
+                                               maxShape=9,
+                                               ratioDeathvsCase = 0.001,
+                                               ratioTotalvsShape = 0.25,
+                                               minDeath=100,
+                                               minCase=5000
+                                               )
+
+```
+  
+These segments appear much better tailored to differences in case volume and shape by county.  A key finding is that even a modest weight on deaths (0.2 of cases) leads the segments to be overly driven by deaths.  This is likely driven by the difference in deaths, especially among early/high, being extremely differentiated from each other over s short period of time (which will produce a very high euclidean distance that needs to be substantially scaled down to not dominate)
+
+The comparisons of death and cases can again be run, with the main text overlap grid using only cases with at least 5 counties OR at least 500,000 population:  
+```{r}
+
+# Run comparisons for cases and deaths
+temp_caseDeath_002 <- examineCasevDeathClusters(caseList=cty_20201015_rule6_caseshvy, 
+                                                deathList=cty_20201015_rule6, 
+                                                ctyMin=5, 
+                                                popMin=500000
+                                                )
+
+```
+  
+The switching among segments is now largely driven by differences in CFR, as desired.  The plots of deaths by cluster overlap appear driven by death cluster while the plots of cases by cluster overlap appear driven by case cluster.  These segments appear suitable for further analysis.
+  
