@@ -1133,6 +1133,7 @@ readRunUSAFacts <- function(maxDate,
                             createClusters=FALSE, 
                             hierarchical=FALSE,
                             kCut=6,
+                            orderCluster=TRUE,
                             ...
                             ) {
     
@@ -1157,6 +1158,7 @@ readRunUSAFacts <- function(maxDate,
     #               FALSE means run kmeans clustering
     #               NA means run rules-based clustering
     # kCut; if hierarchical clustering is used, what k (number of clusters in cutree) should be used?
+    # orderCluster: if FALSE, ignore; if TRUE, order by "dpm"; if anything else, order by orderCluster
     # ...: other arguments that will be passed to prepClusterCounties
     
     # STEP 0: Download new files (if requested)
@@ -1229,7 +1231,7 @@ readRunUSAFacts <- function(maxDate,
                                                    showCum=TRUE,
                                                    thruLabel=format(as.Date(maxDate), "%b %d, %Y"), 
                                                    plotsTogether=TRUE, 
-                                                   orderCluster=TRUE
+                                                   orderCluster=orderCluster
     )
     
     # STEP 5: Add back clusters not used for analysis (code 999) and associated disease data
@@ -1237,7 +1239,7 @@ readRunUSAFacts <- function(maxDate,
     clusterStateData <- helperMakeClusterStateData(dfPlot=helperACC_county, 
                                                    dfPop=usmap::countypop,
                                                    dfBurden=clusterData$countyDailyPerCapita,
-                                                   orderCluster=TRUE
+                                                   orderCluster=orderCluster
     )
     
     # STEP 6: Return a list of the key files
@@ -2069,4 +2071,465 @@ temp_caseDeath_002 <- examineCasevDeathClusters(caseList=cty_20201015_rule6_case
 ```
   
 The switching among segments is now largely driven by differences in CFR, as desired.  The plots of deaths by cluster overlap appear driven by death cluster while the plots of cases by cluster overlap appear driven by case cluster.  These segments appear suitable for further analysis.
+  
+The rules-based segmentation approach is updated to allow for more user control (defining the number of segments by dimension and setting a seed):  
+```{r}
+
+# Updated preparation file for county clustering
+prepClusterCounties <- function(burdenFile, 
+                                maxDate,
+                                minPop, 
+                                createClusters=TRUE,
+                                hierarchical=FALSE, 
+                                returnList=!hierarchical, 
+                                ...
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # burdenFile: the pivoted file containing the burdens data
+    # maxDate: the latest date to be used from the data
+    # minPop: the smallest population for a county to be included
+    # createClusters: boolean, whether to create county-level clusters (if FALSE, object returned as NULL)
+    #                 FALSE would be for prepping and converting data only (those objects are returned)
+    # hierarchical: whether to create hierarchical clusters
+    #               TRUE means run hierarchical clustering
+    #               FALSE means run kmeans clustering
+    #               NA means run rules-based clustering
+    # returnList: whether the clustering call returns a list (only set up for TRUE as of now)
+    # ...: other arguments to be passed to clusterStates
+    
+    # STEP 1: Select only desired variables from burden file
+    countyCumPerCapita <- burdenFile %>%
+        select(state=countyFIPS, date, cpm=cumCasesPer, dpm=cumDeathPer, population) %>%
+        arrange(state, date)
+    
+    # STEP 2: Confirm that there are no duplicates and that every county has the same dates
+    # This should be 1 provided that there are no duplicates
+    countyCumPerCapita %>% 
+        count(state, date) %>% 
+        pull(n) %>% 
+        max()
+    
+    # This should have no standard deviation if the same number of records exist on every day
+    countyCumPerCapita %>%
+        mutate(n=1) %>%
+        group_by(date) %>%
+        summarize(n=sum(n), population=sum(population)) %>%
+        summarize_at(vars(all_of(c("n", "population"))), .funs=list(sd=sd, min=min, max=max))
+    
+    # STEP 3: Convert to daily new totals rather than cumulative data
+    countyDailyPerCapita <- countyCumPerCapita %>%
+        group_by(state) %>%
+        arrange(date) %>%
+        mutate_at(vars(all_of(c("cpm", "dpm"))), ~ifelse(row_number()==1, ., .-lag(.))) %>%
+        ungroup()
+    
+    # STEP 4: Add rolling 7 aggregates and total cases/deaths
+    countyDailyPerCapita <- countyDailyPerCapita %>%
+        arrange(state, date) %>%
+        group_by(state) %>%
+        helperRollingAgg(origVar="cpm", newName="cpm7", k=7) %>%
+        helperRollingAgg(origVar="dpm", newName="dpm7", k=7) %>%
+        ungroup() %>%
+        mutate(cases=cpm*population/1000000, deaths=dpm*population/1000000)
+    
+    # STEP 5: Filter the data prior to clustering
+    countyFiltered <- countyDailyPerCapita %>%
+        filter(population >= minPop, date <= as.Date(maxDate)) %>%
+        mutate(state=as.character(state))
+    
+    # STEP 6: Check the implications of the filtering
+    # Step 6a: Check whether minDeath and minCase have been passed
+    ellipsisList <- (list(...))
+
+    if ("minCase" %in% names(ellipsisList)) {
+        minCase <- ellipsisList[["minCase"]]
+        cat("\nShape curves will impose a floor of at least", minCase, "cases per million")
+    } else {
+        cat("\nShapes will be created without any floor on the number of cases per million")
+        minCase <- 0
+    }
+    
+    if ("minDeath" %in% names(ellipsisList)) {
+        minDeath <- ellipsisList[["minDeath"]]
+        cat("\nShape curves will impose a floor of at least", minDeath, "deaths per million")
+    } else {
+        cat("\nShapes will be created without any floor on the number of deaths per million")
+        minDeath <- 0
+    }
+    
+    # Check number of counties that fail the test for minDeath deaths per million or minCase cases per million
+    is0 <- function(x) mean(x==0)
+    isltn <- function(x, n) mean(x<n)
+    isltDeath <- function(x) isltn(x, n=minDeath)
+    isltCase <- function(x) isltn(x, n=minCase)
+    
+    cat("\n*** Counties with 0 cases/deaths or that fall below the floor for minCase/minDeath ***\n")
+    countyFiltered %>% 
+        group_by(state) %>% 
+        summarize_at(c("cpm", "dpm"), sum) %>% 
+        ungroup() %>%
+        summarize_at(vars(all_of(c("cpm", "dpm"))), 
+                     .funs=list(mean_is0=is0, mean_ltDeath=isltDeath, mean_ltCase=isltCase)
+                     ) %>%
+        select(-cpm_mean_ltDeath, -dpm_mean_ltCase) %>%
+        print()
+    
+    # Run county-level clusters if requested, otherwise store as NULL
+    objCluster <- if(createClusters) {
+        clusterStates(countyFiltered, hierarchical=hierarchical, returnList=returnList, ...)
+    } else {
+        NULL
+    }
+    
+    # Return all of the relevant objects
+    list(objCluster=objCluster, 
+         countyFiltered=countyFiltered, 
+         countyDailyPerCapita=countyDailyPerCapita, 
+         countyCumPerCapita=countyCumPerCapita
+    )
+    
+}
+
+
+
+# Updateds to the clustering function
+clusterStates <- function(df, 
+                          caseVar="cpm", 
+                          deathVar="dpm",
+                          shapeFunc=lubridate::month, 
+                          minShape=NULL, 
+                          maxShape=NULL,
+                          minDeath=0,
+                          maxDeath=Inf,
+                          minCase=0,
+                          maxCase=Inf,
+                          ratioTotalvsShape=1, 
+                          ratioDeathvsCase=1, 
+                          hierarchical=TRUE, 
+                          hierMethod="complete", 
+                          nCenters=3, 
+                          iter.max=10,
+                          nstart=1,
+                          testCenters=NULL,
+                          returnList=FALSE, 
+                          hmlSegs=3, 
+                          eslSegs=2,
+                          seed=NULL
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing cases and deaths data
+    # caseVar: the variable containing the cases per capita data
+    # deathVar: the variable containing the deaths per capita data
+    # shapeFunc: the function to be used for creating the shape of the curve
+    # minShape: the minimum value to be used for shape (to avoid very small amounts of data in Jan/Feb/Mar)
+    #           shape is the month, so 4 means start with April data (NULL means keep everything)
+    # maxShape: the maximum value to be used for shape (to avoid very small amounts of data in a partial month)
+    #           shape is the month, so 9 means end with September data (NULL means keep everything)
+    # minDeath: use this value as a floor for the death metric when calculating shape
+    # maxDeath: use this value as a maximum when calculating distance using deaths 
+    # minCase: use this value as a floor for the case metric when calculating shape
+    # maxCase: use this value as a maximum when calculating distance using cases 
+    # ratioTotalvsShape: amount of standard deviation to be kept in total variable vs shape variables
+    # ratioDeathvsCase: amount of standard deviation to be kept in deaths vs cases 
+    #                   (total death data will be scaled to have sd this many times higher than cases)
+    #                   (death percentages by time period will be scaled directly by this amount)
+    # hierarchical: whether to create hierarchical clusters
+    #               TRUE means run hierarchical clustering
+    #               FALSE means run kmeans clustering
+    #               NA means run rules-based clustering
+    # hierMethod: the method for hierarchical clustering (e.g., 'complete' or 'single')
+    # nCenters: the number of centers to use for kmeans clustering
+    # testCenters: integer vector of centers to test (will create an elbow plot); NULL means do not test
+    # iter.max: maximumum number of kmeans iterations (default in kmeans algorithm is 10)
+    # nstart: number of random sets chosen for kmeans (default in kmeans algorithm is 1)
+    # returnList: boolean, if FALSE just the cluster object is returned
+    #                      if TRUE, a list is returned with dfCluster and the cluster object
+    # hmlSegs: number of segments to create for volume of burden integrated over time
+    # eslSegs: number of segments to create for shape of burden over time
+    # seed: set the seed to this value (NULL means no seed)
+    
+    # Extract key information (aggregates and by shapeFunc for each state)
+    df <- df %>%
+        select_at(vars(all_of(c("date", "state", caseVar, deathVar)))) %>%
+        purrr::set_names(c("date", "state", "cases", "deaths")) %>%
+        mutate(timeBucket=shapeFunc(date)) %>%
+        group_by(state, timeBucket) %>%
+        summarize(cases=sum(cases), deaths=sum(deaths)) %>%
+        ungroup()
+    
+    # Limit to only relevant time buckets if requested
+    if (!is.null(minShape)) {
+        df <- df %>%
+            filter(timeBucket >= minShape)
+    }
+    if (!is.null(maxShape)) {
+        df <- df %>%
+            filter(timeBucket <= maxShape)
+    }
+    
+    # Extract an aggregate by state, scaled so that they have the proper ratio
+    dfAgg <- df %>%
+        group_by(state) %>%
+        summarize(totalCases=sum(cases), totalDeaths=sum(deaths)) %>%
+        mutate(totalCases=pmin(totalCases, maxCase), totalDeaths=pmin(totalDeaths, maxDeath)) %>%
+        ungroup() %>%
+        mutate(totalDeaths=ratioDeathvsCase*totalDeaths*sd(totalCases)/sd(totalDeaths))
+    
+    # Extract the percentages (shapes) by month, scaled so that they have the proper ratio
+    dfShape <- df %>%
+        pivot_longer(-c(state, timeBucket)) %>%
+        group_by(state, name) %>%
+        mutate(tot=pmax(sum(value), ifelse(name=="deaths", minDeath, minCase)), 
+               value=ifelse(name=="deaths", ratioDeathvsCase, 1) * value / tot) %>%
+        select(-tot) %>%
+        pivot_wider(state, names_from=c(name, timeBucket), values_from=value) %>%
+        ungroup()
+    
+    # Function to calculate SD of a subset of columns
+    calcSumSD <- function(df) {
+        df %>% 
+            ungroup() %>% 
+            select(-state) %>% 
+            summarize_all(.funs=sd) %>% 
+            as.vector() %>% 
+            sum()
+    }
+    
+    # Down-weight the aggregate data so that there is the proper sum of sd in aggregates and shapes
+    aggSD <- calcSumSD(dfAgg)
+    shapeSD <- calcSumSD(dfShape)
+    dfAgg <- dfAgg %>%
+        mutate_if(is.numeric, ~. * ratioTotalvsShape * shapeSD / aggSD)
+    
+    # Combine so there is one row per state
+    dfCluster <- dfAgg %>%
+        inner_join(dfShape, by="state")
+    
+    # convert 'state' to rowname
+    keyData <- dfCluster %>% column_to_rownames("state")
+    
+    # Create rules-based segments (NA) or hierarchical segments (TRUE) or kmeans segments (FALSE)
+    if (is.na(hierarchical)) {
+        # Create pseudo-rules-based segments
+        if (!is.null(seed)) set.seed(seed)
+        # STEP 1: Classify high-medium-low based on deaths and cases
+        hml <- kmeans(select(keyData, starts_with("total")), 
+                      centers=hmlSegs, iter.max=iter.max, nstart=nstart
+                      )
+        # STEP 2: Classify early-late based on shape
+        esl <- kmeans(select(keyData, -starts_with("total")), 
+                      centers=eslSegs, iter.max=iter.max, nstart=nstart
+                      )
+        # STEP 3: Create a final segment
+        objCluster <- eslSegs*(hml$cluster-1) + esl$cluster
+    } else if (isTRUE(hierarchical)) {
+        # Create hierarchical segments
+        objCluster <-  hclust(dist(keyData), method=hierMethod)
+        plot(objCluster)
+    } else {
+        # Create k-means segments
+        # Create an elbow plot if testCenters is not NULL
+        if (!is.null(testCenters)) {
+            helperElbow(keyData, testCenters=testCenters, iter.max=iter.max, nstart=nstart, silhouette=TRUE)
+        }
+        # Create the kmeans cluster object, setting a seed if requested
+        if (!is.null(seed)) set.seed(seed)
+        objCluster <- kmeans(keyData, centers=nCenters, iter.max=iter.max, nstart=nstart)
+        cat("\nCluster means and counts\n")
+        n=objCluster$size %>% cbind(objCluster$centers) %>% round(2) %>% t() %>% print()
+    }
+    
+    # Return the data and object is a list if returnList is TRUE, otherwise return only the clustering object
+    if (!isTRUE(returnList)) {
+        objCluster
+    } else {
+        list(objCluster=objCluster, dfCluster=dfCluster)
+    }
+    
+}
+
+
+```
+  
+Further, the assessClusters() and helperMakeStateClusterData() functions are updated so they can order based on EITHER cpm or dpm based on function arguments:  
+```{r}
+
+# Updated function for cluster assessment
+# Main function creates the required data and calls helper functions
+# 1. Call helper to create overall cluster summary
+# 2. Call helper function for totals and per capita by state
+# 3. Call helper for recent vs. overall cases
+# 4. Call helper for evolution of segment aggregate and individual components
+assessClusters <- function(clusters, 
+                           dfState=stateData, 
+                           dfBurden=cvFilteredPerCapita,
+                           thruLabel="Aug 20, 2020",
+                           isCounty=FALSE,
+                           plotsTogether=FALSE, 
+                           clusterPlotsTogether=plotsTogether,
+                           recentTotalTogether=plotsTogether, 
+                           clusterAggTogether=plotsTogether, 
+                           makeSummaryPlots=TRUE, 
+                           makeTotalvsPerCapitaPlots=!isCounty, 
+                           makeRecentvsTotalPlots=TRUE, 
+                           makeTotalvsElementPlots=TRUE, 
+                           showMap=!isCounty, 
+                           orderCluster=FALSE
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # clusters: the named vector containing the clusters by state
+    # dfState: the file containing the states and populations
+    # dfBurden: the data containing the relevant per capita burden statistics by state-date
+    # thruLabel: label for plots for 'data through'
+    # isCounty: boolean, is this a plot of county-level data that have been named 'state'?
+    #           FALSE means that it is normal state-level data
+    # plotsTogether: boolean, should plots be consolidated on fewer pages?
+    # clusterPlotsTogether: boolean, should plots p1-p4 be consolidated?
+    # recentTotalTogether: boolean, should recent total plots p7-p8 be consolidated?
+    # clusterAggTogether: boolean, should aggregate plots p9/p11 and p10/p12 be consolidated?
+    # makeSummaryPlots: boolean, should the summary plots be made?
+    # makeTotalvsPerCapitaPlots: boolean, should the total and per capita plots be produced?
+    # makeRecentvsTotalPlots: boolean, should the recent vs. total plots be created?
+    # makeTotalvsElementPlots: boolean, should the total vs. element plots be created?
+    # showMap: boolean, whether to create a map colored by cluster (will show segment counts otherwise)
+    # orderCluster: if FALSE, ignore; if TRUE, order by "dpm"; if anything else, order by orderCluster
+    # ...: any additional arguments passed from a calling function
+    #      most common would be orderCluster=TRUE, a request for the clusters to be ordered by disease burden
+    
+    # Attach the clusters to the state population data
+    dfState <- as.data.frame(clusters) %>%
+        set_names("cluster") %>%
+        rownames_to_column("state") %>%
+        inner_join(dfState, by="state") %>%
+        mutate(cluster=factor(cluster))
+    
+    # Plot the rolling 7-day mean dialy disease burden by cluster
+    dfPlot <- dfState %>%
+        inner_join(dfBurden, by="state") %>%
+        tibble::as_tibble()
+    
+    # Reorder the clusters if requested
+    if (!isFALSE(orderCluster)) {
+        if (isTRUE(orderCluster)) burdenParam <- "dpm" else burdenParam <- orderCluster
+        dfPlot <- changeOrderLabel(dfPlot, grpVars="state", burdenVar=burdenParam)
+    }
+    
+    # Call the helper function to make the overall summary statistics
+    if (makeSummaryPlots) {
+        helperClusterSummaryPlots(dfState=dfState, 
+                                  dfPlot=dfPlot, 
+                                  showMap=showMap, 
+                                  clusterPlotsTogether=clusterPlotsTogether, 
+                                  mapLevel=if(isCounty) "counties" else "states"
+        )
+    }
+    
+    # These are primarily useful for state-level data and default to FALSE when isCounty is TRUE
+    if (makeTotalvsPerCapitaPlots) {
+        helperCallTotalPerCapita(dfPlot=dfPlot, thruLabel=thruLabel)
+    }
+    
+    # Call the helper function to make recent vs. total plots
+    if (makeRecentvsTotalPlots) {
+        helperCallRecentvsTotal(dfPlot=dfPlot, 
+                                thruLabel=thruLabel, 
+                                labelPoints=!isCounty, 
+                                recentTotalTogether = recentTotalTogether
+        )
+    }
+    
+    # Call the total vs. elements helper function
+    if (makeTotalvsElementPlots) {
+        helperCallTotalvsElements(dfPlot=dfPlot, 
+                                  aggAndTotal=!isCounty, 
+                                  clusterAggTogether=clusterPlotsTogether
+        )
+    }
+    
+    # Return the plotting data frame
+    dfPlot
+    
+}
+
+
+
+# Create the cluster-state data
+helperMakeClusterStateData <- function(dfPlot, 
+                                       dfPop=usmap::countypop,
+                                       dfBurden=countyDailyPerCapita, 
+                                       orderCluster=FALSE
+                                       ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPlot: the raw plotting data (which can have factors already reordered)
+    # dfPop: source for full county data with population
+    # dfBurden: source for disease burden by geography
+    # orderCluster: if FALSE, ignore; if TRUE, order by "dpm"; if anything else, order by orderCluster
+    
+    # Merge in the counties that were previously excluded from segmentation
+    df <- dfPlot %>%
+        filter(date==max(date)) %>%
+        select(fipsCounty=state, cluster) %>%
+        mutate(fipsCounty=stringr::str_pad(fipsCounty, width=5, side="left", pad="0")) %>%
+        right_join(select(dfPop, fipsCounty=fips, state=abbr, countyName=county, pop=pop_2015)) %>%
+        mutate(cluster=factor(ifelse(is.na(cluster), 999, as.character(cluster))))
+    
+    # Merge in the disease data
+    df <- dfBurden %>%
+        mutate(fipsCounty=stringr::str_pad(state, width=5, side="left", pad="0")) %>%
+        select(-state, -population) %>%
+        right_join(df)
+
+    # Reorder the clusters if requested
+    if (!isFALSE(orderCluster)) {
+        if (isTRUE(orderCluster)) burdenParam <- "dpm" else burdenParam <- orderCluster
+        df <- changeOrderLabel(df, grpVars="fipsCounty", burdenVar=burdenParam)
+    }
+    
+    # Return the relevant frame
+    df
+    
+}
+
+
+```
+  
+The updated segments can be run using 3x3, and with a seed set:  
+```{r}
+
+# Create 3x3 clusters for hml and shape
+popLoc <- "./RInputFiles/Coronavirus/covid_county_population_usafacts.csv"
+cty_20201015_rule9_caseshvy <- readRunUSAFacts(maxDate="2020-10-13", 
+                                               popLoc=popLoc, 
+                                               caseLoc=caseLoc, 
+                                               deathLoc=deathLoc, 
+                                               dlCaseDeath=!(file.exists(caseLoc) & file.exists(deathLoc)),
+                                               oldFile=readFromRDS("burden_20200903_new"), 
+                                               existingStateClusters=test_hier6_201014$useClusters,
+                                               createClusters=TRUE, 
+                                               hierarchical=NA,
+                                               minShape=4,
+                                               maxShape=9,
+                                               ratioDeathvsCase = 0.001,
+                                               ratioTotalvsShape = 0.25,
+                                               minDeath=100,
+                                               minCase=5000, 
+                                               hmlSegs=3, 
+                                               eslSegs=3, 
+                                               seed=2010221422, 
+                                               orderCluster="cpm"
+                                               )
+
+```
+  
+The shapes of the segments are intriguing, with generally:  
+  
+1.  Early (Apr-Jun) disease in a classic pandemic curve  
+2.  Middle (Jul-Sep) disease in a classic pandemic curve  
+3.  Late disease that does not yet show the downslope of the pandemic curve  
+  
+Additionally, the "lower burden" version of each of the shapes shows more signs of rebounding than the "higher burdens" of the same shape.  Further exploration is a next step.
   
