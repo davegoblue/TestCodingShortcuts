@@ -1939,7 +1939,7 @@ examineCasevDeathClusters <- function(caseList,
                                    "\nDeaths: ", round(deaths/1000, 1), " (", round(100*deaths/cases, 1), "%)"
                                    )
                       ), 
-                  size=3.5
+                  size=2.5
                   ) + 
         scale_fill_continuous("CFR", low="white", high="orange") + 
         labs(x="County cluster driven by cases", 
@@ -2533,3 +2533,118 @@ The shapes of the segments are intriguing, with generally:
   
 Additionally, the "lower burden" version of each of the shapes shows more signs of rebounding than the "higher burdens" of the same shape.  Further exploration is a next step.
   
+The overlap of death clusters and case cluster can again be explored:  
+```{r}
+
+# Run comparisons for cases and deaths
+temp_caseDeath_003 <- examineCasevDeathClusters(caseList=cty_20201015_rule9_caseshvy, 
+                                                deathList=cty_20201015_rule6, 
+                                                ctyMin=5, 
+                                                popMin=500000
+                                                )
+
+```
+  
+Overlaps are as expected, with good diferentiation of death volumes and shapes by death cluster and good differentiation of case volumes and shapes by case cluster.  And, the overlaps between the death cluster and case cluster are closely tied to the case fatality rate (CFR), at least in overlap buckets where there is "sufficient" data volume.
+
+Suppose that the objective is to look for counties that have had significant increases in case volumes after September (the final data used for the shape portion of the segmentation):  
+```{r}
+
+octCases <- cty_20201015_rule9_caseshvy$clusterStateData %>%
+    filter(!is.na(date)) %>%
+    mutate(dateType = factor(ifelse(date >= "2020-10-01", "Oct", "Jan-Sep"), levels=c("Jan-Sep", "Oct"))) %>%
+    group_by(fipsCounty, cluster, dateType) %>%
+    summarize(cpm=sum(cpm), dpm=sum(dpm), pop=mean(pop))
+
+octCases %>%
+    pivot_wider(c(fipsCounty, cluster, pop), names_from="dateType", values_from=cpm) %>%
+    ggplot(aes(x=`Jan-Sep`/1000, y=Oct/1000)) + 
+    geom_point(aes(color=cluster, size=pop), alpha=0.25) + 
+    geom_smooth(aes(group=cluster, color=cluster), se=FALSE, method="lm") + 
+    labs(x="Cases per million (Jan-Sep), in thousands", 
+         y="Cases per million (Oct), in thousands", 
+         title="Cases per million by cluster and time period (000s)"
+         ) +
+    facet_wrap(~cluster, scales="free") + 
+    xlim(c(0, NA)) + 
+    ylim(c(0, NA))
+
+octCases %>%
+    pivot_wider(c(fipsCounty, cluster, pop), names_from="dateType", values_from=cpm) %>%
+    filter(cluster != 999) %>%
+    ggplot(aes(x=`Jan-Sep`/1000, y=Oct/1000)) + 
+    geom_point(aes(color=cluster, size=pop), alpha=0.25) + 
+    geom_smooth(aes(group=cluster, color=cluster), se=FALSE, method="lm") + 
+    labs(x="Cases per million (Jan-Sep), in thousands", 
+         y="Cases per million (Oct), in thousands", 
+         title="Cases per million by cluster and time period (000s)", 
+         subtitle="Excludes counties < 25k population"
+         ) +
+    facet_wrap(~cluster)
+
+octCases %>%
+    pivot_wider(c(fipsCounty, cluster, pop), names_from="dateType", values_from=cpm) %>%
+    filter(cluster != 999) %>%
+    ggplot(aes(x=`Jan-Sep`/1000, y=Oct/1000)) + 
+    geom_point(aes(color=cluster, size=pop), alpha=0.25) + 
+    geom_smooth(aes(group=cluster, color=cluster, weight=pop), se=FALSE, method="lm") +
+    geom_smooth(aes(weight=pop), se=FALSE, method="lm", color="black", lty=2) + 
+    labs(x="Cases per million (Jan-Sep), in thousands", 
+         y="Cases per million (Oct), in thousands", 
+         title="Cases per million by cluster and time period (000s)", 
+         subtitle="Excludes counties < 25k population", 
+         caption="Smooths driven by lm, with points weighted by population"
+         )
+
+```
+  
+In general, higher impacted elements in Jan-Sep within a given cluster tend to be higher impacted in October also.  Suppose that counties with at least 10,000 cases per million through mid-October are of interest:  
+```{r}
+
+octCases %>%
+    filter(dateType=="Oct", cpm >= 10000) %>%
+    group_by(cluster) %>%
+    summarize(n=n(), cpm=sum(cpm*pop)/sum(pop), dpm=sum(dpm*pop)/sum(pop), mean_pop=mean(pop))
+
+```
+  
+By and large, counties with large "spikes" in early October tend to be the small counties where it is easy to get a spike with just a few cases.  There are a handful of larger counties that also meet this threshold.
+
+One common threshold used is 150 cases per million.  Since the October data extends through October 13, this would be roughly 2000 cases per million.  Suppose that a "spike" is defined as a pace that is at least double this threshold:  
+```{r}
+
+octCases %>%
+    filter(dateType=="Oct") %>%
+    group_by(cluster) %>%
+    summarize(nTotal=n(), n_gt4k=sum(cpm>=4000), pct_gt4k=n_gt4k/nTotal,
+              cpm_gt4k=sum(cpm*pop*(cpm>=4000))/sum(pop*(cpm>=4000)), 
+              dpm_gt4k=sum(dpm*pop*(cpm>=4000))/sum(pop*(cpm>=4000)), 
+              mean_pop_total=mean(pop), mean_pop_gt4k=sum(pop*(cpm>=4000))/sum(cpm>=4000)
+              ) %>%
+    arrange(-pct_gt4k)
+
+```
+  
+There is significant variation in the likelihood of a county experiencing ~300 cases per million per day during early October:  
+  
+* A majority of the counties experiencing heavy and late disease  
+* Roughly half of the counties experiencing moderate and late case burden  
+* Roughly a quarter of small counties (<25k population) and counties that experienced early and heavy burden  
+* Roughly 15% of counties experience light and late case burden and counties that experienced heavy and mid-period case burden  
+* Few counties that experienced mild-moderate burden either early or mod-term  
+  
+In general, population for counties experiencing high disease burden in early October is less than average population for counties in the cluster.  
+  
+These counties can be plotted on the US map:  
+```{r}
+
+octCases %>%
+    filter(dateType=="Oct", cpm >= 4000) %>%
+    select(fips=fipsCounty, cluster) %>%
+    usmap::plot_usmap(regions="counties", data=., values="cluster") + 
+    scale_fill_discrete("Cluster", na.value="lightgrey") + 
+    labs(title="Counties averaging 300+ cases per million per day (October 1-13)")
+
+```
+  
+There is a strong geographic clustering of the high-case counties which is suggestive of prevalence increase rather than spurious spikes based solely on small denominators.  Next steps are to refresh that data and see how burden by segment has evolved through mid-late October.
