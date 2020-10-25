@@ -2141,4 +2141,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v002 further explores county-level segmentation using cases  
 * Coronavirus_Statistics_v002 updates clustering functions for additional control options  
 * Coronavirus_Statistics_v002 explores counties with heavy disease in early October  
+* Coronavirus_Statistics_v002 includes most recent data  
   
