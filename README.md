@@ -2143,3 +2143,8 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_v002 explores counties with heavy disease in early October  
 * Coronavirus_Statistics_v002 includes most recent data  
   
+### Expansions week of 26-OCT-2020  
+* Coronavirus_Statistics_Functions_Shared_v003 contains functions shared across routines  
+* Coronavirus_Statistics_Functions_CTP_v003 contains functions for state-level data from COVID Tracking Project  
+* Coronavirus_Statistics_CTP_v003 created as a stand-alone for running state-level analysis of COVID Tracking Project data  
+  
