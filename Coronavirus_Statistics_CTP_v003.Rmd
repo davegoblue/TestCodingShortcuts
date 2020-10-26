@@ -1,0 +1,159 @@
+---
+title: "Coronavirus US - COVID Tracking Project"
+author: "davegoblue"
+date: "10/25/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+  
+## Background
+This file is designed as a subset of the code contained in Coronavirus_Statistics_v002.Rmd.  This file includes the latest code for analyzing data from [The COVID Tracking Project](https://covidtracking.com/).  The COVID Tracking Project contains data on positive tests, hospitalizations, deaths, and the like, for coronavirus in the US.  Downloaded data are unique by state and date.
+
+Companion code for functions is in Coronavirus_Statistics_CTP_v003.R and Coronavirus_Statistics_Shared_v003.R.  The code leverages tidyverse and a variable mapping file throughout:  
+```{r}
+
+# All functions assume that tidyverse and its components are loaded and available
+# Other functions are declared in the sourcing files or use library::function()
+library(tidyverse)
+
+# If the same function is in both files, use the version from the more specific source
+source("./Coronavirus_Statistics_Functions_Shared_v003.R")
+source("./Coronavirus_Statistics_Functions_CTP_v003.R")
+
+# Create a variable mapping file
+varMapper <- c("cases"="Cases", 
+               "newCases"="Increase in cases, most recent 30 days",
+               "casesroll7"="Rolling 7-day mean cases", 
+               "deaths"="Deaths", 
+               "newDeaths"="Increase in deaths, most recent 30 days",
+               "deathsroll7"="Rolling 7-day mean deaths", 
+               "cpm"="Cases per million",
+               "cpm7"="Cases per day (7-day rolling mean) per million", 
+               "newcpm"="Increase in cases, most recent 30 days, per million",
+               "dpm"="Deaths per million", 
+               "dpm7"="Deaths per day (7-day rolling mean) per million", 
+               "newdpm"="Increase in deaths, most recent 30 days, per million", 
+               "hpm7"="Currently Hospitalized per million (7-day rolling mean)", 
+               "tpm"="Tests per million", 
+               "tpm7"="Tests per million per day (7-day rolling mean)"
+               )
+
+```
+  
+## Running Code  
+The main function is readRunCOVIDTrackingProject(), which performs multiple tasks:  
+  
+STEP 1: Extracts a file of population by state (by default uses 2015 population from usmap::statepop)  
+STEP 2a^: Downloads the latest data from COVID Tracking Project if requested  
+STEP 2b^: Reads in data from a specified local file (may have just been downloaded in step 2a), and checks control total trends against a previous version of the file  
+STEP 3^: Processed the loaded data file for keeping proper variables, dropping non-valid states, etc.  
+STEP 4^: Adds per-capita metrics for cases, deaths, tests, and hospitalizations  
+STEP 5: Adds existing clusters by state if passed as an argument to useClusters=, otherwise creates new segments based on user-defined parameters  
+STEP 6^^: Creates assessment plots for the state-level clusters  
+STEP 7^^: Creates consolidated plots of cases, hospitalizations, deaths, and tests  
+STEP 8^^: Optionally, creates plots of cumulative burden by segments and by state  
+STEP 9: Returns a list of key data frames, modeling objects, named cluster vectors, etc.  
+  
+^ The user can instead specify a previously processed file and skip steps 2a, 2b, 3, and 4.  The previously processed file needs to be formatted and filtered such that it can be used "as is"  
+^^ The user can skip the segment-level assessments by setting skipAssessmentPlots=TRUE  
+  
+Broadly, there are several use cases for the function:  
+  
+1. Download new data, run new segments, and assess the segments (all steps)  
+2. Download new data, use existing segments, and assess the segments (steps 1-4 and 6-9)  
+3. Use previously processed data, explore and assess various segmenting methodologies (steps 1 and 5-9)  
+4. Create a list from existing state burden and cluster data for another purpose (steps 1, 5, and 9)  
+  
+An example for each use case is created, with the caveat that data are not repeatedly downloaded (process is cached) to avoid unnecessary calls to the COVID Tracking Project server.
+
+Further, files can be saved in RDS format so they can be loaded and used later.
+
+#### _Use Case 1: Download new data, create segments, assess performance_  
+The full process downloads data, creates segments, and assesses performance.  Hierarchical segmentation with a heavy focus on deaths vs. cases tends to work well for creating state-level clusters:  
+```{r cache=TRUE}
+
+# Create segments and download data from COVID Tracking Project
+# Create 6 segments but place Vermont (a very small state and dendrogram outlier) in the New Hampshire segment
+locDownload <- "./RInputFiles/Coronavirus/CV_downloaded_201025.csv"
+test_hier5_201025 <- readRunCOVIDTrackingProject(thruLabel="Oct 24, 2020", 
+                                                 downloadTo=if(file.exists(locDownload)) NULL else locDownload,
+                                                 readFrom=locDownload, 
+                                                 compareFile=readFromRDS("test_hier5_201001")$dfRaw,
+                                                 hierarchical=TRUE, 
+                                                 reAssignState=list("VT"="NH"), 
+                                                 kCut=6, 
+                                                 minShape=3, 
+                                                 ratioDeathvsCase = 5, 
+                                                 ratioTotalvsShape = 0.5, 
+                                                 minDeath=100, 
+                                                 minCase=10000
+                                                 )
+
+```
+  
+#### _Use Case 2: Download new data, apply existing segments, assess performance_  
+A modified process gathers new data and assesses existing state-level clusters:  
+```{r cache=TRUE}
+
+# Use existing segments with updated data
+locDownload <- "./RInputFiles/Coronavirus/CV_downloaded_201025.csv"
+test_old_201025 <- readRunCOVIDTrackingProject(thruLabel="Oct 24, 2020", 
+                                               downloadTo=if (file.exists(locDownload)) NULL else locDownload,
+                                               readFrom=locDownload, 
+                                               compareFile=readFromRDS("test_hier5_201001")$dfRaw,
+                                               useClusters=readFromRDS("test_hier5_201001")$useClusters
+                                               )
+
+```
+  
+#### _Use Case 3: Use existing data and explore clustering approach_  
+A different clustering approach can be assessed using existing data.  A common example would be exploring kmeans clustering with the previously processed state-level data:  
+```{r cache=TRUE}
+
+# Test function for k-means clustering using the per capita data file previously created
+test_km5_201025 <- readRunCOVIDTrackingProject(thruLabel="Oct 24, 2020", 
+                                               dfPerCapita=test_hier6_201025$dfPerCapita,
+                                               hierarchical=FALSE,
+                                               minShape=3, 
+                                               ratioDeathvsCase = 5, 
+                                               ratioTotalvsShape = 0.5, 
+                                               minDeath=100, 
+                                               minCase=10000, 
+                                               nCenters=5,
+                                               testCenters=1:10, 
+                                               iter.max=20,
+                                               nstart=10, 
+                                               seed=2008261400
+                                               )
+
+```
+  
+The silhouette plot is suggestive that k-means may not be an ideal approach, or at least that there is no obviously optimal number of segments.
+  
+#### _Use Case 4: Create list with burden and cluster data for a downstream purpose_  
+```{r cache=TRUE}
+
+combine_201025 <- readRunCOVIDTrackingProject(thruLabel="Oct 24, 2020", 
+                                              dfPerCapita=test_hier6_201025$dfPerCapita,
+                                              useClusters=readFromRDS("test_hier5_201001")$useClusters, 
+                                              skipAssessmentPlots=TRUE
+                                              )
+str(combine_201025)
+
+```
+  
+The list is properly formatted (though lacking the plotting and cumulative components) such that it could be used by other functions that rely on the data being available in this format.
+  
+#### _Saving key files as RDS_  
+```{r cache=TRUE}
+
+saveToRDS(test_hier5_201025, ovrWriteError=FALSE)
+saveToRDS(test_old_201025, ovrWriteError=FALSE)
+saveToRDS(test_km5_201025, ovrWriteError=FALSE)
+saveToRDS(combine_201025, ovrWriteError=FALSE)
+
+```
+
