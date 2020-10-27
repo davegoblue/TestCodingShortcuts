@@ -1,0 +1,128 @@
+---
+title: "Coronavirus US - USA Facts"
+author: "davegoblue"
+date: "10/25/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+  
+## Background
+This is a subset of the code contained in Coronavirus_Statistics_v002.Rmd.  This file includes the latest code for analyzing data from [USA Facts](https://usafacts.org/visualizations/coronavirus-covid-19-spread-map/).  USA Facts maintains data on cases and deaths by county for coronavirus in the US.  Downloaded data are unique by county with date as a column and a separate file for each of cases, deaths, and population..
+
+Functions are available in Coronavirus_Statistics_Functions_USAF_v003.R and Coronavirus_Statistics_Functions_Shared_v003.R.  The code leverages tidyverse and a variable mapping file throughout:  
+```{r}
+
+# All functions assume that tidyverse and its components are loaded and available
+# Other functions are declared in the sourcing files or use library::function()
+library(tidyverse)
+
+# If the same function is in both files, use the version from the more specific source
+source("./Coronavirus_Statistics_Functions_Shared_v003.R")
+source("./Coronavirus_Statistics_Functions_USAF_v003.R")
+
+# Create a variable mapping file
+varMapper <- c("cases"="Cases", 
+               "newCases"="Increase in cases, most recent 30 days",
+               "casesroll7"="Rolling 7-day mean cases", 
+               "deaths"="Deaths", 
+               "newDeaths"="Increase in deaths, most recent 30 days",
+               "deathsroll7"="Rolling 7-day mean deaths", 
+               "cpm"="Cases per million",
+               "cpm7"="Cases per day (7-day rolling mean) per million", 
+               "newcpm"="Increase in cases, most recent 30 days, per million",
+               "dpm"="Deaths per million", 
+               "dpm7"="Deaths per day (7-day rolling mean) per million", 
+               "newdpm"="Increase in deaths, most recent 30 days, per million", 
+               "hpm7"="Currently Hospitalized per million (7-day rolling mean)", 
+               "tpm"="Tests per million", 
+               "tpm7"="Tests per million per day (7-day rolling mean)"
+               )
+
+```
+  
+## Running Code  
+The main function is readRunUSAFacts(), which performs multiple tasks:  
+  
+STEP 0: Optionally, downloads the latest data files from USA Facts  
+STEP 1: Reads a population file by county that has been downloaded from USA Facts to local  
+STEP 2: Reads case and death data, integrates with population for per-capita, and creates an integrated file  
+STEP 3: Filter data based on population and/or burden thresholds, create segments if requested, and return an integrated file  
+STEP 4a: Extract the relevant clustering vector (created in step 3 or passed as an argument)  
+STEP 4b: Create integrated dataset with clusters and display relevant plots
+STEP 5: Add back counties that fell below burden or population thresholds and assign as cluster 999  
+STEP 6: Returns a list of key data frames, modeling objects, named cluster vectors, etc.  
+  
+Broadly, there are two use cases for the function:  
+  
+1. Download new data, create new segments, and assess the segments  
+2. Download new data, use existing segments, and assess the segments  
+  
+An example for each use case is created, with the caveat that data are not repeatedly downloaded (process is cached) to avoid unnecessary calls to the USA Facts server.
+
+Further, files can be saved in RDS format so they can be loaded and used later.
+
+#### _Use Case 1: Download new data, create segments, assess performance_  
+The full process downloads data, creates segments, and assesses performance.  Rules-based segmentation that integrated total burden and shape (percent by month) tends to work well for creating county-level clusters:  
+```{r cache=TRUE}
+
+# Locations for the population, case, and death file
+popLoc <- "./RInputFiles/Coronavirus/covid_county_population_usafacts.csv"
+caseLoc <- "./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20201026.csv"
+deathLoc <- "./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20201026.csv"
+
+# Create 3x3 clusters for burden x shape, with focus on cases rather than deaths
+cty_20201026 <- readRunUSAFacts(maxDate="2020-10-24", 
+                                popLoc=popLoc, 
+                                caseLoc=caseLoc, 
+                                deathLoc=deathLoc, 
+                                dlCaseDeath=!(file.exists(caseLoc) & file.exists(deathLoc)),
+                                oldFile=readFromRDS("burden_20200903_new"), 
+                                existingStateClusters=readFromRDS("test_hier5_201025")$useClusters,
+                                createClusters=TRUE, 
+                                hierarchical=NA,
+                                minShape=4,
+                                maxShape=9,
+                                ratioDeathvsCase = 0.001,
+                                ratioTotalvsShape = 0.25,
+                                minDeath=100,
+                                minCase=5000, 
+                                hmlSegs=3, 
+                                eslSegs=3, 
+                                seed=2010261358, 
+                                orderCluster="cpm"
+                                )
+
+```
+  
+#### _Use Case 2: Download new data, apply existing segments, assess performance_  
+A modified process gathers new data and assesses existing state-level clusters:  
+```{r cache=TRUE}
+
+# Locations for the population, case, and death file
+popLoc <- "./RInputFiles/Coronavirus/covid_county_population_usafacts.csv"
+caseLoc <- "./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20201026.csv"
+deathLoc <- "./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20201026.csv"
+
+# Run old segments against new data
+cty_old_20201026 <- readRunUSAFacts(maxDate="2020-10-24", 
+                                    popLoc=popLoc, 
+                                    caseLoc=caseLoc, 
+                                    deathLoc=deathLoc, 
+                                    dlCaseDeath=!(file.exists(caseLoc) & file.exists(deathLoc)),
+                                    oldFile=readFromRDS("burden_20200903_new"), 
+                                    existingCountyClusters=readFromRDS("clustVec_county_20200903_new")
+                                    )
+
+```
+  
+#### _Saving key files as RDS_  
+```{r cache=TRUE}
+
+saveToRDS(cty_20201026, ovrWriteError=FALSE)
+saveToRDS(cty_old_20201026, ovrWriteError=FALSE)
+
+```
+
