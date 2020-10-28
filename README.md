@@ -2149,4 +2149,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v003 created as a stand-alone for running state-level analysis of COVID Tracking Project data  
 * Coronavirus_Statistics_Functions_USAF_v003 contains functions for county-level data from USA Facts  
 * Coronavirus_Statistics_USAF_v003 created as a stand-alone for running county-level analysis of USA Facts data  
+* Coronavirus_Statistics_Functions_CDC_v003 contains functions for all-cause deaths data from CDC  
+* Coronavirus_Statistics_CDC_v003 created as a stand-alone for running all-cause death analysis using CDC data  
   
