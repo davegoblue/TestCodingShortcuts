@@ -1,0 +1,363 @@
+---
+title: "State Coronavirus Data"
+author: "davegoblue"
+date: "10/28/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+This file is designed to analyze coronavirus data from a single state using three data sources:  
+  
+* [The COVID Tracking Project](https://covidtracking.com/) contains state-level data for cases, deaths, tests, and hospitalizations  
+* [USA Facts](https://usafacts.org/visualizations/coronavirus-covid-19-spread-map/) contains county-level data for cases, deaths, and population  
+* [CDC Weekly Deaths by Jurisdiction](https://catalog.data.gov/dataset/weekly-counts-of-deaths-by-jurisdiction-and-age-group) contains state-level data for total deaths by age cohort  
+  
+Data from each of these sources has been processed using code available in:  
+  
+* Coronavirus_Statistics_CTP_v003  
+* Coronavirus_Statistics_USAF_v003  
+* Coronavirus_Statistics_CDC_v003  
+  
+The goal of this file is to explore the measures for a single state.  Data are generally available through late October (cases, deaths, tests, hospitalizations) and late August (all-cause deaths).
+  
+## Running Analyses  
+The process uses tidyverse throughout, and otherwise calls functions using library::function().  Further, a variable mapping file is used for readable plot axis labels, and shared functions are made available:  
+```{r}
+
+library(tidyverse)
+
+source("./Coronavirus_Statistics_Functions_Shared_v003.R")
+
+# Create a variable mapping file
+varMapper <- c("cases"="Cases", 
+               "newCases"="Increase in cases, most recent 30 days",
+               "casesroll7"="Rolling 7-day mean cases", 
+               "deaths"="Deaths", 
+               "newDeaths"="Increase in deaths, most recent 30 days",
+               "deathsroll7"="Rolling 7-day mean deaths", 
+               "cpm"="Cases per million",
+               "cpm7"="Cases per day (7-day rolling mean) per million", 
+               "newcpm"="Increase in cases, most recent 30 days, per million",
+               "dpm"="Deaths per million", 
+               "dpm7"="Deaths per day (7-day rolling mean) per million", 
+               "newdpm"="Increase in deaths, most recent 30 days, per million", 
+               "hpm7"="Currently Hospitalized per million (7-day rolling mean)", 
+               "tpm"="Tests per million", 
+               "tpm7"="Tests per million per day (7-day rolling mean)", 
+               "cdcExcess"="Excess all-cause (CDC)", 
+               "ctp_death7"="COVID Tracking Project", 
+               "usaf_death7"="USA Facts"
+               )
+
+```
+
+Data are loaded from files previously processed:  
+```{r}
+
+ctpList <- readFromRDS("test_hier5_201025")
+usafData <- readFromRDS("cty_20201026")$clusterStateData
+cdcList <- readFromRDS("cdcList_20201027")
+
+```
+  
+A function is written to examine the alignment of death data across the data sources for a single state:  
+```{r}
+
+combineDeathData <- function(ctp, 
+                             usaf, 
+                             cdc, 
+                             keyState, 
+                             curYear=2020,
+                             minDate=as.Date(paste0(curYear, "-01-01")), 
+                             perMillion=FALSE,
+                             glimpseIntermediate=FALSE, 
+                             facetFreeY=!perMillion, 
+                             returnData=TRUE
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # ctp: the list with COVID Tracking Project data
+    # usaf: the data frame with USA Facts data
+    # cdc: the list with CDC data
+    # keyState: the state(s) to be explored
+    # curYear: current year
+    # minDate: the minimum date to use in the CDC data
+    # perMillion: boolean, should data be show on a per-million-people basis?
+    # glimpseIntermediate: boolean, should glimpses of frames be provided as they are built?
+    # facetFreeY: boolean, should facets be created with free_y scales (only relevant if 2+ keyStates)
+    # returnData: boolean, should the data frame be returned?
+    
+    # STEP 0a: Extract relevant elements from lists (use frame as-is if directly passed)
+    if ("list" %in% class(ctp)) ctp <- ctp[["consolidatedPlotData"]]
+    if ("list" %in% class(usaf)) usaf <- usaf[["clusterStateData"]]
+    if ("list" %in% class(cdc)) cdc <- cdc[["stateAgg"]]
+    
+    # STEP 0b: Create a mapping file of date to epiWeek
+    epiMap <- tibble::tibble(date=seq.Date(from=minDate, to=as.Date(paste0(curYear, "-12-31")), by="1 day"), 
+                             week=lubridate::epiweek(date)
+                             )
+    
+    # STEP 1: Filter to only relevant data
+    # STEP 1a: COVID Tracking Project
+    ctp <- ctp %>%
+        ungroup() %>%
+        filter(name=="deaths", state %in% keyState)
+    if(glimpseIntermediate) glimpse(ctp)
+    # STEP 1b: USA Facts
+    usaf <- usaf %>%
+        ungroup() %>%
+        filter(state %in% keyState)
+    if(glimpseIntermediate) glimpse(usaf)
+    # STEP 1c: CDC
+    cdc <- cdc %>%
+        ungroup() %>%
+        filter(year==curYear, state %in% keyState)
+    if(glimpseIntermediate) glimpse(cdc)
+    
+    # STEP 2a: Sum the county-level data so that it is state-level data
+    usafState <- usaf %>%
+        group_by(state, date) %>%
+        summarize(deaths=sum(deaths), dpm7=sum(dpm7*pop)/sum(pop), pop=sum(pop)) %>%
+        ungroup()
+    # STEP 2b: Convert the CDC data to an estimated daily total (split the weekly total evenly)
+    cdcDaily <- cdc %>%
+        left_join(epiMap, by=c("week")) %>%
+        select(state, week, date, cdcDeaths=deaths, cdcExcess=delta) %>%
+        mutate(cdcDeaths=cdcDeaths/7, cdcExcess=cdcExcess/7)
+    
+    # STEP 3: Create a state death-level database by date
+    dailyDeath <- select(ctp, state, date, ctpDeaths=value, ctp_dpm7=vpm7, ctp_pop=pop) %>%
+        full_join(select(usafState, state, date, usafDeaths=deaths, usaf_dpm7=dpm7, usaf_pop=pop), 
+                  by=c("state", "date")
+                  ) %>%
+        full_join(cdcDaily, by=c("state", "date")) %>%
+        arrange(state, date) %>%
+        mutate(ctp_death7=ctp_dpm7*ctp_pop/1000000, usaf_death7=usaf_dpm7*usaf_pop/1000000)
+    if(glimpseIntermediate) glimpse(dailyDeath)
+
+    # STEP 4a: Assign a population by state
+    statePop <- dailyDeath %>%
+        group_by(state) %>%
+        summarize(pop=max(usaf_pop, ctp_pop, na.rm=TRUE))
+    
+    # STEP 4b: Plot the deaths data
+    p1 <- dailyDeath %>%
+        select(state, date, ctp_death7, usaf_death7, cdcExcess) %>%
+        pivot_longer(-c(state, date), names_to="source", values_to="deaths") %>%
+        filter(!is.na(deaths)) %>%
+        left_join(statePop, by="state") %>%
+        ggplot(aes(x=date, y=deaths*if(perMillion) (1000000/pop) else 1)) + 
+        geom_line(aes(group=source, color=varMapper[source])) + 
+        labs(x="", 
+             y=paste0("Deaths", if(perMillion) " per million" else ""), 
+             title=paste0(curYear, " deaths per day in ", paste0(keyState, collapse=", ")),
+             subtitle=paste0("Rolling 7-day average", if(perMillion) " per million people" else ""),
+             caption="CDC estimated excess all-cause deaths, weekly total divided by 7 to estimate daily total"
+             ) + 
+        scale_x_date(date_breaks="1 month", date_labels="%b") + 
+        scale_color_discrete("Data source") + 
+        theme(legend.position="bottom") + 
+        geom_hline(yintercept=0, lty=2)
+    if (length(keyState) > 1) p1 <- p1 + facet_wrap(~state, scales=if(facetFreeY) "free_y" else "fixed")
+    print(p1)
+    
+    # STEP 5: Return the daily death file
+    if(returnData) dailyDeath
+    
+}
+
+# Example function
+combineDeathData(ctp=ctpList, 
+                 usaf=usafData, 
+                 cdc=cdcList, 
+                 keyState=c("NY", "FL", "MI", "WI"), 
+                 perMillion=FALSE, 
+                 returnData=FALSE
+                 )
+
+combineDeathData(ctp=ctpList, 
+                 usaf=usafData, 
+                 cdc=cdcList, 
+                 keyState=c("NY", "FL", "MI", "WI"), 
+                 perMillion=TRUE, 
+                 returnData=FALSE
+                 )
+
+```
+
+A different approach would be to combine all of the data, then to subset as needed for producing a given plot.  Broadly, the data elements include:  
+  
+* COVID Tracking Project (state-cluster-date-name-value-pop-vpm-vpm7) where name can be any of 'cases', 'deaths', 'hosp', or 'tests'  
+* USA Facts (state-fipsCounty-date-cpm-dpm-cpm7-dpm7-cases-deaths-pop) where the data have not yet been pivoted to longer format nor summed to state  
+* CDC (state-year-week-deaths-delta) where the date have not yet been pivoted to longer format nor summed to state  
+  
+Functions are written to create a main state-level database in the following format:  
+  
+* State  
+* Date (will need to convert CDC from week to estimated date)  
+* Population (potentially helpful metric for conversions)  
+* State Cluster (potentially helpful metric for reporting)  
+* Metric (combine source and metric)  
+* Value
+* Value Rolling 7  
+* Value per Million  
+* Value per Million rolling 7  
+  
+Functions and example code include:  
+```{r}
+
+# Function to convert a COVID Tracking Project file for further processing
+prepCTPData <- function(ctp) {
+    
+    # FUNCTION AGRUMENTS:
+    # ctp: a properly formatted list or data frame containing processed COVID Tracking Project data
+
+    # Pull the relevant data frame if a list has been passed    
+    if ("list" %in% class(ctp)) ctp <- ctp[["consolidatedPlotData"]]
+
+    # Ungroup the data, delete the state named 'cluster', and Create a value7 metric
+    ctp <- ctp %>%
+        ungroup() %>%
+        filter(state != "cluster") %>%
+        mutate(value7=ifelse(is.na(vpm7), NA, vpm7*pop/1000000))
+    
+    # Split state-cluster-population as a separate file unique by state
+    ctpDemo <- ctp %>%
+        group_by(state, cluster) %>%
+        summarize(pop=max(pop, na.rm=TRUE)) %>%
+        ungroup()
+    
+    # Create a final data file with the key elements
+    ctpData <- ctp %>%
+        rename(metric=name) %>%
+        mutate(source="CTP", name=paste0(source, "_", metric)) %>%
+        select(state, date, metric, source, name, value, value7, vpm, vpm7)
+    
+    # Return the key data frames
+    list(ctpDemo=ctpDemo, ctpData=ctpData)
+    
+}
+
+ctpPrepped <- prepCTPData(ctpList)
+
+
+
+# Function to convert a USA Facts file for further processing
+prepUSAFData <- function(usaf) {
+    
+    # FUNCTION AGRUMENTS:
+    # usaf: a properly formatted list or data frame containing processed USA Facts data
+
+    # Pull the relevant data frame if a list has been passed    
+    if ("list" %in% class(usaf)) usaf <- usaf[["clusterStateData"]]
+
+    # Sum the data to state, keeping only state-date-pop-cases-deaths, then pivot longer
+    usaf <- usaf %>%
+        group_by(state, date) %>%
+        summarize(cases=sum(cases), deaths=sum(deaths), pop=sum(pop)) %>%
+        ungroup() %>%
+        pivot_longer(-c(state, date, pop), names_to="metric", values_to="value")
+    
+    # Create the rolling-7 for value, having grouped by state-pop-metric and sorted by date
+    # Add the per million component
+    usaf <- usaf %>%
+        group_by(state, pop, metric) %>%
+        arrange(date) %>%
+        helperRollingAgg(origVar="value", newName="value7") %>%
+        ungroup() %>%
+        mutate(vpm=value*1000000/pop, vpm7=value7*1000000/pop)
+    
+    # Split state-pop as a separate file unique by state
+    usafDemo <- usaf %>%
+        group_by(state) %>%
+        summarize(pop=max(pop, na.rm=TRUE)) %>%
+        ungroup()
+    
+    # Create a final data file with the key elements
+    usafData <- usaf %>%
+        mutate(source="USAF", name=paste0(source, "_", metric)) %>%
+        select(state, date, metric, source, name, value, value7, vpm, vpm7)
+    
+    # Return the key data frames
+    list(usafDemo=usafDemo, usafData=usafData)
+    
+}
+
+usafPrepped <- prepUSAFData(usafData)
+
+
+
+# Function to convert a CDC file for further processing
+prepCDCData <- function(cdc, 
+                        startYear=2020, 
+                        startDate=as.Date(paste0(startYear, "-01-01")), 
+                        endDate=as.Date(paste0(startYear, "-12-31"))
+                        ) {
+    
+    # FUNCTION AGRUMENTS:
+    # cdc: a properly formatted list or data frame containing processed CDC data
+    # startYear: starting year (CDC data will be filtered for this year and later)
+    # startDate: the starting date for use in the mapping file to create daily estimates
+    # endDate: the ending date for use in the mapping file to create daily estimates
+
+    # Pull the relevant data frame if a list has been passed    
+    if ("list" %in% class(cdc)) cdc <- cdc[["stateAgg"]]
+
+    # Create a mapping file of dates to epiweek-epiyear
+    epiMap <- tibble::tibble(date=seq.Date(from=startDate, to=endDate, by="1 day"), 
+                             year=lubridate::epiyear(date),
+                             week=lubridate::epiweek(date)
+                             )
+    
+    # Filter the data to the relevant year and keep state-year-week-deaths-excess
+    cdc <- cdc %>%
+        filter(yearint >= startYear) %>%
+        select(state, yearint, week, deaths, excess=delta)
+
+    # Merge in the daily mapping file, divide all totals by 7 to reflect weekly to daily, and pivot longer
+    cdc <- cdc %>%
+        left_join(epiMap, by=c("yearint"="year", "week"="week")) %>%
+        mutate(deaths=deaths/7, excess=excess/7) %>%
+        select(state, date, deaths, excess) %>%
+        pivot_longer(-c(state, date), names_to="metric", values_to="value")
+    return(cdc)
+    
+    # Create the rolling-7 for value, having grouped by state-pop-metric and sorted by date
+    # Add the per million component
+    usaf <- usaf %>%
+        group_by(state, pop, metric) %>%
+        arrange(date) %>%
+        helperRollingAgg(origVar="value", newName="value7") %>%
+        ungroup() %>%
+        mutate(vpm=value*1000000/pop, vpm7=value7*1000000/pop)
+    
+    # Split state-pop as a separate file unique by state
+    usafDemo <- usaf %>%
+        group_by(state) %>%
+        summarize(pop=max(pop, na.rm=TRUE)) %>%
+        ungroup()
+    
+    # Create a final data file with the key elements
+    usafData <- usaf %>%
+        mutate(source="USAF", name=paste0(source, "_", metric)) %>%
+        select(state, date, metric, source, name, value, value7, vpm, vpm7)
+    
+    # Return the key data frames
+    list(usafDemo=usafDemo, usafData=usafData)
+    
+}
+
+# Create an integrated state demographics file
+demoData <- ctpPrepped$ctpDemo %>%
+    rename(popCTP=pop) %>%
+    full_join(rename(usafPrepped$usafDemo, popUSAF=pop), by="state") %>%
+    mutate(pop=pmax(popCTP, popUSAF))
+
+cdcPrepped <- prepCDCData(cdcList)
+
+```
+
