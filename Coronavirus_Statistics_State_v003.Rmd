@@ -50,7 +50,11 @@ varMapper <- c("cases"="Cases",
                "tpm7"="Tests per million per day (7-day rolling mean)", 
                "cdcExcess"="Excess all-cause (CDC)", 
                "ctp_death7"="COVID Tracking Project", 
-               "usaf_death7"="USA Facts"
+               "usaf_death7"="USA Facts",
+               "CDC_excess"="CDC excess deaths",
+               "CTP_deaths"="COVID Tracking Project deaths",
+               "USAF_deaths"="USA Facts deaths", 
+               "vpm7"="Per million people (7-day rolling daily average)"
                )
 
 ```
@@ -293,6 +297,7 @@ usafPrepped <- prepUSAFData(usafData)
 
 # Function to convert a CDC file for further processing
 prepCDCData <- function(cdc, 
+                        popData,
                         startYear=2020, 
                         startDate=as.Date(paste0(startYear, "-01-01")), 
                         endDate=as.Date(paste0(startYear, "-12-31"))
@@ -300,6 +305,7 @@ prepCDCData <- function(cdc,
     
     # FUNCTION AGRUMENTS:
     # cdc: a properly formatted list or data frame containing processed CDC data
+    # popData: a file containing fields state-pop
     # startYear: starting year (CDC data will be filtered for this year and later)
     # startDate: the starting date for use in the mapping file to create daily estimates
     # endDate: the ending date for use in the mapping file to create daily estimates
@@ -324,30 +330,24 @@ prepCDCData <- function(cdc,
         mutate(deaths=deaths/7, excess=excess/7) %>%
         select(state, date, deaths, excess) %>%
         pivot_longer(-c(state, date), names_to="metric", values_to="value")
-    return(cdc)
     
-    # Create the rolling-7 for value, having grouped by state-pop-metric and sorted by date
+    # Create the rolling-7 for value, having grouped by state-metric and sorted by date
     # Add the per million component
-    usaf <- usaf %>%
-        group_by(state, pop, metric) %>%
+    cdc <- cdc %>%
+        group_by(state, metric) %>%
         arrange(date) %>%
         helperRollingAgg(origVar="value", newName="value7") %>%
         ungroup() %>%
-        mutate(vpm=value*1000000/pop, vpm7=value7*1000000/pop)
+        left_join(select(popData, state, pop), by="state") %>%
+        mutate(vpm=value*1000000/pop, 
+               vpm7=value7*1000000/pop, 
+               source="CDC", 
+               name=paste0(source, "_", metric)
+               ) %>%
+        select(state, date, pop, metric, source, name, value, value7, vpm, vpm7)
     
-    # Split state-pop as a separate file unique by state
-    usafDemo <- usaf %>%
-        group_by(state) %>%
-        summarize(pop=max(pop, na.rm=TRUE)) %>%
-        ungroup()
-    
-    # Create a final data file with the key elements
-    usafData <- usaf %>%
-        mutate(source="USAF", name=paste0(source, "_", metric)) %>%
-        select(state, date, metric, source, name, value, value7, vpm, vpm7)
-    
-    # Return the key data frames
-    list(usafDemo=usafDemo, usafData=usafData)
+    # Return the key data frame as a list
+    list(cdcDemo=select(cdc, state, pop), cdcData=select(cdc, -pop))
     
 }
 
@@ -357,7 +357,87 @@ demoData <- ctpPrepped$ctpDemo %>%
     full_join(rename(usafPrepped$usafDemo, popUSAF=pop), by="state") %>%
     mutate(pop=pmax(popCTP, popUSAF))
 
-cdcPrepped <- prepCDCData(cdcList)
+cdcPrepped <- prepCDCData(cdcList, popData=demoData)
+
+
+
+# Integrated state data
+stateData <- ctpPrepped$ctpData %>%
+    bind_rows(usafPrepped$usafData) %>%
+    bind_rows(cdcPrepped$cdcData)
+glimpse(stateData)
+
+# Control totals
+stateData %>%
+    group_by(name) %>%
+    summarize(value=sum(value, na.rm=TRUE), value7=sum(value7, na.rm=TRUE))
+
+```
+  
+Most of the metrics included are point estimates rather than cumulative.  The notable exception is CTP_hosp which is the total number of people in the census states (not all report) that are currently hospitalized with coronavirus.  This is a flow metric that is influenced by new admissions and declines driven by various factors such as death, recovery, discharge to a care facility, etc.
+  
+A function is written to allow for plotting of data, optionally facetted by state:  
+```{r}
+
+plotStateMetric <- function(df, 
+                            yVal, 
+                            namesPlot, 
+                            keyStates, 
+                            plotTitle=NULL,
+                            plotSub=NULL,
+                            plotCaption=NULL,
+                            facetFixed=TRUE,
+                            mapper=varMapper
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame with integrated state data
+    # yVal: column to use for the yValues
+    # namesPlot: the values of column 'name' to be kept and plotted
+    # keyStates: states to be included
+    #            if more than one state is passed, facets will be created
+    # plotTitle: plot title to be used (NULL means none)
+    # plotSub: plot subtitle to be used (NULL means none)
+    # plotCaption: plot caption to be used (NULL means none)
+    # facetFixed: boolean, if TRUE scales="fixed", if FALSE scales="free_y"
+    #             only relevant if length(keyStates) > 1
+    
+    # Filter the data for only the key elements
+    df <- df %>%
+        select_at(vars(all_of(c("state", "date", "name", yVal)))) %>%
+        filter(state %in% keyStates, name %in% namesPlot)
+    
+    # Create the relevant line plot
+    p1 <- df %>%
+        filter(!is.na(get(yVal))) %>%
+        ggplot(aes_string(x="date", y=yVal)) + 
+        geom_line(aes(group=name, color=mapper[name])) + 
+        labs(x="", 
+             y=mapper[yVal]
+             ) + 
+        scale_x_date(date_breaks="1 month", date_labels="%b") + 
+        scale_color_discrete("Source and metric") + 
+        geom_hline(aes(yintercept=0), lty=2)
+    if (length(keyStates) > 1) p1 <- p1 + facet_wrap(~state, scales=if(facetFixed) "fixed" else "free_y")
+    if (!is.null(plotTitle)) p1 <- p1 + labs(title=plotTitle)
+    if (!is.null(plotSub)) p1 <- p1 + labs(subtitle=plotSub)
+    if (!is.null(plotCaption)) p1 <- p1 + labs(caption=plotCaption)
+    print(p1)
+    
+}
+
+plotStateMetric(stateData, 
+                yVal="vpm7", 
+                namesPlot=c("CDC_excess", "CTP_deaths", "USAF_deaths"), 
+                keyStates=c("NY", "FL", "MI", "WI"), 
+                plotTitle="2020 coronavirus deaths per million per day (select states)", 
+                plotSub="Rolling 7-day average per million people", 
+                plotCaption=paste0("Linear model used to estimate excess CDC all-cause deaths by week\n", 
+                                   "CDC weekly converted to daily by assigning 1/7 to each day of the week\n", 
+                                   "Converted to rolling 7 mean for smoothing"
+                                   ), 
+                facetFixed=TRUE
+                )
 
 ```
 
