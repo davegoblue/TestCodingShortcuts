@@ -2153,4 +2153,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v003 created as a stand-alone for running all-cause death analysis using CDC data  
 * Coronavirus_Statistics_State_v003 created to combine state-level data from multiple sources  
 * Coronavirus_Statistics_State_v003 assesses deaths by state from multiple sources  
+* Coronavirus_Statistics_State_v003 uses a secondary axis for burden methods with different scales  
   
