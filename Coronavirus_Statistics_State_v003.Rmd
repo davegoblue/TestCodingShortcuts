@@ -51,10 +51,16 @@ varMapper <- c("cases"="Cases",
                "cdcExcess"="Excess all-cause (CDC)", 
                "ctp_death7"="COVID Tracking Project", 
                "usaf_death7"="USA Facts",
+               "CDC_deaths"="CDC total deaths",
                "CDC_excess"="CDC excess deaths",
+               "CTP_cases"="COVID Tracking Project cases",
                "CTP_deaths"="COVID Tracking Project deaths",
-               "USAF_deaths"="USA Facts deaths", 
-               "vpm7"="Per million people (7-day rolling daily average)"
+               "CTP_hosp"="COVID Tracking Project hospitalized",
+               "CTP_tests"="COVID Tracking Project tests",
+               "USAF_cases"="USA Facts cases", 
+               "USAF_deaths"="USA Facts deaths",
+               "vpm7"="Per million people (7-day rolling daily average)",
+               "vpm"="Per million people"
                )
 
 ```
@@ -436,6 +442,178 @@ plotStateMetric(stateData,
                                    "CDC weekly converted to daily by assigning 1/7 to each day of the week\n", 
                                    "Converted to rolling 7 mean for smoothing"
                                    ), 
+                facetFixed=TRUE
+                )
+
+```
+  
+Cases per million can be assessed using the same function:  
+```{r}
+
+plotStateMetric(stateData, 
+                yVal="vpm7", 
+                namesPlot=c("CTP_cases", "USAF_cases"), 
+                keyStates=c("NY", "FL", "MI", "WI"), 
+                plotTitle="2020 coronavirus cases per million per day (select states)", 
+                plotSub="Rolling 7-day average per million people", 
+                facetFixed=TRUE
+                )
+
+```
+
+Tests per million can be assessed using the same function:  
+```{r}
+
+plotStateMetric(stateData, 
+                yVal="vpm7", 
+                namesPlot=c("CTP_tests"), 
+                keyStates=c("NY", "FL", "MI", "WI"), 
+                plotTitle="2020 coronavirus tests per million per day (select states)", 
+                plotSub="Rolling 7-day average per million people", 
+                facetFixed=TRUE
+                )
+
+```
+
+Hospitalized per million can be assessed using the same function:  
+```{r}
+
+plotStateMetric(stateData, 
+                yVal="vpm", 
+                namesPlot=c("CTP_hosp"), 
+                keyStates=c("NY", "FL", "MI", "WI"), 
+                plotTitle="2020 total hospitalized per million per day (select states)", 
+                facetFixed=TRUE
+                )
+
+```
+  
+Suppose that the goal is to use two axes to plot metrics with fundamentally differing scales (e.g., cases and deaths).  The function plotStateMetric() is updated to allow for a secondary axis:  
+```{r}
+
+plotStateMetric <- function(df, 
+                            yVal, 
+                            namesPlot, 
+                            keyStates, 
+                            namesSec=NULL,
+                            scaleSec=NULL,
+                            plotTitle=NULL,
+                            plotSub=NULL,
+                            plotCaption=NULL,
+                            primYLab=NULL,
+                            secYLab="Caution, different metric and scale",
+                            facetFixed=TRUE,
+                            mapper=varMapper
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame with integrated state data
+    # yVal: column to use for the yValues
+    # namesPlot: the values of column 'name' to be kept and plotted
+    # keyStates: states to be included
+    #            if more than one state is passed, facets will be created
+    # namesSec: names to be plotted on a secondary y-axes
+    # scaleSec: scale to be used for the secondary axis 
+    #           namesSec/scaleSec should be similar in magnitude to namesPlot
+    # plotTitle: plot title to be used (NULL means none)
+    # plotSub: plot subtitle to be used (NULL means none)
+    # plotCaption: plot caption to be used (NULL means none)
+    # primYLab: primary y label (NULL means use mapper)
+    # secYLab: secondary y label (default is "Caution, different metric and scale")
+    # facetFixed: boolean, if TRUE scales="fixed", if FALSE scales="free_y"
+    #             only relevant if length(keyStates) > 1
+    
+    # Routine is only set up for a secondary axis with facetFixed=TRUE
+    if (!is.null(namesSec) & !facetFixed) stop("\nSecondary axis only programmed for scales='fixed'\n")
+    
+    # Include variables in namesSec as part of namesPlot so they are kept by filter
+    if (!is.null(namesSec)) namesPlot <- unique(c(namesPlot, namesSec))
+    
+    # Filter the data for only the key elements
+    df <- df %>%
+        select_at(vars(all_of(c("state", "date", "name", yVal)))) %>%
+        filter(state %in% keyStates, name %in% namesPlot)
+    
+    # If there is a secondary scale but no scaleSec has been passed, create one
+    if (!is.null(namesSec) & is.null(scaleSec)) {
+        maxPrimary <- df %>%
+            filter(name %in% setdiff(namesPlot, namesSec)) %>%
+            summarize(max(get(yVal), na.rm=TRUE)) %>%
+            max()
+        maxSecondary <- df %>%
+            filter(name %in% namesSec) %>%
+            summarize(max(get(yVal), na.rm=TRUE)) %>%
+            max()
+        scaleSec <- maxSecondary/maxPrimary
+        cat("\nWill scale by:", scaleSec, "\n")
+    }
+    
+    # Create the primary y-axis label from mapper if it has not been passed
+    if (is.null(primYLab)) primYLab <- mapper[yVal]
+    
+    # Create the relevant line plot
+    p1 <- df %>%
+        filter(!is.na(get(yVal))) %>%
+        ggplot(aes_string(x="date")) + 
+        geom_line(data=~filter(., name %in% setdiff(namesPlot, namesSec)), 
+                  aes(y=get(yVal), group=name, color=mapper[name])
+                  ) + 
+        scale_x_date(date_breaks="1 month", date_labels="%b") + 
+        geom_hline(aes(yintercept=0), lty=2)
+    if (!is.null(namesSec)) {
+        p1 <- p1 + 
+            geom_line(data=~filter(., name %in% namesSec), 
+                      aes(y=get(yVal)/scaleSec, color=mapper[name], group=name)
+                      ) + 
+            scale_y_continuous(name=primYLab, 
+                               sec.axis=sec_axis(~.*scaleSec, name=secYLab)
+                               )
+    } else {
+        p1 <- p1 + scale_y_continuous(name=primYLab)
+    }
+    if (length(keyStates) > 1) p1 <- p1 + facet_wrap(~state, scales=if(facetFixed) "fixed" else "free_y")
+    if (!is.null(plotTitle)) p1 <- p1 + labs(title=plotTitle)
+    if (!is.null(plotSub)) p1 <- p1 + labs(subtitle=plotSub)
+    if (!is.null(plotCaption)) p1 <- p1 + labs(caption=plotCaption)
+    p1 <- p1 + scale_color_discrete("Source and metric")
+    print(p1)
+    
+}
+
+
+plotStateMetric(stateData, 
+                yVal="vpm7", 
+                namesPlot=c("CDC_excess", "USAF_deaths", "CTP_deaths"),
+                namesSec=c("CTP_hosp"), 
+                keyStates=c("LA", "TX", "MI", "WI"), 
+                plotTitle="2020 coronavirus burden per million per day (select states)", 
+                plotSub="Deaths on main y-axis, total hospitalized on secondary y-axis", 
+                primYLab="Cases per million (7-day rolling mean)",
+                secYLab="Total hospitalized per million (7-day rolling mean)",
+                facetFixed=TRUE
+                )
+
+plotStateMetric(stateData, 
+                yVal="vpm7", 
+                namesPlot=c("USAF_cases", "CTP_cases"),
+                namesSec=c("CTP_hosp"), 
+                keyStates=c("LA", "TX", "MI", "WI"), 
+                plotTitle="2020 coronavirus burden per million per day (select states)", 
+                plotSub="Cases on main y-axis, total hospitalized on secondary y-axis", 
+                primYLab="Cases per million (7-day rolling mean)",
+                secYLab="Total hospitalized per million (7-day rolling mean)",
+                facetFixed=TRUE
+                )
+
+plotStateMetric(stateData, 
+                yVal="vpm7", 
+                namesPlot=c("CTP_cases"),
+                namesSec=c("CTP_deaths"), 
+                keyStates=c("LA", "TX", "MI", "WI"), 
+                plotTitle="2020 coronavirus burden per million per day (select states)", 
+                plotSub="Cases on main y-axis, deaths on secondary y-axis", 
+                primYLab="Cases per million (7-day rolling mean)",
+                secYLab="Deaths per million (7-day rolling mean)",
                 facetFixed=TRUE
                 )
 
