@@ -2156,3 +2156,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_State_v003 uses a secondary axis for burden methods with different scales  
 * Coronavirus_Statistics_State_v003 adds capability to combine states  
   
+### Expansions week of 02-NOV-2020  
+* Coronavirus_Statistics_State_v003 assesses lag times between metrics  
+  
