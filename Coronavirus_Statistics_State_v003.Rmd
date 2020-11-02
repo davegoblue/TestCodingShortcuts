@@ -637,7 +637,9 @@ plotStateMetric <- function(df,
                             mapper=varMapper, 
                             combStates=vector("character", 0), 
                             popData=NULL, 
-                            yValPerCap=(yVal %in% c("vpm", "vpm7"))
+                            yValPerCap=(yVal %in% c("vpm", "vpm7")), 
+                            printPlot=TRUE, 
+                            returnData=FALSE
                             ) {
     
     # FUNCTION ARGUMENTS:
@@ -711,37 +713,45 @@ plotStateMetric <- function(df,
     if (is.null(primYLab)) primYLab <- mapper[yVal]
     
     # Create the relevant line plot
-    p1 <- df %>%
-        filter(!is.na(get(yVal))) %>%
-        ggplot(aes_string(x="date")) + 
-        geom_line(data=~filter(., name %in% setdiff(namesPlot, namesSec)), 
-                  aes(y=get(yVal), group=name, color=mapper[name])
-                  ) + 
-        scale_x_date(date_breaks="1 month", date_labels="%b") + 
-        geom_hline(aes(yintercept=0), lty=2) + 
-        labs(x="") + 
-        theme(axis.text.x = element_text(angle = 90))
-    if (!is.null(namesSec)) {
-        p1 <- p1 + 
-            geom_line(data=~filter(., name %in% namesSec), 
-                      aes(y=get(yVal)/scaleSec, color=mapper[name], group=name)
+    if (printPlot) {
+        p1 <- df %>%
+            filter(!is.na(get(yVal))) %>%
+            ggplot(aes_string(x="date")) + 
+            geom_line(data=~filter(., name %in% setdiff(namesPlot, namesSec)), 
+                      aes(y=get(yVal), group=name, color=mapper[name])
                       ) + 
-            scale_y_continuous(name=primYLab, 
-                               sec.axis=sec_axis(~.*scaleSec, name=secYLab)
-                               )
-    } else {
-        p1 <- p1 + scale_y_continuous(name=primYLab)
+            scale_x_date(date_breaks="1 month", date_labels="%b") + 
+            geom_hline(aes(yintercept=0), lty=2) + 
+            labs(x="") + 
+            theme(axis.text.x = element_text(angle = 90))
+        if (!is.null(namesSec)) {
+            p1 <- p1 + 
+                geom_line(data=~filter(., name %in% namesSec), 
+                          aes(y=get(yVal)/scaleSec, color=mapper[name], group=name)
+                          ) + 
+                scale_y_continuous(name=primYLab, 
+                                   sec.axis=sec_axis(~.*scaleSec, name=secYLab)
+                                   )
+        } else {
+            p1 <- p1 + scale_y_continuous(name=primYLab)
+        }
+        if (length(keyStates) > 1) p1 <- p1 + facet_wrap(~state, scales=if(facetFixed) "fixed" else "free_y")
+        if (!is.null(plotTitle)) p1 <- p1 + labs(title=plotTitle)
+        if (!is.null(plotSub)) p1 <- p1 + labs(subtitle=plotSub)
+        if (!is.null(plotCaption)) p1 <- p1 + labs(caption=plotCaption)
+        p1 <- p1 + scale_color_discrete("Source and metric")
+        print(p1)
     }
-    if (length(keyStates) > 1) p1 <- p1 + facet_wrap(~state, scales=if(facetFixed) "fixed" else "free_y")
-    if (!is.null(plotTitle)) p1 <- p1 + labs(title=plotTitle)
-    if (!is.null(plotSub)) p1 <- p1 + labs(subtitle=plotSub)
-    if (!is.null(plotCaption)) p1 <- p1 + labs(caption=plotCaption)
-    p1 <- p1 + scale_color_discrete("Source and metric")
-    print(p1)
+    
+    if (returnData) return(df)
     
 }
 
-# Example of combining states
+```
+  
+```{r eval=FALSE}
+
+# Example of combining states (created below with data returned)
 plotStateMetric(stateData, 
                 yVal="vpm7", 
                 namesPlot=c("CTP_cases"),
@@ -760,3 +770,168 @@ plotStateMetric(stateData,
   
 The sparsely populated states of northern New England (Maine, New Hampshire, Vermont) have very different coronavirus burden than the more densely populated states of southern New England (Massachusetts, Connecticut, Rhode Island).
   
+The function is updated so that it can create a plot and/or return a dataset:  
+```{r}
+
+# Example of combining states
+ne_casedeath <- plotStateMetric(stateData, 
+                                yVal="vpm7", 
+                                namesPlot=c("CTP_cases"),
+                                namesSec=c("CTP_deaths"), 
+                                keyStates=c("NY", "NJ", "MA", "CT", "RI", "NH", "VT", "ME"),
+                                combStates=c("MA"="S NE", "CT"="S NE", "RI"="S NE", 
+                                             "NH"="N NE", "VT"="N NE", "ME"="N NE"
+                                             ),
+                                plotTitle="2020 coronavirus burden per million per day (select states)", 
+                                plotSub="Cases on main y-axis, deaths on secondary y-axis", 
+                                primYLab="Cases per million (7-day rolling mean)",
+                                secYLab="Deaths per million (7-day rolling mean)",
+                                facetFixed=TRUE, 
+                                popData=usafPrepped$usafDemo,
+                                returnData=TRUE
+                                )
+ne_casedeath
+
+```
+  
+Suppose that the goal is to come up with a single transform on two dimensions to best match the curves to each other.  One dimension is time (up to 30 days) and the other dimension is magnitude:  
+```{r}
+
+alignCurves <- function(df, 
+                        valueMetric, 
+                        depName,
+                        indepName=setdiff(unique(df$name), depName),
+                        lagsTry=0:30
+                        ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: a data frame containing state-date-name-valueMetric, with only 2 value types in 'name'
+    # valueMetric: the name of the value metric
+    # depName: the name of the dependent variable (the other will be the predictor)
+    # indepName: the name of the predictor variable
+    
+    # Check that there are only two values in column 'name'
+    if (length(unique(df$name))!=2) { stop("\nFunction depends on 'name' having only two possible values\n") }
+    
+    # Arrange the data by state and date
+    df <- df %>%
+        arrange(state, date)
+    
+    # Function to make a data frame with a specific lag
+    helperMakeLagData <- function(df, depName, indepName, valueMetric, lagValue) {
+        depData <- df %>%
+            filter(name==depName) %>%
+            select_at(vars(all_of(c("state", "date", valueMetric)))) %>%
+            purrr::set_names(c("state", "date", "depVar"))
+        indepData <- df %>%
+            filter(name==indepName) %>%
+            group_by(state) %>%
+            mutate(indepVar=lag(get(valueMetric), lagValue)) %>%
+            ungroup() %>%
+            select(state, date, indepVar)
+        fullData <- depData %>%
+            full_join(indepData, by=c("state", "date"))
+        fullData
+    }
+    
+    # Run a simple linear model for depName ~ lag(otherName, lagsTry) to assess performance
+    lmResults <- vector("list", length(lagsTry))
+    n <- 1
+    for (lagValue in lagsTry) {
+        # Run the linear model with no intercept, save, and increment
+        lmResults[[n]] <- lm(depVar ~ indepVar:state + 0, 
+                             data=helperMakeLagData(df, 
+                                                    depName=depName, 
+                                                    indepName=indepName, 
+                                                    valueMetric=valueMetric, 
+                                                    lagValue=lagValue
+                                                    )
+                             )
+        n <- n + 1
+    }
+    
+    # Find the best lag and coefficients
+    dfResults <- tibble::tibble(lags=lagsTry, 
+                                rsq=sapply(lmResults, FUN=function(x) summary(x)$r.squared)
+                                )
+    p1 <- dfResults %>%
+        ggplot(aes(x=lags, y=rsq)) + 
+        geom_point() + 
+        labs(x="Lag", y="R-squared", title="R-squared vs. lag for aligning curves")
+    print(p1)
+    
+    # Calculate the best lag and coefficients
+    bestLag <- dfResults %>%
+        filter(rsq==max(rsq)) %>%
+        pull(lags)
+    bestCoef <- coef(lmResults[[which(lagsTry==bestLag)]]) %>%
+        as.data.frame() %>% 
+        purrr::set_names("mult") %>%
+        tibble::rownames_to_column("state") %>%
+        mutate(state=str_replace(state, "indepVar:state", ""))
+    
+    # Plot the curves using the coefficients and lags
+    bestDF <- helperMakeLagData(df, 
+                                depName=depName, 
+                                indepName=indepName, 
+                                valueMetric=valueMetric, 
+                                lagValue=bestLag
+                                ) %>%
+        filter(!is.na(indepVar)) %>%
+        left_join(bestCoef, by="state") %>%
+        mutate(pred=mult*indepVar)
+    p2 <- bestDF %>%
+        select(state, date, depVar, pred, mult) %>%
+        pivot_longer(-c(state, date, mult)) %>%
+        mutate(name=case_when(name=="depVar" ~ "Actual deaths", 
+                              name=="pred" ~ "Predicted deaths (lag, mult)", 
+                              TRUE ~ "Unknown Element"
+                              )
+               ) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(group=name, color=name)) + 
+        geom_text(data=~filter(., date==max(date)), 
+                  aes(x=date, y=+Inf, label=paste0("Multiplier: ", round(mult, 3))), 
+                  hjust=1, 
+                  vjust=1
+                  ) +
+        labs(x="", 
+             y="Deaths per million", 
+             title=paste0("Predicting deaths based on lagged cases (best lag: ", bestLag, " days)"),
+             subtitle=""
+             ) + 
+        facet_wrap(~state) + 
+        scale_x_date(date_breaks="1 month", date_labels="%b") + 
+        theme(axis.text.x = element_text(angle = 90)) + 
+        scale_color_discrete("Metric")
+    print(p2)
+    
+    # Return the key data
+    list(bestLag=bestLag, bestCoef=bestCoef, bestDF=bestDF, lmResults=lmResults)
+    
+}
+
+lmOut_ne <- alignCurves(ne_casedeath, valueMetric="vpm7", depName="CTP_deaths", lagsTry=0:20)
+
+# States with later deaths
+so_casedeath <- plotStateMetric(stateData, 
+                                yVal="vpm7", 
+                                namesPlot=c("CTP_cases"),
+                                namesSec=c("CTP_deaths"), 
+                                keyStates=c("FL", "GA", "TX", "AZ"),
+                                plotTitle="2020 coronavirus burden per million per day (select states)", 
+                                plotSub="Cases on main y-axis, deaths on secondary y-axis", 
+                                primYLab="Cases per million (7-day rolling mean)",
+                                secYLab="Deaths per million (7-day rolling mean)",
+                                facetFixed=TRUE, 
+                                popData=usafPrepped$usafDemo,
+                                returnData=TRUE
+                                )
+so_casedeath
+
+lmOut_so <- alignCurves(so_casedeath, valueMetric="vpm7", depName="CTP_deaths", lagsTry=0:20)
+
+```
+  
+The states with later disease burden seem to have 1) longer lag time from case to death; and 2) lower rate of deaths per case.  Both findings would be consistent with greater testing leading to both earlier diagnosis and increased diagnosis of less severe cases.
+
