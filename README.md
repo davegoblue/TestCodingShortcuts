@@ -2159,4 +2159,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 02-NOV-2020  
 * Coronavirus_Statistics_State_v003 assesses lag times between metrics  
 * Coronavirus_Statistics_State_v003 assesses lag times and ratios over time between metrics  
+* Coronavirus_Statistics_State_v003 allows for separate lags by state  
   
