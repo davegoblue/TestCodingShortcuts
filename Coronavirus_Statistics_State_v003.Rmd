@@ -1261,3 +1261,194 @@ A few findings include:
 2.  Assuming a lag appears sub-optimal for NY/NJ and S NE where the peak of the epidemic is better suited for finding a lag through data rather than a heuristic  
   
 Next steps include 1) finding the lag automatically while allowing for change over time; and 2) smoothing monthly CFR borders that drives spikes/cliffs in predicted values at the month end/start.
+
+The function assessStateCFR() is updated to allow for automatically finding the best early and/or late lag:  
+```{r}
+
+# Updated for automatic lag time assessment
+assessStateCFR <- function(lst, 
+                           keyStates, 
+                           depVar, 
+                           indepVar,
+                           depTitleName, 
+                           indepTitleName,
+                           keyMetric="vpm7", 
+                           lagEarlyDate=as.Date("2020-03-31"), 
+                           lagMidDate=NULL,
+                           lagLateDate=as.Date("2020-09-30"), 
+                           lagEarlyValue=10, 
+                           lagLateValue=20, 
+                           lagsTry=0:30
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: A list such as produced by createAndAlignCurves()
+    # keyStates: The key states to be extracted from the list
+    # depVar: the dependent variable
+    # indepVar: the independent variable
+    # depTitleName: the name for the dependent variable in the title
+    # indepTitleName: the name for the independent variable in the plot title
+    # keyMetric: the name of the key metric that is being assessed
+    # lagEarlyDate: the date for the earliest lagging calculation (dates before this will be at lagEarlyValue)
+    # lagMidDate: if lags are found from data, what midpoint should be used to split data as early vs late?
+    #             NULL means midway between lagEarlyDate and lagLateDate
+    # lagLateDate: the date for the latest lagging calculation (dates after this will be at lagLateValue)
+    # lagEarlyValue: the value for lag on lagEarlyDate, will be linearly interpolated to lagLateValue/Date
+    #                NULL means calculate from data and may differ by state
+    # lagLateValue: the value for lag on lagLateDate, will be linearly interpolated from lagEarlyValue/Date
+    #               NULL means estimate from data and may differ by state
+    # lagsTry: the values for lag to be attempted if lageEarlyValue and/or lagLateValue is NULL
+    
+    # Extract the data for keyStates
+    df <- lst[["dfList"]] %>%
+        filter(state %in% keyStates, !is.na(get(keyMetric))) %>%
+        pivot_wider(names_from="name", values_from=keyMetric)
+
+    # Function for finding lag time correlations
+    helperLagCor <- function(lt, lf, dp, id) {
+        lf %>%
+            group_by(state) %>%
+            mutate(y=get(dp), x=lag(get(id), lt)) %>%
+            summarize(p=cor(x, y, use="complete.obs")) %>%
+            ungroup() %>%
+            mutate(lag=lt)
+    }
+    
+    # Middle date for splitting data
+    if (is.null(lagMidDate)) lagMidDate <- mean(c(lagEarlyDate, lagLateDate))
+    
+    # Get the early lags from the data
+    eLag <- map_dfr(.x=lagsTry, .f=helperLagCor, lf=filter(df, date<=lagMidDate), dp=depVar, id=indepVar) %>%
+        group_by(state) %>%
+        filter(p==max(p)) %>%
+        filter(row_number()==1) %>%
+        ungroup() %>%
+        select(state, earlyLag=lag)
+    
+    # Get the late lags from the data
+    lLag <- map_dfr(.x=lagsTry, .f=helperLagCor, lf=filter(df, date>lagMidDate), dp=depVar, id=indepVar) %>%
+        group_by(state) %>%
+        filter(p==max(p)) %>%
+        filter(row_number()==1) %>%
+        ungroup() %>%
+        select(state, lateLag=lag)
+    
+    # Create the full lag frame, including substituting the fixed value(s) if provided
+    lagFrame <- eLag %>%
+        inner_join(lLag, by="state")
+    if (!is.null(lagEarlyValue)) lagFrame <- lagFrame %>% mutate(earlyLag=lagEarlyValue)
+    if (!is.null(lagLateValue)) lagFrame <- lagFrame %>% mutate(lateLag=lagLateValue)
+    print(lagFrame)
+    
+    # Apply the assumed lagging information
+    fullTime <- as.integer(lagLateDate-lagEarlyDate)
+    df <- df %>%
+        left_join(lagFrame, by="state") %>%
+        arrange(state, date) %>%
+        group_by(state) %>%
+        mutate(eLag=lag(get(indepVar), mean(earlyLag)), 
+               lLag=lag(get(indepVar), mean(lateLag)), 
+               pctEarly=pmin(pmax(as.integer(lagLateDate-date)/fullTime, 0), 1), 
+               x=ifelse(is.na(eLag), NA, pctEarly*eLag + (1-pctEarly)*ifelse(is.na(lLag), 0, lLag)), 
+               y=get(depVar),
+               mon=factor(month.abb[lubridate::month(date)], levels=month.abb)
+               ) %>%
+        filter(!is.na(x)) %>%
+        ungroup()
+
+    # Regression for data from keyStates
+    if (length(keyStates) > 1) stateLM <- lm(y ~ x:mon:state + 0, data=df) 
+    else stateLM <- lm(y ~ x:mon + 0, data=df)
+    
+    # Add the predicted value to df
+    df <- df %>%
+        mutate(pred=predict(stateLM))
+
+    # Plot of curve overlaps
+    p1 <- df %>%
+        select(state, date, y, pred) %>%
+        pivot_longer(-c(state, date)) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(color=c("pred"="Predicted", "y"="Actual")[name], group=name)) + 
+        scale_x_date(date_breaks="1 month", date_labels="%b") + 
+        labs(x="", 
+             y=stringr::str_to_title(depTitleName), 
+             title=paste0("Predicted vs. actual ", depTitleName)
+             ) +
+        scale_color_discrete("Metric") +
+        facet_wrap(~state)
+    print(p1)
+    
+    # Plot of rate by month
+    p2 <- coef(stateLM) %>%
+        as.data.frame() %>%
+        purrr::set_names("CFR") %>%
+        tibble::rownames_to_column("monState") %>%
+        mutate(mon=factor(stringr::str_replace_all(monState, pattern="x:mon|:state.+", replacement=""), 
+                          levels=month.abb
+                          ), 
+               state=if (length(keyStates)==1) keyStates 
+                     else stringr::str_replace_all(monState, pattern="x:mon[A-Za-z]{3}:state", replacement="")
+               ) %>%
+        left_join(lagFrame, by="state") %>%
+        ggplot(aes(x=mon, y=CFR)) + 
+        geom_col(fill="lightblue") + 
+        geom_text(aes(y=CFR/2, label=paste0(round(100*CFR, 1), "%"))) +
+        geom_text(data=~filter(., mon==month.abb[lubridate::month(lagMidDate)]), 
+                  aes(x=-Inf, y=Inf, label=paste0("Early Lag: ", earlyLag)), 
+                  hjust=0, 
+                  vjust=1
+                  ) + 
+        geom_text(data=~filter(., mon==month.abb[lubridate::month(lagMidDate)]), 
+                  aes(x=Inf, y=Inf, label=paste0("Late Lag: ", lateLag)), 
+                  hjust=1, 
+                  vjust=1
+                  ) + 
+        labs(x="", 
+             y=paste0(stringr::str_to_title(depTitleName), " as percentage of lagged ", indepTitleName), 
+             title=paste0(stringr::str_to_title(depTitleName), 
+                          " vs. lagged ", 
+                          indepTitleName, 
+                          " in state(s): ", 
+                          paste0(keyStates, collapse=", ")
+                          ), 
+             subtitle=paste0("Assumed early lag on ", 
+                             lagEarlyDate,
+                             " interpolated to late lag on ", 
+                             lagLateDate
+                             ), 
+             caption="Linear model coefficients on lagged data with no intercept used to estimate percentage"
+             ) + 
+        facet_wrap(~state)
+    print(p2)
+
+    # Return the data frame
+    df
+    
+}
+
+# Deaths vs. cases in Michigan
+assessStateCFR(mwCurveList, 
+               keyStates=c("MI", "IL", "IN"), 
+               depVar="CTP_deaths", 
+               indepVar="CTP_cases", 
+               depTitleName="deaths", 
+               indepTitleName="cases", 
+               lagEarlyValue=NULL,
+               lagLateValue=NULL
+               )
+
+# Deaths vs. cases in NY/NJ and S NE
+assessStateCFR(neCurveList, 
+               keyStates=c("NY/NJ", "S NE"), 
+               depVar="CTP_deaths", 
+               indepVar="CTP_cases", 
+               depTitleName="deaths", 
+               indepTitleName="cases", 
+               lagEarlyValue=NULL,
+               lagLateValue=NULL
+               )
+
+```
+  
+The ability to have data-driven lags by state improves the fit.  Next steps are to work on smoothing the scaling factor over time.
