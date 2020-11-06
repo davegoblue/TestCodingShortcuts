@@ -1489,3 +1489,128 @@ mwHospOut <- assessStateCFR(mwHospDeathList,
   
 Total number in the hospital (note that this is not new hospitalizations) appears to be a fairly strong predictor of coronavirus deaths in the next week or so.
 
+Suppose that a goal is to look at correlations between two metrics using 1) different lags, and 2) different windows of time.  Suppose that there are two vectors of equal length, perfectly correlated on a lagged basis:  
+```{r}
+
+v1 <- sin((0:359) * pi / 180)
+v2 <- cos((0:359) * pi / 180)
+tibble::tibble(x=0:359, v1=v1, v2=v2) %>%
+    pivot_longer(-x) %>%
+    ggplot(aes(x=x, y=value)) + 
+    geom_line(aes(group=name, color=name))
+
+```
+  
+Correlations can be explored on various lags of the data:  
+```{r}
+
+tibble::tibble(lags=0:180) %>%
+    mutate(p=sapply(lags, FUN=function(x) cor(v1, lag(v2, x), use="complete.obs"))) %>%
+    ggplot(aes(x=lags, y=p)) + 
+    geom_point() + 
+    labs(x="Lagged degrees", y="Correlation", title="Correlation of sin and cos by lagged degrees")
+
+```
+  
+As expected, the curves are perfectly correlated with a 90-degree lag.  Suppose another goal is to find the best lag (lag producing the highest correlation) based on only a "window" of the data.  Essentially, for each lag, run a subset of [start:(start+window-1)] for the relevant vectors.  A function is written:  
+```{r}
+
+lagVectorWindows <- function(v1, 
+                             v2, 
+                             lagsTry=0:30, 
+                             windowSize=30, 
+                             minNoNA=ceiling(windowSize/2), 
+                             updateStatus=FALSE
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # v1: the first vector, which will be used 'as is'
+    # v2: the second vector, which will be lagged by various values for lagsTry
+    # lagsTry: the values for lag that will be used in cor(v1, lag(v2, lag))
+    # windowSize: the size of the window to use in taking snippets of v1 and lagged v2
+    # minNoNA: minimum number of non-NA lagged values needed to calculate a correlation
+    # updateStates: whether to print which window is being worked on
+    
+    # Find the list of all possible window start points
+    windowStarts <- 1:(length(v1)-windowSize+1)
+    
+    # Helper function to create a frame of correlations
+    helperCorr <- function(s) {
+        
+        # Create the end point for the vector
+        e <- s + windowSize - 1
+        
+        # Announce the start
+        if (updateStatus) cat("\nProcessing window starting at:", s)
+        
+        # Create the correlations tibble for all values of lag, and return
+        tibble::tibble(startWindow=s, endWindow=e, lags=lagsTry) %>%
+            mutate(na1=sum(is.na(v1[s:e])), 
+                   na2=sapply(lags, FUN=function(x) sum(is.na(lag(v2, x)[s:e]))), 
+                   p=sapply(lags, 
+                            FUN=function(x) { 
+                                ifelse(sum(!is.na(lag(v2, x)[s:e])) < minNoNA,
+                                       NA, 
+                                       cor(v1[s:e], lag(v2, x)[s:e], use="complete.obs")
+                                       ) 
+                                } 
+                            )
+                   )
+    }
+
+    # Bind the correlations frames and return
+    map_dfr(windowStarts, .f=helperCorr)
+    
+}
+
+tmpDB <- lagVectorWindows(v1=v1, v2=v2)
+
+tmpDB %>%
+    filter(!is.na(p)) %>%
+    ggplot(aes(x=startWindow, y=lags)) + 
+    geom_tile(aes(fill=p)) + 
+    scale_fill_continuous(low="white", high="lightgreen") + 
+    labs(x="Starting at degrees", y="Lagged by", title="Correlations based on lag and starting window")
+
+```
+  
+The correlations are (essentially) 1 when the curves are both going up/down at the same time, and are (essentially) -1 when one curve rises at the same time that the other curve falls.  This is driven by 30 degrees being a much too small window.  Suppose instead that windows of 90 degrees are applied:  
+```{r}
+
+tmpDB <- lagVectorWindows(v1=v1, v2=v2, windowSize=90, lagsTry=0:180)
+
+tmpDB %>%
+    filter(!is.na(p)) %>%
+    ggplot(aes(x=startWindow, y=lags)) + 
+    geom_tile(aes(fill=p)) + 
+    scale_fill_gradient2(midpoint=0) + 
+    labs(x="Starting at degrees", 
+         y="Lagged by degrees", 
+         title="Correlations based on lag and starting window", 
+         subtitle="Window of 90 degrees, lags of 0 to 180 degrees"
+         ) + 
+    geom_hline(yintercept=90, lty=2)
+
+tmpDB %>%
+    filter(!is.na(p)) %>%
+    mutate(lags=round(lags/5, 0)*5) %>%
+    ggplot(aes(x=factor(lags), y=p)) + 
+    geom_boxplot(fill="lightblue") + 
+    labs(x="Lag, rounded to nearest 5 degrees", y="Correlation", title="Correlations by lag value")
+
+tmpDB %>%
+    filter(!is.na(p)) %>%
+    group_by(startWindow) %>%
+    filter(p==max(p)) %>%
+    ungroup() %>%
+    ggplot(aes(x=startWindow, y=lags)) + 
+    geom_point() +
+    labs(x="Window starting degrees", y="Lag with highest correlation", title="Best lag by starting window")
+
+```
+  
+As expected, a lag of 90 degrees always produces a high correlation.  Since the curves are periodic, there is often a strong correlation at other values of lag also, though these are dependent on the starting point for the window and can also produce strong negative correlations.
+
+The lag producing the highest correlation is consistently the closest allowable value to 90 degrees, which is known to be the answer for sin and cos.
+
+This process can be leveraged to start looking at various coronavirus disease burden curves, to see what values of lag produce the best correlations given a specific window of time.  Exploring this is the next step.
