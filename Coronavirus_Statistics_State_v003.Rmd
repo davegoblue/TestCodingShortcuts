@@ -1614,3 +1614,153 @@ As expected, a lag of 90 degrees always produces a high correlation.  Since the 
 The lag producing the highest correlation is consistently the closest allowable value to 90 degrees, which is known to be the answer for sin and cos.
 
 This process can be leveraged to start looking at various coronavirus disease burden curves, to see what values of lag produce the best correlations given a specific window of time.  Exploring this is the next step.
+
+Suppose that the lag methods are run for the state of MI:  
+```{r}
+
+# Extract the Michigan data
+miData <- mwCurveList$dfList %>%
+    filter(state=="MI", !is.na(vpm7), date>="2020-02-01", date<="2020-10-15") %>%
+    arrange(date, name)
+    
+# Extract cases and deaths
+miCases <- miData %>% filter(name=="CTP_cases") %>% pull(vpm7)
+miDeaths <- miData %>% filter(name=="CTP_deaths") %>% pull(vpm7)
+
+# Confirm that dates are the same for both vectors
+miDates <- miData %>% filter(name=="CTP_cases") %>% pull(date)
+if (!all.equal(miDates, miData %>% filter(name=="CTP_deaths") %>% pull(date))) stop("\nDate mismatch\n")
+
+# Find the lags in the MI data
+miLags <- lagVectorWindows(miDeaths, miCases, lagsTry=0:30, windowSize=56)
+
+# Box plot for correlations by lag
+miLags %>%
+    filter(!is.na(p)) %>%
+    ggplot(aes(x=factor(lags), y=p)) + 
+    geom_boxplot(fill="lightblue") + 
+    labs(x="Lag (days)", y="Correlation", title="Box plot of correlation by lag (days)")
+
+```
+  
+At a glance, every lag value is roughly equal in correlation, potentially driven by the one big early spike where there should be a strong correlation at a defined lag:  
+```{r}
+
+miLags %>%
+    filter(!is.na(p)) %>%
+    group_by(startWindow) %>%
+    filter(p==max(p)) %>%
+    ggplot(aes(x=miDates[startWindow], y=lags)) + 
+    geom_point(aes(size=p)) + 
+    labs(x="Window start date", y="Best lag (days)", title="Best lag by window starting date") + 
+    scale_size_continuous("p at best lag") + 
+    scale_x_date(date_breaks="1 month", date_labels="%b")
+
+miLags %>%
+    filter(!is.na(p)) %>%
+    ggplot(aes(x=miDates[startWindow], y=lags)) + 
+    geom_tile(aes(fill=p)) + 
+    labs(x="Window start date", y="Lag (days)", title="Lag (days) by window starting date") + 
+    scale_color_continuous("p at lag") + 
+    scale_x_date(date_breaks="1 month", date_labels="%b")
+
+```
+  
+During the time when the spike in Michigan was growing, average "best lag" was in the 10-15 day range.  A similar finding is observed in the area of the downslope of the spike in Michigan.  The pattern that lag tends to climb linearly may be a feature of Michigan or of the methodology.
+
+The process is converted to functional form:  
+```{r}
+
+# Function to assess correlations by lag and window by state
+stateCorr <- function(lst, 
+                      keyState, 
+                      met="vpm7", 
+                      v1Name="CTP_deaths", 
+                      v2Name="CTP_cases", 
+                      windowSize=42
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: the processed list
+    # keyState: the state of interest
+    # met: the metric of interest
+    # v1Name: the name of the first vector
+    # v2Name: the name of the second vector
+    # windowSize: number of days in the window
+    
+    # Extract the data for the key State
+    df <- lst[["dfList"]] %>%
+        filter(state %in% keyState, !is.na(get(met))) %>%
+        arrange(state, date, name)
+    
+    # Get the minimum date that is common to both
+    minDate <- df %>%
+        group_by(name) %>%
+        summarize(date=min(date)) %>%
+        pull(date) %>%
+        max()
+    
+    # Extract v1 and v2
+    v1 <- df %>% 
+        filter(name==v1Name, date>=minDate) %>% 
+        pull(met)
+    v2 <- df %>% 
+        filter(name==v2Name, date>=minDate) %>% 
+        pull(met)
+
+    # Confirm that dates are the same for both vectors
+    dfDates1 <- df %>% filter(name==v1Name, date>=minDate) %>% pull(date)
+    dfDates2 <- df %>% filter(name==v2Name, date>=minDate) %>% pull(date)
+    str(dfDates1) %>% print()
+    str(dfDates2) %>% print()
+    if (!all.equal(dfDates1, dfDates2)) stop("\nDate mismatch\n")
+
+    # Find the lags in the data
+    dfLags <- lagVectorWindows(v1, v2, lagsTry=0:30, windowSize=windowSize) %>%
+        mutate(windowStartDate=dfDates1[startWindow])
+
+    # Boxplot of correlations by lag
+    p1 <- dfLags %>%
+        filter(!is.na(p)) %>%
+        ggplot(aes(x=factor(lags), y=p)) + 
+        geom_boxplot(fill="lightblue") + 
+        labs(x="Lag (days)", y="Correlation", title="Box plot of correlation by lag (days)")
+    print(p1)
+
+    # Plot of best lags by starting date
+    p2 <- dfLags %>%
+        filter(!is.na(p)) %>%
+        group_by(startWindow) %>%
+        filter(p==max(p)) %>%
+        ggplot(aes(x=windowStartDate, y=lags)) + 
+        geom_point(aes(size=p)) + 
+        labs(x="Window start date", y="Best lag (days)", title="Best lag by window starting date") + 
+        scale_size_continuous("p at best lag") + 
+        scale_x_date(date_breaks="1 month", date_labels="%b")
+    print(p2)
+    
+    # Plot of correlations by lag
+    p3 <- dfLags %>%
+        filter(!is.na(p)) %>%
+        ggplot(aes(x=windowStartDate, y=lags)) + 
+        geom_tile(aes(fill=p)) + 
+        labs(x="Window start date", y="Lag (days)", title="Lag (days) by window starting date") + 
+        scale_color_continuous("p at lag") + 
+        scale_x_date(date_breaks="1 month", date_labels="%b")
+    print(p3)
+    
+    # Return dfLags
+    dfLags
+    
+}
+
+
+miLagData <- stateCorr(mwCurveList, keyState="MI")
+ilLagData <- stateCorr(mwCurveList, keyState="IL")
+nynjLagData <- stateCorr(neCurveList, keyState="NY/NJ")
+
+```
+  
+The data suggest that there is a fairly discernible "best lag" around the time that there are bona fide spikes in both cases and deaths.  A challenge is that there does not appear to be a discernible "best lag" at other times when spikes may be driven by factors like increased testing and/or there is more random noise in the data then clear patterns with a strong correlation.
+
+A next step is to look at the reverse of this process and use lead(deaths) rather than lag(cases).  This will allow for looking at time periods where cases begin to change rapidly and seeing whether these drive rapid changes in deaths at any particular lead time.
