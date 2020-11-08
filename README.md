@@ -2163,4 +2163,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_State_v003 explores relationship between hospitalizations and deaths  
 * Coronavirus_Statistics_State_v003 includes function for correlations by window and lag in vectors  
 * Coronavirus_Statistics_State_v003 includes functional form for lag correlations  
+* Coronavirus_Statistics_State_v003 includes functional form for lead correlations  
   
