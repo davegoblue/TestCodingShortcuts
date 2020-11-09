@@ -2165,3 +2165,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_State_v003 includes functional form for lag correlations  
 * Coronavirus_Statistics_State_v003 includes functional form for lead correlations  
   
+### Expansions week of 09-NOV-2020  
+* Coronavirus_Statistics_DataUpdate_v003 created to download and integrate latest data  
+  
