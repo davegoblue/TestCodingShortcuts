@@ -2167,4 +2167,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 09-NOV-2020  
 * Coronavirus_Statistics_DataUpdate_v003 created to download and integrate latest data  
+* Coronavirus_Statistics_DataUpdate_v003 downloads latest USA Facts county-level data  
   
