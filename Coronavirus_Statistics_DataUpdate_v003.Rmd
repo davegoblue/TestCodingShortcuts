@@ -52,7 +52,20 @@ varMapper <- c("cases"="Cases",
                "newdpm"="Increase in deaths, most recent 30 days, per million", 
                "hpm7"="Currently Hospitalized per million (7-day rolling mean)", 
                "tpm"="Tests per million", 
-               "tpm7"="Tests per million per day (7-day rolling mean)"
+               "tpm7"="Tests per million per day (7-day rolling mean)", 
+               "cdcExcess"="Excess all-cause (CDC)", 
+               "ctp_death7"="COVID Tracking Project", 
+               "usaf_death7"="USA Facts",
+               "CDC_deaths"="CDC total deaths",
+               "CDC_excess"="CDC excess deaths",
+               "CTP_cases"="COVID Tracking Project cases",
+               "CTP_deaths"="COVID Tracking Project deaths",
+               "CTP_hosp"="COVID Tracking Project hospitalized",
+               "CTP_tests"="COVID Tracking Project tests",
+               "USAF_cases"="USA Facts cases", 
+               "USAF_deaths"="USA Facts deaths",
+               "vpm7"="Per million people (7-day rolling daily average)",
+               "vpm"="Per million people"
                )
 
 ```
@@ -119,4 +132,132 @@ cdcList_20201110 <- readRunCDCAllCause(loc=cdcLoc,
 saveToRDS(cdcList_20201110, ovrWriteError=FALSE)
 
 ```
+
+The death data can then be combined and analyzed, using the function from Coronavirus_Statistics_States_v003:  
+```{r}
+
+combineDeathData <- function(ctp, 
+                             usaf, 
+                             cdc, 
+                             keyState, 
+                             curYear=2020,
+                             minDate=as.Date(paste0(curYear, "-01-01")), 
+                             perMillion=FALSE,
+                             glimpseIntermediate=FALSE, 
+                             facetFreeY=!perMillion, 
+                             returnData=TRUE
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # ctp: the list with COVID Tracking Project data
+    # usaf: the data frame with USA Facts data
+    # cdc: the list with CDC data
+    # keyState: the state(s) to be explored
+    # curYear: current year
+    # minDate: the minimum date to use in the CDC data
+    # perMillion: boolean, should data be show on a per-million-people basis?
+    # glimpseIntermediate: boolean, should glimpses of frames be provided as they are built?
+    # facetFreeY: boolean, should facets be created with free_y scales (only relevant if 2+ keyStates)
+    # returnData: boolean, should the data frame be returned?
+    
+    # STEP 0a: Extract relevant elements from lists (use frame as-is if directly passed)
+    if ("list" %in% class(ctp)) ctp <- ctp[["consolidatedPlotData"]]
+    if ("list" %in% class(usaf)) usaf <- usaf[["clusterStateData"]]
+    if ("list" %in% class(cdc)) cdc <- cdc[["stateAgg"]]
+    
+    # STEP 0b: Create a mapping file of date to epiWeek
+    epiMap <- tibble::tibble(date=seq.Date(from=minDate, to=as.Date(paste0(curYear, "-12-31")), by="1 day"), 
+                             week=lubridate::epiweek(date)
+                             )
+    
+    # STEP 1: Filter to only relevant data
+    # STEP 1a: COVID Tracking Project
+    ctp <- ctp %>%
+        ungroup() %>%
+        filter(name=="deaths", state %in% keyState)
+    if(glimpseIntermediate) glimpse(ctp)
+    # STEP 1b: USA Facts
+    usaf <- usaf %>%
+        ungroup() %>%
+        filter(state %in% keyState)
+    if(glimpseIntermediate) glimpse(usaf)
+    # STEP 1c: CDC
+    cdc <- cdc %>%
+        ungroup() %>%
+        filter(year==curYear, state %in% keyState)
+    if(glimpseIntermediate) glimpse(cdc)
+    
+    # STEP 2a: Sum the county-level data so that it is state-level data
+    usafState <- usaf %>%
+        group_by(state, date) %>%
+        summarize(deaths=sum(deaths), dpm7=sum(dpm7*pop)/sum(pop), pop=sum(pop)) %>%
+        ungroup()
+    # STEP 2b: Convert the CDC data to an estimated daily total (split the weekly total evenly)
+    cdcDaily <- cdc %>%
+        left_join(epiMap, by=c("week")) %>%
+        select(state, week, date, cdcDeaths=deaths, cdcExcess=delta) %>%
+        mutate(cdcDeaths=cdcDeaths/7, cdcExcess=cdcExcess/7)
+    
+    # STEP 3: Create a state death-level database by date
+    dailyDeath <- select(ctp, state, date, ctpDeaths=value, ctp_dpm7=vpm7, ctp_pop=pop) %>%
+        full_join(select(usafState, state, date, usafDeaths=deaths, usaf_dpm7=dpm7, usaf_pop=pop), 
+                  by=c("state", "date")
+                  ) %>%
+        full_join(cdcDaily, by=c("state", "date")) %>%
+        arrange(state, date) %>%
+        mutate(ctp_death7=ctp_dpm7*ctp_pop/1000000, usaf_death7=usaf_dpm7*usaf_pop/1000000)
+    if(glimpseIntermediate) glimpse(dailyDeath)
+
+    # STEP 4a: Assign a population by state
+    statePop <- dailyDeath %>%
+        group_by(state) %>%
+        summarize(pop=max(usaf_pop, ctp_pop, na.rm=TRUE))
+    
+    # STEP 4b: Plot the deaths data
+    p1 <- dailyDeath %>%
+        select(state, date, ctp_death7, usaf_death7, cdcExcess) %>%
+        pivot_longer(-c(state, date), names_to="source", values_to="deaths") %>%
+        filter(!is.na(deaths)) %>%
+        left_join(statePop, by="state") %>%
+        ggplot(aes(x=date, y=deaths*if(perMillion) (1000000/pop) else 1)) + 
+        geom_line(aes(group=source, color=varMapper[source])) + 
+        labs(x="", 
+             y=paste0("Deaths", if(perMillion) " per million" else ""), 
+             title=paste0(curYear, " deaths per day in ", paste0(keyState, collapse=", ")),
+             subtitle=paste0("Rolling 7-day average", if(perMillion) " per million people" else ""),
+             caption="CDC estimated excess all-cause deaths, weekly total divided by 7 to estimate daily total"
+             ) + 
+        scale_x_date(date_breaks="1 month", date_labels="%b") + 
+        scale_color_discrete("Data source") + 
+        theme(legend.position="bottom") + 
+        geom_hline(yintercept=0, lty=2)
+    if (length(keyState) > 1) p1 <- p1 + facet_wrap(~state, scales=if(facetFreeY) "free_y" else "fixed")
+    print(p1)
+    
+    # STEP 5: Return the daily death file
+    if(returnData) dailyDeath
+    
+}
+
+
+# Example function
+combineDeathData(ctp=test_old_201108, 
+                 usaf=cty_old_20201109$clusterStateData, 
+                 cdc=cdcList_20201110, 
+                 keyState=c("NY", "NJ", "MA", "FL", "GA", "TX", "AZ", "MS", "LA", "MI", "IL", "WI"), 
+                 perMillion=FALSE, 
+                 returnData=FALSE
+                 )
+
+combineDeathData(ctp=test_old_201108, 
+                 usaf=cty_old_20201109$clusterStateData, 
+                 cdc=cdcList_20201110, 
+                 keyState=c("NY", "NJ", "MA", "FL", "GA", "TX", "AZ", "MS", "LA", "MI", "IL", "WI"), 
+                 perMillion=TRUE, 
+                 returnData=FALSE
+                 )
+
+```
+  
+In general, the shapes of the curves are well aligned, though the CDC excess-deaths generally start earlier and peak higher than the coronavirus deaths curves from COVID Tracking Project and USA Facts.  In general, the northeastern states hit early have a classic epidemic peak curve, while the states hit later tend to have lower peaks (per million) but, in some cases, a much extended timeline of non-zero disease impact.
 
