@@ -2169,4 +2169,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 created to download and integrate latest data  
 * Coronavirus_Statistics_DataUpdate_v003 downloads latest USA Facts county-level data  
 * Coronavirus_Statistics_DataUpdate_v003 downloads latest CDC all-cause deaths data  
+* Coronavirus_Statistics_DataUpdate_v003 updates deaths per day comparison across data sources  
   
