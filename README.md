@@ -2171,4 +2171,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 downloads latest CDC all-cause deaths data  
 * Coronavirus_Statistics_DataUpdate_v003 updates deaths per day comparison across data sources  
 * Coronavirus_Statistics_DataUpdate_v003 updates integrated state-level database  
+* Coronavirus_Statistics_DataUpdate_v003 plots state metrics on two axes  
   
