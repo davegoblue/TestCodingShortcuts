@@ -579,4 +579,259 @@ ne_casedeath <- plotStateMetric(stateData,
 ne_casedeath
 
 ```
+  
+An attempt is made to align the curves for two different metrics in a single locale:  
+```{r}
+
+alignCurves <- function(df, 
+                        valueMetric, 
+                        depName,
+                        indepName=setdiff(unique(df$name), depName),
+                        lagsTry=0:30, 
+                        yLabel="Deaths per million", 
+                        depLabel="cases",
+                        textMetric=stringr::str_split(yLabel, pattern=" ")[[1]][1] %>% stringr::str_to_lower()
+                        ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: a data frame containing state-date-name-valueMetric, with only 2 value types in 'name'
+    # valueMetric: the name of the value metric
+    # depName: the name of the dependent variable (the other will be the predictor)
+    # indepName: the name of the predictor variable
+    # lagsTry: the lagged values to attempt
+    # yLabel: label for the y-axis
+    # depLabel: label for the title (regression x-variable name)
+    # textMetric: label for the title (regression y-variable name)
+    
+    # Check that there are only two values in column 'name'
+    if (length(unique(df$name))!=2) { stop("\nFunction depends on 'name' having only two possible values\n") }
+    
+    # Arrange the data by state and date
+    df <- df %>%
+        arrange(state, date)
+    
+    # Function to make a data frame with a specific lag
+    helperMakeLagData <- function(df, depName, indepName, valueMetric, lagValue) {
+        depData <- df %>%
+            filter(name==depName) %>%
+            select_at(vars(all_of(c("state", "date", valueMetric)))) %>%
+            purrr::set_names(c("state", "date", "depVar"))
+        indepData <- df %>%
+            filter(name==indepName) %>%
+            group_by(state) %>%
+            mutate(indepVar=lag(get(valueMetric), lagValue)) %>%
+            ungroup() %>%
+            select(state, date, indepVar)
+        fullData <- depData %>%
+            full_join(indepData, by=c("state", "date"))
+        fullData
+    }
+    
+    # Run a simple linear model for depName ~ lag(otherName, lagsTry) to assess performance
+    lmResults <- vector("list", length(lagsTry))
+    n <- 1
+    for (lagValue in lagsTry) {
+        # Run the linear model with no intercept, save, and increment
+        lmResults[[n]] <- lm(depVar ~ indepVar:state + 0, 
+                             data=helperMakeLagData(df, 
+                                                    depName=depName, 
+                                                    indepName=indepName, 
+                                                    valueMetric=valueMetric, 
+                                                    lagValue=lagValue
+                                                    )
+                             )
+        n <- n + 1
+    }
+    
+    # Find the best lag and coefficients
+    dfResults <- tibble::tibble(lags=lagsTry, 
+                                rsq=sapply(lmResults, FUN=function(x) summary(x)$r.squared)
+                                )
+    p1 <- dfResults %>%
+        ggplot(aes(x=lags, y=rsq)) + 
+        geom_point() + 
+        labs(x="Lag", y="R-squared", title="R-squared vs. lag for aligning curves")
+    print(p1)
+    
+    # Calculate the best lag and coefficients
+    bestLag <- dfResults %>%
+        filter(rsq==max(rsq)) %>%
+        pull(lags)
+    bestCoef <- coef(lmResults[[which(lagsTry==bestLag)]]) %>%
+        as.data.frame() %>% 
+        purrr::set_names("mult") %>%
+        tibble::rownames_to_column("state") %>%
+        mutate(state=str_replace(state, "indepVar:state", ""))
+    
+    # Plot the curves using the coefficients and lags
+    bestDF <- helperMakeLagData(df, 
+                                depName=depName, 
+                                indepName=indepName, 
+                                valueMetric=valueMetric, 
+                                lagValue=bestLag
+                                ) %>%
+        filter(!is.na(indepVar)) %>%
+        left_join(bestCoef, by="state") %>%
+        mutate(pred=mult*indepVar)
+    p2 <- bestDF %>%
+        select(state, date, depVar, pred, mult) %>%
+        pivot_longer(-c(state, date, mult)) %>%
+        mutate(name=case_when(name=="depVar" ~ "Actual value", 
+                              name=="pred" ~ "Predicted value\n(lag, mult)", 
+                              TRUE ~ "Unknown Element"
+                              )
+               ) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(group=name, color=name)) + 
+        geom_text(data=~filter(., date==max(date)), 
+                  aes(x=date, y=+Inf, label=paste0("Multiplier: ", round(mult, 3))), 
+                  hjust=1, 
+                  vjust=1
+                  ) +
+        labs(x="", 
+             y=yLabel, 
+             title=paste0("Predicting ", 
+                          textMetric, 
+                          " based on lagged ", 
+                          depLabel, 
+                          " (best lag: ", 
+                          bestLag, 
+                          " days)"
+                          ),
+             subtitle="Best lag is based on highest correlation/R-squared, common across all facets"
+             ) + 
+        facet_wrap(~state) + 
+        scale_x_date(date_breaks="1 month", date_labels="%b") + 
+        theme(axis.text.x = element_text(angle = 90)) + 
+        scale_color_discrete("Metric")
+    print(p2)
+    
+    # Return the key data
+    list(bestLag=bestLag, bestCoef=bestCoef, bestDF=bestDF, lmResults=lmResults)
+    
+}
+
+
+
+createAndAlignCurves <- function(df, 
+                                 yVal, 
+                                 namesPlot, 
+                                 keyStates,
+                                 lagValueMetric,
+                                 lagDepName,
+                                 namesSec=NULL,
+                                 scaleSec=NULL,
+                                 plotTitle=NULL,
+                                 plotSub=NULL,
+                                 plotCaption=NULL,
+                                 primYLab=NULL,
+                                 secYLab="Caution, different metric and scale",
+                                 facetFixed=TRUE,
+                                 mapper=varMapper, 
+                                 combStates=vector("character", 0), 
+                                 popData=NULL, 
+                                 yValPerCap = (yVal %in% c("vpm", "vpm7")), 
+                                 printPlot=TRUE, 
+                                 ...
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame with integrated state data
+    # yVal: column to use for the yValues
+    # namesPlot: the values of column 'name' to be kept and plotted
+    # keyStates: states to be included
+    #            if more than one state is passed, facets will be created
+    # lagValueMetric: the metric to be used for checking lags (typically 'vpm7')
+    # lagDepName: dependent variable (records in column 'name') to be used for the lagging process
+    # namesSec: names to be plotted on a secondary y-axes
+    # scaleSec: scale to be used for the secondary axis 
+    #           namesSec/scaleSec should be similar in magnitude to namesPlot
+    # plotTitle: plot title to be used (NULL means none)
+    # plotSub: plot subtitle to be used (NULL means none)
+    # plotCaption: plot caption to be used (NULL means none)
+    # primYLab: primary y label (NULL means use mapper)
+    # secYLab: secondary y label (default is "Caution, different metric and scale")
+    # facetFixed: boolean, if TRUE scales="fixed", if FALSE scales="free_y"
+    #             only relevant if length(keyStates) > 1
+    # mapper: mapping file for variable names to descriptive names
+    # combStates: states that should be combined together for plotting (named vector, c("state"="newName"))
+    # popData: a population file for combining states
+    # yValPerCap: boolean, is the y-value of type per-capita?
+    # printPlot: boolean, whether to print the plots
+    # ...: other arguments to be passed to alignCurves()
+
+    # Create a frame to be used by the lagging process
+    tempMetrics <- plotStateMetric(df, 
+                                   yVal=yVal, 
+                                   namesPlot=namesPlot,
+                                   keyStates=keyStates,
+                                   namesSec=namesSec, 
+                                   scaleSec=scaleSec,
+                                   plotTitle=plotTitle, 
+                                   plotSub=plotSub, 
+                                   plotCaption=plotCaption,
+                                   primYLab=primYLab,
+                                   secYLab=secYLab,
+                                   facetFixed=facetFixed,
+                                   mapper=mapper,
+                                   combStates=combStates,
+                                   popData=popData,
+                                   yValPerCap=yValPerCap,
+                                   printPlot=printPlot,
+                                   returnData=TRUE  # the data must be returned for the next function
+                                   )
+
+    # Run the lagging process    
+    tempLM <- alignCurves(tempMetrics, valueMetric=lagValueMetric, depName=lagDepName, ...)
+    
+    # Return the key values
+    list(dfList=tempMetrics, lmList=tempLM)
+    
+}
+
+
+# Example for northeastern states
+neCurveList <- createAndAlignCurves(stateData, 
+                                    yVal="vpm7", 
+                                    namesPlot=c("CTP_cases"),
+                                    namesSec=c("CTP_deaths"), 
+                                    keyStates=c("NY", "NJ", "MA", "CT", "RI", "NH", "VT", "ME", "DE", "DC"),
+                                    combStates=c("MA"="S NE", "CT"="S NE", "RI"="S NE", 
+                                                 "NH"="N NE", "VT"="N NE", "ME"="N NE", 
+                                                 "NY"="NY/NJ", "NJ"="NY/NJ", 
+                                                 "DE"="DE/DC", "DC"="DE/DC"
+                                                 ),
+                                    plotTitle="2020 coronavirus burden per million per day (select states)", 
+                                    plotSub="Cases on main y-axis, deaths on secondary y-axis", 
+                                    primYLab="Cases per million (7-day rolling mean)",
+                                    secYLab="Deaths per million (7-day rolling mean)",
+                                    facetFixed=TRUE, 
+                                    popData=usafPrepped$usafDemo, 
+                                    printPlot=TRUE,
+                                    lagValueMetric="vpm7", 
+                                    lagDepName="CTP_deaths", 
+                                    lagsTry=0:30
+                                    )
+
+# Example for midwestern states
+mwCurveList <- createAndAlignCurves(stateData, 
+                                    yVal="vpm7", 
+                                    namesPlot=c("CTP_cases"),
+                                    namesSec=c("CTP_deaths"), 
+                                    keyStates=c("OH", "MI", "IN", "IL"),
+                                    plotTitle="2020 coronavirus burden per million per day (select states)", 
+                                    plotSub="Cases on main y-axis, deaths on secondary y-axis", 
+                                    primYLab="Cases per million (7-day rolling mean)",
+                                    secYLab="Deaths per million (7-day rolling mean)",
+                                    facetFixed=TRUE, 
+                                    popData=usafPrepped$usafDemo, 
+                                    printPlot=TRUE,
+                                    lagValueMetric="vpm7", 
+                                    lagDepName="CTP_deaths", 
+                                    lagsTry=0:30
+                                    )
+
+```
+  
+The midwest is challenging to align.  If using a single value for lag and a single value for CFR (case fatality rate), then predictions will have far too few deaths in the early months and far too many deaths in the later months.
 
