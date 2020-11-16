@@ -2174,3 +2174,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 updates state metrics on two axes  
 * Coronavirus_Statistics_DataUpdate_v003 updates single lag time analysis  
   
+### Expansions week of 16-NOV-2020  
+* Coronavirus_Statistics_DataUpdate_v003 updates estimated CFR  
+  
