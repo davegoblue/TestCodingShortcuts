@@ -1026,3 +1026,200 @@ neOut <- assessStateCFR(neCurveList,
   
 The CFR declines in more recent months, possibly as a function of a greater number of tests finding less serious disease.  Lag times are variable but typically seem to be around a week.  The use of both lag times and variable CFR by month introduces some risk of over-fitting.
 
+The process for investigating lags and leads can also be refreshed with new data:  
+```{r}
+
+lagVectorWindows <- function(v1, 
+                             v2, 
+                             lagsTry=0:30, 
+                             windowSize=30, 
+                             minNoNA=ceiling(windowSize/2), 
+                             updateStatus=FALSE, 
+                             isLag=TRUE
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # v1: the first vector, which will be used 'as is'
+    # v2: the second vector, which will be lagged/led by various values for lagsTry
+    # lagsTry: the values for x that will be used in cor(v1, lag/lead(v2, x))
+    # windowSize: the size of the window to use in taking snippets of v1 and lagged/led v2
+    # minNoNA: minimum number of non-NA lagged/led values needed to calculate a correlation
+    # updateStates: whether to print which window is being worked on
+    # isLag: boolean, should a lag or a lead be applied (TRUE is lag, FALSE is lead)
+    
+    # Find the function to be used
+    func <- if (isLag) lag else lead
+    
+    # Find the list of all possible window start points
+    windowStarts <- 1:(length(v1)-windowSize+1)
+    
+    # Helper function to create a frame of correlations
+    helperCorr <- function(s) {
+        
+        # Create the end point for the vector
+        e <- s + windowSize - 1
+        
+        # Announce the start
+        if (updateStatus) cat("\nProcessing window starting at:", s)
+        
+        # Create the correlations tibble for all values of lag, and return
+        tibble::tibble(startWindow=s, endWindow=e, lags=lagsTry) %>%
+            mutate(na1=sum(is.na(v1[s:e])), 
+                   na2=sapply(lags, FUN=function(x) sum(is.na(func(v2, x)[s:e]))), 
+                   p=sapply(lags, 
+                            FUN=function(x) { 
+                                ifelse(sum(!is.na(func(v2, x)[s:e])) < minNoNA,
+                                       NA, 
+                                       cor(v1[s:e], func(v2, x)[s:e], use="complete.obs")
+                                       ) 
+                                } 
+                            )
+                   )
+    }
+
+    # Bind the correlations frames and return
+    map_dfr(windowStarts, .f=helperCorr)
+    
+}
+
+
+
+# Function to assess correlations by lag/lead and window by state
+stateCorr <- function(lst, 
+                      keyState, 
+                      met="vpm7", 
+                      v1Name="CTP_deaths", 
+                      v2Name="CTP_cases", 
+                      windowSize=42, 
+                      isLag=TRUE
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: the processed list
+    # keyState: the state of interest
+    # met: the metric of interest
+    # v1Name: the name of the first vector (this is considered fixed)
+    # v2Name: the name of the second vector (this will have the lead/lag applied to it)
+    # windowSize: number of days in the window
+    # isLag: boolean, whether to use lag (TRUE) or lead (FALSE) on v2Name
+    
+    # Extract the data for the key State
+    df <- lst[["dfList"]] %>%
+        filter(state %in% keyState, !is.na(get(met))) %>%
+        arrange(state, date, name)
+    
+    # Get the minimum date that is common to both
+    minDate <- df %>%
+        group_by(name) %>%
+        summarize(date=min(date)) %>%
+        pull(date) %>%
+        max()
+    
+    # Extract v1 and v2
+    v1 <- df %>% 
+        filter(name==v1Name, date>=minDate) %>% 
+        pull(met)
+    v2 <- df %>% 
+        filter(name==v2Name, date>=minDate) %>% 
+        pull(met)
+
+    # Confirm that dates are the same for both vectors
+    dfDates1 <- df %>% filter(name==v1Name, date>=minDate) %>% pull(date)
+    dfDates2 <- df %>% filter(name==v2Name, date>=minDate) %>% pull(date)
+    if (!all.equal(dfDates1, dfDates2)) stop("\nDate mismatch\n")
+
+    # Find the lags in the data
+    dfLags <- lagVectorWindows(v1, v2, lagsTry=0:30, windowSize=windowSize, isLag=isLag) %>%
+        mutate(windowStartDate=dfDates1[startWindow])
+
+    # Give the description of the lag or lead
+    descr <- ifelse(isLag, "lag (days)", "lead (days)")
+    
+    # Boxplot of correlations by lag
+    p1 <- dfLags %>%
+        filter(!is.na(p)) %>%
+        ggplot(aes(x=factor(lags), y=p)) + 
+        geom_boxplot(fill="lightblue") + 
+        labs(x=stringr::str_to_title(descr), 
+             y="Correlation", 
+             title=paste0("Box plot of correlation by ", descr)
+             )
+    print(p1)
+
+    # Plot of best lags by starting date
+    p2 <- dfLags %>%
+        filter(!is.na(p)) %>%
+        group_by(startWindow) %>%
+        filter(p==max(p)) %>%
+        ggplot(aes(x=windowStartDate, y=lags)) + 
+        geom_point(aes(size=p)) + 
+        labs(x="Window start date", 
+             y=paste0("Best ", descr), 
+             title=paste0("Best ", descr, " by window starting date")
+             ) + 
+        scale_size_continuous(paste0("p at best ", stringr::str_replace(descr, " .*", ""))) + 
+        scale_x_date(date_breaks="1 month", date_labels="%b")
+    print(p2)
+    
+    # Plot of correlations by lag
+    p3 <- dfLags %>%
+        filter(!is.na(p)) %>%
+        ggplot(aes(x=windowStartDate, y=lags)) + 
+        geom_tile(aes(fill=p)) + 
+        labs(x="Window start date", 
+             y=stringr::str_to_title(descr), 
+             title=paste0(stringr::str_to_title(descr), " by window starting date")
+             ) + 
+        scale_color_continuous(paste0("p at ", stringr::str_replace(descr, " .*", ""))) + 
+        scale_x_date(date_breaks="1 month", date_labels="%b")
+    print(p3)
+
+    # Rename variable lags to leads if isLag is FALSE
+    if (isFALSE(isLag)) dfLags <- dfLags %>%
+        rename(leads=lags)
+    
+    # Return dfLags
+    dfLags
+    
+}
+
+
+miLeadData <- stateCorr(mwCurveList, keyState="MI", v1Name="CTP_cases", v2Name="CTP_deaths", isLag=FALSE)
+nynjLeadData <- stateCorr(neCurveList, keyState="NY/NJ", v1Name="CTP_cases", v2Name="CTP_deaths", isLag=FALSE)
+
+```
+  
+And the full process can be run for the state of Texas:  
+```{r}
+
+# Example for southern states
+soCurveList <- createAndAlignCurves(stateData, 
+                                    yVal="vpm7", 
+                                    namesPlot=c("CTP_cases"),
+                                    namesSec=c("CTP_deaths"), 
+                                    keyStates=c("AZ", "FL", "GA", "TX"),
+                                    plotTitle="2020 coronavirus burden per million per day (select states)", 
+                                    plotSub="Cases on main y-axis, deaths on secondary y-axis", 
+                                    primYLab="Cases per million (7-day rolling mean)",
+                                    secYLab="Deaths per million (7-day rolling mean)",
+                                    facetFixed=TRUE, 
+                                    popData=usafPrepped$usafDemo, 
+                                    printPlot=TRUE,
+                                    lagValueMetric="vpm7", 
+                                    lagDepName="CTP_deaths", 
+                                    lagsTry=0:30
+                                    )
+
+assessStateCFR(soCurveList, 
+               keyStates=c("AZ", "FL", "GA", "TX"), 
+               depVar="CTP_deaths", 
+               indepVar="CTP_cases", 
+               depTitleName="deaths", 
+               indepTitleName="cases"
+               )
+
+
+txLeadData <- stateCorr(soCurveList, keyState="TX", v1Name="CTP_cases", v2Name="CTP_deaths", isLag=FALSE)
+
+```
+
