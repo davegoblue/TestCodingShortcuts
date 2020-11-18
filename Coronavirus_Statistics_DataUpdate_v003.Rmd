@@ -1223,3 +1223,158 @@ txLeadData <- stateCorr(soCurveList, keyState="TX", v1Name="CTP_cases", v2Name="
 
 ```
 
+The process for assessing integrated data is converted to a main function:  
+```{r}
+
+integrateStateData <- function(stateData=NULL, 
+                               popData=NULL,
+                               ctpList=NULL,
+                               usafData=NULL,
+                               cdcList=NULL, 
+                               glimpseStateData=NULL, 
+                               runTwoAxis=TRUE, 
+                               yVal="vpm7", 
+                               var1="CTP_cases", 
+                               var2="CTP_deaths", 
+                               keyStates=sort(c(state.abb, "DC")), 
+                               combStates=vector("character", 0), 
+                               mapper=varMapper, 
+                               runCreateAlign=TRUE, 
+                               lagsTry=0:30
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # stateData: an integrated state-level data file (NULL means create from components)
+    # popData: a state-level population data file (must be passed if stateData is not NULL)
+    # ctpList: a processed list of COVID Tracking Project data (must be provided if stateData=NULL)
+    # usafData: a processed tibble of USA Facts data (must be provided if stateData=NULL)
+    # cdcList: a processed list of CDC All-Cause deaths data (must be provided if stateData=NULL)
+    # glimpseStateData: boolean, whether to glimpse the stateData file (NULL means only if from components)
+    # runTwoAxis: whether to show a plot of two metrics on two axes
+    # yVal: the y-value to use from stateData
+    # var1: the first of the two variables of interest (should be the leading component if a drives b)
+    # var2: the second of the two variables of interest (should be the lagging component if a drives b)
+    # keyStates: subset of states to use for analysis
+    # combStates: states that should be combined together for plotting (named vector, c("state"="newName"))
+    # mapper: mapping file for variables to descriptive names
+    # runCreateAlign: boolean, should createAndAlignCurves() be run?
+    # lagsTry: lag values to try
+    
+    # Check that either stateData or its components have been provided
+    if (!is.null(stateData)) {
+        cat("\nA file has been passed for stateData, components will be ignored\n")
+        if (is.null(popData)) stop("Must also pass a popData file of state-level population\n")
+        if (is.null(glimpseStateData)) glimpseStateData <- FALSE
+    } else {
+        if (is.null(ctpList) | is.null(usafData) | is.null(cdcList)) {
+            stop("\nMust provided all of ctpList, usafData, cdcList when stateData is NULL\n")
+        }
+        cat("\nBuilding stateData from the passed components\n")
+        if (is.null(glimpseStateData)) glimpseStateData <- TRUE
+        
+        # Create COVID Tracking Project File
+        ctpPrepped <- prepCTPData(ctpList)
+        
+        # Create USA Facts file
+        usafPrepped <- prepUSAFData(usafData)
+        
+        # Create an integrated state population demographics file
+        demoData <- ctpPrepped$ctpDemo %>%
+            rename(popCTP=pop) %>%
+            full_join(rename(usafPrepped$usafDemo, popUSAF=pop), by="state") %>%
+            mutate(pop=pmax(popCTP, popUSAF))
+        
+        # Create CDC All-Cause File
+        cdcPrepped <- prepCDCData(cdcList, popData=demoData)
+
+        # Integrated state data
+        stateData <- ctpPrepped$ctpData %>%
+            bind_rows(usafPrepped$usafData) %>%
+            bind_rows(cdcPrepped$cdcData)
+        
+        # Create popData if not provided
+        if (is.null(popData)) popData <- demoData %>% select(state, pop)
+        
+    }
+    
+    # Show summaries of stateData if requested
+    if (glimpseStateData) {
+        # Glimpse the file
+        glimpse(stateData)
+        # Show control totals
+        stateData %>%
+            group_by(name) %>%
+            summarize(value=sum(value, na.rm=TRUE), value7=sum(value7, na.rm=TRUE)) %>%
+            print()
+    }
+    
+    # Run plotStateMetric if requested
+    if (runTwoAxis) {
+        caseDeath <- plotStateMetric(stateData, 
+                                     yVal=yVal, 
+                                     namesPlot=var1,
+                                     namesSec=var2, 
+                                     keyStates=keyStates,
+                                     combStates=combStates,
+                                     plotTitle="2020 coronavirus burden per million per day (select states)", 
+                                     plotSub="Caution that metrics are on different axes and scales",
+                                     primYLab=paste0(mapper[var1], "\n", mapper[yVal]), 
+                                     secYLab=paste0(mapper[var2], "\n", mapper[yVal]), 
+                                     facetFixed=TRUE, 
+                                     popData=popData,
+                                     returnData=TRUE
+                                     )
+    } else {
+        caseDeath <- NULL
+    }
+ 
+    # Run createAndAlignCurves() if requested
+    if (runCreateAlign) {
+        curveList <- createAndAlignCurves(stateData, 
+                                          yVal=yVal, 
+                                          namesPlot=var1,
+                                          namesSec=var2, 
+                                          keyStates=keyStates,
+                                          combStates=combStates,
+                                          plotTitle="2020 coronavirus burden per million per day (select states)", 
+                                          plotSub="Caution that metrics are on different axes and scales",
+                                          primYLab=paste0(mapper[var1], "\n", mapper[yVal]), 
+                                          secYLab=paste0(mapper[var2], "\n", mapper[yVal]), 
+                                          facetFixed=TRUE, 
+                                          popData=popData,
+                                          printPlot=TRUE,
+                                          lagValueMetric=yVal, 
+                                          lagDepName=var2, 
+                                          lagsTry=lagsTry
+                                          )
+        
+    } else {
+        curveList <- NULL
+    }
+    
+    # Return a list of the key data
+    list(stateData=stateData, popData=popData, caseDeath=caseDeath, curveList=curveList)
+    
+}
+
+
+# Example for creating a full stateData file
+fullStateList <- integrateStateData(ctpList=readFromRDS("test_old_201108"), 
+                                    usafData=readFromRDS("cty_old_20201109")$clusterStateData, 
+                                    cdcList=readFromRDS("cdcList_20201110"), 
+                                    runTwoAxis=FALSE,
+                                    runCreateAlign=FALSE
+                                    )
+fullStateList
+
+# Example for using the full stateData file
+stateList <- integrateStateData(stateData=fullStateList$stateData, 
+                                popData=fullStateList$popData,
+                                keyStates=c("NY", "NJ", "MA", "CT", "RI", "NH", "VT", "ME"),
+                                combStates=c("MA"="S NE", "CT"="S NE", "RI"="S NE", 
+                                             "NH"="N NE", "VT"="N NE", "ME"="N NE"
+                                             )
+                                )
+
+```
+
