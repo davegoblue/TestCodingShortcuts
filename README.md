@@ -2177,4 +2177,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 16-NOV-2020  
 * Coronavirus_Statistics_DataUpdate_v003 updates estimated CFR  
 * Coronavirus_Statistics_DataUpdate_v003 updates lag and lead estimations  
+* Coronavirus_Statistics_DataUpdate_v003 begins functional form for cross-metric comparisons  
   
