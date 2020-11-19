@@ -2178,4 +2178,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 updates estimated CFR  
 * Coronavirus_Statistics_DataUpdate_v003 updates lag and lead estimations  
 * Coronavirus_Statistics_DataUpdate_v003 begins functional form for cross-metric comparisons  
+* Coronavirus_Statistics_DataUpdate_v003 expands functional form for cross-metric comparisons  
   
