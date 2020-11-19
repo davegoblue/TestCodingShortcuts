@@ -1232,15 +1232,22 @@ integrateStateData <- function(stateData=NULL,
                                usafData=NULL,
                                cdcList=NULL, 
                                glimpseStateData=NULL, 
-                               runTwoAxis=TRUE, 
+                               runAll=FALSE,
+                               runTwoAxis=runAll, 
                                yVal="vpm7", 
                                var1="CTP_cases", 
                                var2="CTP_deaths", 
                                keyStates=sort(c(state.abb, "DC")), 
                                combStates=vector("character", 0), 
                                mapper=varMapper, 
-                               runCreateAlign=TRUE, 
-                               lagsTry=0:30
+                               runCreateAlign=runAll, 
+                               lagsTry=0:30, 
+                               runCFR=runAll, 
+                               lagEarlyValue=10, 
+                               lagLateValue=20, 
+                               lagEarlyDate=as.Date("2020-03-31"), 
+                               lagMidDate=NULL,
+                               lagLateDate=as.Date("2020-10-15")
                                ) {
     
     # FUNCTION ARGUMENTS:
@@ -1250,6 +1257,7 @@ integrateStateData <- function(stateData=NULL,
     # usafData: a processed tibble of USA Facts data (must be provided if stateData=NULL)
     # cdcList: a processed list of CDC All-Cause deaths data (must be provided if stateData=NULL)
     # glimpseStateData: boolean, whether to glimpse the stateData file (NULL means only if from components)
+    # runAll: boolean, whether to set al of runTwoAxis, runCreateAlign, and runCFR all to the same value
     # runTwoAxis: whether to show a plot of two metrics on two axes
     # yVal: the y-value to use from stateData
     # var1: the first of the two variables of interest (should be the leading component if a drives b)
@@ -1258,7 +1266,16 @@ integrateStateData <- function(stateData=NULL,
     # combStates: states that should be combined together for plotting (named vector, c("state"="newName"))
     # mapper: mapping file for variables to descriptive names
     # runCreateAlign: boolean, should createAndAlignCurves() be run?
-    # lagsTry: lag values to try
+    # lagsTry: lag values to try (applies to both createAlignCurves and assessStateCFR)
+    # runCFR: boolean, should assessStateCFR be run?
+    # lagEarlyValue: the value for lag on lagEarlyDate, will be linearly interpolated to lagLateValue/Date
+    #                NULL means calculate from data and may differ by state
+    # lagLateValue: the value for lag on lagLateDate, will be linearly interpolated from lagEarlyValue/Date
+    #               NULL means estimate from data and may differ by state
+    # lagEarlyDate: the date for the earliest lagging calculation (dates before this will be at lagEarlyValue)
+    # lagMidDate: if lags are found from data, what midpoint should be used to split data as early vs late?
+    #             NULL means midway between lagEarlyDate and lagLateDate
+    # lagLateDate: the date for the latest lagging calculation (dates after this will be at lagLateValue)
     
     # Check that either stateData or its components have been provided
     if (!is.null(stateData)) {
@@ -1352,8 +1369,39 @@ integrateStateData <- function(stateData=NULL,
         curveList <- NULL
     }
     
+    # Run assessStateCFR() if requested (requires that curveList have been created)
+    if (runCFR & is.null(curveList)) {
+        cat("\nassessStateCFR requires runCreateAlign=TRUE; skipping and setting runCFR=FALSE\n")
+        runCFR <- FALSE
+    }
+    if (runCFR) {
+        # Create the list of key states based on keyStates and combStates
+        useStates <- keyStates
+        for (ctr in 1:length(useStates)) { 
+            if (useStates[ctr] %in% names(combStates)) useStates[ctr] <- combStates[useStates[ctr]]
+        }
+        useStates <- unique(useStates)
+        # Run assessStateCFR
+        cfrList <- assessStateCFR(curveList, 
+                                  keyStates=useStates, 
+                                  depVar=var2, 
+                                  indepVar=var1, 
+                                  depTitleName=stringr::str_replace(var2, ".*_", ""), 
+                                  indepTitleName=stringr::str_replace(var1, ".*_", ""), 
+                                  keyMetric=yVal,
+                                  lagEarlyDate=lagEarlyDate,
+                                  lagMidDate=lagMidDate,
+                                  lagLateDate=lagLateDate,
+                                  lagEarlyValue=lagEarlyValue,
+                                  lagLateValue=lagLateValue,
+                                  lagsTry=lagsTry
+                                  )
+    } else {
+        cfrList <- NULL
+    }
+    
     # Return a list of the key data
-    list(stateData=stateData, popData=popData, caseDeath=caseDeath, curveList=curveList)
+    list(stateData=stateData, popData=popData, caseDeath=caseDeath, curveList=curveList, cfrList=cfrList)
     
 }
 
@@ -1361,20 +1409,50 @@ integrateStateData <- function(stateData=NULL,
 # Example for creating a full stateData file
 fullStateList <- integrateStateData(ctpList=readFromRDS("test_old_201108"), 
                                     usafData=readFromRDS("cty_old_20201109")$clusterStateData, 
-                                    cdcList=readFromRDS("cdcList_20201110"), 
-                                    runTwoAxis=FALSE,
-                                    runCreateAlign=FALSE
+                                    cdcList=readFromRDS("cdcList_20201110")
                                     )
 fullStateList
 
 # Example for using the full stateData file
-stateList <- integrateStateData(stateData=fullStateList$stateData, 
-                                popData=fullStateList$popData,
-                                keyStates=c("NY", "NJ", "MA", "CT", "RI", "NH", "VT", "ME"),
-                                combStates=c("MA"="S NE", "CT"="S NE", "RI"="S NE", 
-                                             "NH"="N NE", "VT"="N NE", "ME"="N NE"
-                                             )
-                                )
+nenynjList <- integrateStateData(stateData=fullStateList$stateData, 
+                                 popData=fullStateList$popData,
+                                 runAll=TRUE,
+                                 keyStates=c("NY", "NJ", "MA", "CT", "RI", "NH", "VT", "ME"),
+                                 combStates=c("MA"="S NE", "CT"="S NE", "RI"="S NE", 
+                                              "NH"="N NE", "VT"="N NE", "ME"="N NE"
+                                              ), 
+                                 lagEarlyValue=NULL,
+                                 lagLateValue=NULL
+                                 )
+
+# Example for alignment between USA Facts and CTP
+testList <- integrateStateData(stateData=fullStateList$stateData, 
+                               popData=fullStateList$popData,
+                               runAll=TRUE,
+                               keyStates=c("NY", "NJ", "MA", "CT", "RI", "NH", "VT", "ME"),
+                               combStates=c("MA"="S NE", "CT"="S NE", "RI"="S NE", 
+                                            "NH"="N NE", "VT"="N NE", "ME"="N NE"
+                                            ), 
+                               var1="CTP_deaths", 
+                               var2="USAF_deaths",
+                               lagEarlyValue=NULL,
+                               lagLateValue=NULL
+                               )
 
 ```
+  
+The differences in data reporting between CTP and USA Facts stand out.  Lags are generally zero, though the spikes mean that each source has a different cumulative number of deaths.  The process can similarly be run for the Great Lakes states (excluding Pennsylvania and New York):  
+```{r}
 
+# Example for using the full stateData file
+glakesList <- integrateStateData(stateData=fullStateList$stateData, 
+                                 popData=fullStateList$popData,
+                                 runAll=TRUE,
+                                 keyStates=c("MN", "WI", "IL", "IN", "MI", "OH"),
+                                 lagEarlyValue=NULL,
+                                 lagLateValue=NULL
+                                 )
+
+```
+  
+Creating separate lags by state as well as separate CFR by month is important in the Great Lakes.  Michigan had a very large spike early when there was little case-death lag and a high CFR.  By contrast, Wisconsin had a large late spike when there was more meaningful case-death lag and a much lower CFR.  Indiana especially needs the variation by month as its early spike had ~6% CFR and its late spike had ~1% CFR.
