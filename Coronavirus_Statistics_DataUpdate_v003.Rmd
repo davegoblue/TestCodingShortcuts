@@ -190,7 +190,7 @@ combineDeathData <- function(ctp,
     # STEP 2a: Sum the county-level data so that it is state-level data
     usafState <- usaf %>%
         group_by(state, date) %>%
-        summarize(deaths=sum(deaths), dpm7=sum(dpm7*pop)/sum(pop), pop=sum(pop)) %>%
+        summarize(deaths=sum(deaths), dpm7=sum(dpm7*pop)/sum(pop), pop=sum(pop), .groups="drop_last") %>%
         ungroup()
     # STEP 2b: Convert the CDC data to an estimated daily total (split the weekly total evenly)
     cdcDaily <- cdc %>%
@@ -211,7 +211,7 @@ combineDeathData <- function(ctp,
     # STEP 4a: Assign a population by state
     statePop <- dailyDeath %>%
         group_by(state) %>%
-        summarize(pop=max(usaf_pop, ctp_pop, na.rm=TRUE))
+        summarize(pop=max(usaf_pop, ctp_pop, na.rm=TRUE), .groups="drop_last")
     
     # STEP 4b: Plot the deaths data
     p1 <- dailyDeath %>%
@@ -286,7 +286,7 @@ prepCTPData <- function(ctp) {
     # Split state-cluster-population as a separate file unique by state
     ctpDemo <- ctp %>%
         group_by(state, cluster) %>%
-        summarize(pop=max(pop, na.rm=TRUE)) %>%
+        summarize(pop=max(pop, na.rm=TRUE), .groups="drop_last") %>%
         ungroup()
     
     # Create a final data file with the key elements
@@ -316,7 +316,7 @@ prepUSAFData <- function(usaf) {
     # Sum the data to state, keeping only state-date-pop-cases-deaths, then pivot longer
     usaf <- usaf %>%
         group_by(state, date) %>%
-        summarize(cases=sum(cases), deaths=sum(deaths), pop=sum(pop)) %>%
+        summarize(cases=sum(cases), deaths=sum(deaths), pop=sum(pop), .groups="drop_last") %>%
         ungroup() %>%
         pivot_longer(-c(state, date, pop), names_to="metric", values_to="value")
     
@@ -332,7 +332,7 @@ prepUSAFData <- function(usaf) {
     # Split state-pop as a separate file unique by state
     usafDemo <- usaf %>%
         group_by(state) %>%
-        summarize(pop=max(pop, na.rm=TRUE)) %>%
+        summarize(pop=max(pop, na.rm=TRUE), .groups="drop_last") %>%
         ungroup()
     
     # Create a final data file with the key elements
@@ -424,7 +424,7 @@ glimpse(stateData)
 # Control totals
 stateData %>%
     group_by(name) %>%
-    summarize(value=sum(value, na.rm=TRUE), value7=sum(value7, na.rm=TRUE))
+    summarize(value=sum(value, na.rm=TRUE), value7=sum(value7, na.rm=TRUE), .groups="drop_last")
 
 ```
   
@@ -496,11 +496,11 @@ plotStateMetric <- function(df,
         if (yValPerCap) {
             df <- df %>%
                 group_by(state, date, name) %>%
-                summarize(!!yVal:=sum(get(yVal)*pop)/sum(pop), pop=sum(pop))
+                summarize(!!yVal:=sum(get(yVal)*pop)/sum(pop), pop=sum(pop), .groups="drop_last")
         } else {
             df <- df %>%
                 group_by(state, date, name) %>%
-                summarize(!!yVal:=sum(get(yVal)), pop=sum(pop))
+                summarize(!!yVal:=sum(get(yVal)), pop=sum(pop), .groups="drop_last")
         }
         # Ungroup data frame
         df <- df %>%
@@ -511,11 +511,11 @@ plotStateMetric <- function(df,
     if (!is.null(namesSec) & is.null(scaleSec)) {
         maxPrimary <- df %>%
             filter(name %in% setdiff(namesPlot, namesSec)) %>%
-            summarize(max(get(yVal), na.rm=TRUE)) %>%
+            summarize(max(get(yVal), na.rm=TRUE), .groups="drop_last") %>%
             max()
         maxSecondary <- df %>%
             filter(name %in% namesSec) %>%
-            summarize(max(get(yVal), na.rm=TRUE)) %>%
+            summarize(max(get(yVal), na.rm=TRUE), .groups="drop_last") %>%
             max()
         scaleSec <- maxSecondary/maxPrimary
         cat("\nWill scale by:", scaleSec, "\n")
@@ -882,7 +882,7 @@ assessStateCFR <- function(lst,
         lf %>%
             group_by(state) %>%
             mutate(y=get(dp), x=lag(get(id), lt)) %>%
-            summarize(p=cor(x, y, use="complete.obs")) %>%
+            summarize(p=cor(x, y, use="complete.obs"), .groups="drop_last") %>%
             ungroup() %>%
             mutate(lag=lt)
     }
@@ -930,8 +930,8 @@ assessStateCFR <- function(lst,
         ungroup()
 
     # Regression for data from keyStates
-    if (length(keyStates) > 1) stateLM <- lm(y ~ x:mon:state + 0, data=df) 
-    else stateLM <- lm(y ~ x:mon + 0, data=df)
+    if (length(keyStates) > 1) stateLM <- lm(y ~ x:mon:state + 0, data=df, na.action=na.exclude) 
+    else stateLM <- lm(y ~ x:mon + 0, data=df, na.action=na.exclude)
     
     # Add the predicted value to df
     df <- df %>%
@@ -1111,7 +1111,7 @@ stateCorr <- function(lst,
     # Get the minimum date that is common to both
     minDate <- df %>%
         group_by(name) %>%
-        summarize(date=min(date)) %>%
+        summarize(date=min(date), .groups="drop_last") %>%
         pull(date) %>%
         max()
     
@@ -1321,7 +1321,7 @@ integrateStateData <- function(stateData=NULL,
         # Show control totals
         stateData %>%
             group_by(name) %>%
-            summarize(value=sum(value, na.rm=TRUE), value7=sum(value7, na.rm=TRUE)) %>%
+            summarize(value=sum(value, na.rm=TRUE), value7=sum(value7, na.rm=TRUE), .groups="drop_last") %>%
             print()
     }
     
@@ -1456,3 +1456,70 @@ glakesList <- integrateStateData(stateData=fullStateList$stateData,
 ```
   
 Creating separate lags by state as well as separate CFR by month is important in the Great Lakes.  Michigan had a very large spike early when there was little case-death lag and a high CFR.  By contrast, Wisconsin had a large late spike when there was more meaningful case-death lag and a much lower CFR.  Indiana especially needs the variation by month as its early spike had ~6% CFR and its late spike had ~1% CFR.
+
+Functions have been updated so that .groups="drop_last" in every summarize() call to avoid the note about dplyr default behavior.  Further, the lm() has been updated to na.action=na.exclude so that predict() will return NA for all rows with missing data (required for hospital data which has variable date of entry by state).
+
+Suppose that the goal is to check how hospitalizations and deaths correlate:  
+```{r}
+
+# Example for using the full stateData file
+glakesHospList <- integrateStateData(stateData=fullStateList$stateData, 
+                                     popData=fullStateList$popData,
+                                     runAll=TRUE,
+                                     keyStates=c("MN", "WI", "IL", "IN", "MI", "OH"),
+                                     var1="CTP_hosp",
+                                     var2="CTP_deaths",
+                                     lagEarlyValue=NULL,
+                                     lagLateValue=NULL
+                                     )
+
+```
+  
+Even with total hospitalized being a state variable rather than a flow variable, it appears to be a better predicor of changes in deaths in the next week or so.  Specifically, even when using a common 7-day lag across all states and dates, application of a single multiplier in the 2%-3% range by state appears to drive reasonably good convergence of the curves.  It is a much more stable predictor over time than cases.
+
+Suppose that the goal is to assess whether increases in CDC all-cause deaths link to increases in coronavirus deaths:  
+```{r}
+
+# Example for using the full stateData file
+glakesCDC1List <- integrateStateData(stateData=fullStateList$stateData, 
+                                     popData=fullStateList$popData,
+                                     runAll=TRUE,
+                                     keyStates=c("MN", "WI", "IL", "IN", "MI", "OH"),
+                                     var1="CDC_excess",
+                                     var2="CTP_deaths",
+                                     lagEarlyValue=NULL,
+                                     lagLateValue=NULL
+                                     )
+
+# Example for using the full stateData file
+glakesCDC2List <- integrateStateData(stateData=fullStateList$stateData, 
+                                     popData=fullStateList$popData,
+                                     runAll=TRUE,
+                                     keyStates=c("MN", "WI", "IL", "IN", "MI", "OH"),
+                                     var1="CTP_deaths",
+                                     var2="CDC_excess",
+                                     lagEarlyValue=NULL,
+                                     lagLateValue=NULL
+                                     )
+
+```
+  
+The link between CDC excess all-cause deaths and reported coronavirus deaths is less clear.  There appear to be roughly 30% more excess all-cause deaths than reported coronavirus deaths, and with the excess all-cause deaths sometimes leading the reported coronavirus deaths (possibly due to differences in how death date is tracked).  Further, Wisconsin did not have excess deaths until Fall, so the predictive nature of this metric is poor in Wisconsin.
+
+Do increases in coronavirus cases predict increases in CDC all-cause deaths?  
+```{r}
+
+# Example for using the full stateData file
+glakesCDC3List <- integrateStateData(stateData=fullStateList$stateData, 
+                                     popData=fullStateList$popData,
+                                     runAll=TRUE,
+                                     keyStates=c("MN", "WI", "IL", "IN", "MI", "OH"),
+                                     var1="CTP_cases",
+                                     var2="CDC_excess",
+                                     lagEarlyValue=NULL,
+                                     lagLateValue=NULL
+                                     )
+
+```
+  
+Since excess deaths and coronavirus deaths are reasonably correlated, increases in cases help predict increases in excess all-cause deaths.  The rate of excess death per case decreases significantly with time.
