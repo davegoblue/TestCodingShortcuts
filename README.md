@@ -2181,4 +2181,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 expands functional form for cross-metric comparisons  
 * Coronavirus_Statistics_DataUpdate_v003 explores lags on other metrics  
 * Coronavirus_Statistics_DataUpdate_v003 refreshed to most recent data  
+* Coronavirus_Statistics_DataUpdate_v003 run for Plains states experiencing heavy current burden  
   
