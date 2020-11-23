@@ -2183,3 +2183,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 refreshed to most recent data  
 * Coronavirus_Statistics_DataUpdate_v003 run for Plains states experiencing heavy current burden  
   
+### Expansions week of 23-NOV-2020  
+* Coronavirus_Statistics_DataUpdate_v003 adjusts for low-n and high-ratio outliers  
+  
