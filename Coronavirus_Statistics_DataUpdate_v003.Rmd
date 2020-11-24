@@ -496,10 +496,12 @@ plotStateMetric <- function(df,
         if (yValPerCap) {
             df <- df %>%
                 group_by(state, date, name) %>%
+                filter(!is.na(get(yVal))) %>%  # only sum population where yVal exists
                 summarize(!!yVal:=sum(get(yVal)*pop)/sum(pop), pop=sum(pop), .groups="drop_last")
         } else {
             df <- df %>%
                 group_by(state, date, name) %>%
+                filter(!is.na(get(yVal))) %>% # only sum population where yVal exists
                 summarize(!!yVal:=sum(get(yVal)), pop=sum(pop), .groups="drop_last")
         }
         # Ungroup data frame
@@ -1681,6 +1683,7 @@ assessStateCFR <- function(lst,
     
     # Extract the data for keyStates
     df <- lst[["dfList"]] %>%
+        select_at(vars(all_of(c("state", "date", "name", keyMetric)))) %>%
         filter(state %in% keyStates, !is.na(get(keyMetric))) %>%
         pivot_wider(names_from="name", values_from=keyMetric)
 
@@ -1741,7 +1744,7 @@ assessStateCFR <- function(lst,
                ) %>%
         filter(!is.na(x)) %>%
         ungroup()
-
+    
     # Regression for data from keyStates
     if (length(keyStates) > 1) stateLM <- lm(y ~ x:mon:state + 0, data=df, na.action=na.exclude) 
     else stateLM <- lm(y ~ x:mon + 0, data=df, na.action=na.exclude)
@@ -1749,7 +1752,7 @@ assessStateCFR <- function(lst,
     # Add the predicted value to df
     df <- df %>%
         mutate(pred=predict(stateLM))
-
+    
     # Plot of curve overlaps
     p1 <- df %>%
         select(state, date, y, pred) %>%
@@ -1856,3 +1859,36 @@ plainsListHosp_20201120 <- integrateStateData(stateData=fullStateList_20201120$s
 ```
   
 The issues appear to be addressed, with the function now running as expected.
+
+The process can be run using the state clusters:  
+```{r}
+
+# Get the cluster file
+clustData <- readFromRDS("test_hier5_201025")$useClusters
+clustStates <- names(clustData)
+clustData <- paste0("Cluster ", clustData)
+names(clustData) <- clustStates
+
+# Example for using the full stateData file
+clustList_20201120 <- integrateStateData(stateData=fullStateList_20201120$stateData, 
+                                         popData=fullStateList_20201120$popData,
+                                         runAll=TRUE,
+                                         keyStates=clustStates,
+                                         combStates=clustData,
+                                         lagEarlyValue=NULL,
+                                         lagLateValue=NULL
+                                         )
+
+# Example for using hospitalizations
+clustListHosp_20201120 <- integrateStateData(stateData=fullStateList_20201120$stateData, 
+                                             popData=fullStateList_20201120$popData,
+                                             runAll=TRUE,
+                                             var1="CTP_hosp",
+                                             keyStates=clustStates,
+                                             combStates=clustData,
+                                             lagEarlyValue=NULL,
+                                             lagLateValue=NULL
+                                             )
+
+```
+
