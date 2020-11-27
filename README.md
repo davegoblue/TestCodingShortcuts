@@ -2188,4 +2188,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 updates summaries by state cluster  
 * Coronavirus_Statistics_DataUpdate_v003 updates summaries for NY/NJ/CT/MA  
 * Coronavirus_Statistics_DataUpdate_v003 updates summaries for southern states  
+* Coronavirus_Statistics_DataUpdate_v003 updates summaries for earlier impacted northern states  
   
