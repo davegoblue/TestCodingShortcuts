@@ -2190,4 +2190,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 updates summaries for southern states  
 * Coronavirus_Statistics_DataUpdate_v003 updates summaries for earlier impacted northern states  
 * Coronavirus_Statistics_DataUpdate_v003 updates summaries for large cohort of later impacted states  
+* Coronavirus_Statistics_DataUpdate_v003 updates summaries for outlier cohort of lower impacted states  
   
