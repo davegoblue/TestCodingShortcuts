@@ -2192,3 +2192,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 updates summaries for large cohort of later impacted states  
 * Coronavirus_Statistics_DataUpdate_v003 updates summaries for outlier cohort of lower impacted states  
   
+### Expansions week of 30-NOV-2020  
+* Coronavirus_Statistics_DataUpdate_v003 updates summaries for select states  
+  
