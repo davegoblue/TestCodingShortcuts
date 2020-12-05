@@ -2198,4 +2198,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 assesses movement in state segments  
 * Coronavirus_Statistics_DataUpdate_v003 assesses burden by state segment overlap  
 * Coronavirus_Statistics_DataUpdate_v003 updates USA Facts data and creates new county-level segments  
+* Coronavirus_Statistics_DataUpdate_v003 assesses movement in county segments  
   
