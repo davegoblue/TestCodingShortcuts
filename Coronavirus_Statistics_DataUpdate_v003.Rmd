@@ -2171,4 +2171,62 @@ fisher.test(select(countySegmentChange, oldSegment, newSegment) %>% table(), sim
 chisq.test(select(countySegmentChange, oldSegment, newSegment) %>% table())
 ```
   
-There is meaningful overlap between old county segment and new county segment.
+There is meaningful overlap between old county segment and new county segment.  Plots of disease burden by county segment overlap are also created:  
+```{r}
+
+countySegChangePlotData <- cty_new_20201203$clusterStateData %>%
+    ungroup() %>%
+    select(fipsCounty, date, countyName, state, pop, cpm7, dpm7) %>%
+    filter(!is.na(cpm7), !is.na(dpm7)) %>%
+    inner_join(select(countySegmentChange, fipsCounty=state, newSegment, oldSegment), by=c("fipsCounty")) %>%
+    bind_rows(mutate(., fipsCounty="TOTAL", state="TOTAL", countyName="TOTAL")) %>%
+    group_by(fipsCounty, date, countyName, state, newSegment, oldSegment) %>%
+    summarize(cpm7=sum(cpm7*pop)/sum(pop), dpm7=sum(dpm7*pop)/sum(pop), pop=sum(pop), .groups="drop")
+
+newSegLevels <- countySegChangePlotData %>% count(newSegment) %>% arrange(n) %>% pull(newSegment)
+oldSegLevels <- countySegChangePlotData %>% count(oldSegment) %>% arrange(-n) %>% pull(oldSegment)
+
+for (keyVar in c("cpm7", "dpm7")) {
+    p1 <- countySegChangePlotData %>%
+        mutate(newSegment=factor(newSegment, levels=newSegLevels), 
+               oldSegment=factor(oldSegment, levels=oldSegLevels)
+               ) %>%
+        ggplot(aes(x=date, y=get(keyVar))) + 
+        # geom_line(data=~filter(., state != "TOTAL"), aes(group=fipsCounty), color="grey") +
+        geom_line(data=~filter(., state == "TOTAL"), aes(group=1, color=newSegment)) + 
+        facet_grid(oldSegment ~ newSegment) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b") + 
+        scale_color_discrete("New\nSegment") +
+        theme(axis.text.x = element_text(angle = 90)) +
+        labs(x="", 
+             y="Per million (7-day rolling mean)", 
+             title=paste0(stringr::str_to_title(keyVar), " per million per day by segment overlap")
+             )
+    print(p1)
+}
+
+```
+
+Further, updated CDC data are downloaded:  
+```{r cache=TRUE}
+
+# Download new data
+cdcLoc <- "Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20201206.csv"
+cdcList_20201206 <- readRunCDCAllCause(loc=cdcLoc, 
+                                       startYear=2015, 
+                                       curYear=2020,
+                                       weekThru=39, 
+                                       startWeek=9, 
+                                       lst=test_hier5_201130, 
+                                       epiMap=readFromRDS("epiMonth"), 
+                                       agePopData=readFromRDS("usPopBucket2020"), 
+                                       cvDeathThru="2020-09-26", 
+                                       cdcPlotStartWeek=10, 
+                                       dlData=!file.exists(paste0("./RInputFiles/Coronavirus/", cdcLoc)), 
+                                       stateNoCheck=c("NC")
+                                       )
+
+saveToRDS(cdcList_20201206, ovrWriteError=FALSE)
+
+```
+
