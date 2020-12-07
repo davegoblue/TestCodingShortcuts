@@ -2230,3 +2230,88 @@ saveToRDS(cdcList_20201206, ovrWriteError=FALSE)
 
 ```
 
+A function is written to compare CDC deaths for the same time period in two different files:  
+```{r}
+
+cdcDeathCompare <- function(loc1, 
+                            loc2, 
+                            dir="./RInputFiles/Coronavirus/", 
+                            periodKeep="2015-2019", 
+                            weekThru=53, 
+                            stateNoCheck=c(state.abb, "DC"), 
+                            threshPct=0.0005
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # loc1: the first raw CDC file
+    # loc2: the second raw CDC file
+    # dir: the directory containing the raw CDC files
+    # periodKeep: keep all data from this time period
+    # weekThru: keep all data that is from this week or earlier, even if not in periodKeep
+    # stateNoCheck: do not run error checks for these states (all in this case)
+    # threshPct: threshold for plotting as a difference
+    
+    # Function to read raw CDC data
+    readRawCDC <- function(x) {
+        readProcessCDC(x, weekThru=weekThru, periodKeep=periodKeep, fDir=dir, stateNoCheck=stateNoCheck) %>%
+            group_by(weekEnding) %>%
+            summarize(deaths=sum(deaths, na.rm=TRUE), .groups="drop")
+    }
+    cdc1 <- readRawCDC(loc1)
+    cdc2 <- readRawCDC(loc2)
+    
+    # Merge the files
+    cdc <- select(cdc1, weekEnding, deaths1=deaths) %>%
+        full_join(select(cdc2, weekEnding, deaths2=deaths), by="weekEnding")
+    
+    # Mapping file
+    name1 <- stringr::str_extract(loc1, pattern="\\d{8}")
+    name2 <- stringr::str_extract(loc2, pattern="\\d{8}")
+    mapFile <- c(name1, name2)
+    names(mapFile) <- c("deaths1", "deaths2")
+    
+    
+    # Plot differences
+    p1 <- cdc %>%
+        pivot_longer(-weekEnding) %>%
+        mutate(name=mapFile[name]) %>%
+        ggplot(aes(x=weekEnding, y=value)) +
+        geom_line(aes(group=name, color=name)) + 
+        labs(x="", 
+             y="Total deaths", 
+             title="Change in total deaths (predicted) reported in CDC data by time period"
+             ) + 
+        scale_color_discrete("CDC Time Period") + 
+        ylim(0, NA)
+    print(p1)
+    
+    # Extract any weeks with change greater than threshPct
+    p2 <- cdc %>%
+        filter(!is.na(deaths1), !is.na(deaths2)) %>%
+        mutate(delta=deaths2-deaths1) %>%
+        filter(abs(delta) >= threshPct*pmax(deaths1, deaths2)) %>%
+        ggplot(aes(x=weekEnding, y=delta)) + 
+        geom_col(aes(fill=delta>0)) + 
+        geom_text(aes(y=delta+100, label=delta), hjust=0) +
+        labs(x="", 
+             y="Delta between files (positive means more in second file)", 
+             title="Change in CDC reported deaths by week", 
+             subtitle=paste0("Includes only weeks with change at least ", round(threshPct*100, 3), "%")
+             ) + 
+        coord_flip() + 
+        scale_fill_discrete("Positive Delta")
+    print(p2)
+    
+    # Return the CDC data
+    cdc
+    
+}
+
+loc1 <- "Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20200923.csv"
+loc2 <- "Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20201206.csv"
+
+cdcCompare_0923_1206 <- cdcDeathCompare(loc1=loc1, loc2=loc2)
+
+```
+
+There is eventual modest restatement of CDC data in most weeks, and more significant restatement of CDC data in the four most recent weeks of the September 23, 2020 data file (last week available week ending September 5, last mostly non-restated data week ending August 8).
