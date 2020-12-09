@@ -2204,4 +2204,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 06-DEC-2020  
 * Coronavirus_Statistics_DataUpdate_v003 explores restatements over time in CDC all-cause deaths data  
 * Coronavirus_Statistics_DataUpdate_v003 restatement function returns a list if requested  
+* Coronavirus_Statistics_DataUpdate_v003 restatement function run on different time periods  
   
