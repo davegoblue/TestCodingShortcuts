@@ -2244,8 +2244,8 @@ cdcDeathCompare <- function(loc1,
                             ) {
     
     # FUNCTION ARGUMENTS:
-    # loc1: the first raw CDC file
-    # loc2: the second raw CDC file
+    # loc1: the first raw CDC file (either character location of CSV or data frame)
+    # loc2: the second raw CDC file (either character location of CSV or data frame)
     # dir: the directory containing the raw CDC files
     # periodKeep: keep all data from this time period
     # weekThru: keep all data that is from this week or earlier, even if not in periodKeep
@@ -2260,16 +2260,22 @@ cdcDeathCompare <- function(loc1,
             group_by(weekEnding) %>%
             summarize(deaths=sum(deaths, na.rm=TRUE), .groups="drop")
     }
-    cdc1 <- readRawCDC(loc1)
-    cdc2 <- readRawCDC(loc2)
+    
+    # Read the data if character, otherwise keep "as is"
+    if ("character" %in% class(loc1)) cdc1 <- readRawCDC(loc1)
+    else cdc1 <- loc1
+    if ("character" %in% class(loc2)) cdc2 <- readRawCDC(loc2)
+    else cdc2 <- loc2
     
     # Merge the files
     cdc <- select(cdc1, weekEnding, deaths1=deaths) %>%
         full_join(select(cdc2, weekEnding, deaths2=deaths), by="weekEnding")
     
     # Mapping file
-    name1 <- stringr::str_extract(loc1, pattern="\\d{8}")
-    name2 <- stringr::str_extract(loc2, pattern="\\d{8}")
+    if ("character" %in% class(loc1)) name1 <- stringr::str_extract(loc1, pattern="\\d{8}")
+    else name1 <- loc1 %>% pull(weekEnding) %>% max() %>% as.character() %>% stringr::str_replace_all("-", "")
+    if ("character" %in% class(loc2)) name2 <- stringr::str_extract(loc2, pattern="\\d{8}")
+    else name2 <- loc2 %>% pull(weekEnding) %>% max() %>% as.character() %>% stringr::str_replace_all("-", "")
     mapFile <- c(name1, name2)
     names(mapFile) <- c("deaths1", "deaths2")
     
@@ -2299,7 +2305,9 @@ cdcDeathCompare <- function(loc1,
         labs(x="", 
              y="Delta between files (positive means more in second file)", 
              title="Change in CDC reported deaths by week", 
-             subtitle=paste0("Includes only weeks with change at least ", round(threshPct*100, 3), "%")
+             subtitle=paste0("Includes only weeks with change at least ", round(threshPct*100, 3), "%\n", 
+                             "Dates: ", name1," and ", name2
+                             )
              ) + 
         coord_flip() + 
         scale_fill_discrete("Positive Delta")
@@ -2326,12 +2334,23 @@ The function is updated to return either a list (includes each CDC data file) or
 The function is run again for two different time periods:  
 ```{r}
 
-loc1 <- "Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20201014.csv"
-loc2 <- "Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20201120.csv"
+loc3 <- "Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20201014.csv"
+loc4 <- "Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20201120.csv"
 
-cdcCompare_1014_1120 <- cdcDeathCompare(loc1=loc1, loc2=loc2, returnList=TRUE)
+cdcCompare_1014_1120 <- cdcDeathCompare(loc1=loc3, loc2=loc4, returnList=TRUE)
 str(cdcCompare_1014_1120)
 
 ```
   
 A similar pattern is seen, with larger restatements in the more recent months of the older data file.
+
+The function is updated to allow for taking a data frame or character path to a CSV.  Direct use of the file is for example:  
+```{r}
+
+cdcCompare_1014_1206 <- cdcDeathCompare(loc1=cdcCompare_1014_1120$cdc1, 
+                                        loc2=cdcCompare_0923_1206$cdc2, 
+                                        returnList=FALSE
+                                        )
+str(cdcCompare_1014_1206)
+
+```
