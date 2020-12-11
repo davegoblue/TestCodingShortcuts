@@ -2205,5 +2205,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 explores restatements over time in CDC all-cause deaths data  
 * Coronavirus_Statistics_DataUpdate_v003 restatement function returns a list if requested  
 * Coronavirus_Statistics_DataUpdate_v003 restatement function run on different time periods  
-* Coronavirus_Statistics_DataUpdate_v003 restatement function can ceept processed file as input  
+* Coronavirus_Statistics_DataUpdate_v003 restatement function can accept processed file as input  
+* Coronavirus_Statistics_DataUpdate_v003 explores restatement percentage by week in early-September data  
   
