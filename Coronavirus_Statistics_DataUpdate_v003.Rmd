@@ -2366,41 +2366,68 @@ cdcFourFiles <- cdcCompare_0923_1206$cdc %>%
     arrange(weekEnding, source)
 cdcFourFiles
 
-cdcNoNA <- cdcFourFiles %>%
-    group_by(weekEnding) %>%
-    summarize(numNA=sum(is.na(reportedDeaths)), .groups="drop") %>%
-    filter(numNA==0) %>%
-    select(weekEnding) %>%
-    inner_join(cdcFourFiles, by="weekEnding")
-cdcNoNA
+# Function to plot restatement levels for a file
+plotCDCRestatement <- function(df, 
+                               keyVar="reportedDeaths", 
+                               keyYears=c(2020), 
+                               firstWeek=NULL
+                               ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: a frame containing weekEnding-source-reportedDeaths
+    # keyVar: character string, defaults to "reportedDeaths"
+    # keyYears: years to be included
+    # firstWeek: character vector for description of first week (NULL means calculate from data)
+    
+    dfNoNA <- df %>%
+        rename("numKey"=all_of(keyVar)) %>%
+        group_by(weekEnding) %>%
+        summarize(numNA=sum(is.na(numKey)), .groups="drop") %>%
+        filter(numNA==0) %>%
+        select(weekEnding) %>%
+        inner_join(df, by="weekEnding") %>%
+        rename("numKey"=keyVar)
+    
+    if (is.null(firstWeek)) firstWeek <- dfNoNA %>% pull(source) %>% min() %>% as.character()
+    
+    dfRatio <- dfNoNA %>%
+        arrange(weekEnding, source) %>%
+        group_by(weekEnding) %>%
+        mutate(firstNum=first(numKey), pctFirst=numKey/firstNum) %>%
+        ungroup()
+    
+    p1 <- dfRatio %>%
+        filter(lubridate::year(weekEnding) %in% keyYears) %>%
+        ggplot(aes(x=weekEnding, y=pctFirst)) + 
+        geom_line(aes(group=source, color=factor(source))) + 
+        labs(x="Data reported for week", 
+             y=paste0("Ratio vs. reported in ", firstWeek, " file"), 
+             title="Ratio of CDC all-cause deaths reported by week", 
+             subtitle=paste0("Compared to number by week reported in ", firstWeek, " file")
+             ) + 
+        scale_color_discrete("Download Date")
+    print(p1)
+    
+    p2 <- dfRatio %>%
+        filter(lubridate::year(weekEnding) %in% keyYears) %>%
+        mutate(weeksPrior=as.integer(max(weekEnding)-weekEnding)/7) %>%
+        group_by(weekEnding) %>%
+        filter(row_number()==n()) %>%
+        ggplot(aes(x=weeksPrior, y=pctFirst)) + 
+        geom_text(aes(label=paste0(round(100*pctFirst), "%")), size=3) + 
+        labs(x=paste0("Weeks prior to latest week reported in ", firstWeek, " file"), 
+             y=paste0("Ratio vs. reported in ", firstWeek, " file"), 
+             title="Ratio of CDC all-cause deaths reported by week", 
+             subtitle=paste0("Compared to number by week reported in ", firstWeek, " file")
+             )
+    print(p2)
+    
+}
 
-cdcRatio <- cdcNoNA %>%
-    arrange(weekEnding, source) %>%
-    group_by(weekEnding) %>%
-    mutate(firstDeaths=first(reportedDeaths), pctFirst=reportedDeaths/firstDeaths) %>%
-    ungroup()
-cdcRatio %>%
-    filter(lubridate::year(weekEnding)==2020) %>%
-    ggplot(aes(x=weekEnding, y=pctFirst)) + 
-    geom_line(aes(group=source, color=factor(source))) + 
-    labs(x="Data reported for week", 
-         y="Ratio vs. reported in 2020-09-23 file", 
-         title="Ratio of CDC all-cause deaths reported by week in 2020", 
-         subtitle="Compared to number by week reported in 2020-09-23 file"
-         ) + 
-    scale_color_discrete("Download Date")
-cdcRatio %>%
-    filter(lubridate::year(weekEnding)==2020) %>%
-    mutate(weeksPrior=(lubridate::yday(max(weekEnding))-lubridate::yday(weekEnding))/7) %>%
-    group_by(weekEnding) %>%
-    filter(row_number()==n()) %>%
-    ggplot(aes(x=weeksPrior, y=pctFirst)) + 
-    geom_text(aes(label=paste0(round(100*pctFirst), "%")), size=3) + 
-    labs(x="Weeks prior to latest week reported in 2020-09-23 file", 
-         y="Ratio vs. reported in 2020-09-23 file", 
-         title="Ratio of CDC all-cause deaths reported by week in 2020", 
-         subtitle="Compared to number by week reported in 2020-09-23 file"
-         )
+plotCDCRestatement(cdcFourFiles)
+
 ```
   
 It appears that projected deaths in the 23-SEP-2020 file were mostly finalized prior to the most recent four weeks.  Inflation factors of ~125%, ~110%, ~105%, and ~105% would have been needed for the current week and the three preceding weeks to match the 'final' totals for those weeks as reported in the 2020-DEC-06 file.
+
+The plotting routine has been converted to functional form and re-run.
