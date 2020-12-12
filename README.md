@@ -2207,4 +2207,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 restatement function run on different time periods  
 * Coronavirus_Statistics_DataUpdate_v003 restatement function can accept processed file as input  
 * Coronavirus_Statistics_DataUpdate_v003 explores restatement percentage by week in early-September data  
+* Coronavirus_Statistics_DataUpdate_v003 converts restatement percentage by week to functional form  
   
