@@ -2201,7 +2201,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 assesses movement in county segments  
 * Coronavirus_Statistics_DataUpdate_v003 updates CDC all-cause deaths data  
   
-### Expansions week of 06-DEC-2020  
+### Expansions week of 07-DEC-2020  
 * Coronavirus_Statistics_DataUpdate_v003 explores restatements over time in CDC all-cause deaths data  
 * Coronavirus_Statistics_DataUpdate_v003 restatement function returns a list if requested  
 * Coronavirus_Statistics_DataUpdate_v003 restatement function run on different time periods  
@@ -2209,4 +2209,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 explores restatement percentage by week in early-September data  
 * Coronavirus_Statistics_DataUpdate_v003 converts restatement percentage by week to functional form  
 * Coronavirus_Statistics_DataUpdate_v003 explores restatement percentage by week in late-September data  
+  
+### Expansions week of 14-DEC-2020  
+* Coronavirus_Statistics_DataUpdate_v003 updates CDC all-cause deaths data  
   
