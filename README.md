@@ -2212,4 +2212,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 14-DEC-2020  
 * Coronavirus_Statistics_DataUpdate_v003 updates CDC all-cause deaths data  
+* Coronavirus_Statistics_DataUpdate_v003 updates COVID Tracking Project data and uses existing state-level segments  
   
