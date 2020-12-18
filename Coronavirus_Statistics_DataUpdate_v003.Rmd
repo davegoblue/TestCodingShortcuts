@@ -2567,3 +2567,92 @@ It may be particularly interesting to explore some of the larger differences:
 * Deaths - VA, NY, IA, GA, KS  
   
 Virginia is particularly of note for being ~25% different on both cases and deaths.  Iowa is particularly of note for being ~15% different on both cases and deaths, but in different directions.
+  
+A function is written to explore the daily data for a give state:  
+```{r}
+
+exploreState <- function(keyState, 
+                         ctp, 
+                         usa, 
+                         maxDate=NULL, 
+                         minDate=NULL
+                         ) {
+    
+    # FUNCtION ARGUMENTS:
+    # keyState: the state abbreviation of interest
+    # ctp: a processed list from COVID Tracking Project
+    # usa: a processed list from USA Facts
+    # maxDate: the latest date to use (NULL means use all)
+    # minDate: the minimum date to use (NULL means use all)
+    
+    # Extract the relevant data from COVID Tracking Project
+    ctp <- ctp[["plotData"]] %>% 
+        filter(state %in% keyState) %>% 
+        group_by(date) %>% 
+        summarize(cases=sum(cases), deaths=sum(deaths), .groups="drop")
+    
+    # Extract the relevant data from USA Facts
+    usa <- usa[["clusterStateData"]] %>% 
+        filter(state %in% keyState) %>% 
+        group_by(date) %>%
+        summarize(cases=sum(cases, na.rm=TRUE), deaths=sum(deaths), .groups="drop")
+    
+    # Integrate the data
+    ctpUSA <- mutate(ctp, source="COVID Tracking Project") %>%
+        bind_rows(mutate(usa, source="USA Facts"))
+    
+    # Filter for minDate and maxDate if requested
+    if (!is.null(minDate)) ctpUSA <- filter(ctpUSA, date >= as.Date(minDate))
+    if (!is.null(maxDate)) ctpUSA <- filter(ctpUSA, date >= as.Date(maxDate))
+
+    # Create a pivoted data frame
+    pivotDF <- ctpUSA %>%
+        pivot_longer(-c(date, source), names_to="metric", values_to="value") %>%
+        arrange(source, metric, date) %>%
+        group_by(source, metric) %>%
+        mutate(cumValue=cumsum(value))
+    
+    # Plot the data by date
+    p1 <- pivotDF %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(group=source, color=source)) + 
+        facet_wrap(~metric, scales="free_y") + 
+        labs(x="", y="Impact", title=paste0("Impact by date for: ", keyState)) + 
+        scale_color_discrete("Source")
+    print(p1)
+    
+    # Plot cumulative data by date
+    p2 <- pivotDF %>%
+        ggplot(aes(x=date, y=cumValue)) + 
+        geom_line(aes(group=source, color=source)) + 
+        facet_wrap(~metric, scales="free_y") + 
+        labs(x="", y="Cumulative Impact", title=paste0("Cumulative impact by date for: ", keyState)) + 
+        scale_color_discrete("Source")
+    print(p2)
+    
+    # Return the processed file
+    pivotDF
+    
+}
+
+
+# Test the function for NY
+exploreState("NY", ctp=old_hier5_201214, usa=cty_old_20201215)
+
+```
+  
+The data sources agree almost perfectly on cases, but there are some significant differences on deaths by day leading to a total of ~25k in COVID Tracking Project and ~35k in USA Facts.  Reported data are closer to ~35k so there may be some further digging needed for the COVID Tracking Project process.
+
+The function is also run for VA and IA as they are the two other largest outliers:  
+```{r}
+
+exploreState("VA", ctp=old_hier5_201214, usa=cty_old_20201215)
+exploreState("IA", ctp=old_hier5_201214, usa=cty_old_20201215)
+
+```
+
+With the Virginia data, USA Facts consistently reports lower than COVID Tracking Project, reaching ~3500 deaths with ~225k cases while COVID Tracking Project reports ~4500 deaths and ~275k cases.  The COVID Tracking Project data re much closer to official numbers than the USA Facts data.
+
+With the Iowa data, the disconnect in cases begins roughly in September, with USA Facts reporting ~250k cases total and COVID Tracking Project reporting ~225k cases total (both report ~3200 deaths).  Official data for Iowa are closer to ~260k deaths and ~3300 deaths.
+
+Further exploration of the raw data files may be merited to see if any data are being deleted (e.g., county name/FIPS mismatch or NYC tracked separately from NYS or the like).
