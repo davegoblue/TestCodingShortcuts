@@ -2656,3 +2656,65 @@ With the Virginia data, USA Facts consistently reports lower than COVID Tracking
 With the Iowa data, the disconnect in cases begins roughly in September, with USA Facts reporting ~250k cases total and COVID Tracking Project reporting ~225k cases total (both report ~3200 deaths).  Official data for Iowa are closer to ~260k deaths and ~3300 deaths.
 
 Further exploration of the raw data files may be merited to see if any data are being deleted (e.g., county name/FIPS mismatch or NYC tracked separately from NYS or the like).
+
+The raw data files from COVID Tracking Project are explored:  
+```{r}
+
+# Raw data from COVID Tracking Project, summed
+ctpRaw <- old_hier5_201214$dfRaw %>% 
+    group_by(state) %>% 
+    summarize_if(is.numeric, sum, na.rm=TRUE)
+
+# States in ctpRaw that are not in c(state.abb, "DC)
+# Includes only American Samoa, Guam, Mariana Islands, Puerto Rico, Virgin Islands
+ctpRaw %>%
+    filter(!(state %in% c(state.abb, "DC")))
+
+# Metrics for New York
+ctpRaw %>%
+    filter(state %in% c("NY", "IA", "VA")) %>%
+    column_to_rownames("state") %>%
+    t()
+
+```
+  
+There is no state-level surrogate missing (e.g., 'YC' is not being used to distinguish NYC from NYS).  There are several variables that potentially relate to deaths:  
+  
+* death  
+* deathConfirmed  
+* deathProbable  
+* deathIncrease  
+  
+The data are filtered to just these columns, and the results displayed for easier viewing:  
+```{r}
+
+# Metrics for New York
+ctpRaw %>%
+    filter(state %in% c("NY", "IA", "VA")) %>%
+    select(state, death, deathConfirmed, deathProbable, deathIncrease) %>%
+    column_to_rownames("state") %>%
+    t()
+
+```
+  
+The variable 'death' is potentially of interest, as it appears to be an attempt at cumsum(deathIncrease).  Is this observed in the data?  
+```{r}
+
+# Raw data from COVID Tracking Project, summed
+ctpDaily <- old_hier5_201214$dfRaw %>% 
+    arrange(state, date) %>%
+    select(state, date, death, deathIncrease) %>%
+    group_by(state) %>% 
+    mutate(cumDeathIncrease=cumsum(ifelse(is.na(deathIncrease), 0, deathIncrease))) %>%
+    ungroup()
+
+ctpDaily %>% filter(death != cumDeathIncrease)
+
+```
+  
+The data fields are aligned.  According to COVID Tracking Project, their NYS data include a significant undercount of the LTC deaths, driven by reporting issues with NYS.  
+
+Further, [COVID Tracking Project](https://covidtracking.com/data/state/new-york) explain that "As of June 1, 2020, New York City reported 5740 more deaths (probable and confirmed) than New York State reports for NYC. Due to an exclusion of probable COVID-19 deaths in the state's data, New York City and New York State report substantially diverging death counts. We use the data from the state, so our dataset excludes these probable COVID-19 deaths."
+
+While the disconnect is large, NYC is a very large component of NYS and LTC is a very large component of COVID death.  This would likely explain very different numbers of deaths reported in NYS, even as there is close agreement on the number of cases.
+
