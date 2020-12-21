@@ -2219,3 +2219,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 explores disparity in reported NY deaths  
 * Coronavirus_Statistics_DataUpdate_v003 compares state-level absolute value deltas in USA Facts and COVID Tracking Project  
   
+### Expansions week of 21-DEC-2020  
+* Coronavirus_Statistics_DataUpdate_v003 explores Virginia disconnects  
+  
