@@ -2764,3 +2764,67 @@ This highlights a few additional states of interest, including:
   
 It is notable that the data sources generally agree on the totals in most states, with large differences in either direction observed in some exception states.
 
+The USA Facts data are explored for Virginia:  
+```{r}
+
+countyVA <- cty_old_20201215$burdenData %>% 
+    filter(state=="VA") %>% 
+    group_by(county, countyFIPS) %>% 
+    summarize(pop=max(population, na.rm=TRUE), 
+              cases=max(cumCases, na.rm=TRUE), 
+              deaths=max(cumDeaths, na.rm=TRUE), 
+              .groups="drop"
+              ) 
+countyVA %>% 
+    select(-county, -countyFIPS) %>% 
+    colSums()
+
+```
+  
+Viriginal should have a population closer to 8.5 million, so the processed USA Facts file appears to be missing about 20% of the state.  The raw files are explored in more detail:  
+```{r}
+
+# Locations for the population, case, and death file
+popLoc <- "./RInputFiles/Coronavirus/covid_county_population_usafacts.csv"
+caseLoc <- "./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20201215.csv"
+deathLoc <- "./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20201215.csv"
+
+rawCountyPop <- readr::read_csv(popLoc) 
+rawCountyPop %>%
+    filter(State=="VA") %>%
+    summarize(n=n(), population=sum(population))
+
+```
+  
+The raw population file has 8.5 million people across 134 counties, in contrast to the 6.8 million people across 120 counties in the final processed file.  What causes the disconnect?  
+```{r}
+
+mismatchVA <- rawCountyPop %>%
+    filter(State=="VA") %>%
+    anti_join(select(countyVA, countyFIPS), by="countyFIPS")
+mismatchVA
+mismatchVA %>%
+    summarize(n=n(), population=sum(population))
+
+```
+  
+It appears that the processed data is missing the large cities in Virginia that report separately from the counties.  Are these available in the deaths data?  
+```{r}
+
+rawCountyDeath <- readr::read_csv(deathLoc) 
+rawCountyDeath %>%
+    filter(State=="VA")
+vaCountyDeath <- rawCountyDeath %>%
+    filter(State=="VA") %>%
+    select(-X332) %>%
+    pivot_longer(-c(countyFIPS, `County Name`, State, stateFIPS), names_to="date", values_to="deaths") %>%
+    mutate(date=lubridate::mdy(date)) %>%
+    filter(date==max(date))
+vaCountyDeath
+vaCountyDeath %>%
+    rename(deathName=`County Name`) %>%
+    inner_join(select(mismatchVA, popName=`County Name`, everything()), by=c("countyFIPS", "State"))
+
+```
+  
+Some county and city names are spelled differently in the population file and the deaths file, leading to a disconnect.  The process for reading the USA Facts data should be updated to check and correct for this.
