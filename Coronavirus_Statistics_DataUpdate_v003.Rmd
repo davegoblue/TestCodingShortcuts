@@ -2828,3 +2828,73 @@ vaCountyDeath %>%
 ```
   
 Some county and city names are spelled differently in the population file and the deaths file, leading to a disconnect.  The process for reading the USA Facts data should be updated to check and correct for this.
+
+A check is made to see if this issue impacts any other states in the USA Facts data:  
+```{r}
+
+allCountyDeath <- rawCountyDeath %>%
+    select(-X332) %>%
+    pivot_longer(-c(countyFIPS, `County Name`, State, stateFIPS), names_to="date", values_to="deaths") %>%
+    mutate(date=lubridate::mdy(date), 
+           countyFIPS=stringr::str_pad(countyFIPS, side="left", width=5, pad="0")
+           ) %>%
+    filter(date==max(date))
+allCountyDeath
+
+countyAll <- cty_old_20201215$burdenData %>% 
+    group_by(county, countyFIPS) %>% 
+    summarize(pop=max(population, na.rm=TRUE), 
+              cases=max(cumCases, na.rm=TRUE), 
+              deaths=max(cumDeaths, na.rm=TRUE), 
+              .groups="drop"
+              ) %>%
+    mutate(countyFIPS=stringr::str_pad(countyFIPS, width=5, side="left", pad="0"))
+countyAll
+
+# Records in the processed deaths file but not in the raw file (should be empty)
+countyAll %>%
+    anti_join(allCountyDeath, by="countyFIPS")
+
+# Records in the raw deaths file but not in the processed deaths file
+mismatch_1 <- allCountyDeath %>%
+    anti_join(countyAll, by="countyFIPS")
+mismatch_1 %>%
+    filter(deaths > 0) %>%
+    arrange(-deaths) %>%
+    as.data.frame()
+mismatch_1 %>%
+    mutate(unalloc=ifelse(stringr::str_detect(string=`County Name`, pattern="nallocated"), 
+                          "unallocated", 
+                          "specific"
+                          )
+           ) %>%
+    filter(deaths > 0) %>%
+    pivot_wider(id_cols=c(State), 
+                names_from=unalloc, 
+                values_from=deaths, 
+                values_fn=sum, 
+                values_fill=0
+                ) %>%
+    arrange(-specific, -unallocated)
+
+```
+
+There are an additional 57 deaths in Colorado (Broomfield County) and 7 deaths in Minnesota (Lac qui Parle County) that are not counted.
+
+There are also statewide unallocated deaths of at least 50 in Kansas (254), Georgia (229), New York (182), Michigan (116), Tennessee (97), and Maryland (67).
+
+Among the states where the absolute value of difference in deaths is at least 100:  
+  
+* New York (7340) - driven by differences in LTC tracking and probable cases in NYC as tracked by county (data from NYC) or by state (data from NYS), in an environment where a large city and state disagree on methodology  
+* Georgia (1077) - about 20% explained by unallocated, remainder to be determined  
+* Illinois (984) - to be explored  
+* Virginia (792) - county name mismatches during merging  
+* Iowa (444) - to be explored  
+* Wisconsin (266) - to be explored?  
+* Florida (260) - to be explored?  
+* Washington (177) - to be explored?  
+* Kansas (174) - unallocated explains gap  
+* California (159) - to be explored?  
+* Michigan (117) - unallocated explains gap  
+  
+Next steps include updating the methodology for merging and exploring remaining disconnects for reported deaths in Georgia, Illinois, and Iowa.
