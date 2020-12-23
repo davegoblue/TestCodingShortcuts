@@ -2221,5 +2221,6 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 21-DEC-2020  
 * Coronavirus_Statistics_DataUpdate_v003 explores Virginia disconnects  
-* Coronavirus_Statistics_DataUpdate_v003 explores county name mismatches in USA Facts   
+* Coronavirus_Statistics_DataUpdate_v003 explores county name mismatches for deaths in USA Facts  
+* Coronavirus_Statistics_DataUpdate_v003 explores county name mismatches for cases in USA Facts  
   
