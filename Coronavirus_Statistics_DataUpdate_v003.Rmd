@@ -2939,4 +2939,240 @@ mismatch_1_cases %>%
 
 ```
 
-The issues appear to be broadly the same, with significant county name mismatches in Virginia, one mismatch in each of Colorado and Minnesota, and a number of statewide unallocated cases.  There are also 21 cases on a cruise ship in California; these will hev no impact on the analysis.
+The issues appear to be broadly the same, with significant county name mismatches in Virginia, one mismatch in each of Colorado and Minnesota, and a number of statewide unallocated cases.  There are also 21 cases on a cruise ship in California; these will have no impact on the analysis.
+
+An attempt is made to update the readUSAFacts() function to account for mismatches in county demographics:  
+```{r}
+
+# Function to read and convert raw data from USA Facts
+readUSAFacts <- function(caseFile, 
+                         deathFile, 
+                         countyPopFile=filter(pop_usafacts, countyFIPS!=0),
+                         oldFile=NULL,
+                         showBurdenMinPop=NULL,
+                         maxDate=NULL,
+                         stateClusters=NULL, 
+                         countyClusters=NULL, 
+                         glimpseRaw=TRUE
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # caseFile: the location of the downloaded cases dataset
+    # deathsFile: the location of the downloaded deaths dataset
+    # countyopFile: the location of the county population file
+    # oldFile: a file for comparing control totals against (NULL means do not compare)
+    # showBurdenMinPop: minimum population for showing burden by cluster (NULL means skip plot)
+    # maxDate: the date to use for the burden by cluster plot (ignored unless showBurdenMinPop is not NULL)
+    # stateClusters: a field 'cluster' will be created from state using this named vector
+    #                NULL means do not use state for finding clusters
+    # countyClusters: a field 'cluster' will be created from countyFIPS using this named vector
+    #                 NULL means do not use county for finding clusters
+    # If both stateClusters and countyClusters are passed, only stateClusters will be used
+    # glimpseRaw: boolean, whether to show a glimpse of the raw data when initially read in
+    
+    # Read cases file
+    cnvCases <- helperReadConvert(caseFile, 
+                                  valueName="cumCases", 
+                                  glimpseRaw=glimpseRaw, 
+                                  countyPopFile=countyPopFile
+    )
+    
+    # Read deaths file
+    cnvDeaths <- helperReadConvert(deathFile, 
+                                   valueName="cumDeaths", 
+                                   glimpseRaw=glimpseRaw, 
+                                   countyPopFile=countyPopFile
+    )
+    
+    print(cnvCases)
+    print(cnvDeaths)
+
+    # Check that county name and population is consistent by county FIPS in each file
+    caseCheck <- cnvCases %>%
+        group_by(countyFIPS, stateFIPS) %>%
+        summarize(pop_mean_case=mean(population), 
+                  pop_sd_case=sd(population), 
+                  nNamesCase=n_distinct(county), 
+                  nameCase=first(county), 
+                  .groups="drop"
+                  )
+    deathCheck <- cnvDeaths %>%
+        group_by(countyFIPS, stateFIPS) %>%
+        summarize(pop_mean_death=mean(population), 
+                  pop_sd_death=sd(population), 
+                  nNamesDeath=n_distinct(county), 
+                  nameDeath=first(county), 
+                  .groups="drop"
+                  )
+
+    print(caseCheck)
+    print(deathCheck)
+
+    dcMismatch <- deathCheck %>%
+        full_join(caseCheck, by=c("countyFIPS", "stateFIPS"))
+    
+    # Abort if any counties are in only one source
+    nNA <- dcMismatch %>% is.na() %>% colSums() %>% sum()
+    if (nNA > 0) {
+        cat("\nDifferent combinations of countyFIPS-stateFIPS in cases and deaths data\n")
+        dcMismatch %>% filter(!complete.cases(.)) %>% print()
+        stop("\nFix and re-run\n")
+    }
+    
+    # Abort if any counties have mismatched populations (within source or across source) or 2+ names per source
+    badMismatch <- dcMismatch %>%
+        filter(pop_mean_death != pop_mean_case | 
+                   pop_sd_death != 0 | 
+                   pop_sd_case !=0 | 
+                   nNamesDeath != 1 | 
+                   nNamesCase != 1
+               )
+    if (nrow(badMismatch) > 0) {
+        cat("\nCase and death data have fatal mismatch on population and/or names\n")
+        print(badMismatch)
+        stop("\nFix and re-run\n")
+    }
+
+    # Flag is any counties have different names in the two file
+    cat("\nCounty name mismatches (case name will be used)\n")
+    dcMismatch %>%
+        filter(nameCase != nameDeath) %>%
+        select(countyFIPS, stateFIPS, nameCase, nameDeath, pop_mean_case) %>%
+        print()
+    
+    # Flag any records in one file but not in the other
+    cat("\nIn cases but not in deaths\n")
+    cnvCases %>%
+        anti_join(cnvDeaths, by=c("countyFIPS", "stateFIPS", "date")) %>%
+        print()
+    cat("\nIn deaths but not in cases\n")
+    cnvDeaths %>%
+        anti_join(cnvCases, by=c("countyFIPS", "stateFIPS", "date")) %>%
+        print()
+    
+    # File origin is a single row by county with dates as columns, so inner_join should be OK
+    # From cnvCases keep countyFIPS-stateFIPS-date-county-state-population-cumCases-cumCasesPer
+    # From cnvDeaths keep countyFIPS-stateFIPS-date-cumDeaths-cumDeathsPer
+    # Inner join using keys countyFIPS-stateFIPS-date
+    # Also, add the state segments as 'cluster' if requested
+    dfBurden <- cnvCases %>%
+        select(countyFIPS, stateFIPS, date, county, state, population, cumCases, cumCasesPer=burden) %>%
+        inner_join(select(cnvDeaths, countyFIPS, stateFIPS, date, cumDeaths, cumDeathPer=burden), 
+                   by=c("countyFIPS", "stateFIPS", "date")
+                   ) %>%
+        mutate(cluster=if(is.null(stateClusters)) NA else stateClusters[state])
+    
+    # Attach county clusters if requested and if state clusters were not attached
+    # County cluster file converted to 5-digit character
+    str_pad5 <- function(x) stringr::str_pad(x, width=5, side="left", pad="0")
+    if (is.null(stateClusters) & !is.null(countyClusters)) {
+        names(countyClusters) <- str_pad5(as.character(names(countyClusters)))
+        dfBurden <- dfBurden %>%
+            mutate(cluster=countyClusters[str_pad5(countyFIPS)])
+    }
+    
+    # Compare against an old file, if requested
+    if (!is.null(oldFile)) {
+        p1 <- bind_rows(oldFile, dfBurden, .id="source") %>%
+            mutate(source=factor(case_when(source==1 ~ "Previous", source==2 ~ "New", TRUE ~ "Unknown"), 
+                                 levels=c("New", "Previous", "Unknown")
+            )
+            ) %>%
+            group_by(source, date) %>%
+            summarize(cumDeaths=sum(cumDeaths), cumCases=sum(cumCases)) %>%
+            pivot_longer(-c(source, date)) %>%
+            ggplot(aes(x=date, y=value/1000, group=source, color=source)) + 
+            geom_line() + 
+            facet_wrap(~c("cumCases"="Cases", "cumDeaths"="Deaths")[name], scales="free_y") + 
+            scale_x_date(date_breaks="1 months", date_labels="%m") + 
+            labs(y="Burden (000s)", title="US National Coronavirus Burden by Source")
+        print(p1)
+    }
+    
+    if (!is.null(showBurdenMinPop)) {
+        plotBurdenData(dfBurden, maxDate=maxDate, minPop=showBurdenMinPop)
+    }
+    
+    # Return the burdens file
+    dfBurden
+    
+}
+
+
+```
+  
+The updated function is tested against the existing data:  
+```{r cache=TRUE}
+
+# Locations for the population, case, and death file
+popLoc <- "./RInputFiles/Coronavirus/covid_county_population_usafacts.csv"
+caseLoc <- "./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20201215.csv"
+deathLoc <- "./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20201215.csv"
+
+# Run old segments against new data
+cty_old_20201215_v002 <- readRunUSAFacts(maxDate="2020-12-13", 
+                                         popLoc=popLoc, 
+                                         caseLoc=caseLoc, 
+                                         deathLoc=deathLoc, 
+                                         dlCaseDeath=!(file.exists(caseLoc) & file.exists(deathLoc)),
+                                         oldFile=readFromRDS("cty_20201026")$dfBurden, 
+                                         existingCountyClusters=readFromRDS("cty_new_20201203")$clustVec
+                                         )
+
+
+```
+
+An updated summary of the deaths impact is performed:  
+```{r}
+
+deathLoc <- "./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20201215.csv"
+rawCountyDeath <- readr::read_csv(deathLoc) 
+
+allCountyDeath <- rawCountyDeath %>%
+    select(-X332) %>%
+    pivot_longer(-c(countyFIPS, `County Name`, State, stateFIPS), names_to="date", values_to="deaths") %>%
+    mutate(date=lubridate::mdy(date), 
+           countyFIPS=stringr::str_pad(countyFIPS, side="left", width=5, pad="0")
+           ) %>%
+    filter(date==max(date))
+allCountyDeath
+
+countyAll <- cty_old_20201215_v002$burdenData %>% 
+    group_by(county, countyFIPS) %>% 
+    summarize(pop=max(population, na.rm=TRUE), 
+              cases=max(cumCases, na.rm=TRUE), 
+              deaths=max(cumDeaths, na.rm=TRUE), 
+              .groups="drop"
+              ) %>%
+    mutate(countyFIPS=stringr::str_pad(countyFIPS, width=5, side="left", pad="0"))
+countyAll
+
+# Records in the processed deaths file but not in the raw file (should be empty)
+countyAll %>%
+    anti_join(allCountyDeath, by="countyFIPS")
+
+# Records in the raw deaths file but not in the processed deaths file
+mismatch_1 <- allCountyDeath %>%
+    anti_join(countyAll, by="countyFIPS")
+mismatch_1 %>%
+    filter(deaths > 0) %>%
+    arrange(-deaths) %>%
+    as.data.frame()
+mismatch_1 %>%
+    mutate(unalloc=ifelse(stringr::str_detect(string=`County Name`, pattern="nallocated"), 
+                          "unallocated", 
+                          "specific"
+                          )
+           ) %>%
+    filter(deaths > 0) %>%
+    pivot_wider(id_cols=c(State), 
+                names_from=unalloc, 
+                values_from=deaths, 
+                values_fn=sum, 
+                values_fill=0
+                ) %>%
+    arrange(-unallocated)
+
+```
+
+There is no longer a disconnect based on mismatched county names.  The missing deaths are merely from the statewide unallocated pool.
