@@ -2223,4 +2223,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 explores Virginia disconnects  
 * Coronavirus_Statistics_DataUpdate_v003 explores county name mismatches for deaths in USA Facts  
 * Coronavirus_Statistics_DataUpdate_v003 explores county name mismatches for cases in USA Facts  
+* Coronavirus_Statistics_DataUpdate_v003 updates readUSAFacts() to address county name mismatches  
   
