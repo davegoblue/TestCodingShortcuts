@@ -2226,4 +2226,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 updates readUSAFacts() to address county name mismatches  
 * Coronavirus_Statistics_DataUpdate_v003 updates COVID Tracking Project data and uses existing state-level segments  
 * Coronavirus_Statistics_DataUpdate_v003 updates USA Facts data and uses existing county-level segments  
+* Coronavirus_Statistics_DataUpdate_v003 updates CDC all-cause deaths summary  
   
