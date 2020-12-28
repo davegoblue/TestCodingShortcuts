@@ -3230,3 +3230,56 @@ saveToRDS(cdcList_20201226, ovrWriteError=FALSE)
 
 ```
 
+The updated comparison of deaths in the raw and processed USA Facts files is performed:  
+```{r}
+
+deathLoc <- "./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20201225.csv"
+rawCountyDeath <- readr::read_csv(deathLoc) 
+
+allCountyDeath <- rawCountyDeath %>%
+    pivot_longer(-c(countyFIPS, `County Name`, State, stateFIPS), names_to="date", values_to="deaths") %>%
+    mutate(date=lubridate::mdy(date), 
+           countyFIPS=stringr::str_pad(countyFIPS, side="left", width=5, pad="0")
+           ) %>%
+    filter(date==max(date))
+allCountyDeath
+
+countyAll <- cty_old_20201225$burdenData %>% 
+    group_by(county, countyFIPS) %>% 
+    summarize(pop=max(population, na.rm=TRUE), 
+              cases=max(cumCases, na.rm=TRUE), 
+              deaths=max(cumDeaths, na.rm=TRUE), 
+              .groups="drop"
+              ) %>%
+    mutate(countyFIPS=stringr::str_pad(countyFIPS, width=5, side="left", pad="0"))
+countyAll
+
+# Records in the processed deaths file but not in the raw file (should be empty)
+countyAll %>%
+    anti_join(allCountyDeath, by="countyFIPS")
+
+# Records in the raw deaths file but not in the processed deaths file
+mismatch_1 <- allCountyDeath %>%
+    anti_join(countyAll, by="countyFIPS")
+mismatch_1 %>%
+    filter(deaths > 0) %>%
+    arrange(-deaths) %>%
+    as.data.frame()
+mismatch_1 %>%
+    mutate(unalloc=ifelse(stringr::str_detect(string=`County Name`, pattern="nallocated"), 
+                          "unallocated", 
+                          "specific"
+                          )
+           ) %>%
+    filter(deaths > 0) %>%
+    pivot_wider(id_cols=c(State), 
+                names_from=unalloc, 
+                values_from=deaths, 
+                values_fn=sum, 
+                values_fill=0
+                ) %>%
+    arrange(-unallocated)
+
+```
+  
+As expected, the only differences are in the unallocated deaths by state, with Kansas, Georgia, and NYC being main contributors to this category.
