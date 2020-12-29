@@ -2230,4 +2230,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 28-DEC-2020  
 * Coronavirus_Statistics_DataUpdate_v003 explores alignment of raw and processed USA Facts metrics by state  
+* Coronavirus_Statistics_DataUpdate_v003 explores alignment of metrics by state in USA Facts and COVID Tracking Project  
   
