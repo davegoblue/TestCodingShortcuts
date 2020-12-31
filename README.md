@@ -2232,4 +2232,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 explores alignment of raw and processed USA Facts metrics by state  
 * Coronavirus_Statistics_DataUpdate_v003 explores alignment of metrics by state in USA Facts and COVID Tracking Project  
 * Coronavirus_Statistics_DataUpdate_v003 continues exploring alignment of metrics by state in USA Facts and COVID Tracking Project  
+* Coronavirus_Statistics_DataUpdate_v003 explores subset of states in USA Facts and COVID Tracking Project  
   
