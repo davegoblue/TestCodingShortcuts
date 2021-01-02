@@ -2234,4 +2234,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_DataUpdate_v003 continues exploring alignment of metrics by state in USA Facts and COVID Tracking Project  
 * Coronavirus_Statistics_DataUpdate_v003 explores subset of states in USA Facts and COVID Tracking Project  
 * Coronavirus_Statistics_DataUpdate_v003 explores census divisions as segments with COVID Tracking Project  
+* Coronavirus_Statistics_DataUpdate_v003 updates COVID Tracking Project data and uses existing state-level segments  
   
