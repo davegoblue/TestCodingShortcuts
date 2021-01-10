@@ -2244,4 +2244,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_State_v003 integrates latest data  
 * Coronavirus_Statistics_State_v003 runs latest data for Northeast  
 * Coronavirus_Statistics_State_v003 runs createAndAlignCurves() for Northeast  
+* Coronavirus_Statistics_State_v003 runs createAndAlignCurves() for select Great Lakes states  
   
