@@ -2249,4 +2249,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 11-JAN-2021  
 * Coronavirus_Statistics_State_v003 runs createAndAlignCurves() for select Upper Midwest states  
 * Coronavirus_Statistics_State_v003 runs createAndAlignCurves() for select southern states  
+* Coronavirus_Statistics_State_v003 estimates CFR for select northeast states  
   
