@@ -2255,3 +2255,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_State_v003 estimates CFR for select southern states  
 * Coronavirus_Statistics_State_v003 estimates hospital-death lag for select northeast states  
   
+### Expansions week of 18-JAN-2021  
+* Coronavirus_Statistics_State_v003 estimates hospital-death lag for select midwest states  
+  
