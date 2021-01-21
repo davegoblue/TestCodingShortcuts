@@ -1,0 +1,413 @@
+---
+title: "COVID Tracking Project - Updated for 2021"
+author: "davegoblue"
+date: "1/20/2021"
+output: html_document
+---
+
+## Background
+This file is designed to update the analysis routine for the COVID Tracking Project data to allow for use of 2021 data.  This code is largely a subset of, and update to, code contained in Coronavirus_Statistics_CTP_v003.Rmd.  This file includes the latest code for analyzing data from [The COVID Tracking Project](https://covidtracking.com/).  The COVID Tracking Project contains data on positive tests, hospitalizations, deaths, and the like, for coronavirus in the US.  Downloaded data are unique by state and date.
+
+Companion code is in Coronavirus_Statistics_Shared_v004.R and Coronavirus_Statistics_Functions_CTP_v004.R.  The code leverages tidyverse and a variable mapping file throughout:  
+```{r}
+
+# All functions assume that tidyverse and its components are loaded and available
+# Other functions are declared in the sourcing files or use library::function()
+library(tidyverse)
+
+# If the same function is in both files, use the version from the more specific source
+# For now, soruce from _v003, eventually update to _v004
+# source("./Coronavirus_Statistics_Functions_Shared_v003.R")
+# source("./Coronavirus_Statistics_Functions_CTP_v003.R")
+
+# Create a variable mapping file
+varMapper <- c("cases"="Cases", 
+               "newCases"="Increase in cases, most recent 30 days",
+               "casesroll7"="Rolling 7-day mean cases", 
+               "deaths"="Deaths", 
+               "newDeaths"="Increase in deaths, most recent 30 days",
+               "deathsroll7"="Rolling 7-day mean deaths", 
+               "cpm"="Cases per million",
+               "cpm7"="Cases per day (7-day rolling mean) per million", 
+               "newcpm"="Increase in cases, most recent 30 days, per million",
+               "dpm"="Deaths per million", 
+               "dpm7"="Deaths per day (7-day rolling mean) per million", 
+               "newdpm"="Increase in deaths, most recent 30 days, per million", 
+               "hpm7"="Currently Hospitalized per million (7-day rolling mean)", 
+               "tpm"="Tests per million", 
+               "tpm7"="Tests per million per day (7-day rolling mean)"
+               )
+
+# Helper functions used early in the process
+# Function for saving an R object to RDS, including a check for whether the object already exists
+saveToRDS <- function(obj, 
+                      file=paste0(deparse(substitute(obj)), ".RDS"), 
+                      dir="./RInputFiles/Coronavirus/", 
+                      ovrWrite=FALSE, 
+                      ovrWriteError=TRUE,
+                      makeReadOnly=TRUE
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # obj: the R object to save
+    # file: the file name to save as
+    # dir: the directory to save in (file path will be paste0(dir, file))
+    # ovrWrite: boolean, should the file be overwritten if it already exists?
+    # ovrWriteError: boolean, should an error be thrown if an attempt is made to overwrite the file?
+    # makeReadOnly: boolean, should the output file be made read-only?
+    
+    # Create the file name
+    locFile <- paste0(dir, file)
+    
+    # Check if the file already exists and proceed as per options
+    if (file.exists(locFile)) {
+        cat("\nFile already exists:", locFile, "\n")
+        if (!ovrWrite & ovrWriteError) stop("\nAborting due to ovrWrite=FALSE and ovrWriteError=TRUE")
+        if (!ovrWrite) {
+            cat("\nNot replacing the existing file since ovrWrite=FALSE\n")
+            return(NULL)
+        }
+    }
+    
+    # Save the file and update the permissions to read-only (if flag is set)
+    saveRDS(obj, file=locFile)
+    if (makeReadOnly) Sys.chmod(locFile, mode="0555", use_umask = FALSE)
+    
+}
+
+
+
+# Function for reading an R object from RDS
+readFromRDS <- function(file, 
+                        dir="./RInputFiles/Coronavirus/", 
+                        addSuffix=".RDS", 
+                        deparseSub=FALSE
+                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # file: the file name to read in
+    # dir: the directory the file is in
+    # addSuffix: the suffix that should be added to file (file path will be paste0(dir, file, addSuffix))
+    # deparseSub: whether to deparse and substitute file (use it as the text name)
+    
+    # Convert file if needed
+    if (deparseSub) file <- deparse(substitute(file))
+    
+    # Ensure that file is of type character
+    if (!isTRUE(all.equal(class(file), "character"))) {
+        stop("\nUnable to read since file is not a character\n")
+    }
+    
+    # Create the file name
+    locFile <- paste0(dir, file, addSuffix)
+    
+    # Read the file (will be the return)
+    readRDS(locFile)
+    
+}
+
+
+```
+  
+## Running Code  
+The main function is readRunCOVIDTrackingProject(), which performs multiple tasks:  
+  
+STEP 1: Extracts a file of population by state (by default uses 2015 population from usmap::statepop)  
+STEP 2a^: Downloads the latest data from COVID Tracking Project if requested  
+STEP 2b^: Reads in data from a specified local file (may have just been downloaded in step 2a), and checks control total trends against a previous version of the file  
+STEP 3^: Processed the loaded data file for keeping proper variables, dropping non-valid states, etc.  
+STEP 4^: Adds per-capita metrics for cases, deaths, tests, and hospitalizations  
+STEP 5: Adds existing clusters by state if passed as an argument to useClusters=, otherwise creates new segments based on user-defined parameters  
+STEP 6^^: Creates assessment plots for the state-level clusters  
+STEP 7^^: Creates consolidated plots of cases, hospitalizations, deaths, and tests  
+STEP 8^^: Optionally, creates plots of cumulative burden by segments and by state  
+STEP 9: Returns a list of key data frames, modeling objects, named cluster vectors, etc.  
+  
+^ The user can instead specify a previously processed file and skip steps 2a, 2b, 3, and 4.  The previously processed file needs to be formatted and filtered such that it can be used "as is"  
+^^ The user can skip the segment-level assessments by setting skipAssessmentPlots=TRUE  
+  
+The main function and the helper functions are updated to allow for using 2021 data.
+
+## Main Function  
+The main function, readRunCOVIDTrackingProject() is copied:  
+```{r}
+
+# Function to download/load, process, segment, and analyze data from COVID Tracking Project
+readRunCOVIDTrackingProject <- function(thruLabel, 
+                                        downloadTo=NULL, 
+                                        readFrom=downloadTo, 
+                                        compareFile=NULL,
+                                        dfPerCapita=NULL,
+                                        useClusters=NULL,
+                                        hierarchical=TRUE,
+                                        returnList=!hierarchical, 
+                                        kCut=6,
+                                        reAssignState=vector("list", 0),
+                                        makeCumulativePlots=TRUE,
+                                        skipAssessmentPlots=FALSE,
+                                        ...
+                                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # thruLabel: the label for when the data are through (e.g., "Aug 30, 2020")
+    # donwloadTo: download the most recent COVID Tracking Project data to this location
+    #             NULL means do not download any data
+    # readFrom: location for reading in the COVID Tracking Project data (defaults to donwloadTo)
+    # compareFile: name of the file to use for comparisons when reading in raw data (NULL means no comparison)
+    # dfPerCapita: file can be passed directly, which bypasses the loading and processing steps
+    # useClusters: file containing clusters by state (NULL means make the clusters from the data)
+    # hierarchical: boolean, should hierarchical clusters be produced (if FALSE, will be k-means)?
+    # returnList: boolean, should a list be returned or just the cluster object?
+    #             refers to what is returned by clusterStates(); the main function always returns a list
+    # kCut: number of segments when cutting the hierarchical tree
+    # reAssignState: mapping file for assigning a state to another state's cluster
+    #                format list("stateToChange"="stateClusterToAssign")
+    # makeCumulativePlots: whether to make plots of cumulative metrics
+    # skipAssessmentPlots: boolean to skip the plots for assessClusters()
+    #                      especially useful if just exploring dendrograms or silhouette widths
+    # ...: arguments to be passed to clusterStates(), will be used only if useClusters is NULL
+    
+    
+    # STEP 1: Get state data
+    stateData <- getStateData()
+    
+    
+    # STEPS 2-4 are run only if dfPerCapita does not exist
+    if (is.null(dfPerCapita)) {
+        
+        # STEP 2a: Download latest COVID Tracking Project data (if requested)
+        if (!is.null(downloadTo)) downloadCOVIDbyState(fileName=downloadTo)
+        
+        # STEP 2b: Read-in COVID Tracking Project data
+        dfRaw <- readCOViDbyState(readFrom, checkFile=compareFile)
+        glimpse(dfRaw)
+        
+        # STEP 3: Process the data so that it includes all requested key variables
+        varsFilter <- c("date", "state", "positiveIncrease", "deathIncrease", 
+                        "hospitalizedCurrently", "totalTestResultsIncrease"
+        )
+        dfFiltered <- processCVData(dfRaw, 
+                                    varsKeep=varsFilter, 
+                                    varsRename=c(positiveIncrease="cases", 
+                                                 deathIncrease="deaths", 
+                                                 hospitalizedCurrently="hosp", 
+                                                 totalTestResultsIncrease="tests"
+                                    )
+        )
+        glimpse(dfFiltered)
+        
+        # STEP 4: Convert to per capita
+        dfPerCapita <- helperMakePerCapita(dfFiltered, 
+                                           mapVars=c("cases"="cpm", "deaths"="dpm", 
+                                                     "hosp"="hpm", "tests"="tpm"
+                                           ), 
+                                           popData=stateData
+        )
+        glimpse(dfPerCapita)
+        
+    } else {
+        dfRaw <- NULL
+        dfFiltered <- NULL
+    }
+    
+    
+    # STEP 5: Create the clusters (if they have not been passed)
+    if (is.null(useClusters)) {
+        # Run the clustering process
+        clData <- clusterStates(df=dfPerCapita, hierarchical=hierarchical, returnList=returnList, ...)
+        # If hierarchical clusters, cut the tree, otherwise use the output object directly
+        if (hierarchical) {
+            useClusters <- cutree(clData, k=kCut)
+        } else {
+            useClusters <- clData$objCluster$cluster
+        }
+        # If requested, manually assign clusters to the cluster for another state
+        for (xNum in seq_len(length(reAssignState))) {
+            useClusters[names(reAssignState)[xNum]] <- useClusters[reAssignState[[xNum]]]
+        }
+        
+    }
+    
+    
+    # STEP 5a: Stop the process and return what is available if skipAssessmentPlots is TRUE
+    if (skipAssessmentPlots) {
+        return(list(stateData=stateData, 
+                    dfRaw=dfRaw, 
+                    dfFiltered=dfFiltered, 
+                    dfPerCapita=dfPerCapita, 
+                    useClusters=useClusters, 
+                    plotData=NULL, 
+                    consolidatedPlotData=NULL, 
+                    clCum=NULL
+        )
+        )
+    }
+    
+    
+    # STEP 6: Create the cluster assessments
+    plotData <- assessClusters(useClusters, 
+                               dfState=stateData, 
+                               dfBurden=dfPerCapita,
+                               thruLabel=thruLabel,
+                               plotsTogether=TRUE
+    )
+    
+    
+    # STEP 7: Plot the consolidated metrics
+    subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new), Tests: new tests"
+    consolidatedPlotData <- plotConsolidatedMetrics(plotData, 
+                                                    varMain=c("state", "cluster", "date", "pop",
+                                                              "cases", "deaths", "hosp", "tests"
+                                                    ), 
+                                                    subT=subT, 
+                                                    nrowPlot2=2
+    )
+    
+    # STEP 8: Create cumulative metrics if requested
+    if (makeCumulativePlots) {
+        consPos <- consolidatedPlotData %>%
+            ungroup() %>%
+            select(state, cluster, date, name, vpm7) %>%
+            arrange(state, cluster, date, name) %>%
+            pivot_wider(-vpm7, names_from="name", values_from="vpm7") %>%
+            mutate(pctpos=cases/tests) %>%
+            pivot_longer(-c(state, cluster, date), values_to="vpm7") %>%
+            filter(!is.na(vpm7))
+        clCum <- makeCumulative(consPos)
+        plotCumulativeData(clCum, 
+                           keyMetricp2="", 
+                           flagsp2="", 
+                           makep1=TRUE, 
+                           makep2=FALSE
+        )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="deaths", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "deaths")
+        )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="cases", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "cases")
+        )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="tests", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "tests")
+        )
+    } else {
+        clCum <- NULL
+    }
+    
+    
+    # STEP 9: Return a list of the key data
+    list(stateData=stateData, 
+         dfRaw=dfRaw, 
+         dfFiltered=dfFiltered, 
+         dfPerCapita=dfPerCapita, 
+         useClusters=useClusters, 
+         plotData=plotData, 
+         consolidatedPlotData=consolidatedPlotData, 
+         clCum=clCum
+    )
+    
+    
+}
+
+```
+
+The following functions are examined:  
+  
+* getStateData - function is OK, perhaps more recent data should be added  
+* downloadCOVIDbyState - function is OK  
+* readCOVIDbyState - function is OK  
+* processCVData - function is OK  
+* helperMakePerCapita - function is OK  
+* clusterStates - need to update shapefunc to allow for gathering month and year  
+* assessClusters - function is OK  
+* plotConsolidatedMetrics - function is OK  
+* makeCumulative - function is OK  
+* plotCumulativeData - function is OK  
+
+So, the main effort will be to update the clusterStates() function.  There is also an opportunity to clean up the other functions so that output is directed to a separate log file and warnings caused by not setting .groups can also be addressed.
+
+State population data have been downloaded from [US Census](https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/state/detail/).  The file is processed and saved so that it can be used in an updated getStateData() function:  
+```{r cache=TRUE}
+
+# Read in the state population file
+statePop2019 <- readr::read_csv("./RInputFiles/Coronavirus/SCPRC-EST2019-18+POP-RES.csv")
+
+# Create mapping file for state name to state abbreviation
+stateMap <- tibble::tibble(stateName=c(state.name, "District of Columbia"), stateAbb=c(state.abb, "DC"))
+
+# Create fields for state (abbreviation) and pop_2019
+statePop2019 <- statePop2019 %>%
+    full_join(stateMap, by=c("NAME"="stateName")) %>%
+    mutate(pop_2019=POPESTIMATE2019)
+
+# Check if anything did not merge properly
+# Expected that United States and Puerto Rico will not merge, others should be a good match
+statePop2019 %>%
+    filter(is.na(stateAbb) | is.na(pop_2019))
+
+# Delete the Puerto Rico and US totals data
+statePop2019 <- statePop2019 %>%
+    filter(!is.na(stateAbb))
+
+# Glimpse file and then save to RDS
+glimpse(statePop2019)
+saveToRDS(statePop2019, ovrWrite=FALSE, ovrWriteError=FALSE)
+
+```
+
+The getStateData() function is updated to use defaults for this new file:  
+```{r}
+
+# Function to extract and format key state data
+getStateData <- function(df=readFromRDS("statePop2019"), 
+                         renameVars=c("stateAbb"="state", "NAME"="name", "pop_2019"="pop"), 
+                         keepVars=c("state", "name", "pop")
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing state data
+    # renameVars: variables to be renamed, using named list with format "originalName"="newName"
+    # keepVars: variables to be kept in the final file
+    
+    # Rename variables where appropriate
+    names(df) <- ifelse(is.na(renameVars[names(df)]), names(df), renameVars[names(df)])
+    
+    # Return file with only key variables kept
+    df %>%
+        select_at(vars(all_of(keepVars)))
+    
+}
+
+```
+  
+The function is then tested, with totals by state compared against previous:  
+```{r}
+
+# Using the new defaults
+pop_2019 <- getStateData()
+pop_2019
+
+# Comparison to previous
+fullPop <- pop_2019 %>%
+    full_join(usmap::statepop, by=c("state"="abbr")) %>%
+    mutate(pctChg=pop/pop_2015-1)
+
+# Flag for any differences in name
+fullPop %>%
+    filter(is.na(name) | is.na(full) | name != full)
+
+# Plot population and percent change
+fullPop %>%
+    ggplot(aes(x=fct_reorder(state, pctChg), y=pctChg)) + 
+    geom_col(fill="lightblue") + 
+    coord_flip() + 
+    labs(title="Change in population from usmap::statepop to US Census 2019 estimate", 
+         x="", 
+         y="Percent change from 2015 (usmap) to 2019 (US Census)"
+         )
+
+```
+  
+The data appear to be reasonably aligned, with fast growing states and shrinking states roughly as expected.
