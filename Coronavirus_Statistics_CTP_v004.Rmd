@@ -410,4 +410,217 @@ fullPop %>%
 
 ```
   
-The data appear to be reasonably aligned, with fast growing states and shrinking states roughly as expected.
+The data appear to be reasonably aligned, with fast growing states and shrinking states roughly as expected.  
+
+The function downloadCOVIDbyState() appears to be OK as-is, and is copied below:  
+```{r}
+
+# NO CHANGES MADE TO FUNCTION
+# Function to download data for COVID Tracking Project
+downloadCOVIDbyState <- function(fileName, 
+                                 api="https://api.covidtracking.com/v1/states/daily.csv", 
+                                 ovrWrite=FALSE
+                                 ) {
+    
+    # COVID Tracking Project API allows data downloads for personal, non-commercial use
+    # https://covidtracking.com/data/api
+    
+    # FUNCTION ARGUMENTS:
+    # fileName: the filename that the data will be saved to
+    # api: The API link for data downloads
+    # ovrWrite: whether to allow overwriting of the existing fileName
+    
+    # Check whether fileName already exists
+    if (file.exists(fileName)) {
+        cat("\nFile already exists at:", fileName, "\n")
+        if (ovrWrite) cat("Will over-write with current data from", api, "\n")
+        else stop("Exiting due to ovrWrite=FALSE and a duplicate fileName\n")
+    }
+    
+    # Download the file 
+    download.file(api, destfile=fileName)
+    
+    # Show statistics on downloaded file
+    file.info(fileName)
+    
+}
+
+```
+  
+The download function is then run using 2021 data:  
+```{r cache=TRUE}
+
+# Example for downloading the 22-JAN-21 data file
+locDownload <- "./RInputFiles/Coronavirus/CV_downloaded_210122.csv"
+if (!file.exists(locDownload)) downloadCOVIDbyState(fileName=locDownload)
+
+```
+
+The function readCOVIDbyState() is copied below, with capability to direct control totals for changed items in an easier to read manner:  
+```{r}
+
+# Function to read, convert, and sanity check a downloaded file
+readCOViDbyState <- function(fileName, 
+                             checkFile=NULL, 
+                             controlFields=c("positiveIncrease", "deathIncrease", "hospitalizedCurrently"), 
+                             controlBy=c("state"), 
+                             dateChangePlot=FALSE, 
+                             dateMetricPrint=TRUE, 
+                             controlByMetricPrint=TRUE
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # fileName: the file name for reading the data
+    # checkFile: a file that can be used for comparison purposes (NULL means do not compare to anything)
+    # controlFields: fields that will be explicitly checked against checkFile
+    # controlBy: level of aggregation at which fields will be explicitly checked against checkFile
+    # dateChangePlot: boolean, should the change in dates included be plotte rather than listed?
+    # dateMetricPrint: boolean, should the list of date-metric changes be printed?
+    # controlByMetricPrint: boolean, should the list of controlBy-metric changes be printed?
+    
+    # Helper function to check for similarity of key elements
+    helperSimilarity <- function(newData, refData, label, countOnly=FALSE) {
+        d1 <- setdiff(refData, newData)
+        d2 <- setdiff(newData, refData)
+        cat("\n\nCheckin for similarity of:", label)
+        cat("\nIn reference but not in current:", if(countOnly) length(d1) else d1)
+        cat("\nIn current but not in reference:", if(countOnly) length(d2) else d2)
+        if (countOnly) return(list(d1=d1, d2=d2))
+    }
+    
+    # Read in the file and convert the numeric date field to date using ymd format
+    df <- readr::read_csv(fileName) %>% 
+        mutate(date=lubridate::ymd(date))
+    
+    # Check that the file is unique by date-state
+    if ((df %>% select(date, state) %>% anyDuplicated()) != 0) {
+        stop("\nDuplicates by date and state, investigate and fix\n")
+    } else {
+        cat("\nFile is unique by state and date\n")
+    }
+    
+    # Check for overall control totals in new file
+    cat("\n\nOverall control totals in file:\n")
+    df %>% 
+        summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>% 
+        print()
+    
+    # Get control totals by date for new file
+    dfByDate <- df %>% 
+        group_by(date) %>%
+        summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>%
+        ungroup() %>%
+        pivot_longer(-date, values_to="newValue")
+    
+    # If there is no checkFile, then just produce a plot of the key metrics
+    if (is.null(checkFile)) {
+        p1 <- dfByDate %>% 
+            ggplot(aes(x=date, y=newValue)) + 
+            geom_line() + 
+            facet_wrap(~name, nrow=1, scales="free_y") + 
+            labs(title="Control totals by date for new file (no reference file)", x="", y="Summed Value")
+        print(p1)
+    } else {
+        # Check for similarity of fields, dates, and states
+        cat("\n*** COMPARISONS TO REFERENCE FILE:", deparse(substitute(checkFile)))
+        helperSimilarity(newData=names(df), refData=names(checkFile), label="column names")
+        helperSimilarity(newData=df %>% pull(state) %>% unique(), 
+                         refData=checkFile %>% pull(state) %>% unique(), 
+                         label="states"
+        )
+        dateChangeList <- helperSimilarity(newData=df %>% pull(date) %>% unique() %>% format("%Y-%m-%d"), 
+                         refData=checkFile %>% pull(date) %>% unique() %>% format("%Y-%m-%d"), 
+                         label="dates", 
+                         countOnly=dateChangePlot
+        )
+        
+        # Plot date changes
+        if (dateChangePlot) {
+            pDate <- tibble::tibble(date=as.Date(c(dateChangeList$d1, dateChangeList$d2)), 
+                                    type=c(rep("Control File Only", length(dateChangeList$d1)), 
+                                           rep("New File Only", length(dateChangeList$d2))
+                                           )
+                                    ) %>%
+                ggplot(aes(x=date, fill=type)) + 
+                geom_bar() + 
+                coord_flip() + 
+                labs(x="", y="", title="Dates in one file and not in the other")
+            print(pDate)
+        }
+        
+        # Check for similarity of control totals by date in files
+        checkByDate <- checkFile %>% 
+            group_by(date) %>%
+            summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>%
+            ungroup() %>%
+            pivot_longer(-date, values_to="oldValue")
+        deltaDate <- dfByDate %>% 
+            inner_join(checkByDate, by=c("date", "name")) %>%
+            filter(abs(newValue-oldValue)>=5, 
+                   pmax(newValue, oldValue)>=1.01*pmin(newValue, oldValue)
+            ) %>%
+            as.data.frame()
+        cat("\n\nDifference of 5+ that is at least 1% (summed to date and metric):", nrow(deltaDate), "\n\n")
+        if (dateMetricPrint) print(deltaDate)
+        p1 <- dfByDate %>% 
+            full_join(checkByDate, by=c("date", "name")) %>%
+            pivot_longer(-c(date, name), names_to="newOld") %>%
+            ggplot(aes(x=date, y=value, group=newOld, color=newOld)) + 
+            geom_line() + 
+            facet_wrap(~name, nrow=1, scales="free_y") + 
+            labs(title="Control totals by date for new and reference file", x="", y="Summed Value")
+        print(p1)
+        
+        # Check for similarity of control totals by controlBy in files
+        dfByControl <- df %>% 
+            semi_join(select(checkFile, date), by="date") %>%
+            group_by_at(vars(all_of(controlBy))) %>%
+            summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>%
+            ungroup() %>%
+            pivot_longer(-all_of(controlBy), values_to="newValue")
+        checkByControl <- checkFile %>% 
+            group_by_at(vars(all_of(controlBy))) %>%
+            summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>%
+            ungroup() %>%
+            pivot_longer(-all_of(controlBy), values_to="oldValue")
+        deltaBy <- dfByControl %>% 
+            inner_join(checkByControl, by=c(controlBy, "name")) %>%
+            filter(abs(newValue-oldValue)>=5, 
+                   pmax(newValue, oldValue)>=1.01*pmin(newValue, oldValue)
+            ) %>%
+            as.data.frame()
+        cat("\n\nDifference of 5+ that is at least 1% (summed to", 
+            controlBy, 
+            "and metric):", 
+            nrow(deltaBy), 
+            "\n\n"
+            )
+        if (controlByMetricPrint) print(deltaBy)
+    }
+    
+    # Return the processed data file
+    df
+    
+}
+
+```
+
+The function is then applied to the downloaded 21-JAN-21 data, including a comparison to a previous 2020 file:  
+```{r}
+
+# Reading the file as a standalone
+df1 <- readCOViDbyState(locDownload)
+
+# Reading the file with a comparison to a previous file
+df2 <- readCOViDbyState(locDownload, 
+                        checkFile=readFromRDS("test_hier5_201001")$dfRaw, 
+                        dateChangePlot=TRUE, 
+                        dateMetricPrint=FALSE
+                        )
+
+# Confirm that files are identical
+identical(df1, df2)
+
+```
+
+The added functionality allows for a cleaner log file.  Next steps are to redirect the detailed output to a PDF file if requested.
