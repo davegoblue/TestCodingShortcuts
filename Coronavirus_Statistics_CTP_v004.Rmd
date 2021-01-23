@@ -466,7 +466,9 @@ readCOViDbyState <- function(fileName,
                              controlBy=c("state"), 
                              dateChangePlot=FALSE, 
                              dateMetricPrint=TRUE, 
-                             controlByMetricPrint=TRUE
+                             controlByMetricPrint=TRUE, 
+                             writeLog=NULL, 
+                             ovrwriteLog=TRUE
                              ) {
     
     # FUNCTION ARGUMENTS:
@@ -477,14 +479,24 @@ readCOViDbyState <- function(fileName,
     # dateChangePlot: boolean, should the change in dates included be plotte rather than listed?
     # dateMetricPrint: boolean, should the list of date-metric changes be printed?
     # controlByMetricPrint: boolean, should the list of controlBy-metric changes be printed?
+    # writeLog: write detailed comparison to log file (NULL means do not write)
+    # ovrwriteLog: boolean, should the log be started from scratch with the date comparisons?
     
     # Helper function to check for similarity of key elements
-    helperSimilarity <- function(newData, refData, label, countOnly=FALSE) {
+    helperSimilarity <- function(newData, refData, label, countOnly=FALSE, logFile=NULL, logAppend=TRUE) {
         d1 <- setdiff(refData, newData)
         d2 <- setdiff(newData, refData)
-        cat("\n\nCheckin for similarity of:", label)
+        cat("\n\nChecking for similarity of:", label)
         cat("\nIn reference but not in current:", if(countOnly) length(d1) else d1)
         cat("\nIn current but not in reference:", if(countOnly) length(d2) else d2)
+        if (countOnly & !is.null(logFile)) {
+            cat("\nDetailed differences available in:", logFile)
+            capture.output(cat("\nIn reference but not in current:\n", paste(d1, collapse="\n")), 
+                           cat("\nIn current but not in reference:\n", paste(d2, collapse="\n")), 
+                           file=logFile, 
+                           append=logAppend
+                           )
+        }
         if (countOnly) return(list(d1=d1, d2=d2))
     }
     
@@ -528,13 +540,23 @@ readCOViDbyState <- function(fileName,
                          refData=checkFile %>% pull(state) %>% unique(), 
                          label="states"
         )
-        dateChangeList <- helperSimilarity(newData=df %>% pull(date) %>% unique() %>% format("%Y-%m-%d"), 
-                         refData=checkFile %>% pull(date) %>% unique() %>% format("%Y-%m-%d"), 
-                         label="dates", 
-                         countOnly=dateChangePlot
-        )
+        dateChangeList <- helperSimilarity(newData=df %>% 
+                                               pull(date) %>% 
+                                               unique() %>% 
+                                               format("%Y-%m-%d") %>%
+                                               sort(), 
+                                           refData=checkFile %>% 
+                                               pull(date) %>% 
+                                               unique() %>% 
+                                               format("%Y-%m-%d") %>%
+                                               sort(),
+                                           label="dates", 
+                                           countOnly=dateChangePlot, 
+                                           logFile=writeLog, 
+                                           logAppend=!ovrwriteLog
+                                           )
         
-        # Plot date changes
+        # Plot date changes if requested
         if (dateChangePlot) {
             pDate <- tibble::tibble(date=as.Date(c(dateChangeList$d1, dateChangeList$d2)), 
                                     type=c(rep("Control File Only", length(dateChangeList$d1)), 
@@ -560,8 +582,15 @@ readCOViDbyState <- function(fileName,
                    pmax(newValue, oldValue)>=1.01*pmin(newValue, oldValue)
             ) %>%
             as.data.frame()
-        cat("\n\nDifference of 5+ that is at least 1% (summed to date and metric):", nrow(deltaDate), "\n\n")
-        if (dateMetricPrint) print(deltaDate)
+        cat("\n\nDifference of 5+ that is at least 1% (summed to date and metric):", nrow(deltaDate))
+        if (dateMetricPrint) {
+            cat("\n")
+            print(deltaDate)
+        }
+        else if (!is.null(writeLog)) {
+            cat("\nDetailed output available in log:", writeLog)
+            capture.output(cat("\n\nChange by date:\n"), print(deltaDate), file=writeLog, append=TRUE)
+        }
         p1 <- dfByDate %>% 
             full_join(checkByDate, by=c("date", "name")) %>%
             pivot_longer(-c(date, name), names_to="newOld") %>%
@@ -593,7 +622,7 @@ readCOViDbyState <- function(fileName,
             controlBy, 
             "and metric):", 
             nrow(deltaBy), 
-            "\n\n"
+            "\n"
             )
         if (controlByMetricPrint) print(deltaBy)
     }
@@ -611,16 +640,24 @@ The function is then applied to the downloaded 21-JAN-21 data, including a compa
 # Reading the file as a standalone
 df1 <- readCOViDbyState(locDownload)
 
-# Reading the file with a comparison to a previous file
+# Reading the file with a comparison to a previous file, previous approach
 df2 <- readCOViDbyState(locDownload, 
+                        checkFile=readFromRDS("test_hier5_201001")$dfRaw
+                        )
+
+# Reading the file with a comparison to a previous file, key output directed to a log
+df3 <- readCOViDbyState(locDownload, 
                         checkFile=readFromRDS("test_hier5_201001")$dfRaw, 
                         dateChangePlot=TRUE, 
-                        dateMetricPrint=FALSE
+                        dateMetricPrint=FALSE, 
+                        writeLog="./RInputFiles/Coronavirus/testLogCTP_v001.log", 
+                        ovrwriteLog=TRUE
                         )
 
 # Confirm that files are identical
 identical(df1, df2)
+identical(df1, df3)
 
 ```
 
-The added functionality allows for a cleaner log file.  Next steps are to redirect the detailed output to a PDF file if requested.
+The added functionality allows for a cleaner log, with detailed output optionally sent to a separate file.  Next steps are to continue updating elements of the main function.
