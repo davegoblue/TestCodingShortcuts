@@ -2261,4 +2261,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_State_v003 estimates hospital-death lag for select southern states  
 * Coronavirus_Statistics_CTP_v004 created to begin updating code for 2021 data  
 * Coronavirus_Statistics_CTP_v004 updates downloading and initial reading code  
+* Coronavirus_Statistics_CTP_v004 updates readCOVIDbyState() for cleaner log output  
   
