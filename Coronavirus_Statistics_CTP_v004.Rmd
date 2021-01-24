@@ -239,8 +239,8 @@ readRunCOVIDTrackingProject <- function(thruLabel,
                     plotData=NULL, 
                     consolidatedPlotData=NULL, 
                     clCum=NULL
-        )
-        )
+                    )
+               )
     }
     
     
@@ -313,14 +313,14 @@ readRunCOVIDTrackingProject <- function(thruLabel,
 
 ```
 
-The following functions are examined:  
+The following functions are examined for update:  
   
-* getStateData - function is OK, perhaps more recent data should be added  
-* downloadCOVIDbyState - function is OK  
-* readCOVIDbyState - function is OK  
-* processCVData - function is OK  
-* helperMakePerCapita - function is OK  
-* clusterStates - need to update shapefunc to allow for gathering month and year  
+* getStateData - updated to default to using 2019 census data  
+* downloadCOVIDbyState - function is OK, copied as-is  
+* readCOVIDbyState - updated for cleaner log file  
+* processCVData - function is OK, copied as-is  
+* helperMakePerCapita - function is OK, copied as-is  
+* clusterStates - updated with a custom shape function for year-month  
 * assessClusters - function is OK  
 * plotConsolidatedMetrics - function is OK  
 * makeCumulative - function is OK  
@@ -661,3 +661,454 @@ identical(df1, df3)
 ```
 
 The added functionality allows for a cleaner log, with detailed output optionally sent to a separate file.  Next steps are to continue updating elements of the main function.
+
+The processCVData() and helperMakePerCapita() functions are copied, along with the associated helper function:  
+```{r}
+
+# Function to select relevant variables and observations, and report on control totals
+processCVData <- function(dfFull, 
+                          varsKeep=c("date", "state", "positiveIncrease", "deathIncrease"), 
+                          varsRename=c("positiveIncrease"="cases", "deathIncrease"="deaths"), 
+                          stateList=c(state.abb, "DC")
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # dfFull: the full data file originally loaded
+    # varsKeep: variables to keep from the full file
+    # varsRename: variables to be renamed, using a named vector of form originalName=newName
+    # stateList: variables for filtering state (NULL means do not run any filters)
+    
+    # Select only the key variables
+    df <- dfFull %>%
+        select_at(vars(all_of(varsKeep)))
+    
+    # Apply the renaming of variables
+    names(df) <- ifelse(is.na(varsRename[names(df)]), names(df), varsRename[names(df)])
+    
+    # Designate each record as being either a valid state or not
+    if (!is.null(stateList)) {
+        df <- df %>%
+            mutate(validState=state %in% stateList)
+    } else {
+        df <- df %>%
+            mutate(validState=TRUE)
+    }
+    
+    # Summarize the control totals for the data, based on whether the state is valid
+    cat("\n\nControl totals - note that validState other than TRUE will be discarded\n\n")
+    df %>%
+        mutate(n=1) %>%
+        group_by(validState) %>%
+        summarize_if(is.numeric, sum) %>%
+        print()
+    
+    # Return the file, filtered to where validState is TRUE, and deleting variable validState
+    df %>%
+        filter(validState) %>%
+        select(-validState)
+    
+}
+
+
+
+# Function to add per capita and rolling to the base data frame
+# Updated function to take an arbitrary number of variables and convert them
+helperMakePerCapita <- function(df, 
+                                mapVars=c("cases"="cpm", "deaths"="dpm"),
+                                popData=stateData,
+                                k=7
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the initial data frame for conversion
+    # mapVars: named vector of variables to be converted 'original name'='converted name'
+    # k: the rolling time period to use
+    
+    # Create the variables for per capita
+    for (origVar in names(mapVars)) {
+        df <- df %>% 
+            helperPerCapita(origVar=origVar, newName=mapVars[origVar], popData=popData)
+    }
+    # Arrange the data by date in preparation for rolling aggregations
+    df <- df %>% 
+        group_by(state) %>% 
+        arrange(date)
+    # Create the rolling variables
+    for (newVar in mapVars) {
+        df <- df %>% 
+            helperRollingAgg(origVar=newVar, newName=paste0(newVar, k), k=k)
+    }
+    
+    # Return the updated data frame, ungrouped
+    df %>%
+        ungroup()
+    
+}
+
+
+
+# Helper function to create per capita metrics
+helperPerCapita <- function(df, 
+                            origVar, 
+                            newName,
+                            byVar="state",
+                            popVar="pop",
+                            popData=stateData,
+                            mult=1000000
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame currently being processed
+    # origVar: the variables to be converted to per capita
+    # newName: the new per capita variable name
+    # byVar: the variable that will be merged by
+    # popVar: the name of the population variable in the popData file
+    # popData: the file containing the population data
+    # mult: the multiplier, so that the metric is "per mult people"
+    
+    # Create the per capita variable
+    df %>%
+        inner_join(select_at(popData, vars(all_of(c(byVar, popVar)))), by=byVar) %>%
+        mutate(!!newName:=mult*get(origVar)/get(popVar)) %>%
+        select(-all_of(popVar))
+    
+}
+
+
+
+# Helper function to create rolling aggregates
+helperRollingAgg <- function(df, 
+                             origVar, 
+                             newName,
+                             func=zoo::rollmean,
+                             k=7, 
+                             fill=NA, 
+                             ...
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the data
+    # origVar: the original data column name
+    # newName: the new variable column name
+    # func: the function to be applied (zoo::rollmean will be by far the most common)
+    # k: the periodicity (k=7 is rolling weekly data)
+    # fill: how to fill leading.trailing data to maintain the same vector lengths
+    # ...: any other arguments to be passed to func
+    
+    # Create the appropriate variable
+    df %>%
+        mutate(!!newName:=func(get(origVar), k=k, fill=fill, ...))
+    
+}
+
+```
+
+The processCVData() function is applied to df3:  
+```{r}
+
+# STEP 3: Process the data so that it includes all requested key variables
+varsFilter <- c("date", "state", "positiveIncrease", "deathIncrease", 
+                "hospitalizedCurrently", "totalTestResultsIncrease"
+                )
+dfFilter3 <- processCVData(df3, 
+                           varsKeep=varsFilter, 
+                           varsRename=c(positiveIncrease="cases", 
+                                        deathIncrease="deaths", 
+                                        hospitalizedCurrently="hosp", 
+                                        totalTestResultsIncrease="tests"
+                                        )
+                           )
+glimpse(dfFilter3)
+
+```
+
+The helperMakePerCapita() function is applied to dfFilter3:  
+```{r}
+
+# STEP 4: Convert to per capita
+dfPer3 <- helperMakePerCapita(dfFilter3, 
+                              mapVars=c("cases"="cpm", "deaths"="dpm", "hosp"="hpm", "tests"="tpm"), 
+                              popData=pop_2019
+                              )
+glimpse(dfPer3)
+
+```
+
+The clusterStates() function is updated to allow for both month and year in calculating shape (since data will now be from 2020 and 2021).  Addition of a custom shape function suffices:  
+```{r}
+
+# Updates to the clustering function
+clusterStates <- function(df, 
+                          caseVar="cpm", 
+                          deathVar="dpm",
+                          shapeFunc=lubridate::month, 
+                          minShape=NULL, 
+                          maxShape=NULL,
+                          minDeath=0,
+                          maxDeath=Inf,
+                          minCase=0,
+                          maxCase=Inf,
+                          ratioTotalvsShape=1, 
+                          ratioDeathvsCase=1, 
+                          hierarchical=TRUE, 
+                          hierMethod="complete", 
+                          nCenters=3, 
+                          iter.max=10,
+                          nstart=1,
+                          testCenters=NULL,
+                          returnList=FALSE, 
+                          hmlSegs=3, 
+                          eslSegs=2,
+                          seed=NULL
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing cases and deaths data
+    # caseVar: the variable containing the cases per capita data
+    # deathVar: the variable containing the deaths per capita data
+    # shapeFunc: the function to be used for creating the shape of the curve
+    # minShape: the minimum value to be used for shape (to avoid very small amounts of data in Jan/Feb/Mar)
+    #           shape is the month, so 4 means start with April data (NULL means keep everything)
+    # maxShape: the maximum value to be used for shape (to avoid very small amounts of data in a partial month)
+    #           shape is the month, so 9 means end with September data (NULL means keep everything)
+    # minDeath: use this value as a floor for the death metric when calculating shape
+    # maxDeath: use this value as a maximum when calculating distance using deaths 
+    # minCase: use this value as a floor for the case metric when calculating shape
+    # maxCase: use this value as a maximum when calculating distance using cases 
+    # ratioTotalvsShape: amount of standard deviation to be kept in total variable vs shape variables
+    # ratioDeathvsCase: amount of standard deviation to be kept in deaths vs cases 
+    #                   (total death data will be scaled to have sd this many times higher than cases)
+    #                   (death percentages by time period will be scaled directly by this amount)
+    # hierarchical: whether to create hierarchical clusters
+    #               TRUE means run hierarchical clustering
+    #               FALSE means run kmeans clustering
+    #               NA means run rules-based clustering
+    # hierMethod: the method for hierarchical clustering (e.g., 'complete' or 'single')
+    # nCenters: the number of centers to use for kmeans clustering
+    # testCenters: integer vector of centers to test (will create an elbow plot); NULL means do not test
+    # iter.max: maximumum number of kmeans iterations (default in kmeans algorithm is 10)
+    # nstart: number of random sets chosen for kmeans (default in kmeans algorithm is 1)
+    # returnList: boolean, if FALSE just the cluster object is returned
+    #                      if TRUE, a list is returned with dfCluster and the cluster object
+    # hmlSegs: number of segments to create for volume of burden integrated over time
+    # eslSegs: number of segments to create for shape of burden over time
+    # seed: set the seed to this value (NULL means no seed)
+    
+    # Extract key information (aggregates and by shapeFunc for each state)
+    df <- df %>%
+        select_at(vars(all_of(c("date", "state", caseVar, deathVar)))) %>%
+        purrr::set_names(c("date", "state", "cases", "deaths")) %>%
+        mutate(timeBucket=shapeFunc(date)) %>%
+        group_by(state, timeBucket) %>%
+        summarize(cases=sum(cases), deaths=sum(deaths), .groups="drop") %>%
+        ungroup()
+    
+    # Limit to only relevant time buckets if requested
+    if (!is.null(minShape)) {
+        df <- df %>%
+            filter(timeBucket >= minShape)
+    }
+    if (!is.null(maxShape)) {
+        df <- df %>%
+            filter(timeBucket <= maxShape)
+    }
+    
+    # Extract an aggregate by state, scaled so that they have the proper ratio
+    dfAgg <- df %>%
+        group_by(state) %>%
+        summarize(totalCases=sum(cases), totalDeaths=sum(deaths), .groups="drop") %>%
+        mutate(totalCases=pmin(totalCases, maxCase), totalDeaths=pmin(totalDeaths, maxDeath)) %>%
+        ungroup() %>%
+        mutate(totalDeaths=ratioDeathvsCase*totalDeaths*sd(totalCases)/sd(totalDeaths))
+    
+    # Extract the percentages (shapes) by month, scaled so that they have the proper ratio
+    dfShape <- df %>%
+        pivot_longer(-c(state, timeBucket)) %>%
+        group_by(state, name) %>%
+        mutate(tot=pmax(sum(value), ifelse(name=="deaths", minDeath, minCase)), 
+               value=ifelse(name=="deaths", ratioDeathvsCase, 1) * value / tot) %>%
+        select(-tot) %>%
+        pivot_wider(state, names_from=c(name, timeBucket), values_from=value) %>%
+        ungroup()
+    
+    # Function to calculate SD of a subset of columns
+    calcSumSD <- function(df) {
+        df %>% 
+            ungroup() %>% 
+            select(-state) %>% 
+            summarize_all(.funs=sd) %>% 
+            as.vector() %>% 
+            sum()
+    }
+    
+    # Down-weight the aggregate data so that there is the proper sum of sd in aggregates and shapes
+    aggSD <- calcSumSD(dfAgg)
+    shapeSD <- calcSumSD(dfShape)
+    dfAgg <- dfAgg %>%
+        mutate_if(is.numeric, ~. * ratioTotalvsShape * shapeSD / aggSD)
+    
+    # Combine so there is one row per state
+    dfCluster <- dfAgg %>%
+        inner_join(dfShape, by="state")
+    
+    # convert 'state' to rowname
+    keyData <- dfCluster %>% 
+        column_to_rownames("state")
+    
+    # Create rules-based segments (NA) or hierarchical segments (TRUE) or kmeans segments (FALSE)
+    if (is.na(hierarchical)) {
+        # Create pseudo-rules-based segments
+        if (!is.null(seed)) set.seed(seed)
+        # STEP 1: Classify high-medium-low based on deaths and cases
+        hml <- kmeans(select(keyData, starts_with("total")), 
+                      centers=hmlSegs, iter.max=iter.max, nstart=nstart
+        )
+        # STEP 2: Classify early-late based on shape
+        esl <- kmeans(select(keyData, -starts_with("total")), 
+                      centers=eslSegs, iter.max=iter.max, nstart=nstart
+        )
+        # STEP 3: Create a final segment
+        objCluster <- eslSegs*(hml$cluster-1) + esl$cluster
+    } else if (isTRUE(hierarchical)) {
+        # Create hierarchical segments
+        objCluster <-  hclust(dist(keyData), method=hierMethod)
+        plot(objCluster)
+    } else {
+        # Create k-means segments
+        # Create an elbow plot if testCenters is not NULL
+        if (!is.null(testCenters)) {
+            helperElbow(keyData, testCenters=testCenters, iter.max=iter.max, nstart=nstart, silhouette=TRUE)
+        }
+        # Create the kmeans cluster object, setting a seed if requested
+        if (!is.null(seed)) set.seed(seed)
+        objCluster <- kmeans(keyData, centers=nCenters, iter.max=iter.max, nstart=nstart)
+        cat("\nCluster means and counts\n")
+        n=objCluster$size %>% cbind(objCluster$centers) %>% round(2) %>% t() %>% print()
+    }
+    
+    # Return the data and object is a list if returnList is TRUE, otherwise return only the clustering object
+    if (!isTRUE(returnList)) {
+        objCluster
+    } else {
+        list(objCluster=objCluster, dfCluster=dfCluster)
+    }
+    
+}
+
+
+# Function to create an elbow plot for various numbers of clusters in the data
+helperElbow <- function(mtx, 
+                        testCenters, 
+                        iter.max, 
+                        nstart, 
+                        silhouette=FALSE
+                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # mtx: a numeric matrix, or an object that can be coerced to a numeric matrix (no character fields)
+    # testCenters: integer vector for the centers to be tested
+    # iter.max: parameter passed to kmeans
+    # nstart: parameter passed to kmeans
+    # silhouette: whether to calculate the silhouette score
+    
+    # Create an object for storing tot.withinss and silhouetteScore
+    totWithin <- vector("numeric", length(testCenters))
+    silhouetteScore <- vector("numeric", length(testCenters))
+    
+    # Create the distancing data (required for silhouette score)
+    if (silhouette) distData <- dist(mtx)
+    
+    # Run k-means for every value in testCenters, and store $tot.withinss (and silhouetteScore, if requested)
+    n <- 1
+    for (k in testCenters) {
+        km <- kmeans(mtx, centers=k, iter.max=iter.max, nstart=nstart)
+        totWithin[n] <- km$tot.withinss
+        if (silhouette & (k > 1)) silhouetteScore[n] <- mean(cluster::silhouette(km$cluster, distData)[, 3])
+        n <- n + 1
+    }
+    
+    # Create the elbow plot
+    p1 <- tibble::tibble(n=testCenters, wss=totWithin) %>%
+        ggplot(aes(x=n, y=wss)) + 
+        geom_point() + 
+        geom_line() + 
+        geom_text(aes(y=wss + 0.05*max(totWithin), x=n+0.2, label=round(wss, 1))) + 
+        labs(x="Number of segments", y="Total Within Sum-Squares", title="Elbow plot") + 
+        ylim(c(0, NA))
+    
+    # Create the silhouette plot if requested
+    if (silhouette) {
+        p2 <- tibble::tibble(n=testCenters, ss=silhouetteScore) %>%
+            ggplot(aes(x=n, y=ss)) + 
+            geom_point() + 
+            geom_line() + 
+            geom_text(aes(y=ss + 0.05*max(silhouetteScore), x=n+0.2, label=round(ss, 1))) + 
+            labs(x="Number of segments", y="Mean silhouette width", title="Silhouette plot") + 
+            ylim(c(-1, NA))
+        gridExtra::grid.arrange(p1, p2, nrow=1)
+    } else {
+        print(p1)
+    }
+    
+}
+
+
+```
+
+The shapefunc capability appears capable of working if a custom function is used:  
+```{r}
+
+customTimeBucket <- function(x) {
+    paste0(lubridate::year(x), "-", stringr::str_pad(lubridate::month(x), width=2, side="left", pad="0"))
+}
+
+# Example for rules-based clustering
+clRules3 <- clusterStates(df=dfPer3, 
+                          hierarchical=NA, 
+                          returnList=TRUE, 
+                          shapeFunc=customTimeBucket, 
+                          minShape="2020-04", 
+                          maxShape="2021-01", 
+                          hmlSegs=3, 
+                          eslSegs=3, 
+                          seed=2101231503
+                          )
+
+# Example for kmeans clustering (elbow plot)
+clKMeans3 <- clusterStates(df=dfPer3, 
+                           hierarchical=FALSE, 
+                           returnList=TRUE, 
+                           shapeFunc=customTimeBucket, 
+                           minShape="2020-04", 
+                           maxShape="2021-01", 
+                           iter.max=50,
+                           nstart=25,
+                           testCenters=1:20,
+                           seed=2101231503
+                           )
+
+# Example for kmeans clustering (clusters)
+clKMeans3 <- clusterStates(df=dfPer3, 
+                           hierarchical=FALSE, 
+                           returnList=TRUE, 
+                           shapeFunc=customTimeBucket, 
+                           minShape="2020-04", 
+                           maxShape="2021-01", 
+                           nCenters=6, 
+                           iter.max=50,
+                           nstart=25,
+                           seed=2101231503
+                           )
+
+# Example for hierarchical clustering (clusters)
+clHier3 <- clusterStates(df=dfPer3, 
+                         hierarchical=TRUE, 
+                         returnList=FALSE, 
+                         shapeFunc=customTimeBucket, 
+                         minShape="2020-04", 
+                         maxShape="2021-01"
+                         )
+
+```
+
+Next steps are to update the assessClusters() function.
