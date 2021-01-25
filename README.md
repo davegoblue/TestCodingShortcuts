@@ -2264,3 +2264,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 updates readCOVIDbyState() for cleaner log output  
 * Coronavirus_Statistics_CTP_v004 updates clusterStates() for yyyy-mm  
   
+### Expansions week of 25-JAN-2021  
+* Coronavirus_Statistics_CTP_v004 updates assessClusters()  
+  
