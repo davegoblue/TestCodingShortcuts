@@ -1707,3 +1707,307 @@ plotDataHier3 <- assessClusters(cutree(clHier3, k=6),
 
 ```
 
+The plotConsolidatedMetrics() function is copied:  
+```{r}
+
+# Function to create plots of consolidated metrics
+plotConsolidatedMetrics <- function(dfMain, 
+                                    dfHosp=NULL, 
+                                    varMain=c("state", "cluster", "date", "pop", "cases", "deaths", "hosp"),
+                                    varDropHosp=c("n", "pop"), 
+                                    joinBy=c("state", "cluster", "date"), 
+                                    subT=NULL, 
+                                    nrowPlot2=1
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfMain: the main file produced by assessClusters(), containing data by state-cluster-date
+    # dfHosp: the separate file with hospital data (NULL means data already available in dfMain)
+    # varMain: variables to keep from dfMain
+    # varDropHosp: variables to drop from dfHosp
+    # joinBy: variables for joining dfMain and dfHosp
+    # subT: plot subtitle (NULL will use the defaults), 
+    # nrowPlot2: number of rows for the facetting to use on plot 2
+    
+    if (is.null(subT)) {
+        subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new)"
+    }
+    
+    # Filter dfMain to include only variables in varMain
+    dfMain <- dfMain %>%
+        select_at(vars(all_of(varMain)))
+    
+    # Left join dfMain to dfHosp unless dfHosp is NULL
+    if (!is.null(dfHosp)) {
+        dfHosp <- dfHosp %>%
+            select_at(vars(all_of(names(dfHosp)[!(names(dfHosp) %in% varDropHosp)])))
+        dfMain <- dfMain %>%
+            left_join(dfHosp, by=all_of(joinBy))
+    }
+    
+    # Check that variables state, cluster, date, pop are all available
+    if (!(c("state", "cluster", "date", "pop") %in% names(dfMain) %>% all())) {
+        stop("\nFunction requires variables state, cluster, date, and pop after processing\n")
+    }
+    
+    # Create the relevant plotting data
+    dfPlot <- dfMain %>%
+        pivot_longer(-c(state, cluster, date, pop)) %>%
+        filter(!is.na(value)) %>%
+        rbind(mutate(., state="cluster")) %>%
+        group_by_at(vars(all_of(c(joinBy, "name")))) %>%
+        summarize(value=sum(value), pop=sum(pop), .groups="drop") %>%
+        mutate(vpm=1000000*value/pop) %>%
+        arrange(state, cluster, name, date) %>%
+        group_by(state, cluster, name) %>%
+        helperRollingAgg(origVar="vpm", newName="vpm7")    
+    
+    # Create facetted plots for totals by metric by segment
+    p1 <- dfPlot %>%
+        filter(!is.na(vpm7)) %>%
+        ggplot(aes(x=date, y=vpm7)) + 
+        geom_line(data=~filter(., state=="cluster"), aes(group=cluster, color=cluster), lwd=1.5) +
+        geom_line(data=~filter(., state!="cluster"), aes(group=state), alpha=0.25) + 
+        facet_grid(name ~ cluster, scales="free_y") + 
+        labs(x="", 
+             y="Rolling 7-day mean per million", 
+             title="Key metrics by cluster (7-day rolling mean per million)", 
+             subtitle=subT
+        ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b") + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p1)
+    
+    # Create all-segment plot by metric
+    p2 <- dfPlot %>%
+        filter(!is.na(vpm7)) %>%
+        ggplot(aes(x=date, y=vpm7)) + 
+        geom_line(data=~filter(., state=="cluster"), aes(group=cluster, color=cluster), lwd=1.5) +
+        facet_wrap(~ name, scales="free_y", nrow=nrowPlot2) + 
+        labs(x="", 
+             y="Rolling 7-day mean per million", 
+             title="Key metrics by cluster (7-day rolling mean per million)", 
+             subtitle=subT
+        ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b") + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p2)
+    
+    # Create all-metric plot by segment (define 100% as peak for segment-metric)
+    p3 <- dfPlot %>%
+        filter(!is.na(vpm7)) %>%
+        group_by(state, cluster, name) %>%
+        mutate(spm7=vpm7/max(vpm7)) %>%
+        ggplot(aes(x=date, y=spm7)) + 
+        geom_line(data=~filter(., state=="cluster"), aes(group=name, color=name), lwd=1) +
+        facet_wrap(~ cluster, scales="free_y") + 
+        labs(x="", 
+             y="% of Maximum", 
+             title="Key metrics by cluster (% of cluster maximum for variable)", 
+             subtitle=subT
+        ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b") + 
+        scale_color_discrete("variable") +
+        theme(axis.text.x=element_text(angle=90))
+    print(p3)
+    
+    # Return the plotting data
+    dfPlot
+    
+}
+
+```
+
+```{r}
+
+# Example for consolidatedPlotData()
+subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new), Tests: new tests"
+consolidatedPlotDataHier3 <- plotConsolidatedMetrics(plotDataHier3, 
+                                                     varMain=c("state", "cluster", "date", "pop",
+                                                               "cases", "deaths", "hosp", "tests"
+                                                               ), 
+                                                     subT=subT, 
+                                                     nrowPlot2=2
+                                                     )
+
+```
+
+The makeCumulative() and plotCumulative() functions are copied:  
+```{r}
+
+# Function to convert a file to cumulative totals
+makeCumulative <- function(df, 
+                           typeVar="name", 
+                           typeKeep=c("cases", "deaths", "tests"), 
+                           valVar="vpm7", 
+                           groupVars=c("state", "cluster", "name"), 
+                           arrangeVars=c("date"), 
+                           newName="cum7"
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame containing the metrics
+    # typeVar: the variable holding the metric type (default is 'name')
+    # typeKeep: the values of typeVar to be kept
+    # valVar: the variable holding the metric value (default is 'vpm7')
+    # groupVars: groups for calculating cumulative sum
+    # arrangeVars: variables to be sorted by before calculating cumulative sum
+    # newName: the name for the new variable
+    
+    # Create the cumulative data
+    dfCum <- df %>%
+        filter(get(typeVar) %in% typeKeep, !is.na(get(valVar))) %>%
+        arrange_at(vars(all_of(c(groupVars, arrangeVars)))) %>%
+        group_by_at(groupVars) %>%
+        mutate(!!newName:=cumsum(get(valVar))) %>%
+        ungroup()
+    
+    # Return the processed data
+    dfCum
+    
+}
+
+
+
+# Function to plot cumulative data
+plotCumulativeData <- function(df, 
+                               keyMetricp2,
+                               flagsp2,
+                               p2Desc=keyMetricp2,
+                               keyVar="cum7", 
+                               makep1=FALSE, 
+                               makep2=TRUE
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame of cumulative data
+    # keyMetricp2: the key metric to be plotted in the second plot (e.g., "deaths", "cases", "tests")
+    # flagsp2: states to be treated as flagged in the second plot
+    # p2Desc: the description to be used in plot 2
+    # keyVar: the key variable to plot
+    # makep1: boolean, whether to make the first plot
+    # makep2: boolean, whether to make the second plot
+    
+    # Plot the cumulative data by cluster (if flag is set for producing this)
+    if (isTRUE(makep1)) {
+        p1 <- df %>%
+            filter(state=="cluster") %>%
+            ggplot(aes(x=date, y=get(keyVar))) + 
+            geom_line(aes(group=cluster, color=cluster)) + 
+            facet_wrap(~name, nrow=1, scales="free_y") + 
+            scale_x_date(date_breaks="1 months", date_labels="%m") + 
+            labs(x="Month", 
+                 y="Cumulative Burden (per million)", 
+                 title="Cumulative burden by segment (per million)"
+            )
+        print(p1)
+    }
+    
+    
+    # Plot the cumulative totals over time for one metric, and flag the highest
+    if (isTRUE(makep2)) {
+        p2 <- df %>%
+            filter(state!="cluster", name==keyMetricp2) %>%
+            mutate(bold=ifelse(state %in% flagsp2, 1, 0)) %>%
+            ggplot(aes(x=date, y=get(keyVar))) + 
+            geom_line(aes(group=state, color=cluster, alpha=0.4+0.6*bold, size=0.5+0.5*bold)) + 
+            geom_text(data=~filter(., bold==1, date==max(date)), 
+                      aes(x=date+lubridate::days(10), 
+                          label=paste0(state, ": ", round(get(keyVar), 0)), 
+                          color=cluster
+                      ), 
+                      size=3, 
+                      fontface="bold"
+            ) +
+            scale_x_date(date_breaks="1 months", date_labels="%m") + 
+            scale_alpha_identity() +
+            scale_size_identity() +
+            labs(x="Month", 
+                 y=paste0("Cumulative ", p2Desc, " (per million)"), 
+                 title=paste0("Cumulative coronavirus ", p2Desc, " by state (per million)"), 
+                 subtitle="Top 5 states for total and growth rate are bolded and labelled"
+            )
+        print(p2)
+    }
+    
+}
+
+
+# Function to find and flag states that are high on a key value or change in key value
+findFlagStates <- function(df, 
+                           keyMetricVal, 
+                           keyMetricVar="name", 
+                           cumVar="cum7", 
+                           prevDays=30, 
+                           nFlag=5
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the cumulative data
+    # keyMetricVal: the metric of interest (e.g., "deaths", "cases", "tests")
+    # keyMetricVar: the variable name for the column containing the metric of interest
+    # cumVar: variable containing the cumulative totals
+    # prevDays: the number of days previous to use for defining growth
+    # nFlag: the number of states to flag for either total or growth (top-n of each)
+    
+    # Find top-5 in either total or recent increase
+    dfFlag <- df %>%
+        filter(get(keyMetricVar)==keyMetricVal, state!="cluster") %>%
+        select_at(vars(all_of(c("state", "date", cumVar)))) %>%
+        group_by(state) %>%
+        summarize(maxVal=max(get(cumVar)), 
+                  tminus=sum(ifelse(date==max(date)-lubridate::days(prevDays), get(cumVar), 0)), 
+                  .groups="drop"
+        ) %>%
+        ungroup() %>%
+        mutate(growth=maxVal-tminus, 
+               rkTotal=min_rank(-maxVal), 
+               rkGrowth=min_rank(-growth), 
+               flag=ifelse(pmin(rkTotal, rkGrowth)<=nFlag, 1, 0)
+        ) %>%
+        arrange(-flag, rkTotal)
+    
+    # Return the top values as a vector of states
+    dfFlag %>%
+        filter(flag==1) %>%
+        pull(state)
+    
+}
+
+```
+
+```{r}
+
+consPosHier3 <- consolidatedPlotDataHier3 %>%
+    ungroup() %>%
+    select(state, cluster, date, name, vpm7) %>%
+    arrange(state, cluster, date, name) %>%
+    pivot_wider(-vpm7, names_from="name", values_from="vpm7") %>%
+    mutate(pctpos=cases/tests) %>%
+    pivot_longer(-c(state, cluster, date), values_to="vpm7") %>%
+    filter(!is.na(vpm7))
+
+clCumHier3 <- makeCumulative(consPosHier3)
+
+plotCumulativeData(clCumHier3, 
+                   keyMetricp2="", 
+                   flagsp2="", 
+                   makep1=TRUE, 
+                   makep2=FALSE
+                   )
+plotCumulativeData(clCumHier3, 
+                   keyMetricp2="deaths", 
+                   flagsp2=findFlagStates(clCumHier3, keyMetricVal = "deaths")
+                   )
+plotCumulativeData(clCumHier3, 
+                   keyMetricp2="cases", 
+                   flagsp2=findFlagStates(clCumHier3, keyMetricVal = "cases")
+                   )
+plotCumulativeData(clCumHier3, 
+                   keyMetricp2="tests", 
+                   flagsp2=findFlagStates(clCumHier3, keyMetricVal = "tests")
+                   )
+
+```
+  
+The functions appear to all be working for 2021 data from COVID Tracking Project. Next steps are to try the integrated function on the latest data.
