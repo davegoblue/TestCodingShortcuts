@@ -2267,4 +2267,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 25-JAN-2021  
 * Coronavirus_Statistics_CTP_v004 updates assessClusters()  
 * Coronavirus_Statistics_CTP_v004 updates remaining functions  
+* Coronavirus_Statistics_CTP_v004 run with latest data  
   
