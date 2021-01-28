@@ -491,8 +491,8 @@ readCOViDbyState <- function(fileName,
         cat("\nIn current but not in reference:", if(countOnly) length(d2) else d2)
         if (countOnly & !is.null(logFile)) {
             cat("\nDetailed differences available in:", logFile)
-            capture.output(cat("\nIn reference but not in current:\n", paste(d1, collapse="\n")), 
-                           cat("\nIn current but not in reference:\n", paste(d2, collapse="\n")), 
+            capture.output(cat("\nIn reference but not in current:\n", paste(d1, collapse="\n"), sep=""), 
+                           cat("\nIn current but not in reference:\n", paste(d2, collapse="\n"), sep=""), 
                            file=logFile, 
                            append=logAppend
                            )
@@ -695,11 +695,11 @@ processCVData <- function(dfFull,
     }
     
     # Summarize the control totals for the data, based on whether the state is valid
-    cat("\n\nControl totals - note that validState other than TRUE will be discarded\n\n")
+    cat("\n\nControl totals - note that validState other than TRUE will be discarded\n(na.rm=TRUE)\n\n")
     df %>%
         mutate(n=1) %>%
         group_by(validState) %>%
-        summarize_if(is.numeric, sum) %>%
+        summarize_if(is.numeric, sum, na.rm=TRUE) %>%
         print()
     
     # Return the file, filtered to where validState is TRUE, and deleting variable validState
@@ -2034,4 +2034,249 @@ saveToRDS(ctp_hier7_210126, ovrWriteError=FALSE)
 
 ```
 
-Next steps are to incorporate the better log capturing capabilities in the main function.
+The main function is modified slightly yo allow for taking advantage of the updated functions:  
+```{r}
+
+# Function to download/load, process, segment, and analyze data from COVID Tracking Project
+readRunCOVIDTrackingProject <- function(thruLabel, 
+                                        downloadTo=NULL, 
+                                        readFrom=downloadTo, 
+                                        compareFile=NULL,
+                                        dateChangePlot=FALSE,
+                                        dateMetricPrint=TRUE,
+                                        writeLog=NULL,
+                                        ovrwriteLog=TRUE,
+                                        dfPerCapita=NULL,
+                                        useClusters=NULL,
+                                        hierarchical=TRUE,
+                                        returnList=!hierarchical, 
+                                        kCut=6,
+                                        reAssignState=vector("list", 0),
+                                        makeCumulativePlots=TRUE,
+                                        skipAssessmentPlots=FALSE,
+                                        ...
+                                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # thruLabel: the label for when the data are through (e.g., "Aug 30, 2020")
+    # donwloadTo: download the most recent COVID Tracking Project data to this location
+    #             NULL means do not download any data
+    # readFrom: location for reading in the COVID Tracking Project data (defaults to donwloadTo)
+    # compareFile: name of the file to use for comparisons when reading in raw data (NULL means no comparison)
+    # dateChangePlot: boolean, should changes in dates be captured as a plot rather than as a list?
+    # dateMetricPrint: boolean, should the changes by date and metric be printed to the main log?
+    # writeLog: name of a separate log file for capturing detailed data on changes between files
+    #           NULL means no detailed data captured
+    # ovrwriteLog: boolean, should the log file be overwritten and started again from scratch?
+    # dfPerCapita: file can be passed directly, which bypasses the loading and processing steps
+    # useClusters: file containing clusters by state (NULL means make the clusters from the data)
+    # hierarchical: boolean, should hierarchical clusters be produced (if FALSE, will be k-means)?
+    # returnList: boolean, should a list be returned or just the cluster object?
+    #             refers to what is returned by clusterStates(); the main function always returns a list
+    # kCut: number of segments when cutting the hierarchical tree
+    # reAssignState: mapping file for assigning a state to another state's cluster
+    #                format list("stateToChange"="stateClusterToAssign")
+    # makeCumulativePlots: whether to make plots of cumulative metrics
+    # skipAssessmentPlots: boolean to skip the plots for assessClusters()
+    #                      especially useful if just exploring dendrograms or silhouette widths
+    # ...: arguments to be passed to clusterStates(), will be used only if useClusters is NULL
+    
+    
+    # STEP 1: Get state data
+    stateData <- getStateData()
+    
+    # Helper function for glimpsing
+    glimpseFile <- function(x, txt) {
+        cat(txt)
+        glimpse(x)
+    }
+            
+    # STEPS 2-4 are run only if dfPerCapita does not exist
+    if (is.null(dfPerCapita)) {
+        
+        # STEP 2a: Download latest COVID Tracking Project data (if requested)
+        if (!is.null(downloadTo)) downloadCOVIDbyState(fileName=downloadTo)
+        
+        # STEP 2b: Read-in COVID Tracking Project data
+        dfRaw <- readCOViDbyState(readFrom, 
+                                  checkFile=compareFile, 
+                                  dateChangePlot=dateChangePlot, 
+                                  dateMetricPrint=dateMetricPrint, 
+                                  writeLog=writeLog, 
+                                  ovrwriteLog=ovrwriteLog
+                                  )
+        if (is.null(writeLog)) glimpseFile(dfRaw, txt="\nRaw data file:\n")
+        else capture.output(glimpseFile(dfRaw, txt="\nRaw data file:\n"), file=writeLog, append=TRUE)
+        
+        
+        
+        # STEP 3: Process the data so that it includes all requested key variables
+        varsFilter <- c("date", "state", "positiveIncrease", "deathIncrease", 
+                        "hospitalizedCurrently", "totalTestResultsIncrease"
+        )
+        dfFiltered <- processCVData(dfRaw, 
+                                    varsKeep=varsFilter, 
+                                    varsRename=c(positiveIncrease="cases", 
+                                                 deathIncrease="deaths", 
+                                                 hospitalizedCurrently="hosp", 
+                                                 totalTestResultsIncrease="tests"
+                                    )
+        )
+        if (is.null(writeLog)) glimpseFile(dfFiltered, txt="\nFiltered data file:\n")
+        else capture.output(glimpseFile(dfFiltered, txt="\nFiltered data file:\n"), file=writeLog, append=TRUE)
+        
+        # STEP 4: Convert to per capita
+        dfPerCapita <- helperMakePerCapita(dfFiltered, 
+                                           mapVars=c("cases"="cpm", "deaths"="dpm", 
+                                                     "hosp"="hpm", "tests"="tpm"
+                                           ), 
+                                           popData=stateData
+        )
+        if (is.null(writeLog)) glimpseFile(dfPerCapita, txt="\nPer capita data file:\n")
+        else capture.output(glimpseFile(dfPerCapita, txt="\nPer capita data file:\n"), 
+                            file=writeLog, 
+                            append=TRUE
+                            )
+        
+    } else {
+        dfRaw <- NULL
+        dfFiltered <- NULL
+    }
+    
+    
+    # STEP 5: Create the clusters (if they have not been passed)
+    if (is.null(useClusters)) {
+        # Run the clustering process
+        clData <- clusterStates(df=dfPerCapita, hierarchical=hierarchical, returnList=returnList, ...)
+        # If hierarchical clusters, cut the tree, otherwise use the output object directly
+        if (hierarchical) {
+            useClusters <- cutree(clData, k=kCut)
+        } else {
+            useClusters <- clData$objCluster$cluster
+        }
+        # If requested, manually assign clusters to the cluster for another state
+        for (xNum in seq_len(length(reAssignState))) {
+            useClusters[names(reAssignState)[xNum]] <- useClusters[reAssignState[[xNum]]]
+        }
+        
+    }
+    
+    
+    # STEP 5a: Stop the process and return what is available if skipAssessmentPlots is TRUE
+    if (skipAssessmentPlots) {
+        return(list(stateData=stateData, 
+                    dfRaw=dfRaw, 
+                    dfFiltered=dfFiltered, 
+                    dfPerCapita=dfPerCapita, 
+                    useClusters=useClusters, 
+                    plotData=NULL, 
+                    consolidatedPlotData=NULL, 
+                    clCum=NULL
+                    )
+               )
+    }
+    
+    
+    # STEP 6: Create the cluster assessments
+    plotData <- assessClusters(useClusters, 
+                               dfState=stateData, 
+                               dfBurden=dfPerCapita,
+                               thruLabel=thruLabel,
+                               plotsTogether=TRUE
+    )
+    
+    
+    # STEP 7: Plot the consolidated metrics
+    subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new), Tests: new tests"
+    consolidatedPlotData <- plotConsolidatedMetrics(plotData, 
+                                                    varMain=c("state", "cluster", "date", "pop",
+                                                              "cases", "deaths", "hosp", "tests"
+                                                    ), 
+                                                    subT=subT, 
+                                                    nrowPlot2=2
+    )
+    
+    # STEP 8: Create cumulative metrics if requested
+    if (makeCumulativePlots) {
+        consPos <- consolidatedPlotData %>%
+            ungroup() %>%
+            select(state, cluster, date, name, vpm7) %>%
+            arrange(state, cluster, date, name) %>%
+            pivot_wider(-vpm7, names_from="name", values_from="vpm7") %>%
+            mutate(pctpos=cases/tests) %>%
+            pivot_longer(-c(state, cluster, date), values_to="vpm7") %>%
+            filter(!is.na(vpm7))
+        clCum <- makeCumulative(consPos)
+        plotCumulativeData(clCum, 
+                           keyMetricp2="", 
+                           flagsp2="", 
+                           makep1=TRUE, 
+                           makep2=FALSE
+        )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="deaths", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "deaths")
+        )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="cases", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "cases")
+        )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="tests", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "tests")
+        )
+    } else {
+        clCum <- NULL
+    }
+    
+    
+    # STEP 9: Return a list of the key data
+    list(stateData=stateData, 
+         dfRaw=dfRaw, 
+         dfFiltered=dfFiltered, 
+         dfPerCapita=dfPerCapita, 
+         useClusters=useClusters, 
+         plotData=plotData, 
+         consolidatedPlotData=consolidatedPlotData, 
+         clCum=clCum
+    )
+    
+    
+}
+
+```
+
+The updated function is then run:  
+```{r cache=TRUE}
+
+# Custom shape function for managing 2020 and 2021
+customTimeBucket <- function(x) {
+    paste0(lubridate::year(x), "-", stringr::str_pad(lubridate::month(x), width=2, side="left", pad="0"))
+}
+
+# Create new segments with updated data
+locDownload <- "./RInputFiles/Coronavirus/CV_downloaded_210127.csv"
+locLog <- "./RInputFiles/Coronavirus/downloaded_20210127.log"
+ctp_hier6_210127 <- readRunCOVIDTrackingProject(thruLabel="Jan 26, 2021", 
+                                                downloadTo=if(file.exists(locDownload)) NULL else locDownload,
+                                                readFrom=locDownload, 
+                                                compareFile=readFromRDS("test_hier5_201025")$dfRaw,
+                                                dateChangePlot=TRUE,
+                                                dateMetricPrint=FALSE,
+                                                writeLog=locLog,
+                                                hierarchical=TRUE, 
+                                                reAssignState=list("HI"="ME", "VT"="ME"), 
+                                                kCut=8, 
+                                                shapeFunc=customTimeBucket,
+                                                minShape="2020-04", 
+                                                maxShape="2021-01",
+                                                ratioDeathvsCase = 5, 
+                                                ratioTotalvsShape = 0.25, 
+                                                minDeath=100, 
+                                                minCase=10000
+                                                )
+saveToRDS(ctp_hier6_210127, ovrWriteError=FALSE)
+
+```
+
+The updated functionality appears to be working for 2021.
