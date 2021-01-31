@@ -2271,4 +2271,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 updates readRunCOVIDTrackingProject() to integrate all updated functions  
 * Coronavirus_Statistics_CTP_v004 diagnostics run by census region  
 * Coronavirus_Statistics_CTP_v004 includes consolidated metrics by census region  
+* Coronavirus_Statistics_CTP_v004 includes cumulative metrics by census region  
   
