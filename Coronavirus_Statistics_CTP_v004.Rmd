@@ -2358,3 +2358,100 @@ plotCumulativeData(clCum_hier6_210127,
 
 ```
 
+A function is written to allow for creating plots using an existing frame and a new list of segments:  
+```{r}
+
+# Function to create plots for a new segment mapping and existing state-level data
+createSegmentPlots <- function(stateSegments, 
+                               popData=NULL, 
+                               burdenData=NULL,
+                               lstData=NULL, 
+                               thruLabel="Latest data", 
+                               plotsTogether=TRUE, 
+                               makeTotalvsPerCapitaPlots=FALSE,
+                               makeRecentvsTotalPlots=FALSE
+                               ) {
+
+    # FUNCTION ARGUMENTS:
+    # stateSegments: a named vector containing the states and their segments
+    # popData: tibble or data frame containing population data by state (NULL means get from lstData)
+    # burdenData: tibble or data frame containing per capita burden data by state (NULL means get from lstData)
+    # lstData: list file containing elements for popData and burdenData 
+    #          (NULL means get from popData and burdenData)
+    # thruLabel: plot label for when the data are through
+    # plotsTogether: pass-through argument for assessClusters()
+    # makeTotalvsPerCapitaPlots: pass-through argument for assessClusters()
+    # makeRecentvsTotalPlots: pass-through argument for assessClusters()
+
+    # Get popData and/or burdenData from lstData if needed
+    if (is.null(popData)) {
+        if (is.null(lstData)) stop("\nMust provide either popData or lstData\n")
+        popData <- lstData[["stateData"]]
+    }
+    if (is.null(burdenData)) {
+        if (is.null(lstData)) stop("\nMust provide burdenData or lstData\n")
+        burdenData <- lstData[["dfPerCapita"]]
+    }
+
+    # Run the cluster assessment algorithm
+    ctp_new <- assessClusters(stateSegments, 
+                              dfState=popData, 
+                              dfBurden=burdenData, 
+                              thruLabel=thruLabel, 
+                              plotsTogether=plotsTogether, 
+                              makeTotalvsPerCapitaPlots=makeTotalvsPerCapitaPlots, 
+                              makeRecentvsTotalPlots=makeRecentvsTotalPlots
+                              )
+    
+    # Plot the consolidated metrics
+    subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new), Tests: new tests"
+    consolidatedPlot_new <- plotConsolidatedMetrics(ctp_new, 
+                                                    varMain=c("state", "cluster", "date", "pop",
+                                                              "cases", "deaths", "hosp", "tests"
+                                                              ), 
+                                                    subT=subT, 
+                                                    nrowPlot2=2
+                                                    )
+
+
+    # Create cumulative metrics
+    consPos_new <- consolidatedPlot_new %>%
+        ungroup() %>%
+        select(state, cluster, date, name, vpm7) %>%
+        arrange(state, cluster, date, name) %>%
+        pivot_wider(-vpm7, names_from="name", values_from="vpm7") %>%
+        mutate(pctpos=cases/tests) %>%
+        pivot_longer(-c(state, cluster, date), values_to="vpm7") %>%
+        filter(!is.na(vpm7))
+
+    clCum_new <- makeCumulative(consPos_new)
+
+    # Cumulative burden per million by segment
+    plotCumulativeData(clCum_new, 
+                       keyMetricp2="", 
+                       flagsp2="", 
+                       makep1=TRUE, 
+                       makep2=FALSE
+                       )
+
+    # Return the data frames as a list
+    list(ctp_new=ctp_new, consolidatedPlot_new=consolidatedPlot_new, clCum_new=clCum_new)
+    
+}
+
+# Test the function
+stateCensus <- c(as.character(state.region), "South")
+names(stateCensus) <- c(state.abb, "DC")
+
+# Using lstData
+createSegmentPlots(stateCensus, lstData=ctp_hier6_210127, thruLabel="Jan 26, 2021")
+
+# Using popData and burdenData
+createSegmentPlots(stateCensus, 
+                   popData=ctp_hier6_210127$stateData, 
+                   burdenData=ctp_hier6_210127$dfPerCapita,
+                   thruLabel="Jan 26, 2021"
+                   )
+    
+```
+
