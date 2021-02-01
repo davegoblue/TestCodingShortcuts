@@ -2273,3 +2273,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 includes consolidated metrics by census region  
 * Coronavirus_Statistics_CTP_v004 includes cumulative metrics by census region  
   
+### Expansions week of 01-FEB-2021  
+* Coronavirus_Statistics_CTP_v004 integrates diagnostics and metrics as a stand-alone  
+  
