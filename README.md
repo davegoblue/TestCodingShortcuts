@@ -2278,4 +2278,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 run with data through January 2021  
 * Coronavirus_Statistics_CTP_v004 run by census region through January 2021  
 * Coronavirus_Statistics_CTP_v004 run by census division through January 2021  
+* Coronavirus_Statistics_CTP_v004 run by population density through January 2021  
   
