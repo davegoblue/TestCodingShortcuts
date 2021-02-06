@@ -2543,3 +2543,80 @@ createSegmentPlots(stateDensityVector, lstData=ctp_hier6_210201, thruLabel="Jan 
 
 ```
 
+Functionality is added to pick a subset of states and to plot cumulative and daily metrics solely for those:  
+```{r}
+
+# Plot a subset of states
+subsetStatesCTP <- function(df, 
+                            stateSubset=c(state.abb, "DC"), 
+                            stateHighlight=c(), 
+                            metricsPlot=c("deaths", "cases", "hosp"),
+                            plotCum=c("deaths"=TRUE, "cases"=TRUE, "tests"=TRUE, "hosp"=FALSE)
+                            ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: the processed list file OR a data frame that is of the same format as consolidatedPlotData
+    # stateSubset: the subset of states to plot
+    # stateHighlight: the subset of states to plot using bold and colors
+    #                 states in stateSubset but not in stateHighlight will be in light grey
+    # metricsPlot: the metric(s) to be plotted
+    # plotCum: named vector, names are the available metrics, value is whether to make a cumulative plot
+    
+    # Check that valid metric(s) have been passed
+    if (!all(metricsPlot %in% names(plotCum))) {
+        cat("\nmetricsPlot includes metrics that are not available:\n")
+        cat("Metrics requested:", metricsPlot)
+        cat("\nMetrics available:", names(plotCum))
+        stop("\n")
+    }
+    
+    # Extract the relevant data from the list
+    if ("list" %in% class(df)) {
+        df <- df[["consolidatedPlotData"]]
+    }
+    
+    # Filter to the states of interest and create cumulative vpm by state-date-name
+    df <- df %>%
+        filter(state %in% c(stateSubset, stateHighlight)) %>%
+        ungroup() %>%
+        arrange(state, name, date) %>%
+        group_by(state, name) %>%
+        mutate(cumvpm=cumsum(vpm)) %>%
+        ungroup()
+    
+    # Create a plot for the metric(s) of interest
+    for (thisMetric in metricsPlot) {
+        # Create the daily ploy using vpm7
+        p1 <- df %>%
+            filter(name==thisMetric) %>%
+            ggplot(aes(x=date, y=vpm7)) + 
+            geom_line(aes(group=state), color="lightgrey") + 
+            geom_line(data=~filter(., state %in% stateHighlight), aes(group=state, color=state), lwd=1) +
+            labs(x="", y="Rolling 7-day average (per million)", title=thisMetric) + 
+            scale_color_discrete("")
+        # Create the cumulative plot using cumvpm iff plotCum[thisMetric] is TRUE
+        if (isTRUE(plotCum[thisMetric])) {
+            p2 <- df %>%
+                filter(name==thisMetric) %>%
+                ggplot(aes(x=date, y=cumvpm)) + 
+                geom_line(aes(group=state), color="lightgrey") + 
+                geom_line(data=~filter(., state %in% stateHighlight), aes(group=state, color=state), lwd=1) +
+                labs(x="", y="Cumulative (per million)", title=thisMetric) + 
+                guides(color=FALSE)
+            gridExtra::grid.arrange(p1, p2, nrow=1)
+        } else {
+            print(p1)
+        }
+    }
+    
+}
+
+```
+
+The function is run to highlight select states in the Great Lakes region:  
+```{r}
+
+subsetStatesCTP(ctp_hier6_210201, stateHighlight=c("WI", "IL", "IN", "OH", "MI"))
+
+```
+
