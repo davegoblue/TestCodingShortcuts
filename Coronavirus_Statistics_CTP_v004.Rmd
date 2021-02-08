@@ -2634,3 +2634,87 @@ subsetStatesCTP(ctp_hier6_210201, stateHighlight=c("CA", "TX", "FL", "NY", "NJ",
 
 ```
 
+A function is written to attempt to align two curves (align B to A) as best possible, using only:  
+  
+1.  Cut-offs for the time period of interest for reference curve A  
+2.  Potential lag/lead to be applied to curve B  
+3.  A single scalar for curve B  
+  
+The attempt is to see how similar some of the outbreak curves are:  
+```{r}
+
+# Function that attempts to best align outbreak curves with a lag/lead and a scalar
+alignOutbreaks <- function(dfA, 
+                           dfB, 
+                           minA=NULL, 
+                           maxA=NULL, 
+                           lagLeadTryB=-30:30
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfA: the reference curve that will be kept constant (should have date-value)
+    # dfB: the second curve where an attempt will be made to find the best alignment (should have date-value)
+    # minA: the minimum date to be used for curve A (NULL means no forced minimum)
+    # maxA: the maximum date to be used for curve A (NULL means no forced maximum)
+    # lagLeadTryB: the vector of lags and leads to be attempted for curve B
+    #              if a lag/lead requested would "run out" of curve B data, report and do not use
+    
+    # Create the analysis frame for A
+    useA <- dfA
+    if (!is.null(minA)) useA <- useA %>% filter(date >= minA)
+    if (!is.null(maxA)) useA <- useA %>% filter(date <= maxA)
+    
+    # Create a list for storing the results of each lagLeadTryB
+    resultList <- vector("list", length(lagLeadTryB))
+    
+    # Run the process for each value of lagLeadTryB
+    ctr <- 1
+    for (lagLead in lagLeadTryB) {
+        # Create the analysis data frame for B using only date-value and with the lag-lead applied
+        useB <- dfB %>% select(date, value)
+        if (lagLead < 0) useB <- useB %>% mutate(value=lag(value, -lagLead))
+        if (lagLead > 0) useB <- useB %>% mutate(value=lead(value, lagLead))
+        # Limit useB to the same time period as useA
+        useAll <- select(useA, date, valueA=value) %>%
+            left_join(select(useB, date, valueB=value), by="date")
+        # Plot the curves
+        p1 <- useAll %>%
+            pivot_longer(-date) %>%
+            ggplot(aes(x=date, y=value)) + 
+            geom_line(aes(group=name, color=name)) + 
+            labs(x="", y="Metric", title=paste0("Applying a lead/lag value of: ", lagLead))
+        # Store the data in the list
+        resultList[[ctr]] <- list(useAll=useAll, lagLead=lagLead, p1=p1)
+        # Increment the counter
+        ctr <- ctr + 1
+    }
+    
+    # Return the list object
+    resultList
+    
+}
+
+```
+
+An example for the function is run using WI and MI, with WI as the reference state:  
+```{r}
+
+# Create a test data frame
+testData <- ctp_hier6_210201$consolidatedPlotData %>%
+    ungroup() %>%
+    filter(state %in% c("WI", "MI"), name=="deaths", !is.na(vpm7)) %>%
+    select(state, date, metric=name, value=vpm7)
+
+testList <- alignOutbreaks(dfA=filter(testData, state=="WI"), 
+                           dfB=filter(testData, state=="MI"), 
+                           minA=as.Date("2020-06-01"), 
+                           maxA=as.Date("2020-12-31"), 
+                           lagLeadTryB=c(-30, -15, 0, 15, 30)
+                           )
+
+# Show the plots for lagLead of -15, 0, +15, +30
+gridExtra::grid.arrange(testList[[2]]$p1, testList[[3]]$p1, testList[[4]]$p1, testList[[5]]$p1, nrow=2)
+
+```
+
+The curves clearly align better and worse at different levels of lag/lead.  Next steps are to quantify the similarity and to include a best scalar at the level of highest similarity.
