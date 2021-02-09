@@ -2677,14 +2677,46 @@ alignOutbreaks <- function(dfA,
         # Limit useB to the same time period as useA
         useAll <- select(useA, date, valueA=value) %>%
             left_join(select(useB, date, valueB=value), by="date")
+        # Check for NA values and skip the regression if any
+        nNA <- useAll %>% is.na() %>% sum()
+        if (nNA>0) {
+            cat("\nNA values exist, regression not run.  Value for laglead is:", lagLead)
+            lmAB <- NA
+            rsqAB <- NA
+            rmseAB <- NA
+            scalarAB <- NA
+        } else {
+            lmAB <- lm(valueB ~ valueA + 0, data=useAll)
+            rsqAB <- summary(lmAB)$r.squared
+            rmseAB <- summary(lmAB)$sigma
+            scalarAB <- coef(lmAB)["valueA"]
+        }
         # Plot the curves
         p1 <- useAll %>%
+            mutate(scaledB=valueA*scalarAB) %>%
             pivot_longer(-date) %>%
             ggplot(aes(x=date, y=value)) + 
             geom_line(aes(group=name, color=name)) + 
-            labs(x="", y="Metric", title=paste0("Applying a lead/lag value of: ", lagLead))
+            labs(x="", 
+                 y="Metric", 
+                 title=paste0("Applying a lead/lag value of: ", lagLead), 
+                 subtitle=paste0("Best scalar: ", 
+                                 round(scalarAB, 3), 
+                                 " drives RMSE: ", 
+                                 round(rmseAB, 3), 
+                                 " and R**2: ", 
+                                 round(rsqAB, 3)
+                                 )
+                 )
         # Store the data in the list
-        resultList[[ctr]] <- list(useAll=useAll, lagLead=lagLead, p1=p1)
+        resultList[[ctr]] <- list(useAll=useAll, 
+                                  lagLead=lagLead, 
+                                  p1=p1, 
+                                  lmAB=lmAB, 
+                                  rsqAB=rsqAB, 
+                                  rmseAB=rmseAB, 
+                                  scalarAB=scalarAB
+                                  )
         # Increment the counter
         ctr <- ctr + 1
     }
@@ -2707,8 +2739,8 @@ testData <- ctp_hier6_210201$consolidatedPlotData %>%
 
 testList <- alignOutbreaks(dfA=filter(testData, state=="WI"), 
                            dfB=filter(testData, state=="MI"), 
-                           minA=as.Date("2020-06-01"), 
-                           maxA=as.Date("2020-12-31"), 
+                           minA=as.Date("2020-07-01"), 
+                           maxA=as.Date("2020-12-29"), 
                            lagLeadTryB=c(-30, -15, 0, 15, 30)
                            )
 
@@ -2717,4 +2749,42 @@ gridExtra::grid.arrange(testList[[2]]$p1, testList[[3]]$p1, testList[[4]]$p1, te
 
 ```
 
-The curves clearly align better and worse at different levels of lag/lead.  Next steps are to quantify the similarity and to include a best scalar at the level of highest similarity.
+The curves clearly align better and worse at different levels of lag/lead.
+
+The function can be run more granularly, using lag/lead from 0-30:  
+```{r}
+
+vecLagLead <- 0:30
+testList <- alignOutbreaks(dfA=filter(testData, state=="WI"), 
+                           dfB=filter(testData, state=="MI"), 
+                           minA=as.Date("2020-07-01"), 
+                           maxA=as.Date("2020-12-29"), 
+                           lagLeadTryB=vecLagLead
+                           )
+
+rmseLagLead <- tibble::tibble(lagLead=vecLagLead, 
+                              rmse=sapply(testList, "[[", "rmseAB"), 
+                              rsq=sapply(testList, "[[", "rsqAB")
+                              )
+
+rmseLagLead %>%
+    pivot_longer(-lagLead) %>%
+    ggplot(aes(x=lagLead, y=value)) +
+    geom_line(aes(group=name, color=name)) + 
+    facet_wrap(~name, scales="free_y") + 
+    scale_color_discrete("Metric") + 
+    labs(x="Lag or lead", y="Model Performance", title="Model performance by metric and lag/lead")
+
+bestLagLead <- rmseLagLead %>%
+    filter(rmse==min(rmse)) %>%
+    pull(lagLead)
+
+gridExtra::grid.arrange(testList[[1]]$p1, 
+                        testList[[which(vecLagLead==bestLagLead)]]$p1, 
+                        testList[[length(testList)]]$p1, 
+                        nrow=2
+                        )
+
+```
+
+Next steps are to clean up the charts and labels and to apply to different combinations of data.
