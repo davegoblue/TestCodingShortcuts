@@ -2648,7 +2648,11 @@ alignOutbreaks <- function(dfA,
                            dfB, 
                            minA=NULL, 
                            maxA=NULL, 
-                           lagLeadTryB=-30:30
+                           lagLeadTryB=-30:30, 
+                           nameA="valueA", 
+                           nameB="valueB", 
+                           nameScaled=paste0("Scaled ", nameB), 
+                           yAxisName="Metric"
                            ) {
     
     # FUNCTION ARGUMENTS:
@@ -2691,14 +2695,17 @@ alignOutbreaks <- function(dfA,
             rmseAB <- summary(lmAB)$sigma
             scalarAB <- coef(lmAB)["valueA"]
         }
+        # Create a vector for name mapping
+        nameMap <- c("valueA"=nameA, "valueB"=nameB, "scaledB"=nameScaled)
         # Plot the curves
         p1 <- useAll %>%
             mutate(scaledB=valueA*scalarAB) %>%
             pivot_longer(-date) %>%
+            mutate(name=factor(nameMap[name], levels=c(nameA, nameB, nameScaled))) %>%
             ggplot(aes(x=date, y=value)) + 
             geom_line(aes(group=name, color=name)) + 
             labs(x="", 
-                 y="Metric", 
+                 y=yAxisName, 
                  title=paste0("Applying a lead/lag value of: ", lagLead), 
                  subtitle=paste0("Best scalar: ", 
                                  round(scalarAB, 3), 
@@ -2707,7 +2714,8 @@ alignOutbreaks <- function(dfA,
                                  " and R**2: ", 
                                  round(rsqAB, 3)
                                  )
-                 )
+                 ) + 
+            scale_color_discrete("")
         # Store the data in the list
         resultList[[ctr]] <- list(useAll=useAll, 
                                   lagLead=lagLead, 
@@ -2787,4 +2795,43 @@ gridExtra::grid.arrange(testList[[1]]$p1,
 
 ```
 
-Next steps are to clean up the charts and labels and to apply to different combinations of data.
+Next steps are to clean up the charts and labels and to apply to different combinations of data:  
+```{r}
+
+vecLagLead <- 0:30
+testList <- alignOutbreaks(dfA=filter(testData, state=="WI"), 
+                           dfB=filter(testData, state=="MI"), 
+                           minA=as.Date("2020-07-01"), 
+                           maxA=as.Date("2020-12-29"), 
+                           lagLeadTryB=vecLagLead, 
+                           nameA="MI", 
+                           nameB="Lag/Lead WI", 
+                           nameScaled="Lag/Lead/Scale WI",
+                           yAxisName="Deaths per million (7 day avg.)"
+                           )
+
+rmseLagLead <- tibble::tibble(lagLead=vecLagLead, 
+                              rmse=sapply(testList, "[[", "rmseAB"), 
+                              rsq=sapply(testList, "[[", "rsqAB")
+                              )
+
+rmseLagLead %>%
+    pivot_longer(-lagLead) %>%
+    ggplot(aes(x=lagLead, y=value)) +
+    geom_line(aes(group=name, color=name)) + 
+    facet_wrap(~name, scales="free_y") + 
+    scale_color_discrete("Metric") + 
+    labs(x="Lag or lead", y="Model Performance", title="Model performance by metric and lag/lead")
+
+bestLagLead <- rmseLagLead %>%
+    filter(rmse==min(rmse)) %>%
+    pull(lagLead)
+
+gridExtra::grid.arrange(testList[[1]]$p1, 
+                        testList[[which(vecLagLead==bestLagLead)]]$p1, 
+                        testList[[length(testList)]]$p1, 
+                        nrow=2
+                        )
+
+```
+
