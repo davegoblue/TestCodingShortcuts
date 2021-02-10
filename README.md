@@ -2285,4 +2285,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 08-FEB-2021  
 * Coronavirus_Statistics_CTP_v004 begins curve alignment function  
 * Coronavirus_Statistics_CTP_v004 adds best scalar and RMSE to curve alignment function  
+* Coronavirus_Statistics_CTP_v004 updates plot labels  
   
