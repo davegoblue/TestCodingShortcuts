@@ -2835,3 +2835,72 @@ gridExtra::grid.arrange(testList[[1]]$p1,
 
 ```
 
+The function is run for FL against itself (cases vs. deaths):  
+```{r}
+
+# Create a test data frame
+testData <- ctp_hier6_210201$consolidatedPlotData %>%
+    ungroup() %>%
+    filter(!is.na(vpm7)) %>%
+    select(state, date, metric=name, value=vpm7)
+
+vecLagLead <- -30:0
+testList <- alignOutbreaks(dfA=filter(testData, state=="FL", metric=="deaths"), 
+                           dfB=filter(testData, state=="FL", metric=="cases"), 
+                           minA=as.Date("2020-06-01"), 
+                           maxA=as.Date("2020-12-01"), 
+                           lagLeadTryB=vecLagLead, 
+                           nameA="FL deaths", 
+                           nameB="FL cases", 
+                           nameScaled="Lag/Lead/Scale",
+                           yAxisName="Per million (7 day avg.)"
+                           )
+
+# Function for assessing list performance
+assessLagLead <- function(lst, 
+                          subTp1=NULL
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a processed list file
+    # subTp1: subtitle to be used for plot 1 (NULL means no subtitle)
+    
+    # Pull out key elements from the processed list file
+    rmseLagLead <- tibble::tibble(lagLead=sapply(lst, "[[", "lagLead"), 
+                                  rmse=sapply(lst, "[[", "rmseAB"), 
+                                  rsq=sapply(lst, "[[", "rsqAB"), 
+                                  bestScalar=sapply(lst, "[[", "scalarAB")
+                                  )
+
+    # Plot for lag/lead data
+    p1 <- rmseLagLead %>%
+        pivot_longer(-lagLead) %>%
+        ggplot(aes(x=lagLead, y=value)) +
+        geom_line(aes(group=name, color=name)) + 
+        facet_wrap(~name, scales="free_y") + 
+        scale_color_discrete("Metric") + 
+        labs(x="Lag or lead", y="Model Performance", title="Model performance by metric and lag/lead")
+    if (!is.null(subTp1)) p1 <- p1 + labs(subtitle=subTp1)
+    print(p1)
+
+    # Find the best lag/lead value
+    bestLagLead <- rmseLagLead %>%
+        filter(rmse==min(rmse)) %>%
+        pull(lagLead)
+    
+    # Show a plot of the best lag lead, as well as the smallest and the largest
+    gridExtra::grid.arrange(lst[[1]]$p1, 
+                            lst[[which(rmseLagLead$lagLead==bestLagLead)]]$p1, 
+                            lst[[length(lst)]]$p1, 
+                            nrow=2
+                            )
+    
+}
+
+
+# Run for testList containing FL data
+assessLagLead(testList, subTp1="FL deaths as function of FL cases\n(negative lag/lead means cases first)")
+
+```
+  
+Deaths in FL appear to follow reported cases at a ratio of roughly 1:50 with a lag of ~20 days.
