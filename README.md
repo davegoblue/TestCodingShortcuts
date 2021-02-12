@@ -2287,4 +2287,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 adds best scalar and RMSE to curve alignment function  
 * Coronavirus_Statistics_CTP_v004 updates plot labels  
 * Coronavirus_Statistics_CTP_v004 runs cases vs deaths for FL  
+* Coronavirus_Statistics_CTP_v004 runs cases vs deaths for ND vs MI  
   
