@@ -2291,3 +2291,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 runs deaths for WI vs MI  
 * Coronavirus_Statistics_CTP_v004 runs cases vs deaths for WI  
   
+### Expansions week of 15-FEB-2021  
+* Coronavirus_Statistics_CTP_v004 runs cases vs deaths for FL  
+  
