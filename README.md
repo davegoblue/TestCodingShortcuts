@@ -2294,4 +2294,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 15-FEB-2021  
 * Coronavirus_Statistics_CTP_v004 runs cases vs deaths for FL  
 * Coronavirus_Statistics_CTP_v004 runs cases vs deaths for OH  
+* Coronavirus_Statistics_CTP_v004 runs cases vs deaths for IA  
   
