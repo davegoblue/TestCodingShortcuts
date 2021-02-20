@@ -3102,3 +3102,216 @@ assessLagLead(testList, subTp1="IL deaths as function of IL hospitalized\n(posit
 ```
 
 In general, the death rate in IL is best predicted as 2.6% of the total hospitalized, with a 12-day lag.  This relationship appears to have a (currently not modeled) y-axis offset, as even in the period with very low deaths per million, there are still a bolus of hospitalized patients.  So, death appears more accuratelt to be modeled as death = a * (lag(hospitalized, 12) - b). This could be captured by allowing lm(y~x, ...) rather than the current lm(y~x+0, ...).
+
+The capability is added for regression to include an intercept:  
+```{r}
+
+# Function that attempts to best align outbreak curves with a lag/lead and a scalar
+alignOutbreaks <- function(dfA, 
+                           dfB, 
+                           minA=NULL, 
+                           maxA=NULL, 
+                           lagLeadTryB=-30:30, 
+                           nameA="valueA", 
+                           nameB="valueB", 
+                           nameScaled=paste0("Scaled ", nameB), 
+                           yAxisName="Metric", 
+                           noPlotA=FALSE, 
+                           useIntercept=FALSE
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfA: the reference curve that will be kept constant (should have date-value)
+    # dfB: the second curve where an attempt will be made to find the best alignment (should have date-value)
+    # minA: the minimum date to be used for curve A (NULL means no forced minimum)
+    # maxA: the maximum date to be used for curve A (NULL means no forced maximum)
+    # lagLeadTryB: the vector of lags and leads to be attempted for curve B
+    #              if a lag/lead requested would "run out" of curve B data, report and do not use
+    # nameA: name to be used for series A
+    # nameB: name to be used for series B
+    # yAxisName: name to be used for y-axis
+    # noPlotA: boolean, flags to not plot unscaled series A (useful if A and B are on very different scales)
+    # useIntercept: boolean, should the regression include an intercept?
+    
+    # Create the analysis frame for A
+    useA <- dfA
+    if (!is.null(minA)) useA <- useA %>% filter(date >= minA)
+    if (!is.null(maxA)) useA <- useA %>% filter(date <= maxA)
+    
+    # Create a list for storing the results of each lagLeadTryB
+    resultList <- vector("list", length(lagLeadTryB))
+    
+    # Run the process for each value of lagLeadTryB
+    ctr <- 1
+    for (lagLead in lagLeadTryB) {
+        # Create the analysis data frame for B using only date-value and with the lag-lead applied
+        useB <- dfB %>% select(date, value)
+        if (lagLead < 0) useB <- useB %>% mutate(value=lag(value, -lagLead))
+        if (lagLead > 0) useB <- useB %>% mutate(value=lead(value, lagLead))
+        # Limit useB to the same time period as useA
+        useAll <- select(useA, date, valueA=value) %>%
+            left_join(select(useB, date, valueB=value), by="date")
+        # Check for NA values and skip the regression if any
+        nNA <- useAll %>% is.na() %>% sum()
+        if (nNA>0) {
+            cat("\nNA values exist, regression not run.  Value for laglead is:", lagLead)
+            lmAB <- NA
+            rsqAB <- NA
+            rmseAB <- NA
+            scalarAB <- NA
+        } else {
+            if (isTRUE(useIntercept)) {
+                lmAB <- lm(valueB ~ valueA, data=useAll)
+                interceptAB <- coef(lmAB)["(Intercept)"]
+            }
+            else {
+                lmAB <- lm(valueB ~ valueA + 0, data=useAll)
+                interceptAB <- 0
+            }
+            rsqAB <- summary(lmAB)$r.squared
+            rmseAB <- summary(lmAB)$sigma
+            scalarAB <- coef(lmAB)["valueA"]
+        }
+        # Create a vector for name mapping
+        nameMap <- c("valueA"=nameA, "valueB"=nameB, "scaledB"=nameScaled)
+        # Create the plot data
+        p1Data <- useAll %>%
+            mutate(scaledB=valueA*scalarAB + interceptAB) %>%
+            pivot_longer(-date) %>%
+            mutate(name=factor(nameMap[name], levels=c(nameA, nameB, nameScaled)))
+        # Optionally, remove nameA
+        if (isTRUE(noPlotA)) p1Data <- p1Data %>% filter(name!=nameA)
+        # Plot the curves
+        p1 <- p1Data %>% 
+            ggplot(aes(x=date, y=value)) + 
+            geom_line(aes(group=name, color=name)) + 
+            labs(x="", 
+                 y=yAxisName, 
+                 title=paste0("Applying a lead/lag value of: ", lagLead), 
+                 subtitle=paste0("Best scalar: ", 
+                                 round(scalarAB, 3), 
+                                 " with intercept: ", 
+                                 round(interceptAB, 3),
+                                 "\ndrives RMSE: ", 
+                                 round(rmseAB, 3), 
+                                 " and R**2: ", 
+                                 round(rsqAB, 3)
+                                 )
+                 ) + 
+            scale_color_discrete("")
+        # Store the data in the list
+        resultList[[ctr]] <- list(useAll=useAll, 
+                                  lagLead=lagLead, 
+                                  p1=p1, 
+                                  lmAB=lmAB, 
+                                  rsqAB=rsqAB, 
+                                  rmseAB=rmseAB, 
+                                  scalarAB=scalarAB, 
+                                  interceptAB=interceptAB
+                                  )
+        # Increment the counter
+        ctr <- ctr + 1
+    }
+    
+    # Return the list object
+    resultList
+    
+}
+
+
+# Function for assessing list performance (updated to allow for intercept)
+assessLagLead <- function(lst, 
+                          subTp1=NULL, 
+                          checkIntercept=FALSE
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a processed list file
+    # subTp1: subtitle to be used for plot 1 (NULL means no subtitle)
+    # checkIntercept: boolean, should lst be checked for an intercept value?
+    
+    # Pull out key elements from the processed list file
+    rmseLagLead <- tibble::tibble(lagLead=sapply(lst, "[[", "lagLead"), 
+                                  rmse=sapply(lst, "[[", "rmseAB"), 
+                                  rsq=sapply(lst, "[[", "rsqAB"), 
+                                  bestScalar=sapply(lst, "[[", "scalarAB"), 
+                                  bestIntercept=if(checkIntercept) sapply(lst, "[[", "interceptAB") else 0
+                                  )
+
+    # Is the intercept of interest for the plot?
+    if (sum(rmseLagLead$bestIntercept != 0) == 0) noInt <- TRUE else noInt <- FALSE
+    
+    # Plot for lag/lead data
+    plotData <- rmseLagLead %>%
+        pivot_longer(-lagLead)
+    if (noInt) plotData <- plotData %>% filter(name != "bestIntercept")
+    p1 <- plotData %>%
+        ggplot(aes(x=lagLead, y=value)) +
+        geom_line(aes(group=name, color=name)) + 
+        facet_wrap(~name, scales="free_y", nrow=2-as.integer(noInt)) + 
+        scale_color_discrete("Metric") + 
+        labs(x="Lag or lead", y="Model Performance", title="Model performance by metric and lag/lead")
+    if (!is.null(subTp1)) p1 <- p1 + labs(subtitle=subTp1)
+    print(p1)
+
+    # Find the best lag/lead value
+    bestLagLead <- rmseLagLead %>%
+        filter(rmse==min(rmse)) %>%
+        pull(lagLead)
+    
+    # Show a plot of the best lag lead, as well as the smallest and the largest
+    gridExtra::grid.arrange(lst[[1]]$p1, 
+                            lst[[which(rmseLagLead$lagLead==bestLagLead)]]$p1, 
+                            lst[[length(lst)]]$p1, 
+                            nrow=2
+                            )
+    
+}
+
+```
+  
+The new function is tested, first using data "as is" and second using data modeled with an intercept:  
+```{r}
+
+# RUNNING AS-IS
+vecLagLead <- seq(-10, 36, by=2)
+testList <- alignOutbreaks(dfA=filter(testData, state=="IL", metric=="hosp"), 
+                           dfB=filter(testData, state=="IL", metric=="deaths"), 
+                           minA=as.Date("2020-06-15"), 
+                           maxA=as.Date("2020-12-20"), 
+                           lagLeadTryB=vecLagLead, 
+                           nameA="IL total hospitalized", 
+                           nameB="IL deaths with lag/lead", 
+                           nameScaled="Scaled IL hospitalized",
+                           yAxisName="Per million (7 day avg.)", 
+                           noPlotA=TRUE
+                           )
+
+# Run for testList containing IL data
+assessLagLead(testList, subTp1="IL deaths as function of IL hospitalized\n(positive lag/lead means hospitalized first)")
+
+
+# RUNNING WITH INTERCEPT
+vecLagLead <- seq(-10, 36, by=2)
+testList <- alignOutbreaks(dfA=filter(testData, state=="IL", metric=="hosp"), 
+                           dfB=filter(testData, state=="IL", metric=="deaths"), 
+                           minA=as.Date("2020-06-15"), 
+                           maxA=as.Date("2020-12-20"), 
+                           lagLeadTryB=vecLagLead, 
+                           nameA="IL total hospitalized", 
+                           nameB="IL deaths with lag/lead", 
+                           nameScaled="Scaled IL hosp\nwith intercept",
+                           yAxisName="Per million (7 day avg.)", 
+                           noPlotA=TRUE, 
+                           useIntercept=TRUE
+                           )
+
+# Run for testList containing IL data
+assessLagLead(testList, 
+              subTp1="IL deaths vs. IL hospitalized\n(positive lag/lead means hospitalized first)", 
+              checkIntercept=TRUE
+              )
+
+```
+
+Adding an intercept creates an almost perfect alignment between the Illinois total hospitalized curve and the Illinois death curve, with a best lag of 12 days.
