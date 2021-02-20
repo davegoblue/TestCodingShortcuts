@@ -2297,4 +2297,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 runs cases vs deaths for IA  
 * Coronavirus_Statistics_CTP_v004 runs cases vs deaths for IL  
 * Coronavirus_Statistics_CTP_v004 runs total hospitalizations vs deaths for IL  
+* Coronavirus_Statistics_CTP_v004 adds intercept yes/no option to curve-aligning process  
   
