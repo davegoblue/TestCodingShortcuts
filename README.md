@@ -2300,3 +2300,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 adds intercept yes/no option to curve-aligning process  
 * Coronavirus_Statistics_CTP_v004 adds state aggregation capability for curve-aligning process  
   
+### Expansions week of 22-FEB-2021  
+* Coronavirus_Statistics_CTP_v004 runs total hospitalizations vs deaths for US  
+  
