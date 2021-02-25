@@ -2304,4 +2304,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 runs total hospitalizations vs deaths for US  
 * Coronavirus_Statistics_CTP_v004 runs cases vs deaths for primary midwest cluster  
 * Coronavirus_Statistics_CTP_v004 runs cases vs deaths for primary southern cluster  
+* Coronavirus_Statistics_CTP_v004 runs deaths for midwest vs southern clusters  
   
