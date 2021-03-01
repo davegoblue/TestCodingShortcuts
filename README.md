@@ -2309,3 +2309,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 runs cases vs deaths for first wave of primary northeastern cluster  
 * Coronavirus_Statistics_CTP_v004 runs hospitalization vs deaths for first wave of primary northeastern cluster  
   
+### Expansions week of 01-MAR-2021  
+* Coronavirus_Statistics_CTP_v004 runs hospitalization vs deaths for second wave of primary northeastern cluster  
+  
