@@ -2316,4 +2316,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 updates cases vs deaths for current wave of US  
 * Coronavirus_Statistics_CTP_v004 updates hospitalizations vs deaths for current wave of US  
 * Coronavirus_Statistics_CTP_v004 updates cases vs hospitalizations for current wave of US  
+* Coronavirus_Statistics_CTP_v004 updates cases vs deaths for primary midwestern cluster  
   
