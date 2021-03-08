@@ -3864,3 +3864,59 @@ assessLagLead(testListAgg,
 ```
 
 There appears to be some significant spikiness to the deaths data, but best alignment has deaths at 1.4% of confirmed cases, with a 20-day lag.
+
+Some of the spikiness is driven by reporting issues in states like Ohio and Indiana.  There are large one-day spikes in deaths in each state driven by previous undercounting due to issues in the death certificate matching process.  As such, deaths are reported at times meaningfully different than when they occurred.  Examples for 7-day rolling mean deaths per million by state in the primary midwestern cluster:  
+```{r}
+
+testData_210301 %>% 
+    filter(metric=="deaths", state %in% names(mwStates)) %>% 
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=state, color=state)) + 
+    facet_wrap(~state)
+
+```
+
+The process can then be re-run excluding the Ohio and Indiana data which appear to be spurious:  
+```{r}
+
+# Create an aggregate from the most recent data
+dfAggMW_210301_2 <- weightByPop(testData_210301, 
+                                inclStates=names(mwStates)[!(names(mwStates) %in% c("OH", "IN"))], 
+                                stateName=paste0("Cluster ", mwStates[1])
+                                )
+dfAggMW_210301_2
+
+# Plot the burden data
+dfAggMW_210301_2 %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(color=metric, group=metric)) + 
+    labs(x="", 
+         y="Per million per day (7-day mean)", 
+         title="Cluster-level burden", 
+         subtitle="Each day includes only states that reported that day (numerator and denominator)"
+         ) + 
+    facet_wrap(~metric, scales="free_y") + 
+    guides(color=FALSE)
+
+# Cluster cases vs. deaths for second wave
+vecLagLead <- seq(-10, 36, by=2)
+testListAgg <- alignOutbreaks(dfA=filter(dfAggMW_210301_2, metric=="cases"), 
+                              dfB=filter(dfAggMW_210301_2, metric=="deaths"), 
+                              minA=as.Date("2020-07-15"), 
+                              maxA=as.Date("2021-01-20"), 
+                              lagLeadTryB=vecLagLead, 
+                              nameA="Cluster cases", 
+                              nameB="Cluster deaths with lag/lead", 
+                              nameScaled="Scaled cluster cases",
+                              yAxisName="Per million (7 day avg.)", 
+                              noPlotA=TRUE
+)
+
+# Run for testList containing Cluster data
+assessLagLead(testListAgg, 
+              subTp1="Cluster deaths as function of cluster cases\n(positive lag/lead means cases first)"
+              )
+
+```
+
+The best alignment is now a 1.5% CFR with a 24-day lag, very close to the 1.4% CFR on a 20-day lag observed previously with Ohio and Indiana included.  RMSE lowers from ~1.2 to ~0.9 and the curves are visually more closely aligned.  It is encouraging that best-fit CFR and lag are reasonably similar even when some spurious data are included.
