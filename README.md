@@ -2320,4 +2320,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 08-MAR-2021  
 * Coronavirus_Statistics_CTP_v004 investigates impact of OH/IN death spikes in primary midwestern cluster  
+* Coronavirus_Statistics_CTP_v004 explores states with spikes in deaths data  
   
