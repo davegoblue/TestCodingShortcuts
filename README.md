@@ -2323,4 +2323,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 explores states with spikes in deaths data  
 * Coronavirus_Statistics_CTP_v004 updates total hospitalization vs deaths for primary midwestern cluster excluding OH/IN  
 * Coronavirus_Statistics_CTP_v004 updates cases vs total hospitalized for primary midwestern cluster excluding OH/IN  
+* Coronavirus_Statistics_CTP_v004 investigates alignment of estimated and actual deaths  
   
