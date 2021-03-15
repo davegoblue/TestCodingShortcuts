@@ -2327,3 +2327,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 plots consolidated cluster-level metrics  
 * Coronavirus_Statistics_CTP_v004 plots RMSE and R-squared by lag/lead and cluster  
   
+### Expansions week of 15-MAR-2021  
+* Coronavirus_Statistics_CTP_v004 plots best fit deaths~cases parameters by cluster  
+  
