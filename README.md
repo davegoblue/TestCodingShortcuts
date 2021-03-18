@@ -2331,4 +2331,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 plots best fit deaths~cases parameters by cluster  
 * Coronavirus_Statistics_CTP_v004 plots best fit deaths~cases alignment by cluster  
 * Coronavirus_Statistics_CTP_v004 uses more efficient call for plotting list of ggplot objects  
+* Coronavirus_Statistics_CTP_v004 adjusts legend locations prior to grid.arrange  
   
