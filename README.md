@@ -2334,4 +2334,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 adjusts legend locations prior to grid.arrange  
 * Coronavirus_Statistics_CTP_v004 controls figure size with fig.height and fig.width  
 * Coronavirus_Statistics_CTP_v004 adjusts plot titles with lapply  
+* Coronavirus_Statistics_CTP_v004 uses facet_wrap with ggplot data from inside the lists  
   
