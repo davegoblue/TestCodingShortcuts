@@ -2336,3 +2336,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 adjusts plot titles with lapply  
 * Coronavirus_Statistics_CTP_v004 uses facet_wrap with ggplot data from inside the lists  
   
+### Expansions week of 22-MAR-2021  
+* Coronavirus_Statistics_CTP_v004 adds key statistics to the facetted plots  
+  
