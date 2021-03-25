@@ -2340,4 +2340,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 adds key statistics to the facetted plots  
 * Coronavirus_Statistics_CTP_v004 plots consolidated cluster-level metrics for lagged total hospitalizations ~ cases  
 * Coronavirus_Statistics_CTP_v004 plots best fit parameters for lagged total hospitalizations ~ cases  
+* Coronavirus_Statistics_CTP_v004 plots best fit hospitalized~cases alignment by cluster  
   
