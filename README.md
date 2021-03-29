@@ -2345,3 +2345,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 plots consolidated cluster-level metrics for lagged deaths ~ total hospitalizations  
 * Coronavirus_Statistics_CTP_v004 plots best fit parameters for lagged deaths ~ total hospitalizations  
   
+### Expansions week of 29-MAR-2021  
+* Coronavirus_Statistics_CTP_v004 plots best fit deaths-hospitalized alignment by cluster  
+  
