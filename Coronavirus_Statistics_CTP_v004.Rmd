@@ -4678,3 +4678,156 @@ p1 +
 ```
 
 The facet is advantageous for the specific information in these plots.
+
+The process ic converted to functional form so that a single set of parameters can be passed:  
+```{r}
+
+# Mapping file for metric name to axis name(s)
+alignNameMap <- list("hosp"=c("total hospitalized", "total hosp"), 
+                     "cases"=c("cases", "cases"), 
+                     "deaths"=c("deaths", "deaths")
+                     )
+
+# Function for aligning metrics
+plotAlignment <- function(lst, 
+                          vecLagLead=seq(-10, 36, by=2), 
+                          algMetrics=c("cases", "deaths"), 
+                          algDates=c("2020-07-15", "2021-01-20"), 
+                          mapper=alignNameMap, 
+                          useIntercept=FALSE, 
+                          plotA=FALSE
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # lst: A list containing the key data by cluster
+    # vecLagLead: the vector of lags and leads to try
+    # algMetrics: a length 2 character vector where algMetrics[1] is investigated as a driver of algMetrics[2]
+    # algDates: a length 2 character vector with yyyy-mm-dd for the minimum date and then maximum date
+    # mapper: list for mapping algMetrics to axis names
+    # useIntercept: should an intercept be modeled when aligning algMetrics?
+    # plotA: should A and B be plotted together without scaling (only makes sense if they are of similar scale)
+    
+    # Cluster algMetrics for full list
+    allList <- lapply(lst, 
+                      FUN=function(x) {
+                          alignOutbreaks(dfA=filter(x, metric==algMetrics[1]), 
+                                         dfB=filter(x, metric==algMetrics[2]), 
+                                         minA=as.Date(algDates[1]), 
+                                         maxA=as.Date(algDates[2]), 
+                                         lagLeadTryB=vecLagLead, 
+                                         nameA=paste0("Cluster ", mapper[[algMetrics[1]]][1]), 
+                                         nameB=paste0("Cluster ", mapper[[algMetrics[2]]][1]), 
+                                         nameScaled=paste0("Scaled cluster ", algMetrics[1][2]),
+                                         yAxisName="Per million (7 day avg.)", 
+                                         useIntercept=useIntercept,
+                                         noPlotA=isFALSE(plotA)
+                                         )
+                          }
+                      )
+
+    # Pull all relevant RMSE data and convert to tibble
+    allRMSER2 <- lapply(allList, 
+                        FUN=function(x) {
+                            sapply(x, FUN=function(y) c(lagLead=y$lagLead, 
+                                                        rsq=y$rsqAB, 
+                                                        rmse=y$rmseAB, 
+                                                        scalar=unname(y$scalarAB), 
+                                                        intercept=unname(y$interceptAB)
+                                                        )
+                                   )  %>%
+                                t() %>%
+                                tibble::as_tibble()
+                            }
+                        ) %>%
+        bind_rows(.id="cluster")
+
+    # Plot the alignment metrics data
+    p1 <- allRMSER2 %>%
+        pivot_longer(-c("cluster", "lagLead")) %>%
+        ggplot(aes(x=lagLead, y=value)) + 
+        geom_line(aes(group=cluster, color=cluster)) + 
+        labs(x=paste0("Lag/lead (positive means ", mapper[[algMetrics[1]]][2], " first)"), 
+             y="", 
+             title=paste0("Metrics for ", 
+                          mapper[[algMetrics[2]]][1], 
+                          " vs. ", 
+                          mapper[[algMetrics[1]]][1], 
+                          " by cluster"
+                          )
+             ) + 
+        facet_wrap(~name, scales="free_y")
+    print(p1)
+
+    # Show the lowest RMSE and highest R-squared (will sometimes, but not always, be the same)    
+    allRMSER2 %>%
+        group_by(cluster) %>%
+        filter(rsq==max(rsq) | rmse==min(rmse)) %>%
+        ungroup() %>%
+        print()
+
+    # Capture the best lag/lead by cluster (use highest R-squared rather than lowest RMESE if different lags)
+    bestLagLead <- allRMSER2 %>%
+        group_by(cluster) %>%
+        filter(rsq==max(rsq)) %>%
+        ungroup()
+    print(bestLagLead)
+
+    # Plot the best-fit alignment metrics
+    p2 <- bestLagLead %>%
+        pivot_longer(-c("cluster")) %>%
+        filter(name %in% c("lagLead", "scalar")) %>%
+        mutate(name=factor(name, 
+                           levels=c("lagLead", "scalar"), 
+                           labels=c(paste0("Best lag/lead (positive means ", 
+                                           mapper[[algMetrics[1]]][1], 
+                                           " first)"
+                                           ), 
+                                    paste0("Best scalar (", 
+                                           mapper[[algMetrics[1]]][2], 
+                                           " ~ ", 
+                                           mapper[[algMetrics[1]]][1], 
+                                           ")"
+                                           )
+                                    )
+                           ), 
+               cluster=str_replace_all(str_to_title(cluster), "_", " ")
+               ) %>%
+        ggplot(aes(x=fct_rev(cluster), y=value)) + 
+        geom_text(aes(label=ifelse(abs(value) < 1 & value != 0, paste0(100*round(value, 4), "%"), value)), 
+                  size=4, 
+                  color="red"
+                  ) + 
+        labs(x="", 
+             y="", 
+             title=paste0("Modeling ", 
+                          mapper[[algMetrics[2]]][1], 
+                          " vs. lag/lead ", 
+                          mapper[[algMetrics[1]]][1], 
+                          " (using data from ", 
+                          format(as.Date(algDates[1]), "%b %Y"), 
+                          " to ", 
+                          format(as.Date(algDates[2]), "%b %Y"), 
+                          ")"
+                          ), 
+             subtitle=paste0("Best-fit parameters for linear model: ", 
+                             mapper[[algMetrics[2]]][1],
+                             " ~ best scalar * lag(", 
+                             mapper[[algMetrics[1]]][1], 
+                             ", best lag/lead)", 
+                             ifelse(useIntercept, "", " + 0")
+                             )
+             ) +
+        facet_wrap(~name, scales="free_x", ncol=1) + 
+        coord_flip()
+    print(p2)
+
+    # Return a list of the core list file, RMSER2 data, and best lag/lead
+    list(allList=allList, allRMSER2=allRMSER2, bestLagLead=bestLagLead)
+    
+}
+
+caseDeath <- plotAlignment(dfAggList)
+
+```
+
+Next steps are to create a function for plotting data from the output list.
