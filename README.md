@@ -2348,4 +2348,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 29-MAR-2021  
 * Coronavirus_Statistics_CTP_v004 plots best fit deaths-hospitalized alignment by cluster  
 * Coronavirus_Statistics_CTP_v004 uses facet_wrap with ggplot data from inside the lists  
+* Coronavirus_Statistics_CTP_v004 converts first component of curve alignment to functional form  
   
