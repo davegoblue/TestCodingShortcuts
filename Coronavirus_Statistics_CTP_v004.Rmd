@@ -4689,7 +4689,7 @@ alignNameMap <- list("hosp"=c("total hospitalized", "total hosp"),
                      )
 
 # Function for aligning metrics
-plotAlignment <- function(lst, 
+makeAlignment <- function(lst, 
                           vecLagLead=seq(-10, 36, by=2), 
                           algMetrics=c("cases", "deaths"), 
                           algDates=c("2020-07-15", "2021-01-20"), 
@@ -4717,7 +4717,7 @@ plotAlignment <- function(lst,
                                          lagLeadTryB=vecLagLead, 
                                          nameA=paste0("Cluster ", mapper[[algMetrics[1]]][1]), 
                                          nameB=paste0("Cluster ", mapper[[algMetrics[2]]][1]), 
-                                         nameScaled=paste0("Scaled cluster ", algMetrics[1][2]),
+                                         nameScaled=paste0("Scaled cluster ", mapper[[algMetrics[1]]][2]),
                                          yAxisName="Per million (7 day avg.)", 
                                          useIntercept=useIntercept,
                                          noPlotA=isFALSE(plotA)
@@ -4822,12 +4822,125 @@ plotAlignment <- function(lst,
     print(p2)
 
     # Return a list of the core list file, RMSER2 data, and best lag/lead
-    list(allList=allList, allRMSER2=allRMSER2, bestLagLead=bestLagLead)
+    list(allList=allList, allRMSER2=allRMSER2, bestLagLead=bestLagLead, algMetrics=algMetrics)
     
 }
 
-caseDeath <- plotAlignment(dfAggList)
+caseDeath <- makeAlignment(dfAggList)
 
 ```
 
-Next steps are to create a function for plotting data from the output list.
+Next steps are to create a function for plotting data from the output list:  
+```{r}
+
+# Function for plotting aligned curves
+plotAlignment <- function(lst, 
+                          mapper=alignNameMap
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: list containing outputs from makeAlignment
+    # mapper: list for mapping algMetrics to axis names
+    
+    # Get the number to pull from the lists
+    dfTemp <- lst[["allRMSER2"]] %>%
+        group_by(cluster) %>%
+        mutate(n=row_number()) %>%
+        ungroup() %>%
+        inner_join(select(lst[["bestLagLead"]], cluster, lagLead))
+
+    # Iterate over listTemp
+    listPlots <- vector("list", nrow(dfTemp))
+    for (ctr in 1:length(listPlots)) {
+        listPlots[ctr] <- lst[["allList"]][[dfTemp$cluster[ctr]]][[dfTemp$n[ctr]]]["p1"]
+    }
+    
+    # Name plots and update final list for plotting
+    names(listPlots) <- dfTemp$cluster
+    listPlots <- lapply(seq_along(listPlots), 
+                        FUN=function(ctr) {
+                            listPlots[[ctr]] + 
+                                labs(title=paste0(names(listPlots)[ctr], 
+                                                  ":\n", 
+                                                  listPlots[[ctr]]$labels$title
+                                                  )
+                                     )
+                            }
+                        )
+
+    # Use grid.arrange to show the key plots
+    gridExtra::grid.arrange(grobs=lapply(listPlots, 
+                                         FUN=function(x) { 
+                                             x + 
+                                                 theme(legend.position="bottom") +
+                                                 guides(color=guide_legend(nrow=2))
+                                             }
+                                         ), 
+                            ncol=3
+                            )
+    
+    # Create combined data for facetting
+    plotData <- lapply(listPlots, FUN=function(x) x$data) %>%
+        bind_rows(.id="listNumber") %>%
+        mutate(listNumber=dfTemp$cluster[as.integer(listNumber)])
+    
+    # Create a baseline plot from the facetted data
+    p1 <- plotData %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(group=name, color=name)) + 
+        facet_wrap(~listNumber) + 
+        labs(x="", 
+             y="Per million (7 day avg.)", 
+             title=paste0("Curve alignment for lag(", 
+                          mapper[[lst[["algMetrics"]][2]]][1], 
+                          ") ~ ", 
+                          mapper[[lst[["algMetrics"]][1]]][1]
+                          ),
+             subtitle=paste0("Positive lag/lead means ", lst[["algMetrics"]][1], " first")
+             ) + 
+        scale_color_discrete("") +
+        theme(legend.position="bottom")
+
+    # Find a good date for showing key statistics (left justify at this date)
+    keyDate <- plotData %>%
+        group_by(listNumber) %>%
+        summarize(date=min(date), .groups="drop") %>%
+        pull(date) %>%
+        min() %>%
+        lubridate::ceiling_date("months")
+    
+    # Add the key statistics
+    p1 <- p1 + 
+        geom_text(data=mutate(rename(lst[["bestLagLead"]], listNumber=cluster), 
+                              date=as.Date(keyDate), 
+                              value=Inf
+                              ), 
+                  aes(label=paste0("Best lag/lead: ", lagLead, 
+                                   "\nBest scalar: ", round(scalar, 3),
+                                   "\nBest intercept: ", round(intercept, 1), 
+                                   "\nR**2: ", round(rsq, 3),
+                                   "\nRMSE: ", round(rmse, 2)
+                                   )
+                      ), 
+                  vjust=1, 
+                  hjust=0, 
+                  size=3
+                  ) +
+        facet_wrap(~listNumber, scales="free_y")
+
+    # Print the facetted plot
+    print(p1)
+    
+    # Return key elements
+    list(inputList=lst, listPlots=listPlots, plotData=plotData, facetPlot=p1)
+}
+
+```
+
+The data can then be plotted using a wider and taller space:  
+```{r, fig.height=9, fig.width=9}
+
+caseDeathPlots <- plotAlignment(caseDeath)
+
+```
+
