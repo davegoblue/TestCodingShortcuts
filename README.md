@@ -2351,4 +2351,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 converts first component of curve alignment to functional form  
 * Coronavirus_Statistics_CTP_v004 converts remaining components of curve alignment to functional form  
 * Coronavirus_Statistics_CTP_v004 downloads final CTP data (through 07-MAR-21)  
+* Coronavirus_Statistics_CTP_v004 chains curve alignment functions for one-step call  
   
