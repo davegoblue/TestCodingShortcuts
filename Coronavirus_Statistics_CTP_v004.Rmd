@@ -5116,3 +5116,86 @@ origLagLead %>%
 ```
 
 While not identical, the reverse model run on data of the same time period produces very similar results.  This is driven by the curves having pronounced peaks that tend to occur at an 2-3 week lag/lead.
+
+Projections can be made using the hospitalized ~ cases data and the deaths ~ hospitalized data.  A function is written to convert data by cluster to a projection using a best lag/lead parameters file:  
+```{r}
+
+projectLagLead <- function(df=select(bind_rows(dfAggList, .id="cluster"), cluster, date, metric, value), 
+                           bestParams, 
+                           keyMetric="cases", 
+                           algDates=c("2020-07-15", "2021-01-20")
+                           ) {
+    
+    # FUNCTION ARGUMNETS
+    # bestParams: a file including cluster-lagLead-scalar-intercept
+    # df: a file containing cluster-date-metric-value
+    # keyMetric: filter df to only contain records where value == keyMetric (NULL means no filtering)
+    # algDates: the date range to include from df (NA means use data as-is)
+    
+    # Filter df to the relevant metric (only if keyMetric is not NULL)
+    if (!is.null(keyMetric)) {
+        df <- df %>%
+            filter(metric %in% all_of(keyMetric))
+    }
+    
+    # Filter for dates in df, excluding NULL
+    if (!is.na(algDates[1])) {
+        df <- df %>%
+            filter(date >= as.Date(algDates[1]))
+    }
+    if (!is.na(algDates[2])) {
+        df <- df %>%
+            filter(date <= as.Date(algDates[2]))
+    }
+    
+    # Get the list of variables to keep
+    keepVar <- names(df)
+    
+    # Merge in the lagLead file (for processing only)
+    df <- df %>%
+        inner_join(bestParams, by=c("cluster"))
+    
+    # Create the new date and new value
+    df <- df %>%
+        mutate(newDate=date + lagLead, newValue = value * scalar + intercept)
+    
+    # Return the data frame
+    df %>%
+        select_at(vars(all_of(c(keepVar, "newDate", "newValue"))))
+    
+}
+
+```
+
+The process is then run on the hospital ~ cases data:  
+```{r}
+
+tempData <- projectLagLead(bestParams=caseHospPlots$inputList$bestLagLead, algDates=c("2020-07-15", NA)) %>%
+    rename(caseDate=date, caseValue=value, date=newDate, value=newValue) %>%
+    projectLagLead(bestParams=hospDeadPlots$inputList$bestLagLead, algDates=c("2020-07-15", NA)) %>%
+    rename(hospDate=date, hospValue=value, deadDate=newDate, deadValue=newValue)
+tempData
+
+# Projected hospitalizations by cluster
+tempData %>%
+    ggplot(aes(x=hospDate, y=hospValue, group=cluster, color=cluster)) + 
+    geom_line() + 
+    labs(x="", 
+         y="Per million, 7-day average (projected)", 
+         title="Projection for total hospitalized by cluster"
+         ) + 
+    facet_wrap(~cluster)
+
+# Projected deaths by cluster
+tempData %>%
+    ggplot(aes(x=deadDate, y=deadValue, group=cluster, color=cluster)) + 
+    geom_line() + 
+    labs(x="", 
+         y="Per million, 7-day average (projected)", 
+         title="Projection for total deaths by cluster"
+         ) + 
+    facet_wrap(~cluster)
+
+```
+
+The projection function appears to produce outputs as desired.
