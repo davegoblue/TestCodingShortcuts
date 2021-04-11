@@ -5238,3 +5238,101 @@ projData %>%
 ```
 
 The projected and actual data are well aligned, as expected given that most of the actual data were fitted in the projection modeling.
+
+CDC case and death data by state and date are available for download on the [CDC website](https://data.cdc.gov/api/views/9mfq-cb36/rows.csv?accessType=DOWNLOAD).  The data are downloaded and the process cached to avoid repeated hits against the CDC website:  
+```{r cache=TRUE}
+
+downloadCOVIDbyState("./RInputFiles/Coronavirus/CDC_dc_downloaded_210410.csv",
+                     api="https://data.cdc.gov/api/views/9mfq-cb36/rows.csv?accessType=DOWNLOAD", 
+                     ovrWrite=FALSE
+                     )
+
+```
+
+Key fields from the documentation include:  
+  
+* submission_date - date of counts  
+* state - state (includes 50 states, DC, NYC, and 8 territories/federations)  
+* tot_cases - cumulative number of cases (confirmed and probable)  
+* new_case - new cases (confirmed and probable)  
+* tot_death - cumulative number of deaths (confirmed and probable)  
+* new_death - new deaths (confirmed and probable)  
+* consent_cases - boolean tracked as "Agree" (confirmed and probable tracked separately) or "Not Agree" (only total tracked)  
+* consent_deaths - boolean tracked as "Agree" or "Not Agree" (same as for consent_cases)  
+  
+Control totals are explored by state:  
+```{r}
+
+# Read and glimpse
+cdcRaw <- readr::read_csv("./RInputFiles/Coronavirus/CDC_dc_downloaded_210410.csv")
+glimpse(cdcRaw)
+cdcRaw %>% 
+    count(consent_cases, consent_deaths)
+
+# Create date field and convert 'consent' to boolean
+cdcToBool <- function(x) {
+    y <- case_when(is.na(x) ~ "NA", 
+                   x=="N/A" ~ "NA", 
+                   x=="Agree" ~ "TRUE", 
+                   x=="Not agree" ~ "FALSE", 
+                   TRUE ~ "Problem"
+                   )
+    if (sum(y=="Problem") != 0) stop("Problem with the boolean conversion")
+    y[y=="NA"] <- NA
+    as.logical(y)
+}
+
+cdcProcessed <- cdcRaw %>%
+    mutate(date=lubridate::mdy(submission_date), 
+           creation_date=lubridate::mdy_hms(created_at), 
+           bool_c_cases=cdcToBool(consent_cases), 
+           bool_c_deaths=cdcToBool(consent_deaths)
+           )
+
+cdcControl <- cdcProcessed %>%
+    group_by(state) %>%
+    summarize_if(is.numeric, .funs=function(x) sum(x, na.rm=TRUE))
+
+for (keyVar in names(cdcControl)[2:ncol(cdcControl)]) {
+    p1 <- cdcControl %>%
+        select_at(vars(all_of(c("state", keyVar)))) %>%
+        purrr::set_names(c("state", "y")) %>%
+        ggplot(aes(x=fct_reorder(state, y), y=y)) + 
+        geom_col(fill="lightblue") + 
+        geom_text(aes(y=y/2, label=format(y, big.mark=",")), size=3, hjust=0) +
+        labs(x="", y="", title=paste0("Control totals by state for ", keyVar)) + 
+        coord_flip()
+    print(p1)
+}
+
+cdcMism <- cdcProcessed %>%
+    arrange(state, date) %>%
+    group_by(state) %>%
+    mutate(ck_tot_case=cumsum(ifelse(is.na(new_case), 0, new_case)), 
+           ck_tot_death=cumsum(ifelse(is.na(new_death), 0, new_death))
+           ) %>%
+    select(date, state, tot_cases, ck_tot_case, tot_death, ck_tot_death, everything()) %>%
+    mutate(mism_case=tot_cases != ck_tot_case, mism_death=tot_death != ck_tot_death) %>%
+    group_by(state) %>%
+    summarize(mism_case=sum(mism_case), mism_death=sum(mism_death), .groups="drop") %>%
+    filter(mism_death > 0 | mism_case > 0) %>%
+    arrange(-mism_case, -mism_death)
+cdcMism
+
+```
+
+As expected from the documentation, not all jurisdictions split their cases and/or deaths by probable and confirmed.  
+
+Next steps are to explore the mismatches between the sum of 'new' and 'total':
+```{r}
+
+# Function to report totals and plot trends by state
+assessMismath <- function(df) {
+    
+    # FUNCTION ARGUMENTS
+    # df: 
+    
+} 
+
+```
+
