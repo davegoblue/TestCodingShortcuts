@@ -2361,4 +2361,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 runs reverse chained alignment process for cases ~ deaths  
 * Coronavirus_Statistics_CTP_v004 uses best-fit models to project hospitalizations and deaths  
 * Coronavirus_Statistics_CTP_v004 compares projected vs. actual  
+* Coronavirus_Statistics_CTP_v004 downloads CDC case and death by state data  
   
