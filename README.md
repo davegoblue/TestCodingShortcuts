@@ -2354,7 +2354,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 chains curve alignment functions for one-step call  
 * Coronavirus_Statistics_CTP_v004 runs chained function in reverse direction (cases ~ hosp)  
   
-### Expansions week of 29-MAR-2021  
+### Expansions week of 05-APR-2021  
 * Coronavirus_Statistics_CTP_v004 compares forward and reverse curve alignments  
 * Coronavirus_Statistics_CTP_v004 runs chained alignment process for deaths ~ hosp  
 * Coronavirus_Statistics_CTP_v004 runs reverse chained alignment process for hosp ~ deaths  
@@ -2362,4 +2362,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CTP_v004 uses best-fit models to project hospitalizations and deaths  
 * Coronavirus_Statistics_CTP_v004 compares projected vs. actual  
 * Coronavirus_Statistics_CTP_v004 downloads CDC case and death by state data  
+  
+### Expansions week of 12-APR-2021  
+* Coronavirus_Statistics_CTP_v004 compares 'total' and 'new' fields for cases and deaths  
   
