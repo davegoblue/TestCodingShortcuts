@@ -5327,12 +5327,80 @@ Next steps are to explore the mismatches between the sum of 'new' and 'total':
 ```{r}
 
 # Function to report totals and plot trends by state
-assessMismath <- function(df) {
+assessMismatch <- function(keyStates, 
+                           keyMetric="cases",
+                           df=cdcProcessed
+                           ) {
     
     # FUNCTION ARGUMENTS
-    # df: 
+    # keyStates: states to be explored for differences
+    # keyMetric: metric to be explored
+    # df: the data frame containing data by state-date
     
-} 
+    # Create a main database for comparisons
+    dfUse <- cdcProcessed %>%
+        arrange(state, date) %>%
+        group_by(state) %>%
+        mutate(ck_tot_case=cumsum(ifelse(is.na(new_case), 0, new_case)), 
+               ck_tot_death=cumsum(ifelse(is.na(new_death), 0, new_death)), 
+               d_cases=ck_tot_case-tot_cases,
+               d_deaths=ck_tot_death-tot_death
+               ) %>%
+        select(date, 
+               state, 
+               cases=tot_cases, 
+               ck_cases=ck_tot_case, 
+               d_cases,
+               deaths=tot_death, 
+               ck_deaths=ck_tot_death, 
+               d_deaths,
+               everything()
+               )
+    
+    # Show the discrepancies in the final data for each state
+    dfUse %>%
+        filter(state %in% all_of(keyStates)) %>%
+        group_by(state) %>%
+        filter(row_number()==n()) %>% 
+        select(date, state, cases, ck_cases, d_cases, deaths, ck_deaths, d_deaths) %>%
+        print()
+    
+    # Create plot of metric evolution
+    dfPlot <- dfUse %>%
+        filter(state %in% all_of(keyStates)) %>%
+        select(date, state, cases, ck_cases, d_cases, deaths, ck_deaths, d_deaths) %>%
+        pivot_longer(-c(date, state)) %>%
+        filter(str_detect(name, keyMetric)) 
+    p1 <- dfPlot %>%
+        filter(!str_detect(name, "d_")) %>%
+        mutate(useName=ifelse(str_detect(name, "ck_"), "cumsum(new)", "reported total")) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(group=useName, color=useName)) +
+        labs(x="", 
+             y="Cumulative reported", 
+             title=paste0("Discrepancies in cumulative total ", keyMetric)
+             ) +
+        scale_color_discrete("Source") +
+        facet_wrap(~state, scales="free_y")
+    print(p1)
+    p2 <- dfPlot %>%
+        filter(str_detect(name, "d_")) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(group=state, color=state)) +
+        labs(x="", 
+             y="Cumulative discrepancy", 
+             title=paste0("Discrepancies in cumulative total ", keyMetric)
+             ) +
+        scale_color_discrete("State")
+    print(p2)
+    
+}
+
+assessMismatch(keyStates=cdcMism %>% filter(mism_case > 0) %>% pull(state), keyMetric="cases")
+assessMismatch(keyStates=cdcMism %>% filter(mism_death > 0) %>% pull(state), keyMetric="deaths")
 
 ```
 
+The reported total field appears to always be greater than or equal to the cumulative sum of the new field.  Discrepancies occur in large chunks at discrete points in time, likely due to reclassifications and other corrections to the data.  It is likely that the 'new' fields are more appropriate for assessing shape of the curve while the 'total' fields are more accurate for assesing total disease impact per capita.  Both will be kept as columns for further analysis.
+
+Next steps are to address the NYC/NYS issue and to compare totals from the CDC to data previously downloaded using CTP.
