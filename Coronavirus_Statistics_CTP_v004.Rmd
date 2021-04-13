@@ -5404,3 +5404,57 @@ assessMismatch(keyStates=cdcMism %>% filter(mism_death > 0) %>% pull(state), key
 The reported total field appears to always be greater than or equal to the cumulative sum of the new field.  Discrepancies occur in large chunks at discrete points in time, likely due to reclassifications and other corrections to the data.  It is likely that the 'new' fields are more appropriate for assessing shape of the curve while the 'total' fields are more accurate for assesing total disease impact per capita.  Both will be kept as columns for further analysis.
 
 Next steps are to address the NYC/NYS issue and to compare totals from the CDC to data previously downloaded using CTP.
+
+The cdcProcessed file is converted to a format for easier analysis:  
+```{r}
+
+glimpse(cdcProcessed)
+
+# Key fields will be date-state-tot_*-new_*-bool_c_*
+cdcPivotLong <- cdcProcessed %>%
+    select(date, state, 
+           tot_cases, conf_cases, prob_cases, new_cases=new_case, pnew_cases=pnew_case, 
+           tot_deaths=tot_death, conf_deaths=conf_death, prob_deaths=prob_death, 
+           new_deaths=new_death, pnew_deaths=pnew_death,
+           bool_cases=bool_c_cases, bool_deaths=bool_c_deaths
+           ) %>%
+    pivot_longer(-c(date, state)) %>%
+    tidyr::separate(name, into=c("modifier", "metric"), sep="_")
+
+glimpse(cdcPivotLong)
+
+cdcPivotLong %>%
+    group_by(modifier, metric) %>%
+    summarize(n=n(), nna=sum(is.na(value)), sum=sum(value, na.rm=TRUE))
+
+# Function for summing NA so that if all values are NA it is NA, otherwise return sum(na.rm=TRUE)
+specNASum <- function(x) if (any(!is.na(x))) sum(x, na.rm=TRUE) else NA
+
+# Consolidate NYC to NY and then keep only state.abb plus DC while dropping the 'bool' data
+cdcAnalysis <- cdcPivotLong %>%
+    filter(modifier != "bool") %>%
+    mutate(state=ifelse(state=="NYC", "NY", state)) %>%
+    group_by(state, date, modifier, metric) %>%
+    summarize(n=n(), nna=sum(is.na(value)), value=specNASum(value), .groups="drop") %>%
+    arrange(date, state, metric, modifier)
+
+glimpse(cdcAnalysis)
+
+# Check that only NY has n > 1
+cdcAnalysis %>%
+    filter(n > 1) %>%
+    count(state, n, nna, name="num")
+
+# Check that specNASum worked
+cdcAnalysis %>%
+    group_by(n, nna) %>%
+    summarize(value=sum(value), .groups="drop")
+
+# Check for prevalenece of NA by metric-modifier
+cdcAnalysis %>%
+    group_by(metric, modifier) %>%
+    summarize(sumValue=sum(value, na.rm=TRUE), n=n(), nna=sum(is.na(value)))
+
+```
+
+Data appear to be integrated reasonably.  The priority fields with modifiers 'new' and 'tot' do not have any NA remaining.  The data appear appropriate for comparison to previous data from CTP.
