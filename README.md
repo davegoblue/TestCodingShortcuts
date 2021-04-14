@@ -2366,4 +2366,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 12-APR-2021  
 * Coronavirus_Statistics_CTP_v004 compares 'total' and 'new' fields for cases and deaths  
 * Coronavirus_Statistics_CTP_v004 cleans and formats CDC case and death by state data  
+* Coronavirus_Statistics_CTP_v004 compares CDC and CTP  
   
