@@ -5458,3 +5458,92 @@ cdcAnalysis %>%
 ```
 
 Data appear to be integrated reasonably.  The priority fields with modifiers 'new' and 'tot' do not have any NA remaining.  The data appear appropriate for comparison to previous data from CTP.
+
+Final data from CTP are retrieved, and cumulative totals for cases and deaths as of 2021-03-07 are assessed:  
+```{r}
+
+ctp_hier6_210401 <- readFromRDS("ctp_hier6_210401")
+
+# Totals through 2021-03-07 for CTP (final date of collection)
+ctp_cum_210307 <- ctp_hier6_210401$dfFiltered %>%
+    group_by(state) %>%
+    summarize_if(is.numeric, sum, na.rm=TRUE)
+
+# Totals through 2021-03-07 for CDC (to match CTP data)
+# Uses final tot-cases, final tot-deaths, cumsum new-cases, cumsum new-deaths
+stateCompareData <- cdcAnalysis %>%
+    filter(date <= as.Date("2021-03-07"), 
+           metric %in% c("cases", "deaths"), 
+           modifier %in% c("new", "tot"), 
+           state %in% c(state.abb, "DC")
+           ) %>%
+    pivot_wider(c(state, date, metric), names_from="modifier", values_from="value") %>%
+    group_by(state, metric) %>%
+    summarize(new=sum(new, na.rm=TRUE), tot=last(tot, order_by=date), .groups="drop") %>%
+    pivot_wider(state, names_from="metric", values_from=c("new", "tot")) %>%
+    full_join(ctp_cum_210307, by=c("state")) %>%
+    pivot_longer(-c(state))
+stateCompareData
+
+# Function to assess variables new_x, tot_x, and x for percentage differences
+checkStateCompare <- function(met, 
+                              df=stateCompareData
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # met: the metric to be used, "cases" or "deaths"
+    # df: the data frame containing state-name-value data
+    
+    # Filter for just the key metrics, and calculate percentage of the "base" metric
+    df <- df %>%
+        filter(name %in% paste0(c("new_", "tot_", ""), met)) %>%
+        group_by(state) %>%
+        mutate(pct_of=value/sum(ifelse(name==all_of(met), value, 0))) %>%
+        ungroup()
+    
+    # Plot the percentage differences for both new_cases and tot_cases
+    p1 <- df %>%
+        filter(name != all_of(met)) %>%
+        ggplot(aes(x=fct_reorder(state, pct_of), 
+                   y=pct_of, 
+                   color=name
+                   )
+               ) + 
+        geom_point() + 
+        coord_flip() + 
+        labs(x="", 
+             y="CDC as percentage of CTP (totals as of 2021-03-07)", 
+             title=paste0("Comparison of CTP and CDC reporting for metric ", met)
+             ) + 
+        scale_color_discrete("CDC metric") + 
+        geom_hline(yintercept=1, lty=2)
+    print(p1)
+    
+    # Return the data frame
+    df
+    
+}
+
+# Run comparisons for cases and deaths
+caseCompare <- checkStateCompare("cases")
+deathCompare <- checkStateCompare("deaths")
+
+# Print cases and deaths that are at least 3% different
+caseCompare %>%
+    filter(abs(1-pct_of) >= 0.03)
+deathCompare %>%
+    filter(abs(1-pct_of) >= 0.03)
+
+```
+
+Data are well aligned between CTP and CDC as of 2021-03-07.  Primary differences include:  
+  
+* CDC reports significantly more cases for Iowa (+20%) and Missouri (+17%)  
+* CDC reports modestly less cases for Massachusetts (-4%) and Hawaii (-6%)  
+* CDC reports significantly more deaths for Oklahoma (+46%) and New York (+13% on sum of 'new', +23% on 'tot)  
+* CDC reports modestly more deaths for Texas (+5%)  
+* CDC reports significantly less deaths for Indiana (-11% using 'new'), Ohio (-21% using 'new'), and New Jersey (-8% using 'new'), though sums of 'tot' for these states appear well aligned to the CTP data  
+  
+In general, the CDC 'tot' field appears well aligned to the cumulative totals from CTP, and can likely be used on a go-forward as a measure of cumulative disease impact in each state.
+
+Next steps are to check the curve evolutions, particularly since states with differences in 'new' and 'tot' have large corrections all reported at once, potentially complicating interpretation of the evolution of disease impact in those jurisdictions.
