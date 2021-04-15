@@ -1,0 +1,246 @@
+---
+title: "CDC Daily by State"
+author: "davegoblue"
+date: "4/14/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+This file is designed to use CDC data to assess coronavirus disease burden by state, including creating and analyzing state-level cluters.
+
+Through March 7, 2021, [The COVID Tracking Project](https://covidtracking.com/) collected and integrated data on tests, cases, hospitalizations, deaths, and the like by state and date.  The latest code for using this data is available in Coronavirus_Statistics_CTP_v004.Rmd.
+
+The COVID Tracking Project suggest that [US federal data sources](https://covidtracking.com/analysis-updates/federal-covid-data-101-how-to-find-data) are now sufficiently robust to be used for analyses that previously relied on COVID Tracking Project.  This code is an attempt to update modules in Coronavirus_Statistics_CTP_v004.Rmd to leverage US federal data.
+
+The code leverages tidyverse and a variable mapping file throughout:  
+```{r}
+
+# All functions assume that tidyverse and its components are loaded and available
+# Other functions are declared in the sourcing files or use library::function()
+library(tidyverse)
+
+# For future use, source key modules from a separate .R file
+
+# Create a variable mapping file - this is not yest updated for federal data
+varMapper <- c("cases"="Cases", 
+               "newCases"="Increase in cases, most recent 30 days",
+               "casesroll7"="Rolling 7-day mean cases", 
+               "deaths"="Deaths", 
+               "newDeaths"="Increase in deaths, most recent 30 days",
+               "deathsroll7"="Rolling 7-day mean deaths", 
+               "cpm"="Cases per million",
+               "cpm7"="Cases per day (7-day rolling mean) per million", 
+               "newcpm"="Increase in cases, most recent 30 days, per million",
+               "dpm"="Deaths per million", 
+               "dpm7"="Deaths per day (7-day rolling mean) per million", 
+               "newdpm"="Increase in deaths, most recent 30 days, per million", 
+               "hpm7"="Currently Hospitalized per million (7-day rolling mean)", 
+               "tpm"="Tests per million", 
+               "tpm7"="Tests per million per day (7-day rolling mean)"
+               )
+
+# Helper functions used early in the process
+# Function for saving an R object to RDS, including a check for whether the object already exists
+saveToRDS <- function(obj, 
+                      file=paste0(deparse(substitute(obj)), ".RDS"), 
+                      dir="./RInputFiles/Coronavirus/", 
+                      ovrWrite=FALSE, 
+                      ovrWriteError=TRUE,
+                      makeReadOnly=TRUE
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # obj: the R object to save
+    # file: the file name to save as
+    # dir: the directory to save in (file path will be paste0(dir, file))
+    # ovrWrite: boolean, should the file be overwritten if it already exists?
+    # ovrWriteError: boolean, should an error be thrown if an attempt is made to overwrite the file?
+    # makeReadOnly: boolean, should the output file be made read-only?
+    
+    # Create the file name
+    locFile <- paste0(dir, file)
+    
+    # Check if the file already exists and proceed as per options
+    if (file.exists(locFile)) {
+        cat("\nFile already exists:", locFile, "\n")
+        if (!ovrWrite & ovrWriteError) stop("\nAborting due to ovrWrite=FALSE and ovrWriteError=TRUE")
+        if (!ovrWrite) {
+            cat("\nNot replacing the existing file since ovrWrite=FALSE\n")
+            return(NULL)
+        }
+    }
+    
+    # Save the file and update the permissions to read-only (if flag is set)
+    saveRDS(obj, file=locFile)
+    if (makeReadOnly) Sys.chmod(locFile, mode="0555", use_umask = FALSE)
+    
+}
+
+
+
+# Function for reading an R object from RDS
+readFromRDS <- function(file, 
+                        dir="./RInputFiles/Coronavirus/", 
+                        addSuffix=".RDS", 
+                        deparseSub=FALSE
+                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # file: the file name to read in
+    # dir: the directory the file is in
+    # addSuffix: the suffix that should be added to file (file path will be paste0(dir, file, addSuffix))
+    # deparseSub: whether to deparse and substitute file (use it as the text name)
+    
+    # Convert file if needed
+    if (deparseSub) file <- deparse(substitute(file))
+    
+    # Ensure that file is of type character
+    if (!isTRUE(all.equal(class(file), "character"))) {
+        stop("\nUnable to read since file is not a character\n")
+    }
+    
+    # Create the file name
+    locFile <- paste0(dir, file, addSuffix)
+    
+    # Read the file (will be the return)
+    readRDS(locFile)
+    
+}
+
+
+```
+  
+### Downloading and Integrating US Federal Data  
+#### _Cases and Deaths by State-Date_
+CDC case and death data by state and date are available for download on the [CDC website](https://data.cdc.gov/api/views/9mfq-cb36/rows.csv?accessType=DOWNLOAD).  The previously written function downloadCOVIDbyState() can be used to acquire the data by updating the API:  
+```{r}
+
+# NO CHANGES MADE TO FUNCTION - default API is from COVID Tracking Project
+# Function to download data for COVID Tracking Project
+downloadCOVIDbyState <- function(fileName, 
+                                 api="https://api.covidtracking.com/v1/states/daily.csv", 
+                                 ovrWrite=FALSE
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # fileName: the filename that the data will be saved to
+    # api: The API link for data downloads
+    # ovrWrite: whether to allow overwriting of the existing fileName
+    
+    # Check whether fileName already exists
+    if (file.exists(fileName)) {
+        cat("\nFile already exists at:", fileName, "\n")
+        if (ovrWrite) cat("Will over-write with current data from", api, "\n")
+        else stop("Exiting due to ovrWrite=FALSE and a duplicate fileName\n")
+    }
+    
+    # Download the file 
+    download.file(api, destfile=fileName)
+    
+    # Show statistics on downloaded file
+    file.info(fileName)
+    
+}
+
+
+```
+
+The data are downloaded and the process cached to avoid repeated hits against the CDC website:  
+```{r cache=TRUE}
+
+downloadCOVIDbyState("./RInputFiles/Coronavirus/CDC_dc_downloaded_210414.csv",
+                     api="https://data.cdc.gov/api/views/9mfq-cb36/rows.csv?accessType=DOWNLOAD", 
+                     ovrWrite=FALSE
+                     )
+
+```
+
+Key fields from the documentation include:  
+  
+* submission_date - date of counts  
+* state - state (includes 50 states, DC, NYC, and 8 territories/federations)  
+* tot_cases - cumulative number of cases (confirmed and probable)  
+* new_case - new cases (confirmed and probable)  
+* tot_death - cumulative number of deaths (confirmed and probable)  
+* new_death - new deaths (confirmed and probable)  
+* consent_cases - boolean tracked as "Agree" (confirmed and probable tracked separately) or "Not Agree" (only total tracked)  
+* consent_deaths - boolean tracked as "Agree" or "Not Agree" (same as for consent_cases)  
+  
+Basic formatting and QC is run on the downloaded data (this can later be converted to functional form):  
+```{r}
+
+# Read and glimpse downloaded CDC file
+cdcRaw <- readr::read_csv("./RInputFiles/Coronavirus/CDC_dc_downloaded_210414.csv")
+glimpse(cdcRaw)
+
+# Check for variables in the consent_ fields
+cdcRaw %>% 
+    count(consent_cases, consent_deaths)
+
+# Function to convert N/A, Agree, and Not agree to boolean
+cdcToBool <- function(x) {
+    y <- case_when(is.na(x) ~ "NA", 
+                   x=="N/A" ~ "NA", 
+                   x=="Agree" ~ "TRUE", 
+                   x=="Not agree" ~ "FALSE", 
+                   TRUE ~ "Problem"
+                   )
+    if (sum(y=="Problem") != 0) stop("Problem with the boolean conversion")
+    y[y=="NA"] <- NA
+    as.logical(y)
+}
+
+# Format fields as desired types
+cdcProcessed <- cdcRaw %>%
+    mutate(date=lubridate::mdy(submission_date), 
+           creation_date=lubridate::mdy_hms(created_at), 
+           bool_c_cases=cdcToBool(consent_cases), 
+           bool_c_deaths=cdcToBool(consent_deaths)
+           )
+glimpse(cdcProcessed)
+
+# Get control totals by state for numeric fields
+cdcControl <- cdcProcessed %>%
+    group_by(state) %>%
+    summarize_if(is.numeric, .funs=function(x) sum(x, na.rm=TRUE))
+
+# Plot control totals by state for numeric fields
+for (keyVar in names(cdcControl)[2:ncol(cdcControl)]) {
+    p1 <- cdcControl %>%
+        select_at(vars(all_of(c("state", keyVar)))) %>%
+        purrr::set_names(c("state", "y")) %>%
+        ggplot(aes(x=fct_reorder(state, y), y=y)) + 
+        geom_col(fill="lightblue") + 
+        geom_text(aes(y=y/2, label=format(y, big.mark=",")), size=3, hjust=0) +
+        labs(x="", y="", title=paste0("Control totals by state for ", keyVar)) + 
+        coord_flip()
+    print(p1)
+}
+
+```
+  
+Not every state reports on every metric.  In particular, some jurisdictions break cases and deaths in to probable and confirmed while others do not.  All states appear to report both total (cumulative) and new case.  Comparisons of these fields are run, since restatements of history can lead to total and cumsum(new) being different:  
+```{r}
+
+# Check for alignment of total and sum(new)
+cdcMism <- cdcProcessed %>%
+    arrange(state, date) %>%
+    group_by(state) %>%
+    mutate(ck_tot_case=cumsum(ifelse(is.na(new_case), 0, new_case)), 
+           ck_tot_death=cumsum(ifelse(is.na(new_death), 0, new_death))
+           ) %>%
+    select(date, state, tot_cases, ck_tot_case, tot_death, ck_tot_death, everything()) %>%
+    mutate(mism_case=tot_cases != ck_tot_case, mism_death=tot_death != ck_tot_death) %>%
+    group_by(state) %>%
+    summarize(mism_case=sum(mism_case), mism_death=sum(mism_death), .groups="drop") %>%
+    filter(mism_death > 0 | mism_case > 0) %>%
+    arrange(-mism_case, -mism_death)
+cdcMism
+
+```
+
+Many states have data that are aligned throughout.  In some states, there are differences between the total and new fields that should be explored further.
