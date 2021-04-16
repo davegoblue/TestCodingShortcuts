@@ -243,4 +243,170 @@ cdcMism
 
 ```
 
-Many states have data that are aligned throughout.  In some states, there are differences between the total and new fields that should be explored further.
+Many states have data that are aligned throughout.  In some states, there are differences between the total and new fields that should be explored further.  A function is written to assess mismatches in the data:  
+```{r}
+
+# Function to report totals and plot trends by state
+assessMismatch <- function(keyStates, 
+                           keyMetric="cases",
+                           df=cdcProcessed
+                           ) {
+    
+    # FUNCTION ARGUMENTS
+    # keyStates: states to be explored for differences
+    # keyMetric: metric to be explored
+    # df: the data frame containing data by state-date
+    
+    # Create a main database for comparisons
+    dfUse <- cdcProcessed %>%
+        arrange(state, date) %>%
+        group_by(state) %>%
+        mutate(ck_tot_case=cumsum(ifelse(is.na(new_case), 0, new_case)), 
+               ck_tot_death=cumsum(ifelse(is.na(new_death), 0, new_death)), 
+               d_cases=ck_tot_case-tot_cases,
+               d_deaths=ck_tot_death-tot_death
+               ) %>%
+        select(date, 
+               state, 
+               cases=tot_cases, 
+               ck_cases=ck_tot_case, 
+               d_cases,
+               deaths=tot_death, 
+               ck_deaths=ck_tot_death, 
+               d_deaths,
+               everything()
+               )
+    
+    # Show the discrepancies in the final data for each state
+    dfUse %>%
+        filter(state %in% all_of(keyStates)) %>%
+        group_by(state) %>%
+        filter(row_number()==n()) %>% 
+        select(date, state, cases, ck_cases, d_cases, deaths, ck_deaths, d_deaths) %>%
+        print()
+    
+    # Create plot of metric evolution
+    dfPlot <- dfUse %>%
+        filter(state %in% all_of(keyStates)) %>%
+        select(date, state, cases, ck_cases, d_cases, deaths, ck_deaths, d_deaths) %>%
+        pivot_longer(-c(date, state)) %>%
+        filter(str_detect(name, keyMetric)) 
+    p1 <- dfPlot %>%
+        filter(!str_detect(name, "d_")) %>%
+        mutate(useName=ifelse(str_detect(name, "ck_"), "cumsum(new)", "reported total")) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(group=useName, color=useName)) +
+        labs(x="", 
+             y="Cumulative reported", 
+             title=paste0("Discrepancies in cumulative total ", keyMetric)
+             ) +
+        scale_color_discrete("Source") +
+        facet_wrap(~state, scales="free_y")
+    print(p1)
+    p2 <- dfPlot %>%
+        filter(str_detect(name, "d_")) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(group=state, color=state)) +
+        labs(x="", 
+             y="Cumulative discrepancy", 
+             title=paste0("Discrepancies in cumulative total ", keyMetric)
+             ) +
+        scale_color_discrete("State")
+    print(p2)
+    
+}
+
+```
+  
+The function can then be applied to the case and death data with mismatches:  
+```{r}
+
+assessMismatch(keyStates=cdcMism %>% filter(mism_case > 0) %>% pull(state), keyMetric="cases")
+assessMismatch(keyStates=cdcMism %>% filter(mism_death > 0) %>% pull(state), keyMetric="deaths")
+
+```
+
+The mismathes appear to arise at discrete points in time, likely reflecting a reclassification of many previous cases and deaths.  The total field is always greater than or equal to the sum of the new field.  This sugests using 'new' for shape of the curve and 'total' for overall disease burden.
+
+A function is then written to rename and split columns appropriately:  
+```{r}
+
+# Create list of expected variables and renames (NA means keep as-is)
+cdcVarNames <- c("date"=NA, 
+                 "state"=NA, 
+                 "tot_cases"=NA, 
+                 "conf_cases"=NA, 
+                 "prob_cases"=NA, 
+                 "new_case"="new_cases", 
+                 "pnew_case"="pnew_cases", 
+                 "tot_death"="tot_deaths", 
+                 "conf_death"="conf_deaths", 
+                 "prob_death"="prob_deaths", 
+                 "new_death"="new_deaths", 
+                 "pnew_death"="pnew_deaths",
+                 "bool_c_cases"="bool_cases", 
+                 "bool_c_deaths"="bool_deaths"
+                 )
+
+# Function to rename variables, split, and pivot for easier analysis
+renamePivotProcessed <- function(df, 
+                                 selectRename=cdcVarNames
+                                 ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: a processed CDC data file
+    # selectRename: a list of variable -> new name (NA means keep as-is) as c('original'='new')
+    
+    # Check alignment of variables in df and selectRename
+    dfNames <- names(df)
+    selNames <- names(selectRename)
+    
+    # Create the vector of renamed variables after selection
+    selRenames <- unname(selectRename[selNames])
+    selRenames[is.na(selRenames)] <- selNames[is.na(selRenames)]
+    
+    # Names in one but not the other
+    cat("\n*** Variables that will be dropped (not in selectRename vector) include:", 
+        setdiff(dfNames, selNames), 
+        sep="\n"
+        )
+    cat("\n\n*** Variables passed in selectRename that are not in the data include:", 
+        setdiff(selNames, dfNames), 
+        sep="\n"
+        )
+    
+    # Select the key variables and rename
+    df <- df %>%
+        select_at(vars(all_of(selNames))) %>%
+        purrr::set_names(selRenames)
+
+    # Pivot and separate the data, keeping unique by date-state
+    # Requires that selectRename have every variable as modifier_type
+    df <- df %>%
+        pivot_longer(-c(date, state)) %>%
+        tidyr::separate(name, into=c("modifier", "metric"), sep="_")
+
+    # Summary NA statistics of the new dataset
+    cat("\nSummary statistics for processed and pivoted data\n")
+    df %>%
+        group_by(modifier, metric) %>%
+        summarize(n=n(), nna=sum(is.na(value)), sum=sum(value, na.rm=TRUE), .groups="drop") %>%
+        print()
+    cat("\n")
+    
+    # Return the data frane
+    df
+    
+}
+
+```
+  
+The function is applied to create cdcPivotLong:  
+```{r}
+
+cdcPivotLong <- renamePivotProcessed(cdcProcessed)
+glimpse(cdcPivotLong)
+
+```
+
+Next steps are to combine the NYS/NYC data as NY and to filter to the states and DC.
