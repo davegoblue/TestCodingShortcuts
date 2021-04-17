@@ -941,7 +941,84 @@ renamePivotProcessed &lt;- function(df,
 ## $ modifier &lt;chr&gt; &quot;tot&quot;, &quot;conf&quot;, &quot;prob&quot;, &quot;new&quot;, &quot;pnew&quot;, &quot;tot&quot;, &quot;conf&quot;, &quot;prob...
 ## $ metric   &lt;chr&gt; &quot;cases&quot;, &quot;cases&quot;, &quot;cases&quot;, &quot;cases&quot;, &quot;cases&quot;, &quot;deaths&quot;, &quot;de...
 ## $ value    &lt;dbl&gt; 1300528, NA, NA, 0, 6063, 21673, NA, NA, 0, 7, 0, 0, 7145,...</code></pre>
-<p>Next steps are to combine the NYS/NYC data as NY and to filter to the states and DC.</p>
+<p>Next steps are to combine the NYS/NYC data as NY and to filter to the states and DC. A function is written to combine states (will be applied only to NY and NYC for these data):</p>
+<pre class="r"><code># Function to combine states
+combineStates &lt;- function(df, 
+                          mapper=comboStates,
+                          sortBy=c(&quot;date&quot;, &quot;state&quot;, &quot;modifier&quot;, &quot;metric&quot;),
+                          boolMod=c(&quot;bool&quot;)
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a data frame resulting from renamePivotProcessed() that includes date-state-modifier-metric-value
+    # mapper: a vector listing the states to be remapped
+    # sortBy: order that the resulting file should be sorted (and unique) by
+    # boolMod: modifier indicating value is a boolean rather than number (cannot be summed)
+    
+    # Split the file in to stand-alone and combined
+    df &lt;- df %&gt;%
+        mutate(combined=state %in% names(mapper))
+    dfAlone &lt;- df %&gt;% filter(!combined)
+    dfCombo &lt;- df %&gt;% filter(combined)
+    
+    # Process the combined file to give it the new state name
+    # Group by the final sorting variables
+    dfCombo &lt;- dfCombo %&gt;%
+        mutate(state=unname(comboStates[state])) %&gt;%
+        group_by_at(vars(all_of(sortBy))) %&gt;%
+        arrange_at(vars(all_of(sortBy)))
+    
+    # Numeric variables should be summed, with NA+NA=NA and NA+number=number
+    specNASum &lt;- function(x) if (any(!is.na(x))) sum(x, na.rm=TRUE) else NA
+
+    # Sum the value field, leave the combined field as-is
+    dfCombo &lt;- dfCombo %&gt;%
+        summarize(value=specNASum(value), combined=first(combined), .groups=&quot;drop&quot;)
+    
+    # Boolean variables should be output as NA since there is no sensible combining based on what it means
+    dfCombo &lt;- dfCombo %&gt;%
+        mutate(value=ifelse(modifier %in% all_of(boolMod), NA, value))
+    
+    # Combine the data, sort, check for uniqueness, and return
+    dfAll &lt;- bind_rows(dfCombo, dfAlone) %&gt;%
+        arrange_at(vars(all_of(sortBy)))
+    if (nrow(distinct(dfAll %&gt;% select_at(vars(all_of(sortBy))))) != nrow(dfAll)) stop(&quot;\nRow mismatch\n&quot;)
+    dfAll
+    
+}</code></pre>
+<p>The function is then applied to the cdcPivotLong data:</p>
+<pre class="r"><code># List of states to be changed 
+# Also include any state that is mapped to itself with some other state mapping to it
+# Format is &#39;currentState&#39;=&#39;combinedState&#39;
+comboStates &lt;- c(&quot;NYC&quot;=&quot;NY&quot;, 
+                 &quot;NY&quot;=&quot;NY&quot;
+                 )
+
+# Run function
+cdcAnalysis &lt;- combineStates(cdcPivotLong)
+
+# Check for prevalenece of NA by metric-modifier
+cdcAnalysis %&gt;%
+    group_by(metric, modifier) %&gt;%
+    summarize(sumValue=sum(value, na.rm=TRUE), n=n(), nna=sum(is.na(value)), nComb=sum(combined))</code></pre>
+<pre><code>## `summarise()` regrouping output by &#39;metric&#39; (override with `.groups` argument)</code></pre>
+<pre><code>## # A tibble: 12 x 6
+## # Groups:   metric [2]
+##    metric modifier   sumValue     n   nna nComb
+##    &lt;chr&gt;  &lt;chr&gt;         &lt;dbl&gt; &lt;int&gt; &lt;int&gt; &lt;int&gt;
+##  1 cases  bool          14275 26373  5364   447
+##  2 cases  conf     2067083705 26373 14395   447
+##  3 cases  new        30995591 26373     0   447
+##  4 cases  pnew        3328224 26373  4835   447
+##  5 cases  prob      230283006 26373 14396   447
+##  6 cases  tot      4503152844 26373     0   447
+##  7 deaths bool          14751 26373  4470   447
+##  8 deaths conf       51520966 26373 14031   447
+##  9 deaths new          546212 26373     0   447
+## 10 deaths pnew          41359 26373  5014   447
+## 11 deaths prob        5712572 26373 14031   447
+## 12 deaths tot        96207327 26373     0   447</code></pre>
+<p>The fields for tot/new by cases/deaths appear appropriate for further usage. Next steps are to compare the totals to existing data from the CTP (final date 2021-03-07).</p>
 </div>
 </div>
 </div>

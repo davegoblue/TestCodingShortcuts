@@ -409,4 +409,75 @@ glimpse(cdcPivotLong)
 
 ```
 
-Next steps are to combine the NYS/NYC data as NY and to filter to the states and DC.
+Next steps are to combine the NYS/NYC data as NY and to filter to the states and DC.  A function is written to combine states (will be applied only to NY and NYC for these data):  
+```{r}
+
+# Function to combine states
+combineStates <- function(df, 
+                          mapper=comboStates,
+                          sortBy=c("date", "state", "modifier", "metric"),
+                          boolMod=c("bool")
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a data frame resulting from renamePivotProcessed() that includes date-state-modifier-metric-value
+    # mapper: a vector listing the states to be remapped
+    # sortBy: order that the resulting file should be sorted (and unique) by
+    # boolMod: modifier indicating value is a boolean rather than number (cannot be summed)
+    
+    # Split the file in to stand-alone and combined
+    df <- df %>%
+        mutate(combined=state %in% names(mapper))
+    dfAlone <- df %>% filter(!combined)
+    dfCombo <- df %>% filter(combined)
+    
+    # Process the combined file to give it the new state name
+    # Group by the final sorting variables
+    dfCombo <- dfCombo %>%
+        mutate(state=unname(comboStates[state])) %>%
+        group_by_at(vars(all_of(sortBy))) %>%
+        arrange_at(vars(all_of(sortBy)))
+    
+    # Numeric variables should be summed, with NA+NA=NA and NA+number=number
+    specNASum <- function(x) if (any(!is.na(x))) sum(x, na.rm=TRUE) else NA
+
+    # Sum the value field, leave the combined field as-is
+    dfCombo <- dfCombo %>%
+        summarize(value=specNASum(value), combined=first(combined), .groups="drop")
+    
+    # Boolean variables should be output as NA since there is no sensible combining based on what it means
+    dfCombo <- dfCombo %>%
+        mutate(value=ifelse(modifier %in% all_of(boolMod), NA, value))
+    
+    # Combine the data, sort, check for uniqueness, and return
+    dfAll <- bind_rows(dfCombo, dfAlone) %>%
+        arrange_at(vars(all_of(sortBy)))
+    if (nrow(distinct(dfAll %>% select_at(vars(all_of(sortBy))))) != nrow(dfAll)) stop("\nRow mismatch\n")
+    dfAll
+    
+}
+
+```
+  
+The function is then applied to the cdcPivotLong data:  
+```{r}
+
+# List of states to be changed 
+# Also include any state that is mapped to itself with some other state mapping to it
+# Format is 'currentState'='combinedState'
+comboStates <- c("NYC"="NY", 
+                 "NY"="NY"
+                 )
+
+# Run function
+cdcAnalysis <- combineStates(cdcPivotLong)
+
+# Check for prevalenece of NA by metric-modifier
+cdcAnalysis %>%
+    group_by(metric, modifier) %>%
+    summarize(sumValue=sum(value, na.rm=TRUE), n=n(), nna=sum(is.na(value)), nComb=sum(combined))
+
+```
+  
+The fields for tot/new by cases/deaths appear appropriate for further usage.  Next steps are to compare the totals to existing data from the CTP (final date 2021-03-07).
+
