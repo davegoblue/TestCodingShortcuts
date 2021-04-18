@@ -2370,4 +2370,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v001 created to use CDC daily data in place of CTP  
 * Coronavirus_CDC_Daily_v001 cleans and pivots CDC daily data  
 * Coronavirus_CDC_Daily_v001 combines NYC and NYS as NY  
+* Coronavirus_CDC_Daily_v001 calculates cumulative totals as of 2021-03-07 (end date of CTP)  
   
