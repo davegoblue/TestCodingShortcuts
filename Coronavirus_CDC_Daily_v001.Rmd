@@ -514,3 +514,77 @@ cdc_cum_210307
 ```
 
 Next steps are to write a function to pull a specific metric and plot the differences in a 'base' modifier and any other values for modifier.
+
+A function is written to compare data from different sources:  
+```{r}
+
+# Function to assess variables new_x, tot_x, and x for percentage differences
+checkStateCompare <- function(..., 
+                              met="cases", 
+                              baseModifier="ctp"
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # ...: one or more data frames of the form state-modifier-metric-value
+    # met: the metric to be used, "cases" or "deaths"
+    # baseModifier: value of the modifier field that signifies the baseline for comparison
+    
+    # Bind the data frames, and calculate as a percentage of the "base" modifier
+    df <- bind_rows(...) %>%
+        filter(metric %in% all_of(met)) %>%
+        arrange(state, modifier) %>%
+        group_by(state) %>%
+        mutate(pct_of=value/sum(ifelse(modifier==all_of(baseModifier), value, 0))) %>%
+        ungroup()
+
+    # Plot the percentage differences for fields other than reference
+    p1 <- df %>%
+        filter(modifier != all_of(baseModifier)) %>%
+        ggplot(aes(x=fct_reorder(state, pct_of), 
+                   y=pct_of, 
+                   color=modifier
+                   )
+               ) + 
+        geom_point() + 
+        coord_flip() + 
+        labs(x="", 
+             y=paste0("Reported ", met, " as function of baseline data from ", baseModifier), 
+             title=paste0("Comparison to baseline data for ", met)
+             ) + 
+        scale_color_discrete("Comparison metric") + 
+        geom_hline(yintercept=1, lty=2)
+    print(p1)
+    
+    # Return the data frame
+    df
+    
+}
+
+```
+
+The function can then be applied to the cases and deaths data:  
+```{r}
+
+# Run comparisons for cases and deaths
+caseCompare <- checkStateCompare(ctp_cum_210307, cdc_cum_210307, met="cases")
+deathCompare <- checkStateCompare(ctp_cum_210307, cdc_cum_210307, met="deaths")
+
+# Print cases and deaths that are at least 3% different
+caseCompare %>%
+    filter(abs(1-pct_of) >= 0.03)
+deathCompare %>%
+    filter(abs(1-pct_of) >= 0.03)
+
+```
+
+Data are well aligned between CTP and CDC as of 2021-03-07.  Primary differences include:  
+  
+* CDC reports significantly greater cases for Iowa (+20%) and Missouri (+17%)  
+* CDC reports modestly lower cases for Massachusetts (-4%) and Hawaii (-6%)  
+* CDC reports significantly more deaths for Oklahoma (+46%) and New York (+13% on sum of 'new', +23% on 'tot)  
+* CDC reports modestly more deaths for Texas (+5%)  
+* CDC reports significantly lower deaths for Indiana (-11% using 'new'), Ohio (-21% using 'new'), and New Jersey (-8% using 'new'), though sums of 'tot' for these states appear well aligned to the CTP data  
+  
+In general, the CDC 'tot' field appears well aligned to the cumulative totals from CTP, and can likely be used on a go-forward as a measure of cumulative disease impact in each state.
+
+Next steps are to check the curve evolutions, particularly since states with differences in 'new' and 'tot' have large corrections all reported at once.
