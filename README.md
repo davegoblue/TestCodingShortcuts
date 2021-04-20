@@ -2374,4 +2374,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 19-APR-2021  
 * Coronavirus_CDC_Daily_v001 compares CTP and CDC cumulative totals as of 2021-03-07 (end date of CTP)  
+* Coronavirus_CDC_Daily_v001 compares shape of the curve in CDC and CTP  
   
