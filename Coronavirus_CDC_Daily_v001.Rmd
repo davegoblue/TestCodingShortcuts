@@ -588,3 +588,76 @@ Data are well aligned between CTP and CDC as of 2021-03-07.  Primary differences
 In general, the CDC 'tot' field appears well aligned to the cumulative totals from CTP, and can likely be used on a go-forward as a measure of cumulative disease impact in each state.
 
 Next steps are to check the curve evolutions, particularly since states with differences in 'new' and 'tot' have large corrections all reported at once.
+
+A function is written to compare the shapes of the curves.  Curve shape will be assessed as the percentage distribution of 'new' cases and deaths by time:  
+```{r}
+
+curvePercent <- function(df, 
+                         keyMetric, 
+                         keyModifiers=c("new", "ctp"), 
+                         dateMax=as.Date("2021-03-07")
+                         ) {
+  
+ 
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing date-state-modifier-metric-value
+    
+    # Filter for the metric and modifiers of interest and only through dateMax
+    df <- df %>%
+        filter(metric %in% all_of(keyMetric), 
+               modifier %in% all_of(keyModifiers), 
+               date <= all_of(dateMax)
+               )
+    
+    # Calculate the cumulative percentage by date
+    df <- df %>%
+        mutate(value=ifelse(is.na(value), 0, value)) %>%
+        arrange(date) %>%
+        group_by(state, metric, modifier) %>%
+        mutate(pct=cumsum(value)/sum(value)) %>%
+        ungroup()
+    
+    # Pivot for percentages by state-date-metric
+    df <- df %>%
+        pivot_wider(c(state, date, metric), names_from="modifier", values_from="pct") %>%
+        mutate_at(vars(all_of(keyModifiers)), .funs=function(x) ifelse(is.na(x), 0, x))
+    
+    # Calculate RMSE for each state-metric (assumes only two columns - can expand later)
+    stateRMSE <- df %>%
+        group_by(state, metric) %>%
+        summarize(rmse=sqrt(mean((get(keyModifiers[1])-get(keyModifiers[2]))**2)), .groups="drop")
+
+    # Create plots of RMSE by state
+    p1 <- stateRMSE %>%
+        ggplot(aes(x=fct_reorder(state, rmse), y=rmse)) + 
+        geom_point() +
+        geom_text(aes(label=round(rmse, 3), y=rmse+0.00025), hjust=0, size=3) +
+        coord_flip() + 
+        labs(x="", 
+             y="RMSE for cumulative percentage by date", 
+             title=paste0("Curve comparison for ", keyMetric)
+             )
+    print(p1)
+    
+    # Return the data frame
+    df
+    
+}
+
+```
+  
+The CTP data are formatted for use with the function, integrated with cdcPivotLong, and assessed:  
+```{r}
+
+fullPivotLong <- ctp_hier6_210401$dfFiltered %>%
+    pivot_longer(-c(date, state), names_to="metric") %>%
+    mutate(modifier="ctp") %>%
+    bind_rows(cdcPivotLong) %>%
+    filter(state %in% c(state.abb, "DC"))
+
+curveCases <- curvePercent(fullPivotLong, keyMetric="cases")
+curveDeath <- curvePercent(fullPivotLong, keyMetric="deaths")
+
+```
+
+Many of the same locales that have differences between the 'new' and 'total' fields in CDC also have differences in curve shape with CTP.  Next steps are to explore some of the larger differences.
