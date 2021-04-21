@@ -661,3 +661,86 @@ curveDeath <- curvePercent(fullPivotLong, keyMetric="deaths")
 ```
 
 Many of the same locales that have differences between the 'new' and 'total' fields in CDC also have differences in curve shape with CTP.  Next steps are to explore some of the larger differences.
+
+A function is written to explore curves for a speciic metric and set of states:  
+```{r}
+
+exploreCurve <- function(df, 
+                         keyMetric=NULL, 
+                         keyStates=NULL
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame containing state-date-metric-[1 column per metric type]
+    # keyMetric: the metric to filter in column 'metric' (NULL means determine from data)
+    # keyStates: the list of states to be plotted (NULL means pick the top 9 from data)
+    
+    # Get keyMetric if it is passed as NULL
+    if (is.null(keyMetric)) {
+        keyMetric <- df %>% count(metric) %>% arrange(-n) %>% head(1) %>% pull(metric)
+        cat("\nKey metric will be: ", keyMetric)
+    }
+    
+    # Get the numerical columns for plotting
+    colPlot <- df %>% select_if(is.numeric) %>% names()
+    cat("\nColumns to be plotted will be: ", colPlot, "\n")
+    
+    # Get keyStates if not passed
+    if (is.null(keyStates)) {
+        keyStates <- df %>%
+            filter(metric==all_of(keyMetric)) %>%
+            group_by(state) %>%
+            summarize(rmse=sqrt(mean((get(colPlot[1])-get(colPlot[2]))**2)), .groups="drop") %>%
+            arrange(-rmse) %>%
+            head(9) %>%
+            pull(state)
+        cat("States to be plotted will be: ", keyStates, "\n")
+    }
+    
+    # Create faceted plots for the requested metrics
+    dfPlot <- df %>%
+        filter(metric==all_of(keyMetric), state %in% all_of(keyStates)) %>%
+        select_at(vars(all_of(c("state", "date", colPlot)))) %>%
+        mutate(state=factor(state, levels=keyStates)) %>%
+        pivot_longer(-c("state", "date")) %>%
+        arrange(state, name, date) %>%
+        group_by(state, name) %>%
+        mutate(delta=ifelse(row_number()==1, value, value-lag(value, 1)))
+    p1 <- dfPlot %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(group=name, color=name)) + 
+        facet_wrap(~state) + 
+        labs(x="", 
+             y="Cumulative percentage of total recorded by date", 
+             title=paste0("Curve evolution by percentage for metric: ", keyMetric), 
+             subtitle="Cumulative"
+             ) + 
+        scale_color_discrete("Data source")
+    p2 <- dfPlot %>%
+        ggplot(aes(x=date, y=delta)) + 
+        geom_line(aes(group=name, color=name)) + 
+        facet_wrap(~state, scales="free_y") + 
+        labs(x="", 
+             y="Incremental percentage of total recorded by date", 
+             title=paste0("Curve evolution by percentage for metric: ", keyMetric), 
+             subtitle="Incremental"
+             ) + 
+        scale_color_discrete("Data source")
+    print(p1)
+    print(p2)
+    
+}
+
+```
+
+The routine is then run for cases and deaths, with a larger plotting area:  
+``````{r, fig.height=9, fig.width=9}
+
+exploreCurve(curveCases)
+exploreCurve(curveDeath)
+
+```
+
+Visually, the shapes of the case curves are nearly overlapping, and segments based using shape will likely be the same whether using CTP or CDC data.  The shapes of the death curves vary meaningfully in NY and modestly in OH, OK, and IN.  While the different curve evolutions are unlikely to drive different segments, it is worth keeping an eye on (particularly for NY).
+
+Next steps are to adapt the CDC data and existing CTP code so they can be used together.
