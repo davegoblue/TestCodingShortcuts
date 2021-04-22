@@ -2376,4 +2376,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v001 compares CTP and CDC cumulative totals as of 2021-03-07 (end date of CTP)  
 * Coronavirus_CDC_Daily_v001 compares shape of the curve in CDC and CTP  
 * Coronavirus_CDC_Daily_v001 plots states with largest differences in shape of the curve  
+* Coronavirus_CDC_Daily_v001 creates per capita CDC daily data  
   
