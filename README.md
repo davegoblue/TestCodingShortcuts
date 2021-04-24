@@ -2378,4 +2378,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v001 plots states with largest differences in shape of the curve  
 * Coronavirus_CDC_Daily_v001 creates per capita CDC daily data  
 * Coronavirus_CDC_Daily_v001 adapts clustering code for CDC daily data  
+* Coronavirus_CDC_Daily_v001 adapts assessClusters() for CDC daily data  
   
