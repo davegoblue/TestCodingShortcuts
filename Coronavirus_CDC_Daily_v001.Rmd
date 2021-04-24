@@ -26,17 +26,21 @@ library(tidyverse)
 # For future use, source key modules from a separate .R file
 
 # Create a variable mapping file - this is not yest updated for federal data
-varMapper <- c("cases"="Cases", 
+varMapper <- c("cases"="Cases",
+               "tot_cases"="Total cases",
                "newCases"="Increase in cases, most recent 30 days",
                "casesroll7"="Rolling 7-day mean cases", 
                "deaths"="Deaths", 
+               "tot_deaths"="Total deaths",
                "newDeaths"="Increase in deaths, most recent 30 days",
                "deathsroll7"="Rolling 7-day mean deaths", 
                "cpm"="Cases per million",
                "cpm7"="Cases per day (7-day rolling mean) per million", 
+               "tcpm"="Total cases per million",
                "newcpm"="Increase in cases, most recent 30 days, per million",
                "dpm"="Deaths per million", 
                "dpm7"="Deaths per day (7-day rolling mean) per million", 
+               "tdpm"="Total deaths per million", 
                "newdpm"="Increase in deaths, most recent 30 days, per million", 
                "hpm7"="Currently Hospitalized per million (7-day rolling mean)", 
                "tpm"="Tests per million", 
@@ -1436,4 +1440,662 @@ tibble::tibble(state=names(cutree(clHier, k=7)),
 
 There are some meaningful differences in segment membership depending on method, suggestive that there may have been some convergence of outcomes across states.  Generally, the heavy/hard cluster centered around NY and the light/late cluster centered in the NE/NW tend to appear in each approach.  The rules-based segments look reasonably similar to those generated previously.
 
-Next steps are to generate descriptive plots for the segments.
+Next steps are to generate descriptive plots for the segments.  The code for assessClusters() is copied and adapted:  
+```{r}
+
+# # STEP 6: Create the cluster assessments
+# plotData <- assessClusters(useClusters, 
+#                            dfState=stateData, 
+#                            dfBurden=dfPerCapita,
+#                            thruLabel=thruLabel,
+#                            plotsTogether=TRUE
+#                            )
+
+
+# Function to reorder and relabel factors
+changeOrderLabel <- function(df, 
+                             fctVar="cluster",
+                             grpVars=c(),
+                             burdenVar="dpm", 
+                             wgtVar="pop",
+                             exclfct="999"
+                             ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: the data frame
+    # fctVar: the factor variable
+    # grpVars: the variable that the data are aurrently at (e.g., "fipsCounty" for county-level in df)
+    # burdenVar: the disease burden variable for sorting
+    # wgtVar: the weight variable for sorting
+    # exclfct: the factor level to be excluded from analysis
+    
+    # General approach
+    # 1. Data are aggregated to c(fctVar, grpVars) as x=sum(burdenVar*wgtVar) and y=mean(wgtVar)
+    # 2. Data are aggregated to fctVar as z=sum(x)/sum(y)
+    # 3. Factors are reordered from high to low on z, with the excluded factor added back last (if it exists)
+    
+    # Check if exclfct exists in the factor variable
+    fctDummy <- exclfct %in% levels(df[, fctVar, drop=TRUE])
+    
+    # Create the summary of impact by segment
+    newLevels <- df %>%
+        filter(get(fctVar) != exclfct) %>%
+        group_by_at(vars(all_of(c(fctVar, grpVars)))) %>%
+        summarize(x=sum(get(burdenVar)*get(wgtVar)), y=mean(get(wgtVar)), .groups="drop") %>%
+        group_by_at(vars(all_of(fctVar))) %>%
+        summarize(z=sum(x)/sum(y), .groups="drop") %>%
+        arrange(-z) %>%
+        pull(fctVar) %>%
+        as.character()
+    
+    # Add back the dummy factor at the end (if it exists)
+    if (fctDummy) newLevels <- c(newLevels, exclfct)
+    
+    # Reassign the levels in df
+    df %>% 
+        mutate(!!fctVar:=factor(get(fctVar), levels=newLevels, labels=newLevels))
+    
+}
+
+
+# Helper function to make the overall cluster summary statistics
+helperClusterSummaryPlots <- function(dfState, 
+                                      dfPlot,
+                                      showMap, 
+                                      clusterPlotsTogether,
+                                      weightedMean=TRUE,
+                                      mapLevel="states", 
+                                      p3Vars=c("cases"="cpm7", "deaths"="dpm7"),
+                                      p4Vars=c("cases"="cases", "deaths"="deaths"), 
+                                      p4Fun=sum
+                                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfState: contains the state/county-level data
+    # dfPlot: contains the joined data for plotting
+    # showMap: boolean for whether to create a map (if FALSE, segment membership counts are shown instead)
+    # clusterPlotsTogether: boolean, whether to put all four plots on the same page
+    # weightedMean: boolean, whether to create weighted mean by segment (if FALSE, median by segment is taken)
+    # mapLevel: the level to be used on the map
+    # p3Vars: the variables to be included in plot 3 (character vector of length 2, plotName=variableName)
+    # p4Vars: the variables to be included in plot 4 (character vector of length 2, plotName=variableName)
+    # p4Fun: the function to be applied in plot 4 (sum for sum of daily, max for max of cumulative)
+    
+    # Reorder the cluster levels in dfState to match dfPlot
+    # Convert factor order to match dfPlot (can be reordered by argument to the calling function)
+    dfState <- dfState %>%
+        mutate(cluster=factor(cluster, levels=levels(dfPlot$cluster)))
+    
+    # Plot the segments on a map or show segment membership
+    if (showMap) {
+        if (mapLevel=="counties") {
+            dfMap <- dfState %>%
+                mutate(fips=stringr::str_pad(state, width=5, side="left", pad="0")) %>%
+                select(fips, cluster)
+        } else {
+            dfMap <- dfState
+        }
+        # Create the map
+        p1 <- usmap::plot_usmap(regions=mapLevel, data=dfMap, values="cluster") + 
+            scale_fill_discrete("cluster") + 
+            theme(legend.position="right")
+    } else {
+        p1 <- dfState %>%
+            count(cluster) %>%
+            ggplot(aes(x=fct_rev(cluster), y=n)) + 
+            geom_col(aes(fill=cluster)) +
+            geom_text(aes(y=n/2, label=n)) +
+            coord_flip() + 
+            labs(x="", y="# Counties", title="Membership by segment")
+    }
+    
+    # Plot the population totals by segment
+    # Show population totals by cluster
+    p2 <- dfState %>%
+        group_by(cluster) %>%
+        summarize(pop=sum(pop)/1000000, .groups="drop") %>%
+        ggplot(aes(x=fct_rev(cluster), y=pop)) + 
+        geom_col(aes(fill=cluster)) + 
+        geom_text(aes(y=pop/2, label=round(pop))) + 
+        labs(y="Population (millions)", x="Cluster", title="Population by cluster (millions)") +
+        coord_flip()
+    
+    # Plot the rolling 7-day mean daily disease burden by cluster
+    # Create the p3Data to be either median of all elements in cluster or weighted mean
+    p3 <- dfPlot %>%        
+        select_at(vars(all_of(c("date", "cluster", unname(p3Vars), "pop")))) %>%
+        purrr::set_names(c("date", "cluster", names(p3Vars), "pop")) %>%
+        pivot_longer((-c(date, cluster, pop))) %>%
+        filter(!is.na(value)) %>%
+        group_by(date, cluster, name) %>%
+        summarize(mdnValue=median(value), wtdValue=sum(pop*value)/sum(pop), .groups="drop") %>%
+        ggplot(aes(x=date, y=if(weightedMean) wtdValue else mdnValue)) +
+        geom_line(aes(group=cluster, color=cluster)) +
+        facet_wrap(~name, scales="free_y") +
+        labs(x="",
+             y="Rolling 7-day mean, per million",
+             title="Rolling 7-day mean daily disease burden, per million",
+             subtitle=paste0(if(weightedMean) "Weighted mean" else "Median", 
+                             " per day for states assigned to cluster"
+             )
+        ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b")
+    
+    # Plot the total cases and total deaths by cluster
+    p4 <- dfPlot %>%
+        select_at(vars(all_of(c("cluster", "date", unname(p4Vars))))) %>%
+        purrr::set_names(c("cluster", "date", names(p4Vars))) %>%
+        group_by(cluster, date) %>%
+        summarize_all(.funs=sum) %>% # Get the total by cluster-date so that it can then be summed/maxed
+        group_by(cluster) %>%
+        summarize_at(vars(names(p4Vars)), .funs=p4Fun) %>%
+        ungroup() %>%
+        pivot_longer(-cluster) %>%
+        ggplot(aes(x=fct_rev(cluster), y=value/1000)) + 
+        geom_col(aes(fill=cluster)) + 
+        geom_text(aes(y=value/2000, label=round(value/1000))) +
+        coord_flip() + 
+        facet_wrap(~varMapper[name], scales="free_x") + 
+        labs(x="Cluster", y="Burden (000s)", title="Total burden by segment")
+    
+    # Place the plots together if plotsTogether is TRUE, otherwise just print
+    if (isTRUE(clusterPlotsTogether)) {
+        gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2, ncol=2)
+    } else {
+        print(p1); print(p2); print(p3); print(p4)
+    }
+    
+}
+
+
+# Function to create side-by-side plots for a deaths and cases metric
+# Data in df will be aggregated to be unique by byVar using aggFunc
+helperBarDeathsCases <- function(df, 
+                                 numVars,
+                                 title="",
+                                 xVar="state",
+                                 fillVar=NULL,
+                                 aggFunc=sum, 
+                                 mapper=varMapper
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the data
+    # numVars: the relevant numeric variables for plotting
+    # title: plot title, default is nothing
+    # xVar: the x-axis variable for plotting
+    # fillVar: the variable that will color the bars in the final plot (NULL means use "lightblue" for all)
+    # aggFunc: the aggregate function (will be applied to create data unique by byVar)
+    # mapper: mapping file to convert x/y variables to descriptive axes (named vector "variable"="label")
+    
+    # OVERALL FUNCTION PROCESS:
+    # 1.  Variables in numVar are aggregated by aggFunc to be unique by c(xVar, fillVar)
+    # 2.  Data are pivoted longer
+    # 3.  Bar charts are created, with coloring by fillVar if provided
+    
+    # Create the byVar for summing
+    byVar <- xVar
+    if (!is.null(fillVar)) { byVar <- c(byVar, fillVar) }
+    
+    # Process the data and create the plot
+    p1 <- df %>%
+        select_at(vars(all_of(c(byVar, numVars)))) %>%
+        group_by_at(vars(all_of(byVar))) %>%
+        summarize_all(aggFunc) %>%
+        pivot_longer(-all_of(byVar)) %>%
+        ggplot(aes(x=fct_reorder(get(xVar), value, .fun=min), y=value)) + 
+        coord_flip() + 
+        facet_wrap(~mapper[name], scales="free_x") + 
+        labs(x="", y="", title=title) + 
+        if (is.null(fillVar)) geom_col(fill="lightblue") else geom_col(aes_string(fill=fillVar))
+    
+    # Print the plot
+    print(p1)
+    
+}
+
+
+# Helper function to make total and per capita by state (calls its own helper function)
+helperCallTotalPerCapita <- function(dfPlot, 
+                                     thruLabel, 
+                                     isCDC=FALSE
+                                     ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPlot: the plotting data frame
+    # thruLabel: the date that data are through
+    # isCDC: boolean, are the data from CDC daily rather than CTP?
+    
+    # Plot total cases and total deaths by state, colored by cluster
+    helperBarDeathsCases(dfPlot, 
+                         numVars=if(isTRUE(isCDC)) c("tot_cases", "tot_deaths") else c("cases", "deaths"), 
+                         title=paste0("Coronavirus impact by state through ", thruLabel), 
+                         xVar=c("state"), 
+                         fillVar=c("cluster"), 
+                         aggFunc=if(isTRUE(isCDC)) max else sum
+                         )
+    
+    # Plot cases per million and deaths per million by state, colored by cluster
+    helperBarDeathsCases(dfPlot, 
+                         numVars=if(isTRUE(isCDC)) c("tcpm", "tdpm") else c("cpm", "dpm"), 
+                         title=paste0("Coronavirus impact by state through ", thruLabel), 
+                         xVar=c("state"), 
+                         fillVar=c("cluster"),
+                         aggFunc=if(isTRUE(isCDC)) max else sum
+                         )
+    
+}
+
+
+# Helper function to assess 30-day change vs. total
+helperRecentvsTotal <- function(df, 
+                                xVar, 
+                                yVar,
+                                title,
+                                recencyDays=30, 
+                                ablineSlope=0.5, 
+                                mapper=varMapper, 
+                                labelPlot=TRUE,
+                                printPlot=TRUE, 
+                                isCDC=FALSE
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the tibble containing data by state by day
+    # xVar: the x-variable
+    # yVar: the y-variable
+    # title: the plot title
+    # recencyDays: number of days to consider as recent
+    # ablineSlope: dashed line will be drawn with this slope and intercept 0
+    # mapper: mapping file to convert x/y variables to descriptive axes (named vector "variable"="label")
+    # labelPlot: boolean, whether to show the labels for each point
+    # printPlot: boolean, whether to display the plot (if FALSE, plot object is returned)
+    # isCDC: boolean, are the data from CDC daily rather than CTP?
+    
+    # Get the most date cutoff
+    dateCutoff <- df %>% pull(date) %>% max() - recencyDays + 1
+    cat("\nRecency is defined as", format(dateCutoff, "%Y-%m-%d"), "through current\n")
+    
+    # For CDC data, set tcpm and tdpm to 0 except for the last date
+    if(isTRUE(isCDC)) {
+        df <- df %>%
+            group_by(state) %>%
+            mutate(tcpm=ifelse(date==max(date), tcpm, 0), tdpm=ifelse(date==max(date), tdpm, 0)) %>%
+            ungroup()
+    }
+    
+    # Create the plot
+    p1 <- df %>%
+        mutate(newCases=ifelse(date >= dateCutoff, if(isTRUE(isCDC)) new_cases else cases, 0), 
+               newDeaths=ifelse(date >= dateCutoff, if (isTRUE(isCDC)) new_deaths else deaths, 0), 
+               newcpm=ifelse(date >= dateCutoff, cpm, 0), 
+               newdpm=ifelse(date >= dateCutoff, dpm, 0)
+        ) %>%
+        group_by(state, cluster) %>%
+        summarize_if(is.numeric, .funs=sum) %>%
+        ungroup() %>%
+        ggplot(aes_string(x=xVar, y=yVar)) + 
+        labs(x=mapper[xVar], 
+             y=mapper[yVar], 
+             title=title, 
+             subtitle=paste0("Dashed line represents ", 
+                             round(100*ablineSlope), 
+                             "% of total is new in last ", 
+                             recencyDays,
+                             " days"
+             )
+        ) + 
+        geom_abline(lty=2, slope=ablineSlope) + 
+        lims(x=c(0, NA), y=c(0, NA)) + 
+        theme(legend.position = "bottom")
+    
+    # Add the appropriate geom (scatterplot if labelPlot is FALSE)
+    if (labelPlot) p1 <- p1 + geom_text(aes(color=cluster, label=state))
+    else p1 <- p1 + geom_point(aes(color=cluster), alpha=0.5)
+    
+    if (isTRUE(printPlot)) {
+        print(p1)
+    } else {
+        p1
+    }
+    
+}
+
+
+# Helper function to make recent vs. total plots
+helperCallRecentvsTotal <- function(dfPlot, 
+                                    thruLabel, 
+                                    labelPoints, 
+                                    recentTotalTogether, 
+                                    isCDC=FALSE
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPlot: the plotting data frame
+    # thruLabel: the date that data are through
+    # labelPoints: boolean, whether to label the individual points
+    # recentTotalTogether: boolean, whether to put these plots together on one page
+    # isCDC: boolean, are the data from CDC daily rather than CTP?
+    
+    # Plot last-30 vs total for cases per million by state, colored by cluster
+    p7 <- helperRecentvsTotal(dfPlot, 
+                              xVar=if(isTRUE(isCDC)) "tcpm" else "cpm", 
+                              yVar="newcpm", 
+                              title=paste0("Coronavirus burden through ", thruLabel), 
+                              labelPlot=labelPoints,
+                              printPlot=FALSE, 
+                              isCDC=isCDC
+    )
+    
+    # Plot last-30 vs total for deaths per million by state, colored by cluster
+    p8 <- helperRecentvsTotal(dfPlot, 
+                              xVar=if(isTRUE(isCDC)) "tdpm" else "dpm", 
+                              yVar="newdpm", 
+                              title=paste0("Coronavirus burden through ", thruLabel), 
+                              labelPlot=labelPoints,
+                              printPlot=FALSE,
+                              isCDC=isCDC
+    )
+    
+    # Print the plots either as a single page or separately
+    if (isTRUE(recentTotalTogether)) {
+        gridExtra::grid.arrange(p7, p8, nrow=1)
+    } else {
+        print(p7); print(p8)
+    }    
+    
+}
+
+
+# Function to plot cluster vs. individual elements on a key metric
+helperTotalvsElements <- function(df, 
+                                  keyVar, 
+                                  title,
+                                  aggAndTotal=TRUE,
+                                  pctRibbon=0.8,
+                                  aggFunc=if(aggAndTotal) median else mean, 
+                                  mapper=varMapper, 
+                                  facetScales="free_y", 
+                                  printPlot=TRUE
+                                  ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing n-day rolling averages
+    # keyVar: the variable to be plotted
+    # title: the plot title
+    # aggAndTotal: boolean, whether to plot every individual observation along with the cluster aggregate
+    # pctRibbon: if aggAndTotal is FALSE, a ribbon covering this percentage of the data will be plotted
+    # aggFunc: how to aggregate the elements to the segment
+    #          CAUTION that this is an aggregate of averages, rather than a population-weighted aggregate
+    # mapper: the variable mapping file to get the appropriate label for keyVar
+    # facetScales: the scaling for the facets - "free_y" to let them all float, "fixed" to have them the same
+    # printPlot: boolean, if TRUE print the plot (otherwise return the plot object)
+    
+    # Create an appropriate subtitle
+    subtitle <- if(facetScales=="free_y") {
+        "Caution that each facet has its own y axis with different scales"
+    } else if (facetScales=="fixed") { 
+        "All facets are on the same scale"
+    } else {
+        "Update subtitle code in function helperTotalvsElements"
+    }
+    
+    # Create an appropriate caption
+    xCap <- "1. Cluster aggregate is mean over all observations (NOT population-weighted)"
+    xCap <- paste0(xCap, "\n2. Ribbons reflect range covering ", round(pctRibbon*100), "% of observations")
+    caption <- if(aggAndTotal) {
+        "Cluster aggregate is median, weighting each observation equally\n(NOT population-weighted)"
+    } else {
+        xCap
+    }
+    
+    # Create the plots for segment-level data
+    p1 <- df %>%
+        rbind(mutate(., state="cluster")) %>%
+        group_by(state, cluster, date) %>%
+        summarize_at(vars(all_of(keyVar)), .funs=aggFunc) %>%
+        ungroup() %>%
+        filter(!is.na(get(keyVar))) %>%
+        ggplot(aes_string(x="date")) + 
+        geom_line(data=~filter(., state == "cluster"), 
+                  aes(y=get(keyVar), group=state, color=cluster), 
+                  lwd=1.5
+        ) + 
+        facet_wrap(~cluster, scales=facetScales) + 
+        labs(x="", 
+             y=mapper[keyVar], 
+             title=title, 
+             subtitle=subtitle,
+             caption=caption
+        ) + 
+        ylim(c(0, NA)) + 
+        theme(legend.position="bottom")
+    
+    # Add an appropriate individual metric (either every observation or quantiles)
+    if (aggAndTotal) {
+        p1 <- p1 + 
+            geom_line(data=~filter(., state != "cluster"), 
+                      aes(y=get(keyVar), group=state), 
+                      alpha=0.25
+            )
+    } else {
+        dfRibbon <- df %>%
+            filter(!is.na(get(keyVar))) %>%
+            group_by(cluster, date) %>%
+            summarize(ylow=quantile(get(keyVar), 0.5-0.5*pctRibbon), 
+                      yhigh=quantile(get(keyVar), 0.5+0.5*pctRibbon), 
+                      .groups="drop"
+            )
+        p1 <- p1 + 
+            geom_ribbon(data=dfRibbon, 
+                        aes(ymin=ylow, ymax=yhigh), 
+                        alpha=0.25
+            )
+    }
+    
+    # Print plot if requested, otherwise return it
+    if (isTRUE(printPlot)) {
+        print(p1)
+    } else {
+        p1
+    }
+    
+}
+
+
+# Helper function to create total vs. elements plots
+helperCallTotalvsElements <- function(dfPlot, 
+                                      aggAndTotal, 
+                                      clusterAggTogether,
+                                      ...
+                                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPlot: the plotting data frame
+    # aggAndTotal: boolean, should each individual line be plotted (if FALSE an 80% CI is plotted instead)
+    # clusterAggTogether: boolean, whether to print the plots all on a single page
+    # ...: any other arguments to pass to helperTotalvsElements (especially pctRibbon or aggFunc)
+    
+    # Plot the cases per million on a free y-scale and a fixed y-scale
+    p9 <- helperTotalvsElements(dfPlot, 
+                                keyVar="cpm7", 
+                                aggAndTotal=aggAndTotal,
+                                title="Cases per million, 7-day rolling mean", 
+                                printPlot=FALSE, 
+                                ...
+    )
+    p10 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="cpm7", 
+                                 aggAndTotal=aggAndTotal,
+                                 title="Cases per million, 7-day rolling mean", 
+                                 facetScales="fixed", 
+                                 printPlot=FALSE, 
+                                 ...
+    )
+    
+    # Plot the deaths per million on a free y-scale and a fixed y-scale
+    p11 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="dpm7", 
+                                 aggAndTotal=aggAndTotal,
+                                 title="Deaths per million, 7-day rolling mean", 
+                                 printPlot=FALSE, 
+                                 ...
+    )
+    p12 <- helperTotalvsElements(dfPlot, 
+                                 keyVar="dpm7", 
+                                 aggAndTotal=aggAndTotal,
+                                 title="Deaths per million, 7-day rolling mean", 
+                                 facetScales="fixed", 
+                                 printPlot=FALSE, 
+                                 ...
+    )
+    
+    if (isTRUE(clusterAggTogether)) {
+        gridExtra::grid.arrange(p9, p11, nrow=1)
+        gridExtra::grid.arrange(p10, p12, nrow=1)
+    } else {
+        print(p9); print(p10); print(p11); print(p12)
+    }
+    
+}
+
+
+# assessClusters() function
+assessClusters <- function(clusters, 
+                           dfState=stateData, 
+                           dfBurden=cvFilteredPerCapita,
+                           thruLabel="Aug 20, 2020",
+                           isCounty=FALSE,
+                           plotsTogether=FALSE, 
+                           clusterPlotsTogether=plotsTogether,
+                           recentTotalTogether=plotsTogether, 
+                           clusterAggTogether=plotsTogether, 
+                           makeSummaryPlots=TRUE, 
+                           makeTotalvsPerCapitaPlots=!isCounty, 
+                           makeRecentvsTotalPlots=TRUE, 
+                           makeTotalvsElementPlots=TRUE, 
+                           showMap=!isCounty, 
+                           orderCluster=FALSE, 
+                           isCDC=FALSE,
+                           p3Vars=c("cases"="cpm7", "deaths"="dpm7"),
+                           p4Vars=c("cases"="cases", "deaths"="deaths"), 
+                           p4Fun=sum
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # clusters: the named vector containing the clusters by state
+    # dfState: the file containing the states and populations
+    # dfBurden: the data containing the relevant per capita burden statistics by state-date
+    # thruLabel: label for plots for 'data through'
+    # isCounty: boolean, is this a plot of county-level data that have been named 'state'?
+    #           FALSE means that it is normal state-level data
+    # plotsTogether: boolean, should plots be consolidated on fewer pages?
+    # clusterPlotsTogether: boolean, should plots p1-p4 be consolidated?
+    # recentTotalTogether: boolean, should recent total plots p7-p8 be consolidated?
+    # clusterAggTogether: boolean, should aggregate plots p9/p11 and p10/p12 be consolidated?
+    # makeSummaryPlots: boolean, should the summary plots be made?
+    # makeTotalvsPerCapitaPlots: boolean, should the total and per capita plots be produced?
+    # makeRecentvsTotalPlots: boolean, should the recent vs. total plots be created?
+    # makeTotalvsElementPlots: boolean, should the total vs. element plots be created?
+    # showMap: boolean, whether to create a map colored by cluster (will show segment counts otherwise)
+    # orderCluster: if FALSE, ignore; if TRUE, order by "dpm"; if anything else, order by orderCluster
+    # isCDC: boolean, are the data from CDC daily rather than CTP?
+    # p3Vars: the variables to be included in plot 3 (character vector of length 2, plotName=variableName)
+    # p4Vars: the variables to be included in plot 4 (character vector of length 2, plotName=variableName)
+    # p4Fun: the function to be applied in plot 4 (sum for sum of daily, max for max of cumulative)
+    # ...: any additional arguments passed from a calling function
+    #      most common would be orderCluster=TRUE, a request for the clusters to be ordered by disease burden
+    
+    # Attach the clusters to the state population data
+    dfState <- as.data.frame(clusters) %>%
+        set_names("cluster") %>%
+        rownames_to_column("state") %>%
+        inner_join(dfState, by="state") %>%
+        mutate(cluster=factor(cluster))
+    
+    # Plot the rolling 7-day mean dialy disease burden by cluster
+    dfPlot <- dfState %>%
+        inner_join(dfBurden, by="state") %>%
+        tibble::as_tibble()
+    
+    # Reorder the clusters if requested
+    if (!isFALSE(orderCluster)) {
+        if (isTRUE(orderCluster)) burdenParam <- "dpm" else burdenParam <- orderCluster
+        dfPlot <- changeOrderLabel(dfPlot, grpVars="state", burdenVar=burdenParam)
+    }
+    
+    # Call the helper function to make the overall summary statistics
+    if (makeSummaryPlots) {
+        helperClusterSummaryPlots(dfState=dfState, 
+                                  dfPlot=dfPlot, 
+                                  showMap=showMap, 
+                                  clusterPlotsTogether=clusterPlotsTogether, 
+                                  mapLevel=if(isCounty) "counties" else "states", 
+                                  p3Vars=p3Vars, 
+                                  p4Vars=p4Vars, 
+                                  p4Fun=p4Fun
+                                  )
+    }
+    
+    # These are primarily useful for state-level data and default to FALSE when isCounty is TRUE
+    if (makeTotalvsPerCapitaPlots) {
+        helperCallTotalPerCapita(dfPlot=dfPlot, thruLabel=thruLabel, isCDC=isCDC)
+    }
+    
+    # Call the helper function to make recent vs. total plots
+    if (makeRecentvsTotalPlots) {
+        helperCallRecentvsTotal(dfPlot=dfPlot, 
+                                thruLabel=thruLabel, 
+                                labelPoints=!isCounty, 
+                                recentTotalTogether=recentTotalTogether, 
+                                isCDC=isCDC
+                                )
+    }
+    
+    # Call the total vs. elements helper function
+    if (makeTotalvsElementPlots) {
+        helperCallTotalvsElements(dfPlot=dfPlot, 
+                                  aggAndTotal=!isCounty, 
+                                  clusterAggTogether=clusterPlotsTogether
+        )
+    }
+    
+    # Return the plotting data frame
+    dfPlot
+    
+}
+
+```
+  
+The functions is then tested against the CDC daily data:  
+```{r, fig.height=9, fig.width=9}
+
+cdcPlotData <- assessClusters(clusters=clRules$objCluster,
+                              dfState=stateDataCDC,
+                              dfBurden=cdcPerCapita,
+                              thruLabel="Apr 12, 2021",
+                              plotsTogether=TRUE, 
+                              orderCluster="dpm", 
+                              p4Vars=c("cases"="tot_cases", "deaths"="tot_deaths"), 
+                              p4Fun=max, 
+                              isCDC=TRUE
+                              )
+cdcPlotData
+
+```
+
+Next steps are to adapt the code for plotConsolidatedMetrics() for use with CDC daily data:
+```{r}
+
+# STEP 7: Plot the consolidated metrics
+# subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new), Tests: new tests"
+# consolidatedPlotData <- plotConsolidatedMetrics(plotData, 
+#                                                 varMain=c("state", "cluster", "date", "pop",
+#                                                           "cases", "deaths", "hosp", "tests"
+#                                                           ), 
+#                                                 subT=subT, 
+#                                                 nrowPlot2=2
+#                                                 )
+
+```
+
