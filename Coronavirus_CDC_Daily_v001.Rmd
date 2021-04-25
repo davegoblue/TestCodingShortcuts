@@ -2097,5 +2097,162 @@ Next steps are to adapt the code for plotConsolidatedMetrics() for use with CDC 
 #                                                 nrowPlot2=2
 #                                                 )
 
+# Function to create plots of consolidated metrics
+plotConsolidatedMetrics <- function(dfMain, 
+                                    dfHosp=NULL, 
+                                    varMain=c("state", "cluster", "date", "pop", "cases", "deaths", "hosp"),
+                                    varDropHosp=c("n", "pop"), 
+                                    joinBy=c("state", "cluster", "date"), 
+                                    subT=NULL, 
+                                    nrowPlot2=1
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfMain: the main file produced by assessClusters(), containing data by state-cluster-date
+    # dfHosp: the separate file with hospital data (NULL means data already available in dfMain)
+    # varMain: variables to keep from dfMain
+    # varDropHosp: variables to drop from dfHosp
+    # joinBy: variables for joining dfMain and dfHosp
+    # subT: plot subtitle (NULL will use the defaults), 
+    # nrowPlot2: number of rows for the facetting to use on plot 2
+    
+    if (is.null(subT)) {
+        subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new)"
+    }
+    
+    # Filter dfMain to include only variables in varMain
+    dfMain <- dfMain %>%
+        select_at(vars(all_of(varMain)))
+    
+    # Left join dfMain to dfHosp unless dfHosp is NULL
+    if (!is.null(dfHosp)) {
+        dfHosp <- dfHosp %>%
+            select_at(vars(all_of(names(dfHosp)[!(names(dfHosp) %in% varDropHosp)])))
+        dfMain <- dfMain %>%
+            left_join(dfHosp, by=all_of(joinBy))
+    }
+    
+    # Check that variables state, cluster, date, pop are all available
+    if (!(c("state", "cluster", "date", "pop") %in% names(dfMain) %>% all())) {
+        stop("\nFunction requires variables state, cluster, date, and pop after processing\n")
+    }
+    
+    # Create the relevant plotting data
+    dfPlot <- dfMain %>%
+        pivot_longer(-c(state, cluster, date, pop)) %>%
+        filter(!is.na(value)) %>%
+        rbind(mutate(., state="cluster")) %>%
+        group_by_at(vars(all_of(c(joinBy, "name")))) %>%
+        summarize(value=sum(value), pop=sum(pop), .groups="drop") %>%
+        mutate(vpm=1000000*value/pop) %>%
+        arrange(state, cluster, name, date) %>%
+        group_by(state, cluster, name) %>%
+        helperRollingAgg(origVar="vpm", newName="vpm7")    
+    
+    # Create facetted plots for totals by metric by segment
+    p1 <- dfPlot %>%
+        filter(!is.na(vpm7)) %>%
+        ggplot(aes(x=date, y=vpm7)) + 
+        geom_line(data=~filter(., state=="cluster"), aes(group=cluster, color=cluster), lwd=1.5) +
+        geom_line(data=~filter(., state!="cluster"), aes(group=state), alpha=0.25) + 
+        facet_grid(name ~ cluster, scales="free_y") + 
+        labs(x="", 
+             y="Rolling 7-day mean per million", 
+             title="Key metrics by cluster (7-day rolling mean per million)", 
+             subtitle=subT
+        ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b") + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p1)
+    
+    # Create all-segment plot by metric
+    p2 <- dfPlot %>%
+        filter(!is.na(vpm7)) %>%
+        ggplot(aes(x=date, y=vpm7)) + 
+        geom_line(data=~filter(., state=="cluster"), aes(group=cluster, color=cluster), lwd=1.5) +
+        facet_wrap(~ name, scales="free_y", nrow=nrowPlot2) + 
+        labs(x="", 
+             y="Rolling 7-day mean per million", 
+             title="Key metrics by cluster (7-day rolling mean per million)", 
+             subtitle=subT
+        ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b") + 
+        theme(axis.text.x=element_text(angle=90))
+    print(p2)
+    
+    # Create all-metric plot by segment (define 100% as peak for segment-metric)
+    p3 <- dfPlot %>%
+        filter(!is.na(vpm7)) %>%
+        group_by(state, cluster, name) %>%
+        mutate(spm7=vpm7/max(vpm7)) %>%
+        ggplot(aes(x=date, y=spm7)) + 
+        geom_line(data=~filter(., state=="cluster"), aes(group=name, color=name), lwd=1) +
+        facet_wrap(~ cluster, scales="free_y") + 
+        labs(x="", 
+             y="% of Maximum", 
+             title="Key metrics by cluster (% of cluster maximum for variable)", 
+             subtitle=subT
+        ) + 
+        scale_x_date(date_breaks="1 months", date_labels="%b") + 
+        scale_color_discrete("variable") +
+        theme(axis.text.x=element_text(angle=90))
+    print(p3)
+    
+    # Return the plotting data
+    dfPlot
+    
+}
+
+```
+
+The function appears OK as-is provided that appropriate parameters are passed:  
+```{r}
+
+subT <- "new_cases: new cases, new_deaths: new deaths"
+subT <- paste0(subT, ", tot_cases: cumulative cases, tot_deaths: cumulative deaths")
+consolidatedCDCPlotData <- plotConsolidatedMetrics(cdcPlotData,
+                                                   varMain=c("state", "cluster", "date", "pop",
+                                                             "new_cases", "new_deaths", 
+                                                             "tot_cases", "tot_deaths"
+                                                             ),
+                                                   subT=subT,
+                                                   nrowPlot2=2
+                                                   )
+
+```
+
+Next steps are to adapt the code for making cumulative plots:  
+```{r}
+
+# # STEP 8: Create cumulative metrics if requested
+# consPos <- consolidatedPlotData %>%
+#     ungroup() %>%
+#     select(state, cluster, date, name, vpm7) %>%
+#     arrange(state, cluster, date, name) %>%
+#     pivot_wider(-vpm7, names_from="name", values_from="vpm7") %>%
+#     mutate(pctpos=cases/tests) %>%
+#     pivot_longer(-c(state, cluster, date), values_to="vpm7") %>%
+#     filter(!is.na(vpm7))
+# 
+# clCum <- makeCumulative(consPos)
+# plotCumulativeData(clCum, 
+#                    keyMetricp2="", 
+#                    flagsp2="", 
+#                    makep1=TRUE, 
+#                    makep2=FALSE
+#                    )
+# plotCumulativeData(clCum, 
+#                    keyMetricp2="deaths", 
+#                    flagsp2=findFlagStates(clCum, keyMetricVal = "deaths")
+#                    )
+# plotCumulativeData(clCum, 
+#                    keyMetricp2="cases", 
+#                    flagsp2=findFlagStates(clCum, keyMetricVal = "cases")
+#                    )
+# plotCumulativeData(clCum, 
+#                    keyMetricp2="tests", 
+#                    flagsp2=findFlagStates(clCum, keyMetricVal = "tests")
+#                    )
+
 ```
 
