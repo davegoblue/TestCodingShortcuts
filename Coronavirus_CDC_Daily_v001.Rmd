@@ -2445,3 +2445,572 @@ plotCumulativeData(clCDCCum,
 ```
 
 Next steps are to write the full function using the updates made above.
+
+The elements of the list are saved, for use in future functions:  
+```{r}
+
+cdcDaily_hier7_210414 <- list(stateData=stateDataCDC, 
+                              dfRaw=cdcRaw, 
+                              dfFiltered=cdcFiltered, 
+                              dfPerCapita=cdcPerCapita, 
+                              useClusters=clRules, 
+                              plotData=cdcPlotData, 
+                              consolidatedPlotData=consolidatedCDCPlotData, 
+                              clCum=clCDCCum
+                              )
+saveToRDS(cdcDaily_hier7_210414, ovrWriteError=FALSE)
+
+```
+
+The full function is copied and updated for use with CDC daily data:  
+```{r}
+
+# Function to read, convert, and sanity check a downloaded file
+readCOViDbyState <- function(fileName, 
+                             checkFile=NULL, 
+                             controlFields=c("positiveIncrease", "deathIncrease", "hospitalizedCurrently"), 
+                             controlBy=c("state"), 
+                             dateChangePlot=FALSE, 
+                             dateMetricPrint=TRUE, 
+                             controlByMetricPrint=TRUE, 
+                             writeLog=NULL, 
+                             ovrwriteLog=TRUE, 
+                             isCDCDaily=FALSE
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # fileName: the file name for reading the data
+    # checkFile: a file that can be used for comparison purposes (NULL means do not compare to anything)
+    # controlFields: fields that will be explicitly checked against checkFile
+    # controlBy: level of aggregation at which fields will be explicitly checked against checkFile
+    # dateChangePlot: boolean, should the change in dates included be plotte rather than listed?
+    # dateMetricPrint: boolean, should the list of date-metric changes be printed?
+    # controlByMetricPrint: boolean, should the list of controlBy-metric changes be printed?
+    # writeLog: write detailed comparison to log file (NULL means do not write)
+    # ovrwriteLog: boolean, should the log be started from scratch with the date comparisons?
+    # isCDCDaily: boolean, are the data from CDC (default FALSE means use CTP)
+    
+    # Helper function to check for similarity of key elements
+    helperSimilarity <- function(newData, refData, label, countOnly=FALSE, logFile=NULL, logAppend=TRUE) {
+        d1 <- setdiff(refData, newData)
+        d2 <- setdiff(newData, refData)
+        cat("\n\nChecking for similarity of:", label)
+        cat("\nIn reference but not in current:", if(countOnly) length(d1) else d1)
+        cat("\nIn current but not in reference:", if(countOnly) length(d2) else d2)
+        if (countOnly & !is.null(logFile)) {
+            cat("\nDetailed differences available in:", logFile)
+            capture.output(cat("\nIn reference but not in current:\n", paste(d1, collapse="\n"), sep=""), 
+                           cat("\nIn current but not in reference:\n", paste(d2, collapse="\n"), sep=""), 
+                           file=logFile, 
+                           append=logAppend
+                           )
+        }
+        if (countOnly) return(list(d1=d1, d2=d2))
+    }
+    
+    # Read in the file and convert the date field for proper usage in remainder of process
+    df <- readr::read_csv(fileName)
+    if (isTRUE(isCDCDaily)) {
+        df <- df %>%
+            rename(date=submission_date) %>%
+            mutate(date=lubridate::mdy(date))
+    } else {
+        df <- df %>% 
+            mutate(date=lubridate::ymd(date))
+    }
+    
+    # Check that the file is unique by date-state
+    if ((df %>% select(date, state) %>% anyDuplicated()) != 0) {
+        stop("\nDuplicates by date and state, investigate and fix\n")
+    } else {
+        cat("\nFile is unique by state and date\n")
+    }
+    
+    # Check for overall control totals in new file
+    cat("\n\nOverall control totals in file:\n")
+    df %>% 
+        summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>% 
+        print()
+    
+    # Get control totals by date for new file
+    dfByDate <- df %>% 
+        group_by(date) %>%
+        summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>%
+        ungroup() %>%
+        pivot_longer(-date, values_to="newValue")
+    
+    # If there is no checkFile, then just produce a plot of the key metrics
+    if (is.null(checkFile)) {
+        p1 <- dfByDate %>% 
+            ggplot(aes(x=date, y=newValue)) + 
+            geom_line() + 
+            facet_wrap(~name, nrow=1, scales="free_y") + 
+            labs(title="Control totals by date for new file (no reference file)", x="", y="Summed Value")
+        print(p1)
+    } else {
+        # Check for similarity of fields, dates, and states
+        cat("\n*** COMPARISONS TO REFERENCE FILE:", deparse(substitute(checkFile)))
+        helperSimilarity(newData=names(df), refData=names(checkFile), label="column names")
+        helperSimilarity(newData=df %>% pull(state) %>% unique(), 
+                         refData=checkFile %>% pull(state) %>% unique(), 
+                         label="states"
+        )
+        dateChangeList <- helperSimilarity(newData=df %>% 
+                                               pull(date) %>% 
+                                               unique() %>% 
+                                               format("%Y-%m-%d") %>%
+                                               sort(), 
+                                           refData=checkFile %>% 
+                                               pull(date) %>% 
+                                               unique() %>% 
+                                               format("%Y-%m-%d") %>%
+                                               sort(),
+                                           label="dates", 
+                                           countOnly=dateChangePlot, 
+                                           logFile=writeLog, 
+                                           logAppend=!ovrwriteLog
+                                           )
+        
+        # Plot date changes if requested
+        if (dateChangePlot) {
+            pDate <- tibble::tibble(date=as.Date(c(dateChangeList$d1, dateChangeList$d2)), 
+                                    type=c(rep("Control File Only", length(dateChangeList$d1)), 
+                                           rep("New File Only", length(dateChangeList$d2))
+                                           )
+                                    ) %>%
+                ggplot(aes(x=date, fill=type)) + 
+                geom_bar() + 
+                coord_flip() + 
+                labs(x="", y="", title="Dates in one file and not in the other")
+            print(pDate)
+        }
+        
+        # Check for similarity of control totals by date in files
+        checkByDate <- checkFile %>% 
+            group_by(date) %>%
+            summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>%
+            ungroup() %>%
+            pivot_longer(-date, values_to="oldValue")
+        deltaDate <- dfByDate %>% 
+            inner_join(checkByDate, by=c("date", "name")) %>%
+            filter(abs(newValue-oldValue)>=5, 
+                   pmax(newValue, oldValue)>=1.01*pmin(newValue, oldValue)
+            ) %>%
+            as.data.frame()
+        cat("\n\nDifference of 5+ that is at least 1% (summed to date and metric):", nrow(deltaDate))
+        if (dateMetricPrint) {
+            cat("\n")
+            print(deltaDate)
+        }
+        else if (!is.null(writeLog)) {
+            cat("\nDetailed output available in log:", writeLog)
+            capture.output(cat("\n\nChange by date:\n"), print(deltaDate), file=writeLog, append=TRUE)
+        }
+        p1 <- dfByDate %>% 
+            full_join(checkByDate, by=c("date", "name")) %>%
+            pivot_longer(-c(date, name), names_to="newOld") %>%
+            ggplot(aes(x=date, y=value, group=newOld, color=newOld)) + 
+            geom_line() + 
+            facet_wrap(~name, nrow=1, scales="free_y") + 
+            labs(title="Control totals by date for new and reference file", x="", y="Summed Value")
+        print(p1)
+        
+        # Check for similarity of control totals by controlBy in files
+        dfByControl <- df %>% 
+            semi_join(select(checkFile, date), by="date") %>%
+            group_by_at(vars(all_of(controlBy))) %>%
+            summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>%
+            ungroup() %>%
+            pivot_longer(-all_of(controlBy), values_to="newValue")
+        checkByControl <- checkFile %>% 
+            group_by_at(vars(all_of(controlBy))) %>%
+            summarize_at(vars(all_of(controlFields)), .funs=sum, na.rm=TRUE) %>%
+            ungroup() %>%
+            pivot_longer(-all_of(controlBy), values_to="oldValue")
+        deltaBy <- dfByControl %>% 
+            inner_join(checkByControl, by=c(controlBy, "name")) %>%
+            filter(abs(newValue-oldValue)>=5, 
+                   pmax(newValue, oldValue)>=1.01*pmin(newValue, oldValue)
+            ) %>%
+            as.data.frame()
+        cat("\n\nDifference of 5+ that is at least 1% (summed to", 
+            controlBy, 
+            "and metric):", 
+            nrow(deltaBy), 
+            "\n"
+            )
+        if (controlByMetricPrint) print(deltaBy)
+    }
+    
+    # Return the processed data file
+    df
+    
+}
+
+
+# Function to select relevant variables and observations, and report on control totals
+processCVData <- function(dfFull, 
+                          varsKeep=c("date", "state", "positiveIncrease", "deathIncrease"), 
+                          varsRename=c("positiveIncrease"="cases", "deathIncrease"="deaths"), 
+                          stateList=c(state.abb, "DC")
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # dfFull: the full data file originally loaded
+    # varsKeep: variables to keep from the full file
+    # varsRename: variables to be renamed, using a named vector of form originalName=newName
+    # stateList: variables for filtering state (NULL means do not run any filters)
+    
+    # Select only the key variables
+    df <- dfFull %>%
+        select_at(vars(all_of(varsKeep)))
+    
+    # Apply the renaming of variables
+    names(df) <- ifelse(is.na(varsRename[names(df)]), names(df), varsRename[names(df)])
+    
+    # Designate each record as being either a valid state or not
+    if (!is.null(stateList)) {
+        df <- df %>%
+            mutate(validState=state %in% stateList)
+    } else {
+        df <- df %>%
+            mutate(validState=TRUE)
+    }
+    
+    # Summarize the control totals for the data, based on whether the state is valid
+    cat("\n\nControl totals - note that validState other than TRUE will be discarded\n(na.rm=TRUE)\n\n")
+    df %>%
+        mutate(n=1) %>%
+        group_by(validState) %>%
+        summarize_if(is.numeric, sum, na.rm=TRUE) %>%
+        print()
+    
+    # Return the file, filtered to where validState is TRUE, and deleting variable validState
+    df %>%
+        filter(validState) %>%
+        select(-validState)
+    
+}
+
+
+# Function to download and process data (steps 2-4)
+helperReadRunCTP_steps02_04 <- function(downloadTo, 
+                                        isCDCDaily, 
+                                        readFrom, 
+                                        compareFile,
+                                        dateChangePlot,
+                                        dateMetricPrint,
+                                        writeLog,
+                                        ovrwriteLog, 
+                                        stateData,
+                                        perCapitaVarsMap=NULL
+                                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # downloadTo: download the most recent COVID Tracking Project data to this location
+    #             NULL means do not download any data
+    # isCDCDaily: boolean, are the data from CDC (default FALSE means use CTP)
+    # readFrom: location for reading in the COVID Tracking Project data (defaults to donwloadTo)
+    # compareFile: name of the file to use for comparisons when reading in raw data (NULL means no comparison)
+    # dateChangePlot: boolean, should changes in dates be captured as a plot rather than as a list?
+    # dateMetricPrint: boolean, should the changes by date and metric be printed to the main log?
+    # writeLog: name of a separate log file for capturing detailed data on changes between files
+    #           NULL means no detailed data captured
+    # ovrwriteLog: boolean, should the log file be overwritten and started again from scratch?
+    # stateData: state population data file
+    # perCapitaVarsMap: mapVars to be used in helperMakePerCapita (NULL means create based on isCDCDaily)
+    
+    # Helper function for glimpsing
+    glimpseFile <- function(x, txt) {
+        cat(txt)
+        glimpse(x)
+    }
+    
+    # STEP 2a: Download latest COVID Tracking Project data (if requested)
+    if (!is.null(downloadTo)) {
+        
+        # Use the proper API depending on whether the data are from CDC
+        if (isTRUE(isCDCDaily)) {
+            api <- api="https://data.cdc.gov/api/views/9mfq-cb36/rows.csv?accessType=DOWNLOAD"
+        }
+        else api <- "https://api.covidtracking.com/v1/states/daily.csv"
+        
+        # Download the relevant data to the proper location
+        downloadCOVIDbyState(fileName=downloadTo, api=api)
+    }
+        
+    # STEP 2b: Read-in COVID Tracking Project data
+    # Use a different reading process for CDC daily data and CTP data
+    if (isTRUE(isCDCDaily)) controlFields <- c("tot_cases", "tot_death", "new_case", "new_death")
+    else controlFields <- c("positiveIncrease", "deathIncrease", "hospitalizedCurrently")
+    dfRaw <- readCOViDbyState(readFrom, 
+                              checkFile=compareFile, 
+                              controlFields=controlFields,
+                              dateChangePlot=dateChangePlot, 
+                              dateMetricPrint=dateMetricPrint, 
+                              writeLog=writeLog, 
+                              ovrwriteLog=ovrwriteLog, 
+                              isCDCDaily=isCDCDaily
+                              )
+    # Glimpse the raw data, either in the main log file or in a separate log file
+    if (is.null(writeLog)) glimpseFile(dfRaw, txt="\nRaw data file:\n")
+    else capture.output(glimpseFile(dfRaw, txt="\nRaw data file:\n"), file=writeLog, append=TRUE)
+        
+        
+    # STEP 3: Process the data so that it includes all requested key variables
+    # Change variables to keep and renames depending on data source
+    if (isTRUE(isCDCDaily)) {
+        varsFilter <- c("date", "state", "tot_cases", "tot_death", "new_case", "new_death")
+        varsRename <- c(tot_death="tot_deaths", new_case="new_cases", new_death="new_deaths")
+    } else {
+        varsFilter <- c("date", "state", "positiveIncrease", "deathIncrease", 
+                        "hospitalizedCurrently", "totalTestResultsIncrease"
+                        )
+        varsRename <- c(positiveIncrease="cases", 
+                        deathIncrease="deaths", 
+                        hospitalizedCurrently="hosp", 
+                        totalTestResultsIncrease="tests"
+                        )
+    }
+    # Run the filtering process using the parameters above
+    dfFiltered <- processCVData(dfRaw, varsKeep=varsFilter, varsRename=varsRename)
+    
+    # Glimpse the processed data, either in the main log file or in a separate log file
+    if (is.null(writeLog)) glimpseFile(dfFiltered, txt="\nFiltered data file:\n")
+    else capture.output(glimpseFile(dfFiltered, txt="\nFiltered data file:\n"), file=writeLog, append=TRUE)
+        
+        
+    # STEP 4: Convert to per capita
+    # Create the appropriate perCapitaVarsMap if it has not been passed
+    if (is.null(perCapitaVarsMap)) {
+        if(isTRUE(isCDCDaily)) {
+            perCapitaVarsMap <- c("new_cases"="cpm", "new_deaths"="dpm", 
+                                  "tot_cases"="tcpm", "tot_deaths"="tdpm"
+                                  )
+        } else {
+            perCapitaVarsMap <- c("cases"="cpm", "deaths"="dpm", "hosp"="hpm", "tests"="tpm")
+        }
+    }
+    
+    # Convert to per capita
+    dfPerCapita <- helperMakePerCapita(dfFiltered, mapVars=perCapitaVarsMap, popData=stateData)
+    
+    # Glimpse the per-capita data, either in the main log file or in a separate log file
+    if (is.null(writeLog)) glimpseFile(dfPerCapita, txt="\nPer capita data file:\n")
+    else capture.output(glimpseFile(dfPerCapita, txt="\nPer capita data file:\n"), file=writeLog, append=TRUE)
+    
+    # Return the three key elements as a list
+    list(dfRaw=dfRaw, dfFiltered=dfFiltered, dfPerCapita=dfPerCapita)
+    
+}
+
+
+# Function to download/load, process, segment, and analyze data from COVID Tracking Project
+readRunCOVIDTrackingProject <- function(thruLabel, 
+                                        downloadTo=NULL, 
+                                        readFrom=downloadTo, 
+                                        compareFile=NULL,
+                                        dateChangePlot=FALSE,
+                                        dateMetricPrint=TRUE,
+                                        writeLog=NULL,
+                                        ovrwriteLog=TRUE,
+                                        dfPerCapita=NULL,
+                                        useClusters=NULL,
+                                        hierarchical=TRUE,
+                                        returnList=!hierarchical, 
+                                        kCut=6,
+                                        reAssignState=vector("list", 0),
+                                        makeCumulativePlots=TRUE,
+                                        skipAssessmentPlots=FALSE,
+                                        isCDCDaily=FALSE,
+                                        ...
+                                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # thruLabel: the label for when the data are through (e.g., "Aug 30, 2020")
+    # downloadTo: download the most recent COVID Tracking Project data to this location
+    #             NULL means do not download any data
+    # readFrom: location for reading in the COVID Tracking Project data (defaults to donwloadTo)
+    # compareFile: name of the file to use for comparisons when reading in raw data (NULL means no comparison)
+    # dateChangePlot: boolean, should changes in dates be captured as a plot rather than as a list?
+    # dateMetricPrint: boolean, should the changes by date and metric be printed to the main log?
+    # writeLog: name of a separate log file for capturing detailed data on changes between files
+    #           NULL means no detailed data captured
+    # ovrwriteLog: boolean, should the log file be overwritten and started again from scratch?
+    # dfPerCapita: file can be passed directly, which bypasses the loading and processing steps
+    # useClusters: file containing clusters by state (NULL means make the clusters from the data)
+    # hierarchical: boolean, should hierarchical clusters be produced (if FALSE, will be k-means)?
+    # returnList: boolean, should a list be returned or just the cluster object?
+    #             refers to what is returned by clusterStates(); the main function always returns a list
+    # kCut: number of segments when cutting the hierarchical tree
+    # reAssignState: mapping file for assigning a state to another state's cluster
+    #                format list("stateToChange"="stateClusterToAssign")
+    # makeCumulativePlots: whether to make plots of cumulative metrics
+    # skipAssessmentPlots: boolean to skip the plots for assessClusters()
+    #                      especially useful if just exploring dendrograms or silhouette widths
+    # isCDCDaily: boolean, are the data from CDC (default FALSE means use CTP)
+    # ...: arguments to be passed to clusterStates(), will be used only if useClusters is NULL
+    
+    
+    # STEP 1: Get state data
+    stateData <- getStateData()
+    
+    
+    # STEPS 2-4 are run only if dfPerCapita does not exist
+    if (is.null(dfPerCapita)) {
+        # Call the helper function and pass the key arguments
+        helpList <- helperReadRunCTP_steps02_04(downloadTo=downloadTo, 
+                                                isCDCDaily=isCDCDaily, 
+                                                readFrom=readFrom, 
+                                                compareFile=compareFile, 
+                                                dateChangePlot=dateChangePlot, 
+                                                dateMetricPrint=dateMetricPrint, 
+                                                writeLog=writeLog, 
+                                                ovrwriteLog=ovrwriteLog, 
+                                                stateData=stateData
+                                                )
+        # Extract the key data files from the helper list for future processing
+        dfRaw <- helpList$dfRaw
+        dfFiltered <- helpList$dfFiltered
+        dfPerCapita <- helpList$dfPerCapita
+    } else {
+        # There is no raw or filtered data since a properly formatted dfPerCapita was passed
+        dfRaw <- NULL
+        dfFiltered <- NULL
+    }
+    
+    # File processing stops at this point for now, continue steps 5-8 later
+    return(dfPerCapita)
+    
+    # STEP 5: Create the clusters (if they have not been passed)
+    if (is.null(useClusters)) {
+        # Run the clustering process
+        clData <- clusterStates(df=dfPerCapita, hierarchical=hierarchical, returnList=returnList, ...)
+        # If hierarchical clusters, cut the tree, otherwise use the output object directly
+        if (hierarchical) {
+            useClusters <- cutree(clData, k=kCut)
+        } else {
+            useClusters <- clData$objCluster$cluster
+        }
+        # If requested, manually assign clusters to the cluster for another state
+        for (xNum in seq_len(length(reAssignState))) {
+            useClusters[names(reAssignState)[xNum]] <- useClusters[reAssignState[[xNum]]]
+        }
+        
+    }
+    
+    
+    # STEP 5a: Stop the process and return what is available if skipAssessmentPlots is TRUE
+    if (skipAssessmentPlots) {
+        return(list(stateData=stateData, 
+                    dfRaw=dfRaw, 
+                    dfFiltered=dfFiltered, 
+                    dfPerCapita=dfPerCapita, 
+                    useClusters=useClusters, 
+                    plotData=NULL, 
+                    consolidatedPlotData=NULL, 
+                    clCum=NULL
+                    )
+               )
+    }
+    
+    
+    # STEP 6: Create the cluster assessments
+    plotData <- assessClusters(useClusters, 
+                               dfState=stateData, 
+                               dfBurden=dfPerCapita,
+                               thruLabel=thruLabel,
+                               plotsTogether=TRUE
+    )
+    
+    
+    # STEP 7: Plot the consolidated metrics
+    subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new), Tests: new tests"
+    consolidatedPlotData <- plotConsolidatedMetrics(plotData, 
+                                                    varMain=c("state", "cluster", "date", "pop",
+                                                              "cases", "deaths", "hosp", "tests"
+                                                    ), 
+                                                    subT=subT, 
+                                                    nrowPlot2=2
+    )
+    
+    # STEP 8: Create cumulative metrics if requested
+    if (makeCumulativePlots) {
+        consPos <- consolidatedPlotData %>%
+            ungroup() %>%
+            select(state, cluster, date, name, vpm7) %>%
+            arrange(state, cluster, date, name) %>%
+            pivot_wider(-vpm7, names_from="name", values_from="vpm7") %>%
+            mutate(pctpos=cases/tests) %>%
+            pivot_longer(-c(state, cluster, date), values_to="vpm7") %>%
+            filter(!is.na(vpm7))
+        clCum <- makeCumulative(consPos)
+        plotCumulativeData(clCum, 
+                           keyMetricp2="", 
+                           flagsp2="", 
+                           makep1=TRUE, 
+                           makep2=FALSE
+        )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="deaths", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "deaths")
+        )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="cases", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "cases")
+        )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="tests", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "tests")
+        )
+    } else {
+        clCum <- NULL
+    }
+    
+    
+    # STEP 9: Return a list of the key data
+    list(stateData=stateData, 
+         dfRaw=dfRaw, 
+         dfFiltered=dfFiltered, 
+         dfPerCapita=dfPerCapita, 
+         useClusters=useClusters, 
+         plotData=plotData, 
+         consolidatedPlotData=consolidatedPlotData, 
+         clCum=clCum
+    )
+    
+    
+}
+
+
+```
+  
+The function is then run, stopping after step 4 based on an artificial return statement:  
+```{r}
+
+# Test the reading process only (works provided date is managed OK)
+# readCOViDbyState(fileName="./RInputFiles/Coronavirus/CDC_dc_downloaded_210414.csv", 
+#                  checkFile=readFromRDS("cdcDaily_hier7_210414")$dfRaw %>%
+#                      mutate(date=lubridate::mdy(submission_date)), 
+#                  controlFields=c("tot_cases", "tot_death", "new_case", "new_death"),
+#                  dateChangePlot=TRUE,
+#                  isCDCDaily=TRUE
+#                  )
+
+# Test steps 1-4 for CDC daily data (processing prior to segmentation)
+readRunCOVIDTrackingProject(thruLabel="Apr 14, 2021", 
+                            readFrom="./RInputFiles/Coronavirus/CDC_dc_downloaded_210414.csv", 
+                            compareFile=readFromRDS("cdcDaily_hier7_210414")$dfRaw %>%
+                                mutate(date=lubridate::mdy(submission_date)), 
+                            isCDCDaily=TRUE
+                            )
+
+# Confirm that process still works for final CTP data
+readRunCOVIDTrackingProject(thruLabel="Mar 31, 2021", 
+                            readFrom="./RInputFiles/Coronavirus/CV_downloaded_210401.csv", 
+                            compareFile=readFromRDS("ctp_hier6_210301")$dfRaw
+                            )
+
+```
+  
+The process can still work with the old CTP data and also appears to work with the CDC data.
