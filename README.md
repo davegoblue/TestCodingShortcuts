@@ -2383,4 +2383,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 26-APR-2021  
 * Coronavirus_CDC_Daily_v001 plots cumulative and consolidated data  
+* Coronavirus_CDC_Daily_v001 updates steps 1-4 of readRunCOVIDTrackingProject  
   
