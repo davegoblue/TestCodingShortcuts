@@ -1582,6 +1582,8 @@ helperClusterSummaryPlots <- function(dfState,
         scale_x_date(date_breaks="1 months", date_labels="%b")
     
     # Plot the total cases and total deaths by cluster
+    print(c("cluster", "date", unname(p4Vars)))
+    print(c("cluster", "date", names(p4Vars)))
     p4 <- dfPlot %>%
         select_at(vars(all_of(c("cluster", "date", unname(p4Vars))))) %>%
         purrr::set_names(c("cluster", "date", names(p4Vars))) %>%
@@ -2652,7 +2654,10 @@ readCOViDbyState <- function(fileName,
 processCVData <- function(dfFull, 
                           varsKeep=c("date", "state", "positiveIncrease", "deathIncrease"), 
                           varsRename=c("positiveIncrease"="cases", "deathIncrease"="deaths"), 
-                          stateList=c(state.abb, "DC")
+                          stateList=c(state.abb, "DC"), 
+                          isCDCDaily=FALSE,
+                          comboStates=if(isTRUE(isCDCDaily)) c("NYC"="NY", "NY"="NY") else c(),
+                          sumBy=c("state", "date")
                           ) {
     
     # FUNCTION ARGUMENTS
@@ -2660,6 +2665,9 @@ processCVData <- function(dfFull,
     # varsKeep: variables to keep from the full file
     # varsRename: variables to be renamed, using a named vector of form originalName=newName
     # stateList: variables for filtering state (NULL means do not run any filters)
+    # isCDCDaily: boolean, are the daily data from CDC
+    # comboStates: states to be consolidated ('name in file'='name to use')
+    # sumBy: variables to sum by (after changing state names using comboStates)
     
     # Select only the key variables
     df <- dfFull %>%
@@ -2667,6 +2675,13 @@ processCVData <- function(dfFull,
     
     # Apply the renaming of variables
     names(df) <- ifelse(is.na(varsRename[names(df)]), names(df), varsRename[names(df)])
+    
+    # Apply state name changes and sum
+    df <- df %>%
+        mutate(state=ifelse(state %in% names(comboStates), unname(comboStates[state]), state)) %>%
+        group_by_at(vars(all_of(sumBy))) %>%
+        summarize_if(is.numeric, sum, na.rm=TRUE) %>%
+        ungroup()
     
     # Designate each record as being either a valid state or not
     if (!is.null(stateList)) {
@@ -2773,7 +2788,7 @@ helperReadRunCTP_steps02_04 <- function(downloadTo,
                         )
     }
     # Run the filtering process using the parameters above
-    dfFiltered <- processCVData(dfRaw, varsKeep=varsFilter, varsRename=varsRename)
+    dfFiltered <- processCVData(dfRaw, varsKeep=varsFilter, varsRename=varsRename, isCDCDaily=isCDCDaily)
     
     # Glimpse the processed data, either in the main log file or in a separate log file
     if (is.null(writeLog)) glimpseFile(dfFiltered, txt="\nFiltered data file:\n")
@@ -2817,7 +2832,7 @@ readRunCOVIDTrackingProject <- function(thruLabel,
                                         dfPerCapita=NULL,
                                         useClusters=NULL,
                                         hierarchical=TRUE,
-                                        returnList=!hierarchical, 
+                                        returnList=!isTRUE(hierarchical), 
                                         kCut=6,
                                         reAssignState=vector("list", 0),
                                         makeCumulativePlots=TRUE,
@@ -2879,18 +2894,15 @@ readRunCOVIDTrackingProject <- function(thruLabel,
         dfFiltered <- NULL
     }
     
-    # File processing stops at this point for now, continue steps 5-8 later
-    return(dfPerCapita)
-    
     # STEP 5: Create the clusters (if they have not been passed)
     if (is.null(useClusters)) {
         # Run the clustering process
         clData <- clusterStates(df=dfPerCapita, hierarchical=hierarchical, returnList=returnList, ...)
         # If hierarchical clusters, cut the tree, otherwise use the output object directly
-        if (hierarchical) {
+        if (isTRUE(hierarchical)) {
             useClusters <- cutree(clData, k=kCut)
         } else {
-            useClusters <- clData$objCluster$cluster
+            useClusters <- if(is.na(hierarchical)) clData$objCluster else clData$objCluster$cluster
         }
         # If requested, manually assign clusters to the cluster for another state
         for (xNum in seq_len(length(reAssignState))) {
@@ -2898,7 +2910,6 @@ readRunCOVIDTrackingProject <- function(thruLabel,
         }
         
     }
-    
     
     # STEP 5a: Stop the process and return what is available if skipAssessmentPlots is TRUE
     if (skipAssessmentPlots) {
@@ -2916,23 +2927,30 @@ readRunCOVIDTrackingProject <- function(thruLabel,
     
     
     # STEP 6: Create the cluster assessments
+    # p4Def <- formals(assessClusters)$p4Vars  # Need to fix, pulls wrong formals
+    p4Def <- c(cases="cases", deaths="deaths")
     plotData <- assessClusters(useClusters, 
                                dfState=stateData, 
                                dfBurden=dfPerCapita,
                                thruLabel=thruLabel,
-                               plotsTogether=TRUE
-    )
+                               plotsTogether=TRUE, 
+                               p4Vars=if(isCDCDaily) c(cases="tot_cases", deaths="tot_deaths") else p4Def,
+                               p4Fun=if(isCDCDaily) max else formals(assessClusters)$p4Fun, 
+                               isCDC=isCDCDaily
+                               )
     
     
     # STEP 7: Plot the consolidated metrics
-    subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new), Tests: new tests"
-    consolidatedPlotData <- plotConsolidatedMetrics(plotData, 
-                                                    varMain=c("state", "cluster", "date", "pop",
-                                                              "cases", "deaths", "hosp", "tests"
-                                                    ), 
-                                                    subT=subT, 
-                                                    nrowPlot2=2
-    )
+    if (isCDCDaily) {
+        subT <- "new_cases: new cases, new_deaths: new deaths"
+        subT <- paste0(subT, ", tot_cases: cumulative cases, tot_deaths: cumulative deaths")
+        varMain=c("state", "cluster", "date", "pop", "new_cases", "new_deaths", "tot_cases", "tot_deaths")
+    } else {
+        subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new), Tests: new tests"
+        varMain <- c("state", "cluster", "date", "pop", "cases", "deaths", "hosp", "tests")
+    }
+    consolidatedPlotData <- plotConsolidatedMetrics(plotData, varMain=varMain, subT=subT, nrowPlot2=2)
+    
     
     # STEP 8: Create cumulative metrics if requested
     if (makeCumulativePlots) {
@@ -2941,28 +2959,22 @@ readRunCOVIDTrackingProject <- function(thruLabel,
             select(state, cluster, date, name, vpm7) %>%
             arrange(state, cluster, date, name) %>%
             pivot_wider(-vpm7, names_from="name", values_from="vpm7") %>%
-            mutate(pctpos=cases/tests) %>%
+            mutate(pctpos=if(isTRUE(isCDCDaily)) 0 else cases/tests) %>%
             pivot_longer(-c(state, cluster, date), values_to="vpm7") %>%
             filter(!is.na(vpm7))
-        clCum <- makeCumulative(consPos)
-        plotCumulativeData(clCum, 
-                           keyMetricp2="", 
-                           flagsp2="", 
-                           makep1=TRUE, 
-                           makep2=FALSE
-        )
-        plotCumulativeData(clCum, 
-                           keyMetricp2="deaths", 
-                           flagsp2=findFlagStates(clCum, keyMetricVal = "deaths")
-        )
-        plotCumulativeData(clCum, 
-                           keyMetricp2="cases", 
-                           flagsp2=findFlagStates(clCum, keyMetricVal = "cases")
-        )
-        plotCumulativeData(clCum, 
-                           keyMetricp2="tests", 
-                           flagsp2=findFlagStates(clCum, keyMetricVal = "tests")
-        )
+        typeKeep <- formals(makeCumulative)$typeKeep
+        if(isTRUE(isCDCDaily)) typeKeep <- c("new_cases", "new_deaths", "tot_cases", "tot_deaths")
+        clCum <- makeCumulative(consPos, typeKeep=typeKeep)
+        # Cumulative plot of each variable
+        a <- if(isTRUE(isCDCDaily)) c("tot_cases", "tot_deaths") else ""
+        plotCumulativeData(clCum, keyMetricp2="", flagsp2="", makep1=TRUE, makep2=FALSE, namesOtherKeyVar=a)
+        # Cumulative plots of relevant key variables
+        a <- if(isTRUE(isCDCDaily)) c("new_deaths", "new_cases") else c("deaths", "cases", "tests")
+        plotCumulativeData(clCum, keyMetricp2=a[1], flagsp2=findFlagStates(clCDCCum, keyMetricVal=a[1]))
+        plotCumulativeData(clCum, keyMetricp2=a[2], flagsp2=findFlagStates(clCDCCum, keyMetricVal=a[2]))
+        if(!isTRUE(isCDCDaily)) {
+            plotCumulativeData(clCum, keyMetricp2=a[3], flagsp2=findFlagStates(clCum, keyMetricVal=a[3]))
+        }
     } else {
         clCum <- NULL
     }
@@ -2985,7 +2997,7 @@ readRunCOVIDTrackingProject <- function(thruLabel,
 
 ```
   
-The function is then run, stopping after step 4 based on an artificial return statement:  
+The function is then run using previously downloaded data:  
 ```{r}
 
 # Test the reading process only (works provided date is managed OK)
@@ -2997,20 +3009,47 @@ The function is then run, stopping after step 4 based on an artificial return st
 #                  isCDCDaily=TRUE
 #                  )
 
-# Test steps 1-4 for CDC daily data (processing prior to segmentation)
-readRunCOVIDTrackingProject(thruLabel="Apr 14, 2021", 
-                            readFrom="./RInputFiles/Coronavirus/CDC_dc_downloaded_210414.csv", 
-                            compareFile=readFromRDS("cdcDaily_hier7_210414")$dfRaw %>%
-                                mutate(date=lubridate::mdy(submission_date)), 
-                            isCDCDaily=TRUE
-                            )
-
-# Confirm that process still works for final CTP data
-readRunCOVIDTrackingProject(thruLabel="Mar 31, 2021", 
-                            readFrom="./RInputFiles/Coronavirus/CV_downloaded_210401.csv", 
-                            compareFile=readFromRDS("ctp_hier6_210301")$dfRaw
-                            )
+# Test full process using April 14, 2021 data
+locDownload <- "./RInputFiles/Coronavirus/CDC_dc_downloaded_210414.csv"
+locRDS <- "cdcDaily_hier7_210414"
+cdcDaily_rules7_210421 <- readRunCOVIDTrackingProject(thruLabel="Apr 14, 2021", 
+                                                      readFrom=locDownload, 
+                                                      compareFile=readFromRDS(locRDS)$dfRaw %>%
+                                                          mutate(date=lubridate::mdy(submission_date)), 
+                                                      isCDCDaily=TRUE,
+                                                      hierarchical=NA,
+                                                      shapeFunc=customTimeBucket,
+                                                      minShape="2020-04", 
+                                                      maxShape="2021-03", 
+                                                      ratioDeathvsCase = 5, 
+                                                      ratioTotalvsShape = 0.25, 
+                                                      hmlSegs=3, 
+                                                      eslSegs=3, 
+                                                      seed=2104271501,
+                                                      minDeath=100, 
+                                                      minCase=10000, 
+                                                      reAssignState=list("SD"="ND")
+                                                      )
 
 ```
   
-The process can still work with the old CTP data and also appears to work with the CDC data.
+Next steps are to update the process so that it works with the old CTP data (defaults and formals are not quite aligned).
+```{r eval=FALSE}
+
+# Confirm that process still works for final CTP data
+# test_oldctp <- readRunCOVIDTrackingProject(thruLabel="Mar 31, 2021", 
+#                                            readFrom="./RInputFiles/Coronavirus/CV_downloaded_210401.csv", 
+#                                            compareFile=readFromRDS("ctp_hier6_210301")$dfRaw, 
+#                                            hierarchical=TRUE, 
+#                                            kCut=6,
+#                                            shapeFunc=customTimeBucket,
+#                                            minShape="2020-04", 
+#                                            maxShape="2021-03", 
+#                                            ratioDeathvsCase = 5, 
+#                                            ratioTotalvsShape = 0.25, 
+#                                            minDeath=100, 
+#                                            minCase=10000
+#                                            )
+
+```
+
