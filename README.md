@@ -2385,4 +2385,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v001 plots cumulative and consolidated data  
 * Coronavirus_CDC_Daily_v001 updates steps 1-4 of readRunCOVIDTrackingProject  
 * Coronavirus_CDC_Daily_v001 updates readRunCOVIDTrackingProject to run on CDC daily data  
+* Coronavirus_CDC_Daily_v001 ensures readRunCOVIDTrackingProject back-compatibility with CTP  
   
