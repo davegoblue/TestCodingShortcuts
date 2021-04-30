@@ -3051,3 +3051,136 @@ test_oldctp <- readRunCOVIDTrackingProject(thruLabel="Mar 31, 2021",
 ```
   
 Next steps are to search for hospital and test data that can be integrated to more closely replicate what was available from CTP.
+
+Hospital data are downloaded, with the process cached to avoid repeated hits against the CDC website:  
+```{r cache=TRUE}
+
+downloadCOVIDbyState("./RInputFiles/Coronavirus/CDC_h_downloaded_210429.csv",
+                     api="https://beta.healthdata.gov/api/views/g62h-syeh/rows.csv?accessType=DOWNLOAD", 
+                     ovrWrite=FALSE
+                     )
+
+```
+
+Fields available in the dataset are described at  [healthdata.gov](https://beta.healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/g62h-syeh).  Salient fields include:  
+  
+* state - state (includes 50 states, DC, PR, VI)  
+* date - date of reported data  
+* inpatient_beds_used_covid - reported patients currently hospitalized with confirmed or suspected COVID-19  
+* total_adult_patients_hospitalized_confirmed_and_suspected_covid - reported patients in adult inpatient beds with confirmed or suspected COVID-19 (includes observation beds)  
+* total_pediatric_patients_hospitalized_confirmed_and_suspected_covid - reported patients in pediatric inpatient beds with confirmed or suspected COVID-19 (includes observation beds)  
+* staffed_icu_adult_patients_confirmed_and_suspected_covid - reported patients in an adult ICU bed who have suspected or confirmed COVID-19  
+* previous_day_admission_[pediatric|adult]_covid_[suspected|confirmed] - previous day admissions to a hospital with confirmed or suspected CoVID-19  
+  
+Data availability vary over time, and there are also coverage variables included for each of the key statistics.  Data are loaded, and a plot of data availability by state and metric is created:  
+```{r, fig.height=9, fig.width=9}
+
+# Read and glimpse downloaded hospital file
+hospRaw <- readr::read_csv("./RInputFiles/Coronavirus/CDC_h_downloaded_210429.csv")
+glimpse(hospRaw)
+
+# Plot of states with data availability by metric and month
+hospRaw %>% 
+    mutate(tb=customTimeBucket(date)) %>% 
+    group_by(state, tb) %>% 
+    summarize_if(is.numeric, sum, na.rm=TRUE) %>% 
+    group_by(tb) %>% 
+    summarize_all(.funs=function(x) sum(x>0)) %>% 
+    pivot_longer(-tb) %>% 
+    ggplot(aes(x=tb, y=name)) + 
+    geom_tile(aes(fill=value)) + 
+    geom_text(aes(label=value)) + 
+    scale_fill_continuous(low="white", high="green")
+
+# Check state coverage
+hospRaw %>%
+    count(state) %>%
+    pull(state) %>%
+    setdiff(state.abb)
+
+```
+  
+There are 53 states included (the 50 US states plus DC, PR, VI).  Many of the salient metrics became available in July 2020, though inpatient_beds_used_covid appears to be available throughout.  Three key fields are explored in more detail:  
+```{r, fig.height=9, fig.width=9}
+
+# Hospital summary by date
+hospSum <- hospRaw %>%
+    select(date, 
+           inp=inpatient_beds_used_covid, 
+           hosp_adult=total_adult_patients_hospitalized_confirmed_and_suspected_covid, 
+           hosp_ped=total_pediatric_patients_hospitalized_confirmed_and_suspected_covid
+           ) %>%
+    group_by(date) %>%
+    summarize_all(sum, na.rm=TRUE)
+
+# Summary of 'hosp' field from CTP
+hospCTP <- ctp_hier6_210401$dfFiltered %>%
+    group_by(date) %>%
+    summarize(hosp_ctp=sum(hosp, na.rm=TRUE), .groups="drop")
+
+# Plotted by date, compared with field 'hosp' from CTP
+hospSum %>%
+    full_join(hospCTP, by="date") %>%
+    pivot_longer(-date) %>%
+    filter(!is.na(value)) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=name, color=name)) + 
+    labs(title="COVID Hospitalized by Data Source", x="", y="Hospitalized") + 
+    scale_color_discrete("Metric")
+
+```
+  
+COVID Tracking Project ran a data cleaning algorithm, resulting in some differences.  The field "inp" appears to track the CTP metric reasonably well, and the alignment by state for April 2020 through February 2021 is explored:  
+```{r, fig.height=9, fig.width=9}
+
+hospCompare <- hospRaw %>%
+    select(state, 
+           date, 
+           inp=inpatient_beds_used_covid
+           ) %>%
+    full_join(select(ctp_hier6_210401$dfFiltered, state, date, ctp=hosp), by=c("state", "date")) %>%
+    filter(state %in% c(state.abb, "DC"), date >= as.Date("2020-04-01"), date <= as.Date("2021-02-28"))
+
+# Get correlations by state (only for dates where both supply data)
+hospCompare %>%
+    is.na() %>%
+    colSums()
+
+hospCorr <- hospCompare %>%
+    filter(!is.na(ctp)) %>%
+    group_by(state) %>%
+    summarize(rmse=sqrt(mean((inp-ctp)**2)), 
+              corr=cor(inp, ctp), 
+              inp=mean(inp), 
+              ctp=mean(ctp),
+              rsq=1-rmse/ctp, 
+              .groups="drop"
+              )
+
+# Plot states by correlation, rsq, and RMSE
+hospCorr %>%
+    select(state, rmse, corr, .pseudorsq=rsq) %>%
+    pivot_longer(-state) %>%
+    ggplot(aes(x=fct_reorder(state, value, .fun=min), y=value)) + 
+    geom_col(fill="lightblue") + 
+    coord_flip() +
+    facet_wrap(~name, scales="free_x")
+
+# Plot by individual states, with 'most different' first
+hospDiff <- hospCorr %>%
+    arrange(rsq) %>%
+    pull(state)
+
+hospCompare %>%
+    mutate(state=factor(state, levels=hospDiff)) %>%
+    pivot_longer(-c(state, date)) %>%
+    filter(!is.na(value)) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=name, color=name)) + 
+    facet_wrap(~state, scales="free_y")
+
+```
+
+While there are some meaningful disconnects in the data, particularly in the earlier time periods, there is generally good correlation of the timing and magnitude of peaks and troughs.  The new hospitalized data appear reasonable for usage with the CDC daily data for purposes of highlighting macro trends in disease impact by state.  For potential future exploration, the CTP data could be used through 2020 with the new data picked up starting in 2021.
+
+Next steps are to add the hospitalized data to the dfPerCapita and run through the segmenting and plotting routines.
