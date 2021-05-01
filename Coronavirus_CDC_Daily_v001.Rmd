@@ -3183,4 +3183,260 @@ hospCompare %>%
 
 While there are some meaningful disconnects in the data, particularly in the earlier time periods, there is generally good correlation of the timing and magnitude of peaks and troughs.  The new hospitalized data appear reasonable for usage with the CDC daily data for purposes of highlighting macro trends in disease impact by state.  For potential future exploration, the CTP data could be used through 2020 with the new data picked up starting in 2021.
 
-Next steps are to add the hospitalized data to the dfPerCapita and run through the segmenting and plotting routines.
+Hospital data are manually added to the existing dfPerCapita file:  
+```{r}
+
+# Create the hospital data file
+hospData <- hospRaw %>%
+    select(state, date, inp=inpatient_beds_used_covid) %>%
+    filter(state %in% c(state.abb, "DC"), !is.na(inp)) %>%
+    arrange(date, state)
+
+# Check that there are no duplicates
+if (hospData %>% select(state, date) %>% anyDuplicated() != 0) stop("\nDuplicates in the hospital data\n")
+
+# Create hpm (per capita) and hpm7 (per capita rolling 7) variables
+hospDataPC <- hospData %>%
+    helperMakePerCapita(mapVars=c("inp"="hpm"), popData=getStateData())
+hospDataPC %>% summarize(across(where(is.numeric), sum, na.rm=TRUE))
+
+# Create a full per-capita file, taking only state-date combinations that are in dfPerCapita
+dfPerCapitaTemp <- cdcDaily_rules7_210421$dfPerCapita %>%
+    left_join(hospDataPC, by=c("state", "date"))
+dfPerCapitaTemp %>% summarize(across(where(is.numeric), sum, na.rm=TRUE))
+
+```
+
+The file can then be run through the main function, with the per capita file and existing clusters passed:  
+```{r eval=FALSE}
+
+# Test full process using hospital data
+updDaily_rules7_210421 <- readRunCOVIDTrackingProject(thruLabel="Apr 14, 2021", 
+                                                      isCDCDaily=TRUE,
+                                                      dfPerCapita=dfPerCapitaTemp, 
+                                                      useClusters=cdcDaily_rules7_210421$useClusters
+                                                      )
+
+```
+
+The main function requires updates so that it can optionally use the hospital (or any other) data:  
+```{r}
+
+# Create a subtitle mapping file (variable to descriptive name)
+subTMapper <- c("new_cases"="new cases", 
+                "new_deaths"="new deaths", 
+                "tot_cases"="cumulative cases", 
+                "tot_deaths"="cumulative deaths", 
+                "inp"="total hospitalized (not new or cumulative)", 
+                "cases"="new cases", 
+                "deaths"="new deaths", 
+                "hosp"="total in hospital (not new)", 
+                "tests"="new tests"
+                )
+
+
+# Helper function to make consolidated cumulative data
+helperConsCum <- function(df, 
+                          byVars=c("state", "cluster", "date"),
+                          nameVar=c("name"),
+                          numVar=c("vpm7"), 
+                          makePctPos=FALSE
+                          ) {
+    df %>%
+        ungroup() %>%
+        select_at(vars(all_of(c(byVars, nameVar, numVar)))) %>%
+        arrange_at(vars(all_of(c(byVars, nameVar)))) %>%
+        pivot_wider(-all_of(numVar), names_from=nameVar, values_from=numVar) %>%
+        mutate(pctpos=if(isTRUE(makePctPos)) cases/tests else 0) %>%
+        pivot_longer(-c(all_of(byVars)), values_to=numVar) %>%
+        filter(!is.na(get(numVar)))
+}
+
+
+# Function to download/load, process, segment, and analyze data from COVID Tracking Project
+readRunCOVIDTrackingProject <- function(thruLabel, 
+                                        downloadTo=NULL, 
+                                        readFrom=downloadTo, 
+                                        compareFile=NULL,
+                                        dateChangePlot=FALSE,
+                                        dateMetricPrint=TRUE,
+                                        writeLog=NULL,
+                                        ovrwriteLog=TRUE,
+                                        dfPerCapita=NULL,
+                                        useClusters=NULL,
+                                        hierarchical=TRUE,
+                                        returnList=!isTRUE(hierarchical), 
+                                        kCut=6,
+                                        reAssignState=vector("list", 0),
+                                        makeCumulativePlots=TRUE,
+                                        skipAssessmentPlots=FALSE,
+                                        varMainS7=NULL,
+                                        mapperS7=subTMapper,
+                                        typeKeepS8=NULL,
+                                        isCDCDaily=FALSE,
+                                        ...
+                                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # thruLabel: the label for when the data are through (e.g., "Aug 30, 2020")
+    # downloadTo: download the most recent COVID Tracking Project data to this location
+    #             NULL means do not download any data
+    # readFrom: location for reading in the COVID Tracking Project data (defaults to donwloadTo)
+    # compareFile: name of the file to use for comparisons when reading in raw data (NULL means no comparison)
+    # dateChangePlot: boolean, should changes in dates be captured as a plot rather than as a list?
+    # dateMetricPrint: boolean, should the changes by date and metric be printed to the main log?
+    # writeLog: name of a separate log file for capturing detailed data on changes between files
+    #           NULL means no detailed data captured
+    # ovrwriteLog: boolean, should the log file be overwritten and started again from scratch?
+    # dfPerCapita: file can be passed directly, which bypasses the loading and processing steps
+    # useClusters: file containing clusters by state (NULL means make the clusters from the data)
+    # hierarchical: boolean, should hierarchical clusters be produced (if FALSE, will be k-means)?
+    # returnList: boolean, should a list be returned or just the cluster object?
+    #             refers to what is returned by clusterStates(); the main function always returns a list
+    # kCut: number of segments when cutting the hierarchical tree
+    # reAssignState: mapping file for assigning a state to another state's cluster
+    #                format list("stateToChange"="stateClusterToAssign")
+    # makeCumulativePlots: whether to make plots of cumulative metrics
+    # skipAssessmentPlots: boolean to skip the plots for assessClusters()
+    #                      especially useful if just exploring dendrograms or silhouette widths
+    # varMainS7: main variables to use for step 7 (consolidated metrics): NULL means assume CTP defaults
+    # mapperS7: mapping file for step 7 (variables to descriptive names)
+    # typeKeepS8: variables to be plotted in step 8 (NULL means assume CTP defaults)
+    # isCDCDaily: boolean, are the data from CDC (default FALSE means use CTP)
+    # ...: arguments to be passed to clusterStates(), will be used only if useClusters is NULL
+    
+    
+    # STEP 1: Get state data
+    stateData <- getStateData()
+    
+    # STEPS 2-4 are run only if dfPerCapita does not exist
+    if (is.null(dfPerCapita)) {
+        # Call the helper function and pass the key arguments
+        helpList <- helperReadRunCTP_steps02_04(downloadTo=downloadTo, 
+                                                isCDCDaily=isCDCDaily, 
+                                                readFrom=readFrom, 
+                                                compareFile=compareFile, 
+                                                dateChangePlot=dateChangePlot, 
+                                                dateMetricPrint=dateMetricPrint, 
+                                                writeLog=writeLog, 
+                                                ovrwriteLog=ovrwriteLog, 
+                                                stateData=stateData
+                                                )
+        # Extract the key data files from the helper list for future processing
+        dfRaw <- helpList$dfRaw
+        dfFiltered <- helpList$dfFiltered
+        dfPerCapita <- helpList$dfPerCapita
+    } else {
+        # There is no raw or filtered data since a properly formatted dfPerCapita was passed
+        dfRaw <- NULL
+        dfFiltered <- NULL
+    }
+    
+    # STEP 5: Create the clusters (if they have not been passed)
+    if (is.null(useClusters)) {
+        # Run the clustering process
+        clData <- clusterStates(df=dfPerCapita, hierarchical=hierarchical, returnList=returnList, ...)
+        # If hierarchical clusters, cut the tree, otherwise use the output object directly
+        if (isTRUE(hierarchical)) {
+            useClusters <- cutree(clData, k=kCut)
+        } else {
+            useClusters <- if(is.na(hierarchical)) clData$objCluster else clData$objCluster$cluster
+        }
+        # If requested, manually assign clusters to the cluster for another state
+        for (xNum in seq_len(length(reAssignState))) {
+            useClusters[names(reAssignState)[xNum]] <- useClusters[reAssignState[[xNum]]]
+        }
+        
+    }
+    
+    # STEP 5a: Stop the process and return what is available if skipAssessmentPlots is TRUE
+    if (skipAssessmentPlots) {
+        return(list(stateData=stateData, 
+                    dfRaw=dfRaw, 
+                    dfFiltered=dfFiltered, 
+                    dfPerCapita=dfPerCapita, 
+                    useClusters=useClusters, 
+                    plotData=NULL, 
+                    consolidatedPlotData=NULL, 
+                    clCum=NULL
+                    )
+               )
+    }
+    
+    # STEP 6: Create the cluster assessments using cases and deaths
+    p4Def <- eval(formals(assessClusters)$p4Vars)  # eval(formals(fun)$arg) returns the default arg in fun
+    plotData <- assessClusters(useClusters, 
+                               dfState=stateData, 
+                               dfBurden=dfPerCapita,
+                               thruLabel=thruLabel,
+                               plotsTogether=TRUE, 
+                               p4Vars=if(isCDCDaily) c(cases="tot_cases", deaths="tot_deaths") else p4Def,
+                               p4Fun=if(isCDCDaily) max else eval(formals(assessClusters)$p4Fun), 
+                               isCDC=isCDCDaily
+                               )
+    
+    
+    # STEP 7: Plot the consolidated metrics
+    # Create CTP defaults if passed as NULL
+    if (is.null(varMainS7)) 
+        varMainS7 <- c("state", "cluster", "date", "pop", "cases", "deaths", "hosp", "tests")
+    # Create description for subtitle
+    subT <- varMainS7[varMainS7 %in% names(subTMapper)] %>% 
+        paste(., subTMapper[.] %>% unname, sep=": ") %>% 
+        paste0(collapse=", ")
+    # Create consolidated metrics plot
+    consolidatedPlotData <- plotConsolidatedMetrics(plotData, varMain=varMainS7, subT=subT, nrowPlot2=2)
+    
+    
+    # STEP 8: Create cumulative metrics if requested
+    if (makeCumulativePlots) {
+        consPos <- helperConsCum(consolidatedPlotData)
+        if (is.null(typeKeepS8)) typeKeepS8 <- eval(formals(makeCumulative)$typeKeep)
+        clCum <- makeCumulative(consPos, typeKeep=typeKeepS8)
+        # Cumulative plot of each variable (for CDC daily, tot_cases and tot_deaths are already cumulative)
+        a <- if(isTRUE(isCDCDaily)) c("tot_cases", "tot_deaths") else ""
+        plotCumulativeData(clCum, keyMetricp2="", flagsp2="", makep1=TRUE, makep2=FALSE, namesOtherKeyVar=a)
+        # Cumulative plots of relevant key variables
+        a <- if(isTRUE(isCDCDaily)) c("new_deaths", "new_cases") else c("deaths", "cases", "tests")
+        for (vrbl in a) 
+            plotCumulativeData(clCum, keyMetricp2=vrbl, flagsp2=findFlagStates(clCum, keyMetricVal=vrbl))
+    } else {
+        clCum <- NULL
+    }
+    
+    
+    # STEP 9: Return a list of the key data
+    list(stateData=stateData, 
+         dfRaw=dfRaw, 
+         dfFiltered=dfFiltered, 
+         dfPerCapita=dfPerCapita, 
+         useClusters=useClusters, 
+         plotData=plotData, 
+         consolidatedPlotData=consolidatedPlotData, 
+         clCum=clCum
+    )
+    
+}
+
+```
+
+The routine is then run:  
+```{r, fig.height=9, fig.width=9}
+
+# Test full process using hospital data
+updDaily_rules7_210421 <- readRunCOVIDTrackingProject(thruLabel="Apr 14, 2021", 
+                                                      dfPerCapita=dfPerCapitaTemp, 
+                                                      useClusters=cdcDaily_rules7_210421$useClusters, 
+                                                      varMainS7=c("state", "cluster", "date", "pop", 
+                                                                  "new_cases", "new_deaths", 
+                                                                  "tot_cases", "tot_deaths", "inp"
+                                                                  ), 
+                                                      typeKeepS8=c("new_cases", "new_deaths", 
+                                                                   "tot_cases", "tot_deaths"
+                                                                   ), 
+                                                      isCDCDaily=TRUE
+                                                      )
+
+```
+
+Next steps are to update the function so that it can download and integrate data from multiple sources (for CDC daily which keeps cases/deaths, hospitalizations, and other metrics in separate file).
