@@ -3440,3 +3440,364 @@ updDaily_rules7_210421 <- readRunCOVIDTrackingProject(thruLabel="Apr 14, 2021",
 ```
 
 Next steps are to update the function so that it can download and integrate data from multiple sources (for CDC daily which keeps cases/deaths, hospitalizations, and other metrics in separate file).
+
+The initial portions of steps 2-4 are split in to several smaller functions for easier use:  
+  
+* fileDownload - downloads a file and saves to a location, checking not to overwrite  
+* fileRead - reads a file and outputs as a data frame  
+* colRenamer - renames any number of columns using a named vector c('current name'='new name')  
+* colMutater - applies functions and transformations to a data frame, passed as a list  
+* checkUniqueRows - checks that a file is unique by designated keys  
+* checkControl - gets control totals for a file fr a specified unique key and set of variables  
+  
+This data can then be used to assess differences in a current file and reference file.  Code includes:  
+```{r}
+
+# Generic function to download data given a download location and URL
+fileDownload <- function(fileName, 
+                         url, 
+                         ovrWrite=FALSE, 
+                         ...
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # fileName: the filename that the data will be saved to
+    # url: the URL to pull the data from
+    # ovrWrite: whether to allow overwriting of the existing fileName
+    # ...: other arguments to pass to download.file
+    
+    # Check whether fileName already exists
+    if (file.exists(fileName)) {
+        cat("\nFile already exists at:", fileName, "\n")
+        if (ovrWrite) cat("Will over-write with current data from", url, "\n")
+        else stop("Exiting due to ovrWrite=FALSE and a duplicate fileName\n")
+    }
+    
+    # Download the file 
+    download.file(url, destfile=fileName, ...)
+    
+    # Show statistics on downloaded file
+    file.info(fileName)
+    
+}
+
+
+# Generic function to read an existing file
+fileRead <- function(fileName, 
+                     fnRead=readr::read_csv, 
+                     ...
+                     ) {
+    
+    # FUNCTION ARGUMENTS:
+    # fileName: file location for reading
+    # fnRead: function for reading fileName
+    # ...: other arguments to be passed to fnRead
+    
+    # Read the file and return
+    fnRead(fileName, ...)
+    
+}
+
+
+# Generic function to rename columns in a file using an input vector
+colRenamer <- function(df, 
+                       vecRename=c(), 
+                       ...
+                       ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble
+    # vecRename: vector for renaming c('existing name'='new name'), can be any length from 0 to ncol(df)
+    # ...: additional arguments to be passed to rename_with
+    
+    # Rename the columns as requested
+    dplyr::rename_with(df, .fn=function(x) vecRename[x], .cols=names(vecRename), ...)
+    
+}
+
+
+# Generic function to mutate columns in a file using an input list
+colMutater <- function(df, 
+                       selfList=list(), 
+                       fullList=list(),
+                       ...
+                       ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble
+    # selfList: list for functions to apply to self, list('variable'=fn) will apply variable=fn(variable)
+    #           processed in order, so more than one function can be applied to self
+    # fullList: list for general functions to be applied, list('new variable'=expression(code))
+    #           will create 'new variable' as eval(expression(code))
+    #           for now, requires passing an expression
+    # ...: additional arguments to be passed to across() inside mutate()
+    
+    # Apply the self-functions sequentially
+    for (ctr in seq_along(selfList)) 
+        df <- mutate(df, across(.cols=names(selfList)[ctr], .fns=selfList[[ctr]], ...))
+    
+    # Apply the full-mutates sequentially
+    for (ctr in seq_along(fullList))
+        df <- mutate(df, !!names(fullList)[ctr]:=eval(fullList[[ctr]]))
+        
+    # Return the updated file
+    df
+    
+}
+
+
+# Generic function to check for uniqueness of rows in a tibble
+checkUniqueRows <- function(df, 
+                            uniqueBy=NULL, 
+                            severity="stop", 
+                            noteUnique=TRUE,
+                            returnDF=TRUE
+                            ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: tibble or data frame
+    # uniqueVars: combination of variables for checking uniqueness (NULL means use all)
+    # severity: passed to assertive, can be c("stop", "warning", "message", "none")
+    # noteUnique: boolean, should a note be generated showing that the uniqueness check passed?
+    # returnDF: should the data frame be returned (if TRUE, will alow for downstream chaining)
+    
+    # Use all variables if uniqueBy is NULL
+    if (is.null(uniqueBy)) uniqueBy <- names(df)
+    
+    # Check for uniqueness
+    df %>%
+        select_at(vars(all_of(uniqueBy))) %>%
+        assertive.properties::assert_has_no_duplicates(severity=severity)
+    
+    # Report back on findings if requested
+    if (isTRUE(noteUnique)) cat("\n*** File", "has been checked for uniqueness by:", uniqueBy, "\n\n")
+    
+    # Return the data frame if requested
+    if (returnDF) return(df)
+    
+}
+
+
+# Generic function for checking control totals
+checkControl <- function(df, 
+                         groupBy=c(),
+                         useVars=NULL, 
+                         fn=sum, 
+                         printControls=TRUE,
+                         pivotData=!isTRUE(printControls),
+                         returnData=!isTRUE(printControls),
+                         ...
+                         ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: the data frame or tibble
+    # groupBy: control totals by level (c() means overall total)
+    # useVars: variables to get control totals (NULL means all numeric)
+    # fn: function that will be applied to create control totals
+    # printControls: boolean, should the control file be printed?
+    # pivotData: boolean, should data be pivoted so to be unique by groupBy with columns name and newValue?
+    # returnData: boolean, should the control total data be returned?
+    # ...: additional arguments (most common will be na.rm=TRUE)
+    
+    # Get the columns to summarize (use all numeric non-grouping variables if NULL passed)
+    if (is.null(useVars)) useVars <- setdiff(names(df)[sapply(df, is.numeric)], groupBy)
+    
+    # Get the control totals by group
+    dfControl <- df %>%
+        group_by_at(vars(all_of(groupBy))) %>%
+        summarize(across(.cols=all_of(useVars), .fns=fn, ...), .groups="drop")
+    
+    # Pivot data if requested
+    if (pivotData) dfControl <- dfControl %>% pivot_longer(all_of(useVars), values_to="newValue")
+    
+    # Print control totals if requested
+    if (printControls) print(dfControl)
+    
+    # Return data file if requested
+    if (returnData) return(dfControl)
+    
+}
+
+```
+
+The code can then be tested on previously downloaded data:  
+```{r}
+
+# Test combination of functions to read file, rename fields, mutate variables, and confirm uniqueness
+dfRaw_dc_210414 <- fileRead("./RInputFiles/Coronavirus/CDC_dc_downloaded_210414.csv") %>% 
+    colRenamer(c('submission_date'='date')) %>% 
+    colMutater(selfList=list('date'=lubridate::mdy), 
+               fullList=list('naconf'=expression(is.na(conf_cases)))
+               ) %>%
+    checkUniqueRows(uniqueBy=c("state", "date"))
+dfRaw_dc_210414
+
+# Testing the checkControl functions
+checkControl(dfRaw_dc_210414, printData=TRUE, na.rm=TRUE)
+checkControl(dfRaw_dc_210414, groupBy="state", useVars=c("new_case", "new_death"), printControls=FALSE)
+
+```
+
+A function is written to create line plots for displaying control totals:  
+```{r}
+
+helperLinePlot <- function(df, 
+                           x, 
+                           y, 
+                           groupColor=NULL,
+                           facetVar=NULL, 
+                           facetRows=NULL, 
+                           facetScales="fixed", 
+                           xLab="",
+                           yLab="Summed Value", 
+                           titleLab=paste0("Control totals by ", x)
+                           ) {
+
+    # FUNCTION ARGUMENTS
+    # df: the data frame or tibble
+    # x: the x variable
+    # y: the y variable
+    # groupColor: a variable to be used for grouping and coloring
+    # facetVar: the faceting variable, NULL means do not facet
+    # facetRows: the number of rows to include in faceting (NULL means allow facet_wrap to select)
+    # facetScales: the scale for the facetting, can be "fixed" or "free" or "free_y" or "free_x"
+    # xLab: label for the x-axis
+    # yLab: label for the y-axis
+    # titleLab: label for the title
+    
+    # Code to create the main plot
+    p1 <- df %>% 
+        ggplot(aes_string(x=x, y=y)) + 
+        geom_line(if(!is.null(groupColor)) aes_string(group=groupColor, color=groupColor)) + 
+        labs(title=titleLab, x=xLab, y=yLab)
+    # Add faceting if not NULL
+    if (!is.null(facetVar)) p1 <- p1 + facet_wrap(~get(facetVar), nrow=facetRows, scales=facetScales)
+    print(p1)
+    
+}
+
+dfRaw_dc_210414 %>%
+    checkControl(groupBy="date", useVars=c("new_case", "new_death"), printControls=FALSE) %>%
+    helperLinePlot(x="date", y="newValue", facetVar="name", facetScales="free_y")
+dfRaw_dc_210414 %>%
+    checkControl(groupBy="date", useVars=c("new_case", "new_death"), printControls=FALSE) %>%
+    helperLinePlot(x="date", y="newValue", facetVar="name", facetScales="free_y", groupColor="name")
+
+```
+
+Additionally, it will be valuable to have functions for:  
+  
+* Difference in variable names in new or old file  
+* Difference in field values (e.g., date or state) in new or old file  
+* Difference in specified column sums to specified control levels over specified time periods  
+  
+The function helperSimilarity allows for checking consistency of two sets:  
+```{r}
+
+# Helper function to check for similarity of key elements
+helperSimilarity <- function(newData, 
+                             refData, 
+                             label, 
+                             countOnly=FALSE, 
+                             logFile=NULL, 
+                             logAppend=TRUE, 
+                             returnData=isTRUE(countOnly)
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # newData: a new data file
+    # refData: a reference data file
+    # label: a label for the check being run
+    # countOnly: boolean, should only a count of differences be reported in the main log file?
+    # logFile: external file for writing out detailed differences (NULL means do not write to external file)
+    # logAppend: boolean, if the external log file exists should it be appended? (FALSE means overwrite)
+    # returnData: should the differences data be returned (default is yes for countOnly, no otherwise
+
+    # Find difference in set 1 and set 2    
+    d1 <- setdiff(refData, newData)
+    d2 <- setdiff(newData, refData)
+    
+    # Write the differences (counts or actual values) to the main log file
+    cat("\n\nChecking for similarity of:", label)
+    cat("\nIn reference but not in current:", if(countOnly) length(d1) else d1)
+    cat("\nIn current but not in reference:", if(countOnly) length(d2) else d2)
+    
+    # If a logFile is provided and only counts are in the main file, write to the log file
+    if (countOnly & !is.null(logFile)) {
+        cat("\nDetailed differences available in:", logFile)
+        capture.output(cat("\nIn reference but not in current:\n", paste(d1, collapse="\n"), sep=""), 
+                       cat("\nIn current but not in reference:\n", paste(d2, collapse="\n"), sep=""), 
+                       file=logFile, 
+                       append=logAppend
+                       )
+    }
+
+    # Return data if requested
+    if (returnData) return(list(d1=d1, d2=d2))
+    
+}
+
+```
+
+A function is written to check variable names and values from any number of discrete columns:  
+```{r}
+
+checkSimilarity <- function(df, 
+                            ref, 
+                            keyVars=list(), 
+                            writeLog=NULL, 
+                            ovrwriteLog=TRUE
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the new data frame
+    # ref: the reference data frame
+    # keyVars: the key variables to be tested, passed as a named list
+    #          list('varName'=list(label='label', countOnly=boolean, externalLog=boolean))
+    # writeLog: an external log file to be written to (NULL means main log file only)
+    # ovrwriteLog: boolean, should the external log be overwritten?
+    
+    # Check for consistency of variable names (always output to main log file)
+    helperSimilarity(newData=names(df), refData=names(ref), label="column names")
+    
+    # Create storage container for similarities
+    changeList <- vector("list", length(keyVars))
+    names(changeList) <- names(keyVars)
+    
+    # Check for consistency of variables in keyVars
+    for (ctr in seq_along(keyVars)) {
+        vrbl <- names(keyVars)[ctr]
+        d1 <- df %>% pull(vrbl) %>% unique() %>% sort()
+        d2 <- ref %>% pull(vrbl) %>% unique() %>% sort()
+        lstData <- keyVars[[ctr]]
+        changeList[[ctr]] <- helperSimilarity(d1, 
+                                              d2, 
+                                              label=lstData$label, 
+                                              countOnly=lstData$countOnly, 
+                                              logFile=if(isFALSE(lstData$externalLog)) NULL else writeLog, 
+                                              logAppend=!ovrwriteLog, 
+                                              returnData=TRUE
+                                              )
+    }
+
+    # Return the list file of differences
+    cat("\n\n")
+    changeList
+    
+}
+
+```
+
+The function is applied to dfRaw_dc_210414 against itself:  
+```{r}
+
+checkSimilarity(dfRaw_dc_210414, 
+                dfRaw_dc_210414, 
+                keyVars=list(date=list(label='date', countOnly=TRUE), 
+                             state=list(label='state', countOnly=FALSE)
+                             )
+                )
+
+```
+
+Next steps are to add a capability to plot the differences in the data elements.
