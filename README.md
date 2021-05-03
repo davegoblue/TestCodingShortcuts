@@ -2390,3 +2390,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v001 integrates and reports using CDC daily hospital data  
 * Coronavirus_CDC_Daily_v001 includes small function for data download, read, and initial QC  
   
+### Expansions week of 03-MAY-2021  
+* Coronavirus_CDC_Daily_v001 downloads latest deaths and cases data  
+  
