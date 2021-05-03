@@ -3753,7 +3753,7 @@ checkSimilarity <- function(df,
     # df: the new data frame
     # ref: the reference data frame
     # keyVars: the key variables to be tested, passed as a named list
-    #          list('varName'=list(label='label', countOnly=boolean, externalLog=boolean))
+    #          list('varName'=list(label='label', countOnly=boolean, externalLog=boolean, convChar=boolean))
     # writeLog: an external log file to be written to (NULL means main log file only)
     # ovrwriteLog: boolean, should the external log be overwritten?
     
@@ -3770,8 +3770,8 @@ checkSimilarity <- function(df,
         d1 <- df %>% pull(vrbl) %>% unique() %>% sort()
         d2 <- ref %>% pull(vrbl) %>% unique() %>% sort()
         lstData <- keyVars[[ctr]]
-        changeList[[ctr]] <- helperSimilarity(d1, 
-                                              d2, 
+        changeList[[ctr]] <- helperSimilarity(if(isTRUE(lstData$convChar)) as.character(d1) else d1, 
+                                              if(isTRUE(lstData$convChar)) as.character(d2) else d2, 
                                               label=lstData$label, 
                                               countOnly=lstData$countOnly, 
                                               logFile=if(isFALSE(lstData$externalLog)) NULL else writeLog, 
@@ -3800,4 +3800,40 @@ checkSimilarity(dfRaw_dc_210414,
 
 ```
 
-Next steps are to add a capability to plot the differences in the data elements.
+New data are downloaded, allowing for QC to be more meaningful.  The download process is cached to avoid multiple hits against the server:  
+```{r cache=TRUE}
+
+fileDownload(fileName="./RInputFiles/Coronavirus/CDC_dc_downloaded_210502.csv", 
+             url="https://data.cdc.gov/api/views/9mfq-cb36/rows.csv?accessType=DOWNLOAD", 
+             ovrWrite=FALSE
+             )
+
+```
+
+The read and initial QC functions are then run:  
+```{r, fig.height=9, fig.width=9}
+
+# Test combination of functions to read file, rename fields, mutate variables, and confirm uniqueness
+dfRaw_dc_210502 <- fileRead("./RInputFiles/Coronavirus/CDC_dc_downloaded_210502.csv") %>% 
+    colRenamer(c('submission_date'='date')) %>% 
+    colMutater(selfList=list('date'=lubridate::mdy)) %>%
+    checkUniqueRows(uniqueBy=c("state", "date"))
+dfRaw_dc_210502
+
+# Basic line plot for new cases and new deaths by date
+dfRaw_dc_210502 %>%
+    checkControl(groupBy="date", useVars=c("new_case", "new_death"), printControls=FALSE) %>%
+    helperLinePlot(x="date", y="newValue", facetVar="name", facetScales="free_y", groupColor="name")
+
+# Confirm same universe of variable names, states, and dates
+diff_dc_210502_20414 <- checkSimilarity(df=dfRaw_dc_210502, 
+                                        ref=dfRaw_dc_210414, 
+                                        keyVars=list(date=list(label='date', countOnly=TRUE, convChar=TRUE), 
+                                                     state=list(label='state', countOnly=FALSE)
+                                                     )
+                                        )
+diff_dc_210502_20414
+
+```
+
+The functions appear to be chaining and working correctly.  Next steps are to plot outputs of checkSimilarity, and to add capability to show differences in actual/cumulative values by user-specified grouping variables.
