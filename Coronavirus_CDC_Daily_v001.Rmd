@@ -3837,3 +3837,152 @@ diff_dc_210502_20414
 ```
 
 The functions appear to be chaining and working correctly.  Next steps are to plot outputs of checkSimilarity, and to add capability to show differences in actual/cumulative values by user-specified grouping variables.
+
+A function is written to take a differences list and plot:  
+```{r}
+
+plotSimilarity <- function(lst, 
+                           plotItems=NULL, 
+                           nameMap=c("d1"="old file only", "d2"="new file only")
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a named list that includes setdiff() results in two directions
+    # plotItems: character vector of the named list items to process (NULL means all)
+    # nameMap: map from the list sub-component names to a descriptive name for plotting
+    
+    # If plotItems is NULL, plot everything 
+    if (is.null(plotItems)) plotItems <- names(lst)
+    
+    # Loop through and plot
+    for (vrbl in plotItems) {
+        p1 <- lapply(lst[[vrbl]], FUN=function(x) tibble::tibble(value=x)) %>%
+            bind_rows(.id="src") %>%
+            mutate(src=factor(unname(nameMap[src]), levels=unname(nameMap))) %>%
+            arrange(value, src) %>%
+            ggplot(aes(x=value, y=src)) + 
+            geom_point(aes(color=src), size=4) + 
+            labs(x=vrbl, y="Mismatch cause", title=paste0("Values for ", vrbl, " only in one file")) + 
+            coord_flip() + 
+            scale_color_discrete("Mismatch\ncause")
+        print(p1)
+    }
+    
+}
+
+```
+
+The function is then run for date:  
+```{r}
+
+plotSimilarity(diff_dc_210502_20414, plotItems=c("date"))
+
+```
+
+As expected, the new file contains a greater universe of dates and the same universe of states.
+
+A further capability is added to compare data aggregated to a specific level acros files:  
+```{r}
+
+compareAggregate <- function(df, 
+                             ref, 
+                             grpVar, 
+                             numVars, 
+                             sameUniverse=NA,
+                             plotData=FALSE, 
+                             isLine=TRUE
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the latest data frame or tibble
+    # ref: the reference data frame or tibble
+    # grpVar: character vector of the level for aggregation
+    # numVars: character vector of the numeric vectors to explore
+    # sameUniverse: character vector of variables where the files should be required to have the same universe
+    #               NA means this is not enforced, helps limit to same date range when checking state
+    # plotData: boolean, should the data be plotted?
+    # isLine: boolean, should the plot be drawn as a line graph (FALSE means point graph)
+    
+    # Get the matching universe if requested
+    if (!is.na(sameUniverse)) {
+        univData <- df %>% select_at(vars(all_of(sameUniverse))) %>%
+            bind_rows(select_at(ref, vars(all_of(sameUniverse))), .id="src") %>%
+            count(date, src) %>%
+            pivot_wider(names_from="src", values_from="n") %>%
+            filter(complete.cases(.)) %>%
+            select_at(vars(all_of(sameUniverse)))
+        # Filter df and ref such that they only include matches
+        df <- univData %>% left_join(df, by=names(univData))
+        ref <- univData %>% left_join(ref, by=names(univData))
+    }
+    
+    # Create a tibble of the aggregated data from df and ref
+    dfAgg <- df %>%
+        checkControl(groupBy=grpVar, useVars=numVars, printControls=FALSE)
+    refAgg <- ref %>%
+        checkControl(groupBy=grpVar, useVars=numVars, printControls=FALSE) %>%
+        colRenamer(vecRename=c("newValue"="refValue"))
+    deltaAgg <- full_join(dfAgg, refAgg, by=c(grpVar, "name")) %>%
+        tibble::as_tibble()
+    
+    # Create a plot if requested
+    if (plotData) {
+        p1 <- deltaAgg %>%
+            pivot_longer(c(newValue, refValue), names_to="src") %>%
+            filter(!is.na(value)) %>%
+            ggplot() + 
+            labs(x="", y="", title=paste0("Aggregated data by ", grpVar, " across new and reference file")) + 
+            scale_color_discrete("Source")
+        if (isTRUE(isLine)) {
+            p1 <- p1 + 
+                geom_line(aes_string(x=grpVar, y="value", group="src", color="src")) + 
+                facet_wrap(~name, scales="free_y")
+        } else {
+            p1 <- p1 + 
+                geom_point(aes(x=fct_reorder(get(grpVar), value), y=value, color=src)) + 
+                coord_flip() +
+                facet_wrap(~name, scales="free_x", nrow=1)
+        }
+        if (!is.na(sameUniverse)) {
+            p1 <- p1 + labs(subtitle=paste0("Data filtered to same universe on: ", sameUniverse))
+        }
+        print(p1)
+    }
+    
+}
+
+```
+
+The function is then run for totals by date and state:  
+```{r, fig.height=9, fig.width=9}
+
+# Compare data by date
+compareAggregate(df=dfRaw_dc_210502, 
+                 ref=dfRaw_dc_210414, 
+                 grpVar="date", 
+                 numVars=c("new_case", "new_death", "tot_cases", "tot_death"), 
+                 plotData=TRUE
+                 )
+
+# Compare data by state, using total universe
+compareAggregate(df=dfRaw_dc_210502, 
+                 ref=dfRaw_dc_210414, 
+                 grpVar="state", 
+                 numVars=c("new_case", "new_death"), 
+                 plotData=TRUE, 
+                 isLine=FALSE
+                 )
+
+# Compare data by state, using only matching values
+compareAggregate(df=dfRaw_dc_210502, 
+                 ref=dfRaw_dc_210414, 
+                 grpVar="state", 
+                 sameUniverse="date",
+                 numVars=c("new_case", "new_death", "tot_cases", "tot_death"), 
+                 plotData=TRUE, 
+                 isLine=FALSE
+                 )
+
+```
+
+The data sources appear to be well aligned.  Next steps are to add the capability to print records that differ by more than a specified tolerance.
