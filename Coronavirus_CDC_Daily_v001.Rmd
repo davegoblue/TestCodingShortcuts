@@ -3890,7 +3890,8 @@ compareAggregate <- function(df,
                              numVars, 
                              sameUniverse=NA,
                              plotData=FALSE, 
-                             isLine=TRUE
+                             isLine=TRUE, 
+                             returnDelta=FALSE
                              ) {
     
     # FUNCTION ARGUMENTS:
@@ -3902,6 +3903,7 @@ compareAggregate <- function(df,
     #               NA means this is not enforced, helps limit to same date range when checking state
     # plotData: boolean, should the data be plotted?
     # isLine: boolean, should the plot be drawn as a line graph (FALSE means point graph)
+    # returnDelta: boolean, should the delta aggregate file be returned?
     
     # Get the matching universe if requested
     if (!is.na(sameUniverse)) {
@@ -3949,12 +3951,15 @@ compareAggregate <- function(df,
         print(p1)
     }
     
+    # Return the aggregate data if requested
+    if(isTRUE(returnDelta)) return(deltaAgg)
+    
 }
 
 ```
 
-The function is then run for totals by date and state:  
-```{r, fig.height=9, fig.width=9}
+The function is then run for totals by date and state (superseded below to include printouts):  
+```{r, fig.height=9, fig.width=9, eval=FALSE}
 
 # Compare data by date
 compareAggregate(df=dfRaw_dc_210502, 
@@ -3985,4 +3990,101 @@ compareAggregate(df=dfRaw_dc_210502,
 
 ```
 
-The data sources appear to be well aligned.  Next steps are to add the capability to print records that differ by more than a specified tolerance.
+A function is written to flag instances where two columns differ by more than a specified tolerance:  
+```{r}
+
+flagLargeDelta <- function(df, 
+                           col1="newValue", 
+                           col2="refValue", 
+                           pctTol=0.01, 
+                           absTol=5, 
+                           sortBy=c("pctDelta", "absDelta"),
+                           dropNA=TRUE,
+                           printAll=FALSE
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble
+    # col1: the name of the first column being compared
+    # col2: the name of the second column being compared
+    # pctTol: values will be flagged as 'high percent' if abs(col1-col2) > pctTol*mean(col1, col2)
+    #         setting pctTol to 0 means only absTol is relevant
+    # absTol: values will be flagged as 'high volume' if abs(col1-col2) > absTol
+    #         setting absTol to 0 means only pctTol is relevant
+    #         if absTol==0 and pctTol==0 then any difference in col1 and col2 will be flagged
+    # sortBy: final output should be sorted by descending of these variables (NULL means no sorting)
+    # dropNA: boolean, should cases where col1 or col2 is NA be excluded from reporting?
+    # printAll: print every record (as.data.frame) rather than just the top 10 (tibble)
+    
+    # Create val1 and val2 from col1 and col2
+    tol <- df %>%
+        colRenamer(vecRename=purrr::set_names(c("val1", "val2"), c(col1, col2))) 
+    
+    # Exclude NA if requested
+    if (isTRUE(dropNA)) tol <- tol %>% filter(!is.na(val1), !is.na(val2))
+    
+    # Create absDelta and pctDelta and filter accordingly
+    tol <- tol %>%
+        mutate(use1=ifelse(is.na(val1), 0, val1), 
+               use2=ifelse(is.na(val2), 0, val2), 
+               absDelta=abs(use1-use2), 
+               pctDelta=2*absDelta/(use1+use2)
+               ) %>%
+        select(-use1, -use2) %>%
+        filter(absDelta > absTol, pctDelta > pctTol) %>%
+        colRenamer(vecRename=purrr::set_names(c(col1, col2), c("val1", "val2")))
+    
+    # Sort the columns if requested
+    if (!is.null(sortBy)) {
+        tol <- tol %>%
+            arrange(across(.cols=all_of(sortBy), .fns=desc))
+    }
+    
+    # Convert to data frame if requested to print all
+    if (isTRUE(printAll)) tol <- as.data.frame(tol)
+    
+    # Return the data
+    tol
+    
+}
+
+```
+
+The compareAggregate and flagLargeDelta functions are chained to allow for both plots and printouts:  
+```{r, fig.height=9, fig.width=9}
+
+# Compare data by date
+compareAggregate(df=dfRaw_dc_210502, 
+                 ref=dfRaw_dc_210414, 
+                 grpVar="date", 
+                 numVars=c("new_case", "new_death", "tot_cases", "tot_death"), 
+                 plotData=TRUE, 
+                 returnDelta=TRUE
+                 ) %>%
+    flagLargeDelta(pctTol=0.05, printAll=TRUE, sortBy=c("name", "pctDelta", "absDelta"))
+
+# Compare data by state, using total universe
+compareAggregate(df=dfRaw_dc_210502, 
+                 ref=dfRaw_dc_210414, 
+                 grpVar="state", 
+                 numVars=c("new_case", "new_death"), 
+                 plotData=TRUE, 
+                 isLine=FALSE, 
+                 returnDelta=FALSE
+                 )
+
+# Compare data by state, using only matching values
+compareAggregate(df=dfRaw_dc_210502, 
+                 ref=dfRaw_dc_210414, 
+                 grpVar="state", 
+                 sameUniverse="date",
+                 numVars=c("new_case", "new_death", "tot_cases", "tot_death"), 
+                 plotData=TRUE, 
+                 isLine=FALSE, 
+                 returnDelta=TRUE
+                 ) %>%
+    flagLargeDelta(pctTol=0.001, absTol=0, printAll=TRUE, sortBy=c("name", "pctDelta", "absDelta"))
+
+```
+
+The data sources appear to be well aligned.  There are some meaningful percentage differences by date particularly for older data.  But, aggregates by state over the time period available in each dataset are largely very close to each other.  The largest restatements were for AL and AK, with the AL differences having been evident on the plot also.
