@@ -2393,4 +2393,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 03-MAY-2021  
 * Coronavirus_CDC_Daily_v001 downloads latest deaths and cases data  
 * Coronavirus_CDC_Daily_v001 adds function for plotting differences in raw and reference file  
+* Coronavirus_CDC_Daily_v001 adds function for text summary of differences in raw and reference file  
   
