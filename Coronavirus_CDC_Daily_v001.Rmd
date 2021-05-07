@@ -4096,7 +4096,39 @@ The functions can then be combined for a full run of data processing:
 ```{r}
 
 # Mapping for urlType to url
-urlMapper <- c("cdcDaily"="https://data.cdc.gov/api/views/9mfq-cb36/rows.csv?accessType=DOWNLOAD")
+urlMapper <- c("cdcDaily"="https://data.cdc.gov/api/views/9mfq-cb36/rows.csv?accessType=DOWNLOAD", 
+               "cdcHosp"="https://beta.healthdata.gov/api/views/g62h-syeh/rows.csv?accessType=DOWNLOAD"
+               )
+
+# Mapping for urlType to colRenamer(vecRename=...)
+renMapper <- list("cdcDaily"=c('submission_date'='date', 'new_case'='new_cases', 
+                               'tot_death'='tot_deaths', 'new_death'='new_deaths'
+                               ), 
+                  "cdcHosp"=c("inpatient_beds_used_covid"="inp", 
+                              "total_adult_patients_hospitalized_confirmed_and_suspected_covid"="hosp_adult", 
+                              "total_pediatric_patients_hospitalized_confirmed_and_suspected_covid"="hosp_ped"
+                              )
+                  )
+
+# Mapping for urlType to colMutater(selfList=...)
+selfListMapper <- list("cdcDaily"=list('date'=lubridate::mdy), 
+                       "cdcHosp"=list()
+                       )
+
+# Mapping for urlType to colMutater(fullList=...)
+fullListMapper <- list("cdcDaily"=list(), 
+                       "cdcHosp"=list()
+                       )
+
+# Mapping for urlType to checkUniqueRows(uniqueBy=...)
+uqMapper <- list("cdcDaily"=c("state", "date"), 
+                 "cdcHosp"=c("state", "date")
+                 )
+
+# Mapping for urlType to checkControls(...)
+checkControlMapper <- list("cdcDaily"=list("group"="date", "numVars"=c("new_cases", "new_deaths")), 
+                           "cdcHosp"=list("group"="date", "numVars"=c("inp", "hosp_adult", "hosp_ped"))
+                           )
 
 # Mapping for urlType to checkSimilarity(..., keyVars=)
 checkSimilarityMapper <- list("cdcDaily"=list(date=list(label='date', countOnly=TRUE, convChar=TRUE), 
@@ -4106,9 +4138,6 @@ checkSimilarityMapper <- list("cdcDaily"=list(date=list(label='date', countOnly=
 
 # Mapping for urlType to plotSimilarity(..., )
 plotSimilarityMapper <- list("cdcDaily"=c("date"))
-
-# Mapping for urlType to checkControls(...)
-checkControlMapper <- list("cdcDaily"=list("group"="date", "numVars"=c("new_cases", "new_deaths")))
 
 # Mapping file for aggregates
 keyAggMapper <- list("l1"=list("grpVar"="date", 
@@ -4155,10 +4184,10 @@ readQCRawFile <- function(fileName,
                           url=NULL, 
                           getData=TRUE,
                           ovrWriteDownload=FALSE, 
-                          vecRename=c(), 
-                          selfList=list(),
-                          fullList=list(),
-                          uniqueBy=c(), 
+                          vecRename=NULL, 
+                          selfList=NULL,
+                          fullList=NULL,
+                          uniqueBy=NULL, 
                           step3Group=NULL,
                           step3Vals=NULL, 
                           step4KeyVars=NULL, 
@@ -4174,12 +4203,16 @@ readQCRawFile <- function(fileName,
     # getData: boolean, should an attempt be made to get new data using urlType or url?
     # ovrWriteFilename: boolean, if fileName already exists, should it be overwritten?
     # vecRename: vector for renaming c('existing name'='new name'), can be any length from 0 to ncol(df)
+    #            NULL means infer from urlType, if not available there use c()
     # selfList: list for functions to apply to self, list('variable'=fn) will apply variable=fn(variable)
     #           processed in order, so more than one function can be applied to self
+    #           NULL means infer from urlType, if not available in mapping file use list()
     # fullList: list for general functions to be applied, list('new variable'=expression(code))
     #           will create 'new variable' as eval(expression(code))
     #           for now, requires passing an expression
-    # uniqueBy: combination of variables for checking uniqueness (NULL means use all)
+    #           NULL means infer from urlType, use list() if not in mapping file
+    # uniqueBy: combination of variables for checking uniqueness
+    #           NULL means infer from data, keep as NULL (meaning use-all) if cannot be inferred
     # step3Group: variable to be used as the x-axis (grouping) for step 3 plots
     #             NULL means infer from data
     # step3Vals: values to be plotted on the y-axis for step 3 plots
@@ -4196,6 +4229,14 @@ readQCRawFile <- function(fileName,
     if (!is.null(url) & isTRUE(getData)) fileDownload(fileName=fileName, url=url, ovrWrite=ovrWriteDownload)
     else cat("\nNo file has been downloaded, will use existing file:", fileName, "\n")
     
+    # Step 2a: Get vecRename, selfList, and uniqueBy if NULL
+    if (is.null(vecRename)) vecRename <- if (urlType %in% names(renMapper)) renMapper[[urlType]] else c()
+    if (is.null(selfList)) 
+        selfList <- if(urlType %in% names(selfListMapper)) selfListMapper[[urlType]] else list()
+    if (is.null(fullList)) 
+        fullList <- if(urlType %in% names(fullListMapper)) fullListMapper[[urlType]] else list()
+    if (is.null(uniqueBy)) uniqueBy <- if(urlType %in% names(uqMapper)) uqMapper[[urlType]] else NULL
+    
     # Step 2: Read file, rename and mutate variables, confirm uniqueness by expected levels
     dfRaw <- fileRead(fileName) %>% 
         colRenamer(vecRename) %>% 
@@ -4206,7 +4247,7 @@ readQCRawFile <- function(fileName,
     if (is.null(step3Group)) step3Group <- checkControlMapper[[urlType]][["group"]]
     if (is.null(step3Vals)) step3Vals <- checkControlMapper[[urlType]][["numVars"]]
     dfRaw %>%
-        checkControl(groupBy=step3Group, useVars=step3Vals, printControls=FALSE) %>%
+        checkControl(groupBy=step3Group, useVars=step3Vals, printControls=FALSE, na.rm=TRUE) %>%
         helperLinePlot(x=step3Group, y="newValue", facetVar="name", facetScales="free_y", groupColor="name")
 
     # If there is no file for comparison, return the data
@@ -4245,19 +4286,32 @@ readQCRawFile <- function(fileName,
 The function is tested on previously downloaded data:  
 ```{r, fig.height=9, fig.width=9}
 
-vecRename <- c('submission_date'='date', 'new_case'='new_cases', 
-               'tot_death'='tot_deaths', 'new_death'='new_deaths'
-               )
-
-readQCRawFile(fileName="./RInputFiles/Coronavirus/CDC_dc_downloaded_210502.csv", 
-              urlType="cdcDaily",
-              getData=FALSE,
-              dfRef=colRenamer(dfRaw_dc_210414, vecRename[2:length(vecRename)]),
-              vecRename=vecRename, 
-              selfList=list('date'=lubridate::mdy), 
-              uniqueBy=c("state", "date")
-              )
+dfCaseDeath <- readQCRawFile(fileName="./RInputFiles/Coronavirus/CDC_dc_downloaded_210502.csv", 
+                             urlType="cdcDaily",
+                             getData=FALSE,
+                             dfRef=colRenamer(dfRaw_dc_210414, c('new_case'='new_cases', 
+                                                                 'tot_death'='tot_deaths',
+                                                                 'new_death'='new_deaths'
+                                                                 )
+                                              )
+                             )
+dfCaseDeath
 
 ```
 
 The function appears to work as intended for previously downloaded data.  Next steps are to allow for an external log file and to further parameterize for easier reading and usage.
+
+The function is then run on previous downloaded hospital data, without a reference file:  
+```{r}
+
+# Note that output data will include NA and has not yet mapped NYC and NY together
+dfHosp_old <- readQCRawFile(fileName="./RInputFiles/Coronavirus/CDC_h_downloaded_210429.csv", 
+                            urlType="cdcHosp",
+                            getData=FALSE,
+                            dfRef=NULL
+                            )
+dfHosp_old
+
+```
+
+The function appears to work as intended for reading a hospital data file.  Next steps are to use the function to download new hospital data, then to run comparisons to existing file.
