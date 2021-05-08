@@ -3920,9 +3920,9 @@ compareAggregate <- function(df,
     
     # Create a tibble of the aggregated data from df and ref
     dfAgg <- df %>%
-        checkControl(groupBy=grpVar, useVars=numVars, printControls=FALSE)
+        checkControl(groupBy=grpVar, useVars=numVars, printControls=FALSE, na.rm=TRUE)
     refAgg <- ref %>%
-        checkControl(groupBy=grpVar, useVars=numVars, printControls=FALSE) %>%
+        checkControl(groupBy=grpVar, useVars=numVars, printControls=FALSE, na.rm=TRUE) %>%
         colRenamer(vecRename=c("newValue"="refValue"))
     deltaAgg <- full_join(dfAgg, refAgg, by=c(grpVar, "name")) %>%
         tibble::as_tibble()
@@ -4107,17 +4107,20 @@ renMapper <- list("cdcDaily"=c('submission_date'='date', 'new_case'='new_cases',
                   "cdcHosp"=c("inpatient_beds_used_covid"="inp", 
                               "total_adult_patients_hospitalized_confirmed_and_suspected_covid"="hosp_adult", 
                               "total_pediatric_patients_hospitalized_confirmed_and_suspected_covid"="hosp_ped"
-                              )
+                              ), 
+                  "default"=c()
                   )
 
 # Mapping for urlType to colMutater(selfList=...)
 selfListMapper <- list("cdcDaily"=list('date'=lubridate::mdy), 
-                       "cdcHosp"=list()
+                       "cdcHosp"=list(), 
+                       "default"=list()
                        )
 
 # Mapping for urlType to colMutater(fullList=...)
 fullListMapper <- list("cdcDaily"=list(), 
-                       "cdcHosp"=list()
+                       "cdcHosp"=list(), 
+                       "default"=list()
                        )
 
 # Mapping for urlType to checkUniqueRows(uniqueBy=...)
@@ -4126,18 +4129,29 @@ uqMapper <- list("cdcDaily"=c("state", "date"),
                  )
 
 # Mapping for urlType to checkControls(...)
-checkControlMapper <- list("cdcDaily"=list("group"="date", "numVars"=c("new_cases", "new_deaths")), 
-                           "cdcHosp"=list("group"="date", "numVars"=c("inp", "hosp_adult", "hosp_ped"))
-                           )
+checkControlGroupMapper <- list("cdcDaily"="date",
+                                "cdcHosp"="date",
+                                "default"=c()
+                                )
+checkControlVarsMapper <- list("cdcDaily"=c("new_cases", "new_deaths"),
+                               "cdcHosp"=c("inp", "hosp_adult", "hosp_ped")
+                               )
 
 # Mapping for urlType to checkSimilarity(..., keyVars=)
 checkSimilarityMapper <- list("cdcDaily"=list(date=list(label='date', countOnly=TRUE, convChar=TRUE), 
                                               state=list(label='state', countOnly=FALSE)
-                                              )
+                                              ), 
+                              "cdcHosp"=list(date=list(label='date', countOnly=TRUE, convChar=TRUE), 
+                                              state=list(label='state', countOnly=FALSE)
+                                              ), 
+                              "default"=list()
                               )
 
 # Mapping for urlType to plotSimilarity(..., )
-plotSimilarityMapper <- list("cdcDaily"=c("date"))
+plotSimilarityMapper <- list("cdcDaily"=c("date"), 
+                             "cdcHosp"=c("date"), 
+                             "default"=c()
+                             )
 
 # Mapping file for aggregates
 keyAggMapper <- list("l1"=list("grpVar"="date", 
@@ -4191,7 +4205,17 @@ readQCRawFile <- function(fileName,
                           step3Group=NULL,
                           step3Vals=NULL, 
                           step4KeyVars=NULL, 
-                          step5PlotItems=NULL
+                          step5PlotItems=NULL, 
+                          inferVars=list("url"=urlMapper, 
+                                         "vecRename"=renMapper, 
+                                         "selfList"=selfListMapper, 
+                                         "fullList"=fullListMapper, 
+                                         "uniqueBy"=uqMapper, 
+                                         "step3Group"=checkControlGroupMapper,
+                                         "step3Vals"=checkControlVarsMapper, 
+                                         "step4KeyVars"=checkSimilarityMapper, 
+                                         "step5PlotItems"=plotSimilarityMapper
+                                         )
                           ) {
     
     # FUNCTION ARGUMENTS
@@ -4201,7 +4225,7 @@ readQCRawFile <- function(fileName,
     # url: direct URL passed as character string
     #      NOTE that if both url and urlType are NULL, no file will be downloaded
     # getData: boolean, should an attempt be made to get new data using urlType or url?
-    # ovrWriteFilename: boolean, if fileName already exists, should it be overwritten?
+    # ovrWriteDownload: boolean, if fileName already exists, should it be overwritten?
     # vecRename: vector for renaming c('existing name'='new name'), can be any length from 0 to ncol(df)
     #            NULL means infer from urlType, if not available there use c()
     # selfList: list for functions to apply to self, list('variable'=fn) will apply variable=fn(variable)
@@ -4221,21 +4245,20 @@ readQCRawFile <- function(fileName,
     #               NULL means infer from urlType
     # step5PlotItems: items to be plotted in step 5
     #                 NULL means infer from urlType
+    # inferVars: vector of c('variable'='mapper') for inferring parameter values when passed as NULL
     
-    # Step 0: If url is null, set value using urlMapper[urlType]
-    if (is.null(url) & !is.null(urlType)) url <- unname(urlMapper[urlType])
-    
+    # Step 0: Use urlType to infer key variables if passed as NULL
+    for (vrbl in names(inferVars)) {
+        mapper <- inferVars[[vrbl]]
+        if (is.null(get(vrbl))) {
+            if (urlType %in% names(mapper)) assign(vrbl, mapper[[urlType]])
+            else if ("default" %in% names(mapper)) assign(vrbl, mapper[["default"]])
+        }
+    }
+      
     # Step 1: Download a new file (if requested)
     if (!is.null(url) & isTRUE(getData)) fileDownload(fileName=fileName, url=url, ovrWrite=ovrWriteDownload)
     else cat("\nNo file has been downloaded, will use existing file:", fileName, "\n")
-    
-    # Step 2a: Get vecRename, selfList, and uniqueBy if NULL
-    if (is.null(vecRename)) vecRename <- if (urlType %in% names(renMapper)) renMapper[[urlType]] else c()
-    if (is.null(selfList)) 
-        selfList <- if(urlType %in% names(selfListMapper)) selfListMapper[[urlType]] else list()
-    if (is.null(fullList)) 
-        fullList <- if(urlType %in% names(fullListMapper)) fullListMapper[[urlType]] else list()
-    if (is.null(uniqueBy)) uniqueBy <- if(urlType %in% names(uqMapper)) uqMapper[[urlType]] else NULL
     
     # Step 2: Read file, rename and mutate variables, confirm uniqueness by expected levels
     dfRaw <- fileRead(fileName) %>% 
@@ -4244,8 +4267,6 @@ readQCRawFile <- function(fileName,
         checkUniqueRows(uniqueBy=uniqueBy)
 
     # Step 3: Plot basic control totals for new cases and new deaths by month
-    if (is.null(step3Group)) step3Group <- checkControlMapper[[urlType]][["group"]]
-    if (is.null(step3Vals)) step3Vals <- checkControlMapper[[urlType]][["numVars"]]
     dfRaw %>%
         checkControl(groupBy=step3Group, useVars=step3Vals, printControls=FALSE, na.rm=TRUE) %>%
         helperLinePlot(x=step3Group, y="newValue", facetVar="name", facetScales="free_y", groupColor="name")
@@ -4253,13 +4274,10 @@ readQCRawFile <- function(fileName,
     # If there is no file for comparison, return the data
     if (is.null(dfRef)) return(dfRaw)
     
-    # Step 4a: Get the key variable mapper
-    if (is.null(step4KeyVars)) step4KeyVars <- checkSimilarityMapper[[urlType]]
     # Step 4b: Check similarity of existing and reference file
     diffRaw <- checkSimilarity(df=dfRaw, ref=dfRef, keyVars=step4KeyVars)
 
     # Step 5: Plot the similarity checks
-    if (is.null(step5PlotItems)) step5PlotItems <- plotSimilarityMapper[[urlType]]
     plotSimilarity(diffRaw, plotItems=step5PlotItems)
 
     # Step 6: Plot and report on differences in aggregates
@@ -4286,6 +4304,7 @@ readQCRawFile <- function(fileName,
 The function is tested on previously downloaded data:  
 ```{r, fig.height=9, fig.width=9}
 
+# Note that output data will include NA and has not yet mapped NYC and NY together
 dfCaseDeath <- readQCRawFile(fileName="./RInputFiles/Coronavirus/CDC_dc_downloaded_210502.csv", 
                              urlType="cdcDaily",
                              getData=FALSE,
@@ -4315,3 +4334,70 @@ dfHosp_old
 ```
 
 The function appears to work as intended for reading a hospital data file.  Next steps are to use the function to download new hospital data, then to run comparisons to existing file.
+
+The process is run using itself as a reference file:  
+```{r, fig.height=9, fig.width=9}
+
+# Mapping file for aggregates for cdcHosp
+keyAggMapper <- list("l1"=list("grpVar"="date", 
+                               "numVars"=c("inp", "hosp_adult", "hosp_ped"), 
+                               "sameUniverse"=NA,
+                               "plotData"=TRUE, 
+                               "isLine"=TRUE,
+                               "returnDelta"=TRUE, 
+                               "flagLargeDelta"=TRUE,
+                               "pctTol"=0.05, 
+                               "absTol"=5,
+                               "sortBy"=c("name", "pctDelta", "absDelta"),
+                               "dropNA"=TRUE,
+                               "printAll"=TRUE
+                               ), 
+                     "l2"=list("grpVar"="state", 
+                               "numVars"=c("inp", "hosp_adult", "hosp_ped"), 
+                               "sameUniverse"=NA,
+                               "plotData"=TRUE, 
+                               "isLine"=FALSE,
+                               "returnDelta"=FALSE, 
+                               "flagLargeDelta"=FALSE
+                               ), 
+                     "l3"=list("grpVar"="state", 
+                               "numVars"=c("inp", "hosp_adult", "hosp_ped"), 
+                               "sameUniverse"="date",
+                               "plotData"=TRUE, 
+                               "isLine"=FALSE,
+                               "returnDelta"=TRUE, 
+                               "flagLargeDelta"=TRUE,
+                               "pctTol"=0.001, 
+                               "absTol"=0,
+                               "sortBy"=c("name", "pctDelta", "absDelta"),
+                               "dropNA"=TRUE,
+                               "printAll"=TRUE
+                               )
+                     )
+
+# Note that output data will include NA and has not yet mapped NYC and NY together
+dfHosp <- readQCRawFile(fileName="./RInputFiles/Coronavirus/CDC_h_downloaded_210429.csv", 
+                        urlType="cdcHosp",
+                        getData=FALSE,
+                        dfRef=dfHosp_old
+                        )
+dfHosp
+
+```
+
+The function then downloads and processes new data, cached to avoid multiple hits against the server:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Note that output data will include NA and has not yet mapped NYC and NY together
+dfHosp <- readQCRawFile(fileName="./RInputFiles/Coronavirus/CDC_h_downloaded_210507.csv", 
+                        urlType="cdcHosp",
+                        getData=TRUE,
+                        dfRef=dfHosp_old
+                        )
+glimpse(dfHosp)
+
+```
+
+There are a significant number of new columns added to the hospital download data, primarily related to age breakdowns for admissions in the previous day.  The download is otherwise as expected, and the comparison process appears to be running well.
+
+Next steps are to update the process for assigning inputs to step 6 (compareAggregate and flagLaregDelta).
