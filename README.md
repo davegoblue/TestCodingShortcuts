@@ -2397,4 +2397,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v001 runs readQCRawFile() on previously downloaded cases and death data  
 * Coronavirus_CDC_Daily_v001 runs readQCRawFile() on previously downloaded hospital data  
 * Coronavirus_CDC_Daily_v001 runs readQCRawFile() to downloaded and read latest hospital data  
+* Coronavirus_CDC_Daily_v001 updates keyAggMapper to be more modular  
   
