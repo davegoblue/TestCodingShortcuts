@@ -2399,3 +2399,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v001 runs readQCRawFile() to downloaded and read latest hospital data  
 * Coronavirus_CDC_Daily_v001 updates keyAggMapper to be more modular  
   
+### Expansions week of 10-MAY-2021  
+* Coronavirus_CDC_Daily_v001 includes print to log capability  
+  
