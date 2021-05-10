@@ -3725,7 +3725,8 @@ helperSimilarity <- function(newData,
     # If a logFile is provided and only counts are in the main file, write to the log file
     if (countOnly & !is.null(logFile)) {
         cat("\nDetailed differences available in:", logFile)
-        capture.output(cat("\nIn reference but not in current:\n", paste(d1, collapse="\n"), sep=""), 
+        capture.output(cat("\nDetailed differences for: ", label, "\n", sep=""), 
+                       cat("\nIn reference but not in current:\n", paste(d1, collapse="\n"), sep=""), 
                        cat("\nIn current but not in reference:\n", paste(d2, collapse="\n"), sep=""), 
                        file=logFile, 
                        append=logAppend
@@ -4294,8 +4295,36 @@ keyAggMapper <- list("cdcDaily"=list("l1"=list("grpVar"="date",
 # keyAggFunc <- function(x, y=keyAggGlobal) lapply(names(y), FUN=function(z) {x[[z]] <- y[[z]]; x})
 # keyAggMapper <- lapply(keyAggMapper, FUN=function(a) lapply(a, FUN=function(b) {lapply(b, FUN=keyAggFunc)}))
 
+
+
+# Function to allow for printing to a log file
+printLog <- function(x, 
+                     txt="",
+                     writeLog=NULL, 
+                     appendLog=TRUE
+                     ) {
+    
+    # FUNCTION ARGUMENTS
+    # x: an object to be printed
+    # txt: a descriptor to include for the data in the log file or otherwise
+    # writeLog: the external file location for printing (NULL means use the main log stdout)
+    # appendLog: for an external log, should the file be appended rather than overwritten?
+    
+    if (is.null(writeLog)) {
+        cat("\n", txt, "\n", sep="")
+        print(x)
+    }
+    else {
+        cat("\nDetailed output available in log:", writeLog)
+        capture.output(cat("\n\n", txt, "\n", sep=""), print(x), file=writeLog, append=appendLog)
+        }
+}
+
+
 # Function to read and check a raw data file
 readQCRawFile <- function(fileName, 
+                          writeLog=NULL,
+                          ovrwriteLog=TRUE,
                           dfRef=NULL,
                           urlType=NULL,
                           url=NULL, 
@@ -4325,6 +4354,8 @@ readQCRawFile <- function(fileName,
     
     # FUNCTION ARGUMENTS
     # fileName: the location where downloaded data either is, or will be, stored
+    # writeLog: the external file location for printing (NULL means use the main log stdout)
+    # ovrwriteLog: boolean, if using an external log, should it be started from scratch (overwritten)?
     # dfRef: a reference data frame for comparison (NULL means do not run comparisons)
     # urlType: character vector that can be mapped using urlMapper and keyVarMapper
     # url: direct URL passed as character string
@@ -4354,7 +4385,7 @@ readQCRawFile <- function(fileName,
     #                     NULL means infer from urlType
     # inferVars: vector of c('variable'='mapper') for inferring parameter values when passed as NULL
     
-    # Step 0: Use urlType to infer key variables if passed as NULL
+    # Step 0a: Use urlType to infer key variables if passed as NULL
     for (vrbl in names(inferVars)) {
         mapper <- inferVars[[vrbl]]
         if (is.null(get(vrbl))) {
@@ -4362,7 +4393,13 @@ readQCRawFile <- function(fileName,
             else if ("default" %in% names(mapper)) assign(vrbl, mapper[["default"]])
         }
     }
-      
+
+    # Step 0b: If an external log file is passed, add a note and take care of appending
+    if (!is.null(writeLog)) {
+        txt <- paste0("\n\n*** Writing log at: ", Sys.time() %>% lubridate::with_tz(tzone="UTC"), "Z ***\n\n")
+        capture.output(cat(txt), file=writeLog, append=isFALSE(ovrwriteLog))
+    }
+    
     # Step 1: Download a new file (if requested)
     if (!is.null(url) & isTRUE(getData)) fileDownload(fileName=fileName, url=url, ovrWrite=ovrWriteDownload)
     else cat("\nNo file has been downloaded, will use existing file:", fileName, "\n")
@@ -4382,7 +4419,8 @@ readQCRawFile <- function(fileName,
     if (is.null(dfRef)) return(dfRaw)
     
     # Step 4b: Check similarity of existing and reference file
-    diffRaw <- checkSimilarity(df=dfRaw, ref=dfRef, keyVars=step4KeyVars)
+    # ovrWriteLog=FALSE since everything should be an append after the opening text line in step 0
+    diffRaw <- checkSimilarity(df=dfRaw, ref=dfRef, keyVars=step4KeyVars, writeLog=writeLog, ovrwriteLog=FALSE)
 
     # Step 5: Plot the similarity checks
     plotSimilarity(diffRaw, plotItems=step5PlotItems)
@@ -4396,11 +4434,22 @@ readQCRawFile <- function(fileName,
             h2 <- flagLargeDelta(h1, pctTol=x$pctTol, absTol=x$absTol, sortBy=x$sortBy, 
                                  dropNA=x$dropNA, printAll=x$printAll
                                  )
-            print(h2)
+            if (is.null(writeLog)) print(h2)
+            else {
+                cat(nrow(h2), " records", sep="")
+                txt <- paste0("\n\n***Differences of at least ", 
+                              x$absTol, 
+                              " and at least ", 
+                              round(100*x$pctTol, 3), "%\n\n"
+                              )
+                printLog(h2, txt=txt, writeLog=writeLog)
+            }
         }
     }
     lapply(step6AggregateList, FUN=helperAggMap)
 
+    cat("\n\n")
+    
     # Return the raw data file
     dfRaw
 
@@ -4413,6 +4462,7 @@ The function is tested on previously downloaded data:
 
 # Note that output data will include NA and has not yet mapped NYC and NY together
 dfCaseDeath <- readQCRawFile(fileName="./RInputFiles/Coronavirus/CDC_dc_downloaded_210502.csv", 
+                             writeLog="./RInputFiles/Coronavirus/Coronavirus_CDC_Daily_v001.log",
                              urlType="cdcDaily",
                              getData=FALSE,
                              dfRef=colRenamer(dfRaw_dc_210414, c('new_case'='new_cases', 
@@ -4447,6 +4497,8 @@ The process is run using itself as a reference file:
 
 # Note that output data will include NA and has not yet mapped NYC and NY together
 dfHosp <- readQCRawFile(fileName="./RInputFiles/Coronavirus/CDC_h_downloaded_210429.csv", 
+                        writeLog="./RInputFiles/Coronavirus/Coronavirus_CDC_Daily_v001.log",
+                        ovrwriteLog=FALSE,
                         urlType="cdcHosp",
                         getData=FALSE,
                         dfRef=dfHosp_old
@@ -4459,7 +4511,9 @@ The function then downloads and processes new data, cached to avoid multiple hit
 ```{r, fig.height=9, fig.width=9, cache=TRUE}
 
 # Note that output data will include NA and has not yet mapped NYC and NY together
-dfHosp <- readQCRawFile(fileName="./RInputFiles/Coronavirus/CDC_h_downloaded_210507.csv", 
+dfHosp <- readQCRawFile(fileName="./RInputFiles/Coronavirus/CDC_h_downloaded_210509.csv", 
+                        writeLog="./RInputFiles/Coronavirus/Coronavirus_CDC_Daily_v001.log",
+                        ovrwriteLog=FALSE,
                         urlType="cdcHosp",
                         getData=TRUE,
                         dfRef=dfHosp_old
@@ -4471,3 +4525,5 @@ glimpse(dfHosp)
 There are a significant number of new columns added to the hospital download data, primarily related to age breakdowns for admissions in the previous day.  The download is otherwise as expected, and the comparison process appears to be running well.
 
 The keyAggMapper list has been updated so that it is a list with one entry per urlType, allowing for use like all other elements in readCRawFile().
+
+The function printLog has been added to allow for printing to an external log file.
