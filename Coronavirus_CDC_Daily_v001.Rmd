@@ -3516,6 +3516,26 @@ colRenamer <- function(df,
 }
 
 
+# Generic function to select columns in a file using an input vector
+colSelector <- function(df, 
+                        vecSelect=NULL, 
+                        ...
+                        ) {
+
+    # FUNCTION ARGUMENTS:    
+    # df: the data frame or tibble
+    # vecSelect: vector for variables to keep c('keep1', "keep2", ...), NULL means keep all
+    # ...: additional arguments (not currently used)
+    
+    # If vecSelect is NULL, keep all the columns
+    if (is.null(vecSelect)) vecSelect <- names(df)
+    
+    # Keep the requested columns
+    select(df, all_of(vecSelect))
+    
+}
+
+
 # Generic function to mutate columns in a file using an input list
 colMutater <- function(df, 
                        selfList=list(), 
@@ -3617,6 +3637,73 @@ checkControl <- function(df,
     if (returnData) return(dfControl)
     
 }
+
+
+# Generic function for filtering rows based on criteria
+rowFilter <- function(df, 
+                      lstFilter=list(), 
+                      ...
+                      ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: tibble or data frame
+    # lstFilter: a list for filtering records, of form list("field"=c("allowed values"))
+    # ...: additional arguments (not currently used)
+    
+    # Run the filtering for each element of lstFilter
+    for (colName in names(lstFilter)) {
+        df <- df %>% filter(.data[[colName]] %in% lstFilter[[colName]])
+    }
+    
+    # Return the filtered data frame
+    df
+    
+}
+
+
+# Generic function for combining rows to a single row
+combineRows <- function(df, 
+                        comboVar, 
+                        uqVars=c(),
+                        vecCombo=c(), 
+                        fn=sum, 
+                        ...
+                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble
+    # comboVar: character string representing variable for being combined
+    # uqVars: other variables that the final data should be unique by 
+    #         (e.g., date for a state-date file mapping states together)
+    # vecCombo: vector of combinations to be made of form c('old value'='new value')
+    # fn: function for combining elements (only handles is.numeric for now)
+    # ...: other arguments passed to fn
+    
+    # Add comboVar to uqVars if it is not already included
+    if (!(comboVar %in% uqVars)) uqVars <- c(uqVars, comboVar)
+    
+    # Split data file in to a portion that needs modifying and a portfio for standalone
+    df <- df %>%
+        mutate(dummyVar=ifelse(get(comboVar) %in% names(vecCombo), 1, 0))
+    dfKeep <- df %>% filter(dummyVar==0) %>% select(-dummyVar)
+    dfMod <- df %>% filter(dummyVar==1) %>% select(-dummyVar)
+    
+    # Convert elements as appropriate
+    dfMod <- dfMod %>%
+        mutate(!!comboVar:=vecCombo[get(comboVar)])
+    
+    # Apply summary function at unique level
+    dfMod <- dfMod %>%
+        group_by_at(vars(all_of(uqVars))) %>%
+        summarize(across(where(is.numeric), .fns=fn, ...), .groups="drop")
+    
+    # Return the modified data frame with the new records at the bottom
+    dfKeep %>%
+        select(names(dfMod)) %>%
+        bind_rows(dfMod)
+    
+}
+
 
 ```
 
@@ -4527,3 +4614,99 @@ There are a significant number of new columns added to the hospital download dat
 The keyAggMapper list has been updated so that it is a list with one entry per urlType, allowing for use like all other elements in readCRawFile().
 
 The function printLog has been added to allow for printing to an external log file.
+
+Next, a function is written to process a raw data file, including:  
+  
+* Selecting a subset of fields (rename if needed)  
+* Combining multiple records (e.g., NYC and NYS summing to NY)  
+* Selecting a subset of records (e.g., limit to 50 states and DC)  
+  
+```{r}
+
+# Function for summing numeric variables, with NA+NA=NA and NA+number=number
+specNASum <- function(x) if (any(!is.na(x))) sum(x, na.rm=TRUE) else NA
+
+# Function to process a raw file
+processRawFile <- function(df, 
+                           vecRename=c(), 
+                           vecSelect=NULL,
+                           lstCombo=list(), 
+                           lstFilter=list()
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the raw data frame or tibble
+    # vecRename: vector for renaming c('existing name'='new name'), can be any length from 0 to ncol(df)
+    # vecSelect: vector of columns to select (run after vecRename), NULL means select all columns
+    # lstCombo: a nested list of combinations to be applied
+    #           each element of the list should include comboVar, uqVars, vecCombo, and fn
+    # lstFilter: a list for filtering records, of form list("field"=c("allowed values"))
+    
+    # STEP 1: Rename and select variables (selection occurs AFTER renaming)
+    dfProcess <- df %>%
+        colRenamer(vecRename=vecRename) %>%
+        colSelector(vecSelect=vecSelect)
+    
+    # STEP 2: Combine multiple records to a single record
+    for (ctr in seq_along(lstCombo)) {
+        dfProcess <- dfProcess %>%
+            combineRows(comboVar=lstCombo[[ctr]]$comboVar, 
+                        uqVars=lstCombo[[ctr]]$uqVars, 
+                        vecCombo=lstCombo[[ctr]]$vecCombo, 
+                        fn=lstCombo[[ctr]]$fn
+                        )
+    }
+    
+    # STEP 3: Filter records
+    qcOrig <- dfProcess %>% 
+        summarize(across(where(is.numeric), sum, na.rm=TRUE), n=n()) %>% 
+        mutate(isType="before")
+    dfProcess <- dfProcess %>% 
+        rowFilter(lstFilter=lstFilter)
+    
+    # STEP 4: Report on differences
+    cat("\nColumn sums before and after applying filtering rules:\n")
+    dfProcess %>% 
+        summarize(across(where(is.numeric), sum, na.rm=TRUE), n=n()) %>% 
+        mutate(isType="after") %>%
+        bind_rows(qcOrig) %>%
+        arrange(desc(isType)) %>%
+        bind_rows(mutate(summarize(., across(where(is.numeric), function(x) (max(x)-min(x))/max(x))), 
+                         isType="pctchg"
+                         )
+                  ) %>%
+        select(isType, everything()) %>%
+        print()
+    cat("\n")
+    
+    # Return the processed data file
+    dfProcess
+    
+}
+
+```
+
+The function is then tested on the cases and deaths data as well as the hospital data:  
+```{r}
+
+dfProcess_dc_210502 <- dfRaw_dc_210502 %>%
+    processRawFile(vecSelect=c("date", "state", "tot_cases", "tot_death", "new_case", "new_death"), 
+                   lstCombo=list("nyc"=list("comboVar"="state", 
+                                            "uqVars"="date", 
+                                            "vecCombo"=c("NY"="NY", "NYC"="NY"),
+                                            "fn"=specNASum
+                                            )
+                                 ), 
+                   lstFilter=list("state"=c(state.abb, "DC"))
+                   )
+dfProcess_dc_210502
+
+dfProcess_h <- dfHosp %>%
+    processRawFile(vecSelect=c("date", "state", "inp", "hosp_adult", "hosp_ped"), 
+                   lstFilter=list("state"=c(state.abb, "DC"))
+                   )
+dfProcess_h
+
+```
+
+The processing functions appear to be working as intended.  Next steps are to join the data frames then to add population data and calculate per capita metrics.
