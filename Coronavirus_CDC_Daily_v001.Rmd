@@ -4318,6 +4318,17 @@ keyAggMapper <- list("cdcDaily"=list("l1"=list("grpVar"="date",
                                     )
                      )
 
+# Mapping file for creating per-capita metrics
+perCapMapper <- c("tot_cases"="tcpm", 
+                  "tot_deaths"="tdpm", 
+                  "new_cases"="cpm", 
+                  "new_deaths"="dpm", 
+                  "inp"="hpm", 
+                  "hosp_adult"="ahpm", 
+                  "hosp_ped"="phpm"
+                  )
+
+
 # List of global items for keyAggMapper (can also set flagLargeDelta to equal returnDelta)
 # keyAggGlobal <- list("plotData"=TRUE, 
 #                      "sortBy"=c("name", "pctDelta", "absDelta"),
@@ -4689,8 +4700,8 @@ processRawFile <- function(df,
 The function is then tested on the cases and deaths data as well as the hospital data:  
 ```{r}
 
-dfProcess_dc_210502 <- dfRaw_dc_210502 %>%
-    processRawFile(vecSelect=c("date", "state", "tot_cases", "tot_death", "new_case", "new_death"), 
+dfProcess_dc_210502 <- dfCaseDeath %>%
+    processRawFile(vecSelect=c("date", "state", "tot_cases", "tot_deaths", "new_cases", "new_deaths"), 
                    lstCombo=list("nyc"=list("comboVar"="state", 
                                             "uqVars"="date", 
                                             "vecCombo"=c("NY"="NY", "NYC"="NY"),
@@ -4710,3 +4721,80 @@ dfProcess_h
 ```
 
 The processing functions appear to be working as intended.  Next steps are to join the data frames then to add population data and calculate per capita metrics.
+
+A function is written to join files and convert metrics to per capita:  
+```{r}
+
+combineFiles <- function(lst, 
+                         fn=dplyr::full_join, 
+                         byVars=NULL,
+                         ...
+                         ) {
+
+    # lst: A list containing one or more files to be joined
+    # fn: A function for joining files
+    # byVars: character string "by variables", which must be consistent across files
+    #         NULL means infer from data as is standard in dplyr merges
+    # ...: other arguments to be passed to fn by way of reduce
+    
+    purrr::reduce(lst, .f=fn, by=byVars, ...)
+    
+}
+
+
+createPerCapita <- function(lst, 
+                            uqBy,
+                            popData,
+                            lstSortBy=uqBy,
+                            fnJoin=dplyr::full_join, 
+                            popJoinBy="state",
+                            popVar="pop",
+                            k=7,
+                            mapper=perCapMapper,
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: A list containing one or more files to be joined OR a data frame that is already joined
+    # uqBy: character string that the input file is unique by (will be the join keys if a list is passed)
+    # popData: file containing population data that can be joined to the processed lst
+    # lstSortBy: the sorting that should be used for creating rolling metrics
+    # fnJoin: The function to be used for joining files
+    # popJoinBy: character string for the variable(s) to be used in joining popData to lst
+    # popVar: character string for the variable in popData that represents population
+    # k: time perior for rolling aggregations
+    # mapper: mapping file of c('current name'='per capita name') for mapping variables
+    # ...: other arguments to be passed to combineFiles()
+    
+    # Step 1: If a list has been passed, use a joining process to create a data frame
+    if ("list" %in% class(lst)) lst <- combineFiles(lst, byVars=uqBy, fn=fnJoin, ...)
+    
+    # Step 2: Sort the data using sortBy
+    df <- dplyr::arrange(lst, across(all_of(lstSortBy)))
+    
+    # Step 3: Check that all variables other than uqBy can be mapped using mapper
+    keyVars <- setdiff(names(df), uqBy)
+    if (any(isFALSE(keyVars %in% mapper))) stop("\nVariable is missing in per capita mapper file\n")
+    
+    # Step 4: Run the per capita mapping process
+    df <- helperMakePerCapita(df, mapVars=mapper[keyVars], popData=popData, k=k)
+    
+    # Return the data frame
+    df
+    
+}
+
+```
+  
+The function is then tested using the processed data files:  
+```{r}
+
+dfPerCap_210502 <- createPerCapita(list(dfProcess_dc_210502, dfProcess_h), 
+                                   uqBy=c("state", "date"), 
+                                   popData=stateDataCDC
+                                   )
+dfPerCap_210502
+
+```
+
+Next steps are to update the helperMakePerCapita() function so that it does not need to assume that data are unique by state and sorted by date.
