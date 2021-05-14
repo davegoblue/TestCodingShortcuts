@@ -115,6 +115,8 @@ readFromRDS <- function(file,
     
 }
 
+# Function for summing numeric variables, with NA+NA=NA and NA+number=number
+specNASum <- function(x) if (any(!is.na(x))) sum(x, na.rm=TRUE) else NA
 
 ```
   
@@ -4318,6 +4320,26 @@ keyAggMapper <- list("cdcDaily"=list("l1"=list("grpVar"="date",
                                     )
                      )
 
+# Mapping list for vector selection in processed data
+vecSelectMapper <- list("cdcDaily"=c("date", "state", "tot_cases", "tot_deaths", "new_cases", "new_deaths"), 
+                        "cdcHosp"=c("date", "state", "inp", "hosp_adult", "hosp_ped")
+                        )
+
+# Mapping list for lstFilter
+lstFilterMapper <- list("cdcDaily"=list("state"=c(state.abb, "DC")), 
+                        "cdcHosp"=list("state"=c(state.abb, "DC"))
+                        )
+
+# Mapping list for combining data element
+lstComboMapper <- list("cdcDaily"=list("nyc"=list("comboVar"="state", 
+                                                  "uqVars"="date", 
+                                                  "vecCombo"=c("NY"="NY", "NYC"="NY"),
+                                                  "fn"=specNASum
+                                                  )
+                                       ), 
+                       "cdcHosp"=list()
+                       )
+
 # Mapping file for creating per-capita metrics
 perCapMapper <- c("tot_cases"="tcpm", 
                   "tot_deaths"="tdpm", 
@@ -4454,7 +4476,7 @@ readQCRawFile <- function(fileName,
     # fileName: the location where downloaded data either is, or will be, stored
     # writeLog: the external file location for printing (NULL means use the main log stdout)
     # ovrwriteLog: boolean, if using an external log, should it be started from scratch (overwritten)?
-    # dfRef: a reference data frame for comparison (NULL means do not run comparisons)
+    # dfRef: a reference data frame for comparison (either NULL or NA means do not run comparisons)
     # urlType: character vector that can be mapped using urlMapper and keyVarMapper
     # url: direct URL passed as character string
     #      NOTE that if both url and urlType are NULL, no file will be downloaded
@@ -4514,7 +4536,7 @@ readQCRawFile <- function(fileName,
         helperLinePlot(x=step3Group, y="newValue", facetVar="name", facetScales="free_y", groupColor="name")
 
     # If there is no file for comparison, return the data
-    if (is.null(dfRef)) return(dfRaw)
+    if (is.null(dfRef) | if(length(dfRef)==1) is.na(dfRef) else FALSE) return(dfRaw)
     
     # Step 4b: Check similarity of existing and reference file
     # ovrWriteLog=FALSE since everything should be an append after the opening text line in step 0
@@ -4633,9 +4655,6 @@ Next, a function is written to process a raw data file, including:
 * Selecting a subset of records (e.g., limit to 50 states and DC)  
   
 ```{r}
-
-# Function for summing numeric variables, with NA+NA=NA and NA+number=number
-specNASum <- function(x) if (any(!is.na(x))) sum(x, na.rm=TRUE) else NA
 
 # Function to process a raw file
 processRawFile <- function(df, 
@@ -4973,3 +4992,245 @@ identical(dfPerCap_210502_v2, dfPerCap_210502)
 ```
   
 The function can now take arguments for the unique variable, sorting variable, and population variable.  Results are the same as previous.  The integrated file is now available for use in the main routine.  Next steps are to integrate the new functions in a main function that can download, read, process, integrate, and analyze CDC daily data.
+
+The integrated function readRunCDCDaily() is updated:  
+```{r}
+
+# Function to download/load, process, segment, and analyze data for CDC daily
+readRunCDCDaily <- function(thruLabel, 
+                            downloadTo=list("cdcDaily"=NA, "cdcHosp"=NA), 
+                            readFrom=downloadTo, 
+                            compareFile=list("cdcDaily"=NA, "cdcHosp"=NA),
+                            writeLog=NULL,
+                            ovrwriteLog=TRUE,
+                            dfPerCapita=NULL,
+                            useClusters=NULL,
+                            hierarchical=TRUE,
+                            returnList=!hierarchical, 
+                            kCut=6,
+                            reAssignState=vector("list", 0),
+                            makeCumulativePlots=TRUE,
+                            skipAssessmentPlots=FALSE,
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # thruLabel: the label for when the data are through (e.g., "Aug 30, 2020")
+    # donwloadTo: named list for locations to download data (cdcDaily and cdcHosp)
+    #             NA means do not download data for that particular element
+    # readFrom: named list for locations to read data from (defaults to donwloadTo)
+    # compareFile: named list for the reference file to be used for cdcDaily and cdcHosp 
+    #              NA means do not use a reference file for that element
+    # dateChangePlot: boolean, should changes in dates be captured as a plot rather than as a list?
+    # dateMetricPrint: boolean, should the changes by date and metric be printed to the main log?
+    # writeLog: name of a separate log file for capturing detailed data on changes between files
+    #           NULL means no detailed data captured
+    # ovrwriteLog: boolean, should the log file be overwritten and started again from scratch?
+    # dfPerCapita: file can be passed directly, which bypasses the loading and processing steps
+    # useClusters: file containing clusters by state (NULL means make the clusters from the data)
+    # hierarchical: boolean, should hierarchical clusters be produced (if FALSE, will be k-means)?
+    # returnList: boolean, should a list be returned or just the cluster object?
+    #             refers to what is returned by clusterStates(); the main function always returns a list
+    # kCut: number of segments when cutting the hierarchical tree
+    # reAssignState: mapping file for assigning a state to another state's cluster
+    #                format list("stateToChange"="stateClusterToAssign")
+    # makeCumulativePlots: whether to make plots of cumulative metrics
+    # skipAssessmentPlots: boolean to skip the plots for assessClusters()
+    #                      especially useful if just exploring dendrograms or silhouette widths
+    # ...: arguments to be passed to clusterStates(), will be used only if useClusters is NULL
+    
+    
+    # STEP 1: Get state data
+    stateData <- getStateData()
+    
+    # Helper function for glimpsing
+    glimpseFile <- function(x, txt) {
+        cat(txt)
+        glimpse(x)
+    }
+
+    # If a log file is requested, create the log file (allows for append=TRUE for al downstream functions)
+    if (!is.null(writeLog)) {
+        txt <- paste0("\n\n*** Writing log at: ", Sys.time() %>% lubridate::with_tz(tzone="UTC"), "Z ***\n\n")
+        capture.output(cat(txt), file=writeLog, append=isFALSE(ovrwriteLog))
+    }
+
+    # Get the data types to be used (will be the elements of readFrom) and create a file storage list
+    elemUsed <- names(readFrom)
+    dfRawList <- vector("list", length=length(elemUsed)) %>% 
+        purrr::set_names(elemUsed)
+    dfProcessList <- vector("list", length=length(elemUsed)) %>%
+        purrr::set_names(elemUsed)
+    
+    # Steps 2-4 are run only is dfPerCapita has not been passed
+    if (is.null(dfPerCapita)) {
+        
+        # Step 2: Download and QC all of the requested data
+        for (elem in elemUsed) {
+            dfRawList[[elem]] <- readQCRawFile(fileName=readFrom[[elem]], 
+                                               writeLog=writeLog, 
+                                               ovrwriteLog=FALSE,
+                                               urlType=elem, 
+                                               getData=if(is.na(downloadTo[[elem]])) FALSE else TRUE, 
+                                               dfRef=compareFile[[elem]]
+                                               )
+        }
+        
+        # Step 3: Process all of the requested data
+        for (elem in elemUsed) {
+            dfProcessList[[elem]] <- processRawFile(dfRawList[[elem]], 
+                                                    vecRename=c(), # already handled in readQCRawFile()
+                                                    vecSelect=vecSelectMapper[[elem]], 
+                                                    lstCombo=lstComboMapper[[elem]], 
+                                                    lstFilter=lstFilterMapper[[elem]]
+                                                    )
+        }
+        
+        # Step 4: Integrate in to a dfPerCapita file
+        dfPerCapita <- createPerCapita(dfProcessList, 
+                                       uqBy=c("state", "date"), 
+                                       popData=stateData
+                                       )
+        
+        # Glimpse the per capita data file
+        if (is.null(writeLog)) glimpseFile(dfPerCapita, txt="\nPer capita data file:\n")
+        else capture.output(glimpseFile(dfPerCapita, txt="\nPer capita data file:\n"), 
+                            file=writeLog, 
+                            append=TRUE
+                            )
+    } else {
+        dfRawList <- NULL
+        dfProcessList <- NULL
+    }
+    
+    # STEP 5: Create the clusters (if they have not been passed)
+    if (is.null(useClusters)) {
+        # Run the clustering process
+        clData <- clusterStates(df=dfPerCapita, hierarchical=hierarchical, returnList=returnList, ...)
+        # If hierarchical clusters, cut the tree, otherwise use the output object directly
+        if (hierarchical) {
+            useClusters <- cutree(clData, k=kCut)
+        } else {
+            useClusters <- clData$objCluster$cluster
+        }
+        # If requested, manually assign clusters to the cluster for another state
+        for (xNum in seq_len(length(reAssignState))) {
+            useClusters[names(reAssignState)[xNum]] <- useClusters[reAssignState[[xNum]]]
+        }
+        
+    }
+    
+    
+    # STEP 5a: Stop the process and return what is available if skipAssessmentPlots is TRUE
+    if (skipAssessmentPlots) {
+        return(list(stateData=stateData, 
+                    dfRaw=dfRawList, 
+                    dfProcess=dfProcessList, 
+                    dfPerCapita=dfPerCapita, 
+                    useClusters=useClusters, 
+                    plotData=NULL, 
+                    consolidatedPlotData=NULL, 
+                    clCum=NULL
+                    )
+               )
+    }
+    
+    
+    # STEP 6: Create the cluster assessments
+    plotData <- assessClusters(useClusters, 
+                               dfState=stateData, 
+                               dfBurden=dfPerCapita,
+                               thruLabel=thruLabel,
+                               plotsTogether=TRUE
+    )
+    
+    
+    # STEP 7: Plot the consolidated metrics
+    subT <- "Cases: new cases, Deaths: new deaths, Hosp: total in hospital (not new), Tests: new tests"
+    consolidatedPlotData <- plotConsolidatedMetrics(plotData, 
+                                                    varMain=c("state", "cluster", "date", "pop",
+                                                              "cases", "deaths", "hosp", "tests"
+                                                    ), 
+                                                    subT=subT, 
+                                                    nrowPlot2=2
+    )
+    
+    # STEP 8: Create cumulative metrics if requested
+    if (makeCumulativePlots) {
+        consPos <- consolidatedPlotData %>%
+            ungroup() %>%
+            select(state, cluster, date, name, vpm7) %>%
+            arrange(state, cluster, date, name) %>%
+            pivot_wider(-vpm7, names_from="name", values_from="vpm7") %>%
+            mutate(pctpos=cases/tests) %>%
+            pivot_longer(-c(state, cluster, date), values_to="vpm7") %>%
+            filter(!is.na(vpm7))
+        clCum <- makeCumulative(consPos)
+        plotCumulativeData(clCum, 
+                           keyMetricp2="", 
+                           flagsp2="", 
+                           makep1=TRUE, 
+                           makep2=FALSE
+        )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="deaths", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "deaths")
+        )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="cases", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "cases")
+        )
+        plotCumulativeData(clCum, 
+                           keyMetricp2="tests", 
+                           flagsp2=findFlagStates(clCum, keyMetricVal = "tests")
+        )
+    } else {
+        clCum <- NULL
+    }
+    
+    
+    # STEP 9: Return a list of the key data
+    list(stateData=stateData, 
+         dfRaw=dfRawList, 
+         dfProcess=dfProcessList, 
+         dfPerCapita=dfPerCapita, 
+         useClusters=useClusters, 
+         plotData=plotData, 
+         consolidatedPlotData=consolidatedPlotData, 
+         clCum=clCum
+    )
+    
+}
+
+
+```
+
+The function is tested for previously downloaded data and existing clusters, with no cluster assessment:  
+```{r}
+
+readList <- list("cdcDaily"="./RInputFiles/Coronavirus/CDC_dc_downloaded_210502.csv", 
+                 "cdcHosp"="./RInputFiles/Coronavirus/CDC_h_downloaded_210509.csv"
+                 )
+
+cdc_daily_test <- readRunCDCDaily(thruLabel="May 2, 2021", 
+                                  readFrom=readList, 
+                                  compareFile=list("cdcDaily"=colRenamer(dfRaw_dc_210414,
+                                                                         c('new_case'='new_cases', 
+                                                                           'tot_death'='tot_deaths',
+                                                                           'new_death'='new_deaths'
+                                                                           )
+                                                                         ), 
+                                                   "cdcHosp"=dfHosp_old
+                                                   ), 
+                                  writeLog=NULL, 
+                                  ovrwriteLog=TRUE, 
+                                  dfPerCapita=NULL, 
+                                  useClusters=readFromRDS("ctp_hier7_210126")$useClusters, 
+                                  skipAssessmentPlots=TRUE
+                                  )
+cdc_daily_test
+identical(cdc_daily_test$dfPerCapita, dfPerCap_210502_v2)
+
+```
+
+The function appears to be working as intended.  Next steps are to better enable the external log file processing and to update the assessment capability.
