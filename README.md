@@ -2405,4 +2405,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v001 merges data and creates per capita metrics  
 * Coronavirus_CDC_Daily_v001 increases argument flexibility for createPerCapita()  
 * Coronavirus_CDC_Daily_v001 updates steps 2-4 of readRunCDCDaily()  
+* Coronavirus_CDC_Daily_v001 creates clusters using integrated data  
   
