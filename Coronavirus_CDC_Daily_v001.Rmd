@@ -4996,6 +4996,39 @@ The function can now take arguments for the unique variable, sorting variable, a
 The integrated function readRunCDCDaily() is updated:  
 ```{r}
 
+# Helper function for glimpsing
+glimpseFile <- function(x, txt) {
+    cat(txt)
+    glimpse(x)
+}
+
+
+# Helper function to glimpse to a logfile
+glimpseLog <- function(df, txt="", logFile=NULL, append=TRUE) {
+    if (is.null(logFile)) glimpseFile(df, txt=txt)
+    else capture.output(glimpseFile(df, txt=txt), file=logFile, append=append)
+}
+
+
+# Helper function to get the clusters from a clustering file
+getClusters <- function(clData, hier=FALSE, kCut=0, reAssign=list()) {        
+    
+    # If hierarchical clusters, cut the tree, otherwise use the output object directly
+    if (isTRUE(hier)) useClusters <- cutree(clData, k=kCut)
+    else if (is.na(hier)) useClusters <- clData$objCluster
+    else useClusters <- clData$objCluster$cluster
+        
+    # If requested, manually assign clusters to the cluster for another state
+    for (xNum in seq_len(length(reAssign))) {
+        useClusters[names(reAssign)[xNum]] <- useClusters[reAssign[[xNum]]]
+    }
+    
+    # Return the clusters
+    useClusters
+    
+}
+
+
 # Function to download/load, process, segment, and analyze data for CDC daily
 readRunCDCDaily <- function(thruLabel, 
                             downloadTo=list("cdcDaily"=NA, "cdcHosp"=NA), 
@@ -5006,7 +5039,7 @@ readRunCDCDaily <- function(thruLabel,
                             dfPerCapita=NULL,
                             useClusters=NULL,
                             hierarchical=TRUE,
-                            returnList=!hierarchical, 
+                            returnList=!isTRUE(hierarchical), 
                             kCut=6,
                             reAssignState=vector("list", 0),
                             makeCumulativePlots=TRUE,
@@ -5039,16 +5072,22 @@ readRunCDCDaily <- function(thruLabel,
     #                      especially useful if just exploring dendrograms or silhouette widths
     # ...: arguments to be passed to clusterStates(), will be used only if useClusters is NULL
     
+    # STEP 0: Function to create the return list
+    createFinalList <- function(plots=TRUE) {
+        list(stateData=stateData, 
+             dfRaw=dfRawList, 
+             dfProcess=dfProcessList, 
+             dfPerCapita=dfPerCapita, 
+             useClusters=useClusters, 
+             plotData=if(plots) plotData else NULL, 
+             consolidatedPlotData=if(plots) consolidatedPlotData else NULL, 
+             clCum=if(plots) clCum else NULL
+             )
+    }
     
     # STEP 1: Get state data
     stateData <- getStateData()
     
-    # Helper function for glimpsing
-    glimpseFile <- function(x, txt) {
-        cat(txt)
-        glimpse(x)
-    }
-
     # If a log file is requested, create the log file (allows for append=TRUE for al downstream functions)
     if (!is.null(writeLog)) {
         txt <- paste0("\n\n*** Writing log at: ", Sys.time() %>% lubridate::with_tz(tzone="UTC"), "Z ***\n\n")
@@ -5057,10 +5096,8 @@ readRunCDCDaily <- function(thruLabel,
 
     # Get the data types to be used (will be the elements of readFrom) and create a file storage list
     elemUsed <- names(readFrom)
-    dfRawList <- vector("list", length=length(elemUsed)) %>% 
-        purrr::set_names(elemUsed)
-    dfProcessList <- vector("list", length=length(elemUsed)) %>%
-        purrr::set_names(elemUsed)
+    dfRawList <- vector("list", length=length(elemUsed)) %>% purrr::set_names(elemUsed)
+    dfProcessList <- vector("list", length=length(elemUsed)) %>% purrr::set_names(elemUsed)
     
     # Steps 2-4 are run only is dfPerCapita has not been passed
     if (is.null(dfPerCapita)) {
@@ -5074,6 +5111,7 @@ readRunCDCDaily <- function(thruLabel,
                                                getData=if(is.na(downloadTo[[elem]])) FALSE else TRUE, 
                                                dfRef=compareFile[[elem]]
                                                )
+            glimpseLog(dfRawList[[elem]], txt=paste0("\nRaw file for ", elem, ":\n"), logFile=writeLog)
         }
         
         # Step 3: Process all of the requested data
@@ -5084,20 +5122,13 @@ readRunCDCDaily <- function(thruLabel,
                                                     lstCombo=lstComboMapper[[elem]], 
                                                     lstFilter=lstFilterMapper[[elem]]
                                                     )
+            glimpseLog(dfProcessList[[elem]], txt=paste0("\nProcessed for ", elem, ":\n"), logFile=writeLog)
         }
         
-        # Step 4: Integrate in to a dfPerCapita file
-        dfPerCapita <- createPerCapita(dfProcessList, 
-                                       uqBy=c("state", "date"), 
-                                       popData=stateData
-                                       )
-        
-        # Glimpse the per capita data file
-        if (is.null(writeLog)) glimpseFile(dfPerCapita, txt="\nPer capita data file:\n")
-        else capture.output(glimpseFile(dfPerCapita, txt="\nPer capita data file:\n"), 
-                            file=writeLog, 
-                            append=TRUE
-                            )
+        # Step 4: Integrate in to a dfPerCapita file and glimpse (to specified log file)
+        dfPerCapita <- createPerCapita(dfProcessList, uqBy=c("state", "date"), popData=stateData)
+        glimpseLog(dfPerCapita, txt="\nIntegrated per capita data file:\n", logFile=writeLog)
+
     } else {
         dfRawList <- NULL
         dfProcessList <- NULL
@@ -5105,41 +5136,18 @@ readRunCDCDaily <- function(thruLabel,
     
     # STEP 5: Create the clusters (if they have not been passed)
     if (is.null(useClusters)) {
-        # Run the clustering process
         clData <- clusterStates(df=dfPerCapita, hierarchical=hierarchical, returnList=returnList, ...)
-        # If hierarchical clusters, cut the tree, otherwise use the output object directly
-        if (hierarchical) {
-            useClusters <- cutree(clData, k=kCut)
-        } else {
-            useClusters <- clData$objCluster$cluster
-        }
-        # If requested, manually assign clusters to the cluster for another state
-        for (xNum in seq_len(length(reAssignState))) {
-            useClusters[names(reAssignState)[xNum]] <- useClusters[reAssignState[[xNum]]]
-        }
-        
+        useClusters <- getClusters(clData, hier=hierarchical, kCut=kCut, reAssign=reAssignState)
     }
-    
     
     # STEP 5a: Stop the process and return what is available if skipAssessmentPlots is TRUE
-    if (skipAssessmentPlots) {
-        return(list(stateData=stateData, 
-                    dfRaw=dfRawList, 
-                    dfProcess=dfProcessList, 
-                    dfPerCapita=dfPerCapita, 
-                    useClusters=useClusters, 
-                    plotData=NULL, 
-                    consolidatedPlotData=NULL, 
-                    clCum=NULL
-                    )
-               )
-    }
-    
+    if (skipAssessmentPlots) 
+        return(createFinalList(plots=FALSE))
     
     # STEP 6: Create the cluster assessments
     plotData <- assessClusters(useClusters, 
                                dfState=stateData, 
-                               dfBurden=dfPerCapita,
+                               dfBurden=dfPerCapita, 
                                thruLabel=thruLabel,
                                plotsTogether=TRUE
     )
@@ -5188,17 +5196,8 @@ readRunCDCDaily <- function(thruLabel,
         clCum <- NULL
     }
     
-    
     # STEP 9: Return a list of the key data
-    list(stateData=stateData, 
-         dfRaw=dfRawList, 
-         dfProcess=dfProcessList, 
-         dfPerCapita=dfPerCapita, 
-         useClusters=useClusters, 
-         plotData=plotData, 
-         consolidatedPlotData=consolidatedPlotData, 
-         clCum=clCum
-    )
+    return(createFinalList(plots=TRUE))
     
 }
 
@@ -5234,3 +5233,49 @@ identical(cdc_daily_test$dfPerCapita, dfPerCap_210502_v2)
 ```
 
 The function appears to be working as intended.  Next steps are to better enable the external log file processing and to update the assessment capability.
+
+The updated function is used to create clusters using the integrated data, with an external log file used:  
+```{r}
+
+readList <- list("cdcDaily"="./RInputFiles/Coronavirus/CDC_dc_downloaded_210502.csv", 
+                 "cdcHosp"="./RInputFiles/Coronavirus/CDC_h_downloaded_210509.csv"
+                 )
+
+cdc_daily_test_v2 <- readRunCDCDaily(thruLabel="May 2, 2021", 
+                                     readFrom=readList, 
+                                     compareFile=list("cdcDaily"=colRenamer(dfRaw_dc_210414,
+                                                                            c('new_case'='new_cases', 
+                                                                              'tot_death'='tot_deaths',
+                                                                              'new_death'='new_deaths'
+                                                                              )
+                                                                            ), 
+                                                      "cdcHosp"=dfHosp_old
+                                                      ), 
+                                     writeLog="./RInputFiles/Coronavirus/Coronavirus_CDC_Daily_v001.log", 
+                                     ovrwriteLog=TRUE, 
+                                     dfPerCapita=NULL, 
+                                     useClusters=NULL, 
+                                     hierarchical=NA, 
+                                     returnList=TRUE,
+                                     shapeFunc=customTimeBucket, 
+                                     minShape="2020-04", 
+                                     maxShape="2021-03", 
+                                     hmlSegs=3, 
+                                     eslSegs=3, 
+                                     reAssignState=list("VT"="NH"),
+                                     seed=2104221520,
+                                     skipAssessmentPlots=TRUE
+                                     )
+cdc_daily_test_v2
+identical(cdc_daily_test_v2$dfPerCapita, cdc_daily_test$dfPerCapita)
+
+tibble::tibble(state=names(cdc_daily_test_v2$useClusters), 
+               cluster=factor(unname(cdc_daily_test_v2$useClusters))
+               ) %>%
+    usmap::plot_usmap(regions="states", values="cluster", data=.) + 
+    labs(title="Rules-based clusters using CDC daily data") + 
+    scale_fill_discrete("Cluster")
+
+```
+
+The updated function appears to work as intended, including producing rules-based clusters.  Next steps are to update the cluster assessment algorithms, to account for differences in variable names and interpretations compared with the previous process.
