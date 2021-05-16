@@ -5279,3 +5279,131 @@ tibble::tibble(state=names(cdc_daily_test_v2$useClusters),
 ```
 
 The updated function appears to work as intended, including producing rules-based clusters.  Next steps are to update the cluster assessment algorithms, to account for differences in variable names and interpretations compared with the previous process.
+
+An updated process should include:  
+  
+1.  Create cluster-level aggregates (e.g., population-weighted mean or unweighted median)  
+2.  Create overall summary plots such as maps, burden over time, total burden, and the like  
+3.  Create facetted plots over time that allow for multiple metrics to be displayed simultaneously  
+4.  Create cumulative burden plots over time  
+  
+A function is written to create cluster-level aggregates:  
+```{r}
+
+# Function to join any number of frames
+joinFrames <- function(..., fnJoin=dplyr::inner_join, keyJoin=NULL) {
+    
+    # FUNCtION ARGUMENTS:
+    # ...: data frames to be joined using purrr::reduce
+    # fnJoin: dplyr function for join (full_join, inner_join, left_join, right_join), applied in order to ...
+    # keyJoin: by= variable passed to fnJoin (NULL means anything that matches, the dplyr default)
+
+    purrr::reduce(.x=list(...), .f=fnJoin, by=keyJoin)
+    
+}
+
+# Function to convert a named vector to a tibble
+vecToTibble <- function(x, 
+                        colNameData="value", 
+                        colNameName="name"
+                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # x: a vector (typically would be named, otherwise rownames are 1:length(x))
+    # colNameData: the column name in the tibble for the vector data
+    # colNameName: the column name in the tibble for the vector names
+    
+    as.data.frame(x) %>%
+        rownames_to_column(var=colNameName) %>%
+        tibble::as_tibble() %>%
+        purrr::set_names(c(colNameName, colNameData))
+    
+}
+
+# Function to convert a regular function to one that returns NA for all NA and na.rm=TRUE otherwise
+specNA <- function(fn=sum) function(x) if (any(!is.na(x))) fn(x, na.rm=TRUE) else NA
+
+# Function to create a group aggregate
+createGroupAgg <- function(df, 
+                           aggTo=c(),
+                           vecSelect=NULL,
+                           aggVars=NULL,
+                           aggFunc=specNA(mean),
+                           wtVar=NULL
+                           ) {
+    
+    # FUNCtION ARGUMENTS:
+    # df: a data frame or tibble containing data suitable for aggregation
+    # aggTo: level data will be aggregated to in the final result (c() means overall level)
+    #        passed as character vector, such as c("cluster", "date") for aggregating to cluster-date
+    # vecSelect: the elements of df to be kept (NULL means keep all)
+    # aggVars: variables to be aggregated (NULL means aggregate all that are of type is.numeric)
+    # aggFunc: a function that can be used for aggregation to the aggTo level
+    # wtVar: the weighting variable for the aggregation function (NULL means equal weigthing by record)
+    #        passed as character, so "pop" means that values should be weighted by pop
+
+    # If aggVars has been passed as NULL, apply to all variables of type is.numeric
+    if (is.null(aggVars)) aggVars <- sapply(df, is.numeric) %>% which() %>% names()
+
+    # Ensure aggVars does not include any grouping variables
+    aggVars <- setdiff(aggVars, aggTo)
+    
+    # If a list for vecSelect has been passed, then:
+    # 1. limit aggVars to elements in vecSelect
+    # 2. keep only requested variables (vecSelect and aggTo)
+    if (!is.null(vecSelect)) {
+        aggVars <- base::intersect(aggVars, vecSelect)
+        df <- colSelector(df, vecSelect=base::union(aggTo, vecSelect))
+    }
+    
+    # If no weighting is requested, group by aggTo then summarize aggVars using function aggFunc
+    if (is.null(wtVar)) {
+        dfGroup <- df %>%
+            group_by(across(.cols=all_of(aggTo))) %>%
+            summarize(across(.cols=all_of(aggVars), .fns=aggFunc), .groups="drop")
+    } else {
+        # Need to implement weighting by wtVar
+        dfGroup <- df
+    }
+    
+    # Return dfGroup
+    dfGroup
+    
+}
+
+```
+  
+The functions are tested using existing data, with aggregated medians created by cluster-date:  
+```{r, fig.height=9, fig.width=9}
+
+# Testing the function for median by cluster-date
+dfAgg <- vecToTibble(cdc_daily_test_v2$useClusters, colNameData="cluster", colNameName="state") %>%
+    joinFrames(cdc_daily_test_v2$stateData, cdc_daily_test_v2$dfPerCapita, keyJoin="state") %>%
+    createGroupAgg(aggTo=c("cluster", "date"), 
+                   aggFunc=specNA(median), 
+                   vecSelect=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7")
+                   )
+
+# Check a plot of dfAgg
+dfAgg %>%
+    pivot_longer(-c("cluster", "date")) %>%
+    mutate(name=factor(name, 
+                       levels=c("cpm7", "dpm7", "hpm7", "tcpm7", "tdpm7"), 
+                       labels=c("New cases", "New deaths", "Hospitalized", "Total cases", "Total deaths")
+                       )
+           ) %>%
+    ggplot(aes(x=date, y=value)) +
+    geom_line(aes(group=factor(cluster), color=factor(cluster))) +
+    facet_grid(name ~ cluster, scales="free_y") + 
+    labs(title="Median rolling-7 mean by date for cluster and metric", 
+         subtitle="Includes only non-NA rolling-7 mean states on date", 
+         x="", 
+         y="Median burden per million"
+         ) + 
+    scale_color_discrete("Cluster") + 
+    scale_x_date(date_breaks="3 months", date_labels="%b %Y") + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=8))
+
+```
+
+Aggregated medians appear reasonable.  Next steps are to enable weighting by population, paricularly for averaging or summing.
