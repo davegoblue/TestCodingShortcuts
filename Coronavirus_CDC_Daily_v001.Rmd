@@ -5321,7 +5321,10 @@ vecToTibble <- function(x,
 }
 
 # Function to convert a regular function to one that returns NA for all NA and na.rm=TRUE otherwise
-specNA <- function(fn=sum) function(x) if (any(!is.na(x))) fn(x, na.rm=TRUE) else NA
+specNA <- function(fn=sum) function(x, ...) if (any(!is.na(x))) fn(x, ..., na.rm=TRUE) else NA
+specNAweight <- function(fn=weighted.mean, wt) {
+    function(x, ...) if (any(!is.na(x))) fn(x, w=get(wt), ..., na.rm=TRUE) else NA
+}
 
 # Function to create a group aggregate
 createGroupAgg <- function(df, 
@@ -5353,18 +5356,29 @@ createGroupAgg <- function(df,
     # 2. keep only requested variables (vecSelect and aggTo)
     if (!is.null(vecSelect)) {
         aggVars <- base::intersect(aggVars, vecSelect)
-        df <- colSelector(df, vecSelect=base::union(aggTo, vecSelect))
+        df <- colSelector(df, vecSelect=reduce(list(aggTo, 
+                                                    vecSelect, 
+                                                    if(is.null(wtVar)) c() else wtVar
+                                                    ), 
+                                               .f=base::union
+                                               )
+                          )
     }
     
+    # Group by aggTo
+    dfGroup <- df %>%
+        group_by(across(.cols=all_of(aggTo)))
+    
+    # If the function has no weighting variable, summarize using aggFunc
     # If no weighting is requested, group by aggTo then summarize aggVars using function aggFunc
-    if (is.null(wtVar)) {
-        dfGroup <- df %>%
-            group_by(across(.cols=all_of(aggTo))) %>%
-            summarize(across(.cols=all_of(aggVars), .fns=aggFunc), .groups="drop")
-    } else {
-        # Need to implement weighting by wtVar
-        dfGroup <- df
-    }
+    if (is.null(wtVar)) dfGroup <- dfGroup %>% 
+        summarize(across(.cols=all_of(aggVars), .fns=aggFunc), .groups="drop")
+    else dfGroup <- dfGroup %>%
+        summarize(across(.cols=all_of(aggVars), 
+                         .fns=~weighted.mean(.x, w=get(wtVar), na.rm=TRUE)
+                         ), 
+                  .groups="drop"
+                  )
     
     # Return dfGroup
     dfGroup
@@ -5407,3 +5421,49 @@ dfAgg %>%
 ```
 
 Aggregated medians appear reasonable.  Next steps are to enable weighting by population, paricularly for averaging or summing.
+
+The function can now use weighted.mean.  Example code includes:  
+```{r, fig.height=9, fig.width=9}
+
+# Testing the function for median by cluster-date
+dfAgg_wm <- vecToTibble(cdc_daily_test_v2$useClusters, colNameData="cluster", colNameName="state") %>%
+    joinFrames(cdc_daily_test_v2$stateData, cdc_daily_test_v2$dfPerCapita, keyJoin="state") %>%
+    createGroupAgg(aggTo=c("cluster", "date"), 
+                   aggFunc=NA, # not relevant since wtVar will drive weighted.mean
+                   vecSelect=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"), 
+                   wtVar="pop"
+                   )
+
+# Testing the function for median by cluster-date
+dfAgg_mu <- vecToTibble(cdc_daily_test_v2$useClusters, colNameData="cluster", colNameName="state") %>%
+    joinFrames(cdc_daily_test_v2$stateData, cdc_daily_test_v2$dfPerCapita, keyJoin="state") %>%
+    createGroupAgg(aggTo=c("cluster", "date"), 
+                   aggFunc=specNA(mean), # run the unweighted mean
+                   vecSelect=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7")
+                   )
+
+# Check a plot of dfAgg
+dfAgg_wm %>%
+    bind_rows(dfAgg_mu, dfAgg, .id="aggType") %>%
+    pivot_longer(-c("cluster", "date", "aggType")) %>%
+    mutate(name=factor(name, 
+                       levels=c("cpm7", "dpm7", "hpm7", "tcpm7", "tdpm7"), 
+                       labels=c("New cases", "New deaths", "Hospitalized", "Total cases", "Total deaths")
+                       ), 
+           aggType=factor(aggType, levels=c("1", "2", "3"), labels=c("weighted", "unweighted", "median"))
+           ) %>%
+    ggplot(aes(x=date, y=value)) +
+    geom_line(aes(group=aggType, color=aggType)) +
+    facet_grid(name ~ cluster, scales="free_y") + 
+    labs(title="Rolling-7 mean by date for cluster and metric", 
+         subtitle="Weighted mean, unweighted mean, unweighted median", 
+         x="", 
+         y="Mean 7-day burden per million"
+         ) + 
+    scale_color_discrete("Cluster") + 
+    scale_x_date(date_breaks="3 months", date_labels="%b %Y") + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=8))
+
+```
+
+There is reasonable alignment among the curves, regardless of choice of mean/median and weighted/unweighted.  This is an area to potentially return to, so that the weighting process is not forced to use weighted.mean and could allow for other functions such as sumproduct.
