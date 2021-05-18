@@ -5322,14 +5322,35 @@ vecToTibble <- function(x,
 
 # Function to convert a regular function to one that returns NA for all NA and na.rm=TRUE otherwise
 specNA <- function(fn=sum) function(x, ...) if (any(!is.na(x))) fn(x, ..., na.rm=TRUE) else NA
-specNAweight <- function(fn=weighted.mean, wt) {
-    function(x, ...) if (any(!is.na(x))) fn(x, w=get(wt), ..., na.rm=TRUE) else NA
+
+# Function to create a weighted sum (similar to weighted.mean, but not normalizing or dividing by weights)
+specSumProd <- function(x, w=1, na.rm=FALSE) {
+
+    # FUNCTION ARGUMENTS:
+    # x: a numeric vector x
+    # w: a weighting vector w, which should be either of length(x) or of length 1
+    # na.rm: boolean, should missing vectors in x (and their corresponding weight) be excluded?
+    
+    # Check that x has an appropriate length
+    if (!(length(w) %in% c(1, length(x)))) stop("\nParameter w must be either length 1 or same length as x\n")
+    
+    # If there are any missing values in x, manage x and w appropriately
+    if (any(is.na(x))) {
+        if(!isTRUE(na.rm)) return(NA)  # if there are missing values and na.rm is not TRUE, result is NA
+        else {
+            if(length(w) > 1) w <- w[!is.na(x)]  # eliminate the values of w that correspond to NA in x
+            x <- x[!is.na(x)]
+        }
+    }
+    
+    # Return the sum of the product of x and w (note that if x is of length 0, this will return 0)
+    return(sum(x*w))
+    
 }
 
 # Function to create a group aggregate
 createGroupAgg <- function(df, 
                            aggTo=c(),
-                           vecSelect=NULL,
                            aggVars=NULL,
                            aggFunc=specNA(mean),
                            wtVar=NULL
@@ -5339,43 +5360,23 @@ createGroupAgg <- function(df,
     # df: a data frame or tibble containing data suitable for aggregation
     # aggTo: level data will be aggregated to in the final result (c() means overall level)
     #        passed as character vector, such as c("cluster", "date") for aggregating to cluster-date
-    # vecSelect: the elements of df to be kept (NULL means keep all)
     # aggVars: variables to be aggregated (NULL means aggregate all that are of type is.numeric)
     # aggFunc: a function that can be used for aggregation to the aggTo level
     # wtVar: the weighting variable for the aggregation function (NULL means equal weigthing by record)
     #        passed as character, so "pop" means that values should be weighted by pop
 
     # If aggVars has been passed as NULL, apply to all variables of type is.numeric
-    if (is.null(aggVars)) aggVars <- sapply(df, is.numeric) %>% which() %>% names()
-
     # Ensure aggVars does not include any grouping variables
+    if (is.null(aggVars)) aggVars <- sapply(df, is.numeric) %>% which() %>% names()
     aggVars <- setdiff(aggVars, aggTo)
     
-    # If a list for vecSelect has been passed, then:
-    # 1. limit aggVars to elements in vecSelect
-    # 2. keep only requested variables (vecSelect and aggTo)
-    if (!is.null(vecSelect)) {
-        aggVars <- base::intersect(aggVars, vecSelect)
-        df <- colSelector(df, vecSelect=reduce(list(aggTo, 
-                                                    vecSelect, 
-                                                    if(is.null(wtVar)) c() else wtVar
-                                                    ), 
-                                               .f=base::union
-                                               )
-                          )
-    }
-    
-    # Group by aggTo
+    # Group by aggTo, then apply aggFunc using do.call passing w=get(wtVar) when wtVar is not NULL
     dfGroup <- df %>%
-        group_by(across(.cols=all_of(aggTo)))
-    
-    # If the function has no weighting variable, summarize using aggFunc
-    # If no weighting is requested, group by aggTo then summarize aggVars using function aggFunc
-    if (is.null(wtVar)) dfGroup <- dfGroup %>% 
-        summarize(across(.cols=all_of(aggVars), .fns=aggFunc), .groups="drop")
-    else dfGroup <- dfGroup %>%
+        group_by(across(.cols=all_of(aggTo))) %>%
         summarize(across(.cols=all_of(aggVars), 
-                         .fns=~weighted.mean(.x, w=get(wtVar), na.rm=TRUE)
+                         .fns=~do.call(aggFunc, 
+                                       append(list(x=.x), if(!is.null(wtVar)) list(w=get(wtVar)) else NULL)
+                                       )
                          ), 
                   .groups="drop"
                   )
@@ -5395,7 +5396,7 @@ dfAgg <- vecToTibble(cdc_daily_test_v2$useClusters, colNameData="cluster", colNa
     joinFrames(cdc_daily_test_v2$stateData, cdc_daily_test_v2$dfPerCapita, keyJoin="state") %>%
     createGroupAgg(aggTo=c("cluster", "date"), 
                    aggFunc=specNA(median), 
-                   vecSelect=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7")
+                   aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7")
                    )
 
 # Check a plot of dfAgg
@@ -5429,8 +5430,8 @@ The function can now use weighted.mean.  Example code includes:
 dfAgg_wm <- vecToTibble(cdc_daily_test_v2$useClusters, colNameData="cluster", colNameName="state") %>%
     joinFrames(cdc_daily_test_v2$stateData, cdc_daily_test_v2$dfPerCapita, keyJoin="state") %>%
     createGroupAgg(aggTo=c("cluster", "date"), 
-                   aggFunc=NA, # not relevant since wtVar will drive weighted.mean
-                   vecSelect=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"), 
+                   aggFunc=specNA(weighted.mean), 
+                   aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"), 
                    wtVar="pop"
                    )
 
@@ -5439,7 +5440,7 @@ dfAgg_mu <- vecToTibble(cdc_daily_test_v2$useClusters, colNameData="cluster", co
     joinFrames(cdc_daily_test_v2$stateData, cdc_daily_test_v2$dfPerCapita, keyJoin="state") %>%
     createGroupAgg(aggTo=c("cluster", "date"), 
                    aggFunc=specNA(mean), # run the unweighted mean
-                   vecSelect=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7")
+                   aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7")
                    )
 
 # Check a plot of dfAgg
@@ -5467,3 +5468,43 @@ dfAgg_wm %>%
 ```
 
 There is reasonable alignment among the curves, regardless of choice of mean/median and weighted/unweighted.  This is an area to potentially return to, so that the weighting process is not forced to use weighted.mean and could allow for other functions such as sumproduct.
+
+The function createGroupAgg is updated to use do.call(), allowing for w=get(wtVar) to be optionally passed to the aggregation function.  The results of the updated function are now included above.
+
+Further, a function for creating sum-products has been created, so that the total reported amount of burden by cluster can be tracked:  
+```{r, fig.height=9, fig.width=9}
+
+# Testing the function for median by cluster-date
+dfAgg_sumprod <- vecToTibble(cdc_daily_test_v2$useClusters, colNameData="cluster", colNameName="state") %>%
+    joinFrames(cdc_daily_test_v2$stateData, cdc_daily_test_v2$dfPerCapita, keyJoin="state") %>%
+    mutate(popMill=pop/1000000, popTot=1) %>%
+    createGroupAgg(aggTo=c("cluster", "date"), 
+                   aggFunc=specNA(specSumProd), 
+                   aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7", "popTot"), 
+                   wtVar="popMill"
+                   )
+
+# Check a plot of dfAgg_sumprod
+dfAgg_sumprod %>%
+    pivot_longer(-c("cluster", "date")) %>%
+    mutate(name=factor(name, 
+                       levels=c("cpm7", "dpm7", "hpm7", "tcpm7", "tdpm7", "popTot"), 
+                       labels=c("New cases", "New deaths", "Hospitalized", 
+                                "Total cases", "Total deaths", "Pop (mln)"
+                                )
+                       )
+           ) %>%
+    ggplot(aes(x=date, y=value)) +
+    geom_line(aes(color=factor(cluster))) +
+    facet_grid(name ~ cluster, scales="free_y") + 
+    labs(title="Rolling-7 total by date for cluster and metric", 
+         x="", 
+         y="Total 7-day burden"
+         ) + 
+    scale_color_discrete("Cluster") + 
+    scale_x_date(date_breaks="3 months", date_labels="%b %Y") + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=8))
+
+```
+
+The aggregation functions appear to be working as intended.  Next steps are to create overall summary-level plots for the data (maps, new burden, total burden, etc.).
