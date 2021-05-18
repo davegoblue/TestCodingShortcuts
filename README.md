@@ -2410,4 +2410,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 17-MAY-2021  
 * Coronavirus_CDC_Daily_v001 includes functions to create weighted means  
+* Coronavirus_CDC_Daily_v001 includes additional aggregation capabilities  
   
