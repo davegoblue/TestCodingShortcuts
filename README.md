@@ -2412,4 +2412,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v001 includes functions to create weighted means  
 * Coronavirus_CDC_Daily_v001 includes additional aggregation capabilities  
 * Coronavirus_CDC_Daily_v001 creates aggregation plots  
+* Coronavirus_CDC_Daily_v001 creates state cluster dashboard page  
   
