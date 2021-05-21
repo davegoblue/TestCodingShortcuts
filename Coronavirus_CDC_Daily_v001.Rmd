@@ -5296,11 +5296,20 @@ A function is written to create cluster-level aggregates:
 joinFrames <- function(..., fnJoin=dplyr::inner_join, keyJoin=NULL) {
     
     # FUNCtION ARGUMENTS:
-    # ...: data frames to be joined using purrr::reduce
+    # ...: data frames to be joined using purrr::reduce OR a length-1 list of data frames
     # fnJoin: dplyr function for join (full_join, inner_join, left_join, right_join), applied in order to ...
     # keyJoin: by= variable passed to fnJoin (NULL means anything that matches, the dplyr default)
 
-    purrr::reduce(.x=list(...), .f=fnJoin, by=keyJoin)
+    # Allow for ... to be already passed as a list
+    # Convert ... to a list provisionally, then extract only element 1 if it is already a list
+    x <- list(...)
+    if (length(x)==1) {
+        if ("list" %in% class(x[[1]])) 
+            x <- x[[1]]
+    }
+    
+    # Join the files and return
+    purrr::reduce(.x=x, .f=fnJoin, by=keyJoin)
     
 }
 
@@ -5355,7 +5364,8 @@ createGroupAgg <- function(df,
                            aggTo=c(),
                            aggVars=NULL,
                            aggFunc=specNA(mean),
-                           wtVar=NULL
+                           wtVar=NULL, 
+                           prefix=NULL
                            ) {
     
     # FUNCtION ARGUMENTS:
@@ -5366,6 +5376,8 @@ createGroupAgg <- function(df,
     # aggFunc: a function that can be used for aggregation to the aggTo level
     # wtVar: the weighting variable for the aggregation function (NULL means equal weigthing by record)
     #        passed as character, so "pop" means that values should be weighted by pop
+    # prefix: a character prefix to be prepended to column names in summarize(across(...))
+    #         NULL means use default naming convention
 
     # If aggVars has been passed as NULL, apply to all variables of type is.numeric
     # Ensure aggVars does not include any grouping variables
@@ -5378,7 +5390,8 @@ createGroupAgg <- function(df,
         summarize(across(.cols=all_of(aggVars), 
                          .fns=~do.call(aggFunc, 
                                        append(list(x=.x), if(!is.null(wtVar)) list(w=get(wtVar)) else NULL)
-                                       )
+                                       ),
+                         .names=if(is.null(prefix)) NULL else paste0(prefix, "{.col}")
                          ), 
                   .groups="drop"
                   )
@@ -5792,3 +5805,188 @@ createSummary(cdc_daily_test_v2, brewPalette="Paired")
 ```
 
 The dashboard provides a decent summary of the segments at a glance.  Next steps are to add a few additional detailed plots, such as trends over time by metric and segment.
+
+The function is updated to allow for increased flexibility with parameters.  Specifically, group aggregates are created outside the function, allowing the function to be focused on plotting:  
+```{r}
+
+# Function for creating an integrated data frame
+integrateData <- function(lst=NULL, 
+                          lstExtract=list("useClusters"=function(x) vecToTibble(x, 
+                                                                                colNameData="cluster",
+                                                                                colNameName="state"
+                                                                                ), 
+                                          "stateData"=function(x) colSelector(x, vecSelect=c("state", "pop")), 
+                                          "dfPerCapita"=NULL
+                                          ),
+                          keyJoin="state",
+                          fnJoin=dplyr::inner_join,
+                          otherDF=list()
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a list containing one or more data frame elements
+    # lstExtract: the elements to extract from lst with an optional function for converting the elements
+    #             NULL means use the extracted element as-is
+    # keyJoin: the merge key for the data frames
+    # fnJoin: the merge function, applied as reduce starting with lstExtract and ending with ...
+    # otherDF: list of additional data frames to be joined
+    
+    dfList <- list()
+    
+    # If a list has been provided, extract the relevant elements
+    if (!is.null(lst)) {
+        for (elem in names(lstExtract)) {
+            dfList[[elem]] <- lst[[elem]]
+            if (!(is.null(lstExtract[[elem]]))) dfList[[elem]] <- lstExtract[[elem]](dfList[[elem]])
+        }
+    }
+    
+    # Append any other data frames passed
+    dfList <- append(dfList, otherDF)
+    
+    # Return a consolidated data frame
+    joinFrames(dfList, fnJoin=fnJoin, keyJoin=keyJoin)
+    
+}
+
+# Function for creating an aggregate-level frame
+combineAggData <- function(df, 
+                           aggTo=c("cluster", "date"), 
+                           aggBy=list("agg1"=list(aggFunc=specNA(specSumProd), 
+                                                  aggVars=c("pop"), 
+                                                  wtVar=NULL, 
+                                                  prefix=NULL
+                                                  ), 
+                                      "agg2"=list(aggFunc=specNA(weighted.mean), 
+                                                  aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"), 
+                                                  wtVar="pop", 
+                                                  prefix="wm_"
+                                                  )
+                                      ),
+                           fnJoin=dplyr::full_join
+                           ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: a data frame containing data for summarizing to an aggregate
+    # aggTo: the level to which data should be aggregated
+    # aggBy: a list of lists directing the creation of aggregates
+    # fnJoin: a function for joining the relevant aggTo aggregates
+
+    # Create an empty aggregation list
+    aggList <- list()
+    
+    # Create the aggregates based on the instruction list
+    # Potentially update later so that the instructions can be skipped when the defaults should be used
+    for (ctr in seq_along(aggBy)) {
+        aggList[[ctr]] <- df %>%
+            createGroupAgg(aggTo=aggTo, 
+                           aggFunc=aggBy[[ctr]]$aggFunc, 
+                           aggVars=aggBy[[ctr]]$aggVars,
+                           wtVar=aggBy[[ctr]]$wtVar, 
+                           prefix=aggBy[[ctr]]$prefix
+                           )
+    }
+    
+    # Return the joined data
+    joinFrames(aggList, fnJoin=fnJoin, keyJoin=aggTo)
+    
+}
+
+createSummary <- function(df, 
+                          stateClusterDF=NULL,
+                          brewPalette=NA
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: an integrated data frame by cluster-date
+    # stateClusterDF: a data frame containing state-cluster (NULL means it can be found in df)
+    # brewerPalette: character string for a palette from RColorBrewer to be used (NA means default colors)
+
+    # Create a four-quadrant summary of the segments, including:
+    # 1. Map of segments
+    # 2. Population of segments
+    # 3. Burden per million of segments
+    # 4. Trend-line of burden by segments
+    
+    # Create a map of the clusters
+    p1 <- helperSummaryMap(if(is.null(stateClusterDF)) df else stateClusterDF, 
+                           discreteValues=TRUE, 
+                           labelScale=is.na(brewPalette), 
+                           extraArgs=if(is.na(brewPalette)) list() else 
+                               list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                           )
+    
+    # Create plot for population by cluster
+    p2 <- df %>%
+        helperAggTotal(aggVars=c("pop"), 
+                       mapper=c("pop"="Population (millions)"), 
+                       xLab="", 
+                       yLab="", 
+                       title="",
+                       divideBy=c("pop"=1000000), 
+                       extraArgs=if(is.na(brewPalette)) list() else 
+                           list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                       )
+    
+    # Create total case and death burden per million by cluster plot
+    p3 <- df %>%
+        helperAggTotal(aggVars=c("wm_tcpm7", "wm_tdpm7"), 
+                       mapper=c("wm_tcpm7"="Cases per million", "wm_tdpm7"="Deaths per million"), 
+                       xLab="", 
+                       yLab="", 
+                       title="",
+                       extraArgs=if(is.na(brewPalette)) list() else 
+                           list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                       )
+    
+    # Create plot for cumulative burden per million over time
+    p4xtra <- list(arg1=scale_x_date(date_breaks="2 months", date_labels="%b-%y"), 
+                   arg2=theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+                   )
+    if(!is.na(brewPalette)) p4xtra$arg3 <- scale_color_brewer("Cluster", palette=brewPalette)
+    p4 <- df %>%
+        helperAggTrend(aggVars=c("wm_tcpm7", "wm_tdpm7"), 
+                       mapper=c("wm_tcpm7"="Cases per million", "wm_tdpm7"="Deaths per million"),
+                       yLab="",
+                       title="Cumulative burden per million by cluster", 
+                       linesize=0.75,
+                       extraArgs=p4xtra
+                       )
+
+    gridExtra::grid.arrange(p1, p2, p4, p3)
+    
+}
+
+```
+
+The functions are tested:  
+```{r, fig.height=9, fig.width=9}
+
+# Use defaults and confirm that resulting database is the same
+dfFull <- integrateData(cdc_daily_test_v2)
+identical(dfFull, 
+          integrateData(otherDF=list(cdc_daily_test_v2$useClusters %>% 
+                                         vecToTibble(colNameData="cluster", colNameName="state"), 
+                                     cdc_daily_test_v2$stateData %>% colSelector(vecSelect=c("state", "pop")), 
+                                     cdc_daily_test_v2$dfPerCapita
+                                     )
+                        )
+          )
+
+# Test the aggregation capability
+dfFull <- integrateData(cdc_daily_test_v2) %>%
+    combineAggData()
+dfFull
+
+# Test the dashboard capability
+createSummary(dfFull, 
+              stateClusterDF=vecToTibble(cdc_daily_test_v2[["useClusters"]], 
+                                         colNameData="cluster", 
+                                         colNameName="state"
+                                         ),
+              brewPalette="Paired"
+              )
+
+```
+
+The functions are now split, allowing for the use of dfFull in producing other summary statistics about the clusters.
