@@ -5536,6 +5536,8 @@ helperSummaryMap <- function(df,
                              legend.position="right",
                              labelScale=TRUE,
                              extraArgs=list(),
+                             countOnly=FALSE,
+                             textLabel=c(),
                              ...
                              ) {
     
@@ -5549,6 +5551,8 @@ helperSummaryMap <- function(df,
     # legend.position: character for the location of the legend in the plot
     # labelScale: boolean, should an scale_fill_ be created?  Use FALSE if contained in extraArgs
     # extraArgs: list of other arguments that will be appended as '+' to the end of the usmap::plot_usmap call
+    # countOnly: should a bar plot of counts only be produced?
+    # textLabel: a list of elements that should be labelled as text on the plot (too small to see)
     # ...: other parameters to be passed to usmap::plot_usmap (e.g., labels, include, exclude, etc.)
 
     # Modify the data frame to contain only the relevant data
@@ -5563,11 +5567,45 @@ helperSummaryMap <- function(df,
     if (isTRUE(discreteValues) & is.numeric(df[[values]])) 
         df[[values]] <- factor(df[[values]])
     
-    # Create the map and return
-    gg <- usmap::plot_usmap(regions=mapLevel, data=df, values=values, ...) + 
-        theme(legend.position=legend.position)
+    # If count only is needed, create a count map; otherwise create a map
+    if (isTRUE(countOnly)) { 
+        gg <- df %>%
+            ggplot(aes(x=fct_rev(get(values)))) + 
+            geom_bar(aes_string(fill=values)) + 
+            stat_count(aes(label=..count.., y=..count../2), 
+                       geom="text", 
+                       position="identity", 
+                       fontface="bold"
+                       ) +
+            coord_flip() + 
+            labs(y="Number of members", x="")
+    } else {
+        gg <- usmap::plot_usmap(regions=mapLevel, data=df, values=values, ...)
+        if (length(textLabel) > 0) {
+            labDF <- df %>% 
+                filter(get(keyCol) %in% textLabel) %>%
+                mutate(rk=match(get(keyCol), textLabel)) %>%
+                arrange(rk) %>%
+                mutate(lon=-70.1-seq(0, 0.8*length(textLabel)-0.8, by=0.8), 
+                       lat=40.1-seq(0, 1.5*length(textLabel)-1.5, by=1.5)
+                       ) %>%
+                select(lon, lat, everything()) %>%
+                usmap::usmap_transform()
+            gg <- gg + geom_text(data=labDF, 
+                                 aes(x=lon.1, y=lat.1, label=paste(get(keyCol), get(values))), 
+                                 size=3.25
+                                 )
+        }
+    }
+    
+    # Position the legend as requested
+    gg <- gg + theme(legend.position=legend.position)
+    
+    # Create the scale if appropriate
     if (isTRUE(labelScale)) gg <- gg + 
         if(isTRUE(discreteValues)) scale_fill_discrete(values) else scale_fill_continuous(values)
+    
+    # Apply extra arguments
     for (ctr in seq_along(extraArgs)) gg <- gg + extraArgs[[ctr]]
     
     # Return the map object
@@ -5584,7 +5622,8 @@ helperAggTrend <- function(df,
                            xLab="", 
                            yLab="Rolling 7-day mean per million", 
                            title=paste0(yLab, " by cluster"), 
-                           subtitle=NULL, 
+                           subtitle=NULL,
+                           divideBy=c(),
                            linesize=0,
                            mapper=varMapper,
                            extraArgs=list()
@@ -5600,6 +5639,8 @@ helperAggTrend <- function(df,
     # yLab: the ylabel for the plot
     # title: the title for the plot
     # subtitle: the subtitle for the plot (NULL means no subtitle)
+    # divideBy: a named list of c("variable"=divisor) where variable will be divided by divisor
+    #           not included in list means no divisor (will be treated as 1)
     # linesize: argument passed to geom_line(size=); zero will be the default thinnest line
     # mapper: mapping file for variable to descriptive name
     # extraArgs: list of other arguments that will be appended as '+' to the end of the ggplot call
@@ -5612,7 +5653,8 @@ helperAggTrend <- function(df,
         select(all_of(c(xVar, grpVar, aggVars))) %>%
         pivot_longer(-all_of(c(xVar, grpVar))) %>%
         filter(!is.na(value)) %>%
-        ggplot(aes_string(x=xVar, y="value")) +
+        mutate(useValue=ifelse(name %in% names(divideBy), value/divideBy[name], value)) %>%
+        ggplot(aes_string(x=xVar, y="useValue")) +
         geom_line(aes_string(group=grpVar, color=grpVar), size=linesize) +
         facet_wrap(~mapper[name], scales="free_y") +
         labs(x=xLab, y=yLab, title=title)
@@ -5990,3 +6032,184 @@ createSummary(dfFull,
 ```
 
 The functions are now split, allowing for the use of dfFull in producing other summary statistics about the clusters.
+
+The conversion of 'useClusters' to a data frame is a common need.  A function is written to drive this:  
+```{r}
+
+clustersToFrame <- function(lst, 
+                            colNameData="cluster", 
+                            colNameName="state", 
+                            convFactor=TRUE, 
+                            fctLevels=NULL, 
+                            fctLabels=NULL, 
+                            fctOrdered=!is.null(fctLevels)
+                            ) {
+    
+    # FUNCtION ARGUMENTS
+    # lst: a list containing useClusters OR a vector of useClusters
+    # colNameData: the column name in the tibble for the vector data
+    # colNameName: the column name in the tibble for the vector names
+    # convFactor: should colNameData be converted to a factor?
+    # fctLevels: factor levels and order (NULL means use all sorted low to high)
+    # fctLabels: factor labels (should be a one-to-one match with fctLevels)
+    # fctOrdered: should an ordered factor be created (default is 'yes' if fctLevels have been passed)
+    
+    # If lst is a list, extract the useClusters element
+    if ("list" %in% class(lst)) lst <- lst[["useClusters"]]
+
+    # Convert to tibble
+    df <- vecToTibble(lst, colNameData=colNameData, colNameName=colNameName)
+    
+    # Convert to factor if requested
+    if (isTRUE(convFactor)) {
+        if (is.null(fctLevels)) fctLevels <- sort(unique(df[[colNameData]]))
+        if (is.null(fctLabels)) fctLabels <- fctLevels
+        df[[colNameData]] <- factor(df[[colNameData]], levels=fctLevels, labels=fctLabels, ordered=fctOrdered)
+    }
+    
+    # Return the tibble
+    df
+    
+}
+
+```
+
+The dashboard process is then updated to include clustersToFrame() and to make further use of grid.arrange():  
+```{r}
+
+# Function for creating an integrated data frame
+integrateData <- function(lst=NULL, 
+                          lstExtract=list("useClusters"=function(x) clustersToFrame(x), 
+                                          "stateData"=function(x) colSelector(x, vecSelect=c("state", "pop")), 
+                                          "dfPerCapita"=NULL
+                                          ),
+                          keyJoin="state",
+                          fnJoin=dplyr::inner_join,
+                          otherDF=list()
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a list containing one or more data frame elements
+    # lstExtract: the elements to extract from lst with an optional function for converting the elements
+    #             NULL means use the extracted element as-is
+    # keyJoin: the merge key for the data frames
+    # fnJoin: the merge function, applied as reduce starting with lstExtract and ending with ...
+    # otherDF: list of additional data frames to be joined
+    
+    dfList <- list()
+    
+    # If a list has been provided, extract the relevant elements
+    if (!is.null(lst)) {
+        for (elem in names(lstExtract)) {
+            dfList[[elem]] <- lst[[elem]]
+            if (!(is.null(lstExtract[[elem]]))) dfList[[elem]] <- lstExtract[[elem]](dfList[[elem]])
+        }
+    }
+    
+    # Append any other data frames passed
+    dfList <- append(dfList, otherDF)
+    
+    # Return a consolidated data frame
+    joinFrames(dfList, fnJoin=fnJoin, keyJoin=keyJoin)
+    
+}
+
+# Function for creating plots that can be combined on a dashboard page
+createSummary <- function(df, 
+                          stateClusterDF=NULL,
+                          brewPalette=NA
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: an integrated data frame by cluster-date
+    # stateClusterDF: a data frame containing state-cluster (NULL means it can be found in df)
+    # brewerPalette: character string for a palette from RColorBrewer to be used (NA means default colors)
+
+    # Create plots that can be relevant for a dashboard, including:
+    # 1. Map of segments
+    # 2. Bar plot of counts by segment
+    # 3. Facetted bar plot of segment descriptors (e.g., population, burden per million)
+    # 4. Facetted trend-line plot of burden by segments
+    
+    # Create a map of the clusters
+    p1 <- helperSummaryMap(if(is.null(stateClusterDF)) df else stateClusterDF, 
+                           discreteValues=TRUE, 
+                           labelScale=is.na(brewPalette), 
+                           textLabel=c("RI", "CT", "DE", "MD", "DC"),
+                           extraArgs=if(is.na(brewPalette)) list() else 
+                               list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                           )
+    
+    # Create a bar plot of counts by segment
+    p2 <- helperSummaryMap(if(is.null(stateClusterDF)) df else stateClusterDF, 
+                           discreteValues=TRUE, 
+                           labelScale=is.na(brewPalette), 
+                           countOnly=TRUE,
+                           extraArgs=if(is.na(brewPalette)) list() else 
+                               list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                           )
+    
+    # Create plot for population and burden by cluster
+    p3 <- df %>%
+        helperAggTotal(aggVars=c("pop", "wm_tcpm7", "wm_tdpm7"), 
+                       mapper=c("pop"="Population (millions)", 
+                                "wm_tcpm7"="Cases per thousand", 
+                                "wm_tdpm7"="Deaths per million"
+                                ), 
+                       xLab=NULL, 
+                       yLab=NULL, 
+                       title=NULL,
+                       divideBy=c("pop"=1000000, "wm_tcpm7"=1000), 
+                       extraArgs=if(is.na(brewPalette)) list() else 
+                           list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                       )
+    
+    # Create plot for cumulative burden per million over time
+    p4xtra <- list(arg1=scale_x_date(date_breaks="2 months", date_labels="%b-%y"), 
+                   arg2=theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+                   )
+    if(!is.na(brewPalette)) p4xtra$arg3 <- scale_color_brewer("Cluster", palette=brewPalette)
+    p4 <- df %>%
+        helperAggTrend(aggVars=c("wm_tcpm7", "wm_tdpm7", "wm_hpm7"), 
+                       mapper=c("wm_tcpm7"="Cases per thousand\n(cumulative)", 
+                                "wm_tdpm7"="Deaths per million\n(cumulative)", 
+                                "wm_hpm7"="Hospitalized per million\n(current)"
+                                ),
+                       yLab=NULL,
+                       title=NULL, 
+                       divideBy=c("wm_tcpm7"=1000), 
+                       linesize=0.75,
+                       extraArgs=p4xtra
+                       )
+
+    list(p1=p1, p2=p2, p3=p3, p4=p4)
+    
+}
+
+```
+
+The full process is then tested:  
+```{r, fig.height=9, fig.width=9}
+
+# Test the aggregation capability
+dfFull <- integrateData(cdc_daily_test_v2) %>%
+    combineAggData()
+
+# Test the dashboard capability
+plotList <- createSummary(dfFull, 
+                          stateClusterDF=clustersToFrame(cdc_daily_test_v2),
+                          brewPalette="Paired"
+                          )
+
+# Display a dashboard of the map, bars, and trends
+gridExtra::grid.arrange(plotList$p1 + theme(legend.position="none"), 
+                        plotList$p3 + theme(legend.position="left"), 
+                        plotList$p4, 
+                        layout_matrix=rbind(c(1, 2), 
+                                            c(3, 3)
+                                            )
+                        )
+
+```
+
+Next steps are to create a few additional summaries (e.g., burden by state, faceted burden plots, etc.).
