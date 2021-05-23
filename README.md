@@ -2415,4 +2415,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v001 creates state cluster dashboard page  
 * Coronavirus_CDC_Daily_v001 parameters drive dashboard page  
 * Coronavirus_CDC_Daily_v001 includes function clustersToFrame()  
+* Coronavirus_CDC_Daily_v001 includes detailed summary plots  
   
