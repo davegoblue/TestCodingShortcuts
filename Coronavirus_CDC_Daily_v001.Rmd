@@ -6052,7 +6052,7 @@ clustersToFrame <- function(lst,
     # convFactor: should colNameData be converted to a factor?
     # fctLevels: factor levels and order (NULL means use all sorted low to high)
     # fctLabels: factor labels (should be a one-to-one match with fctLevels)
-    # fctOrdered: should an ordered factor be created (default is 'yes' if fctLevels have been passed)
+    # fctOrdered: should an ordered factor be created?  default is 'yes if fctLevels have been passed
     
     # If lst is a list, extract the useClusters element
     if ("list" %in% class(lst)) lst <- lst[["useClusters"]]
@@ -6123,7 +6123,7 @@ createSummary <- function(df,
     # FUNCTION ARGUMENTS:
     # df: an integrated data frame by cluster-date
     # stateClusterDF: a data frame containing state-cluster (NULL means it can be found in df)
-    # brewerPalette: character string for a palette from RColorBrewer to be used (NA means default colors)
+    # brewPalette: character string for a palette from RColorBrewer to be used (NA means default colors)
 
     # Create plots that can be relevant for a dashboard, including:
     # 1. Map of segments
@@ -6192,11 +6192,11 @@ The full process is then tested:
 ```{r, fig.height=9, fig.width=9}
 
 # Test the aggregation capability
-dfFull <- integrateData(cdc_daily_test_v2) %>%
-    combineAggData()
+dfFull <- integrateData(cdc_daily_test_v2)
+dfAgg <- combineAggData(dfFull)
 
 # Test the dashboard capability
-plotList <- createSummary(dfFull, 
+plotList <- createSummary(dfAgg, 
                           stateClusterDF=clustersToFrame(cdc_daily_test_v2),
                           brewPalette="Paired"
                           )
@@ -6212,4 +6212,101 @@ gridExtra::grid.arrange(plotList$p1 + theme(legend.position="none"),
 
 ```
 
-Next steps are to create a few additional summaries (e.g., burden by state, faceted burden plots, etc.).
+Next steps are to create a few additional summaries (e.g., burden by state, faceted burden plots, etc.).  Key plots include:  
+  
+* Most recent cumulative burden by state  
+* Faceted burden trends by cluster  
+* Percent of burden by timing(?)  
+  
+A function is written to create each of the requested plots:  
+```{r}
+
+createDetailedSummaries <- function(dfDetail, 
+                                    dfAgg, 
+                                    aggVar=c("cluster"), 
+                                    detVar=c("state"),
+                                    p1Metrics=c("tcpm", "tdpm"), 
+                                    p2DetMetrics=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"),
+                                    p2AggMetrics=paste0("wm_", p2DetMetrics),
+                                    p1Order=c("tdpm"), 
+                                    mapper=c("tcpm"="Cases per million\n(cumulative)", 
+                                             "tdpm"="Deaths per million\n(cumulative)", 
+                                             "cpm7"="Cases\nper million", 
+                                             "dpm7"="Deaths\nper million",
+                                             "hpm7"="Hospitalized\nper million",
+                                             "tdpm7"="Deaths (cum)\nper million",
+                                             "tcpm7"="Cases (cum)\nper million"
+                                             ),
+                                    brewPalette=NA
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfDetail: data frame or tibble containing detailed (sub-cluster) data
+    # dfAgg: data frame or tibble containing aggregated (cluster) data
+    # aggVar: variable reflecting the aggregate level
+    # detVar: variable reflecting the detailed level
+    # p1Metrics: metrics to be shown for plot 1 (will be faceted)
+    # p1Order: variable for ordering detVar in p1
+    # p2DetMetrics: variables to be included from dfDetail for p2
+    # p2AggMetrics: corresponding variables to be included from dfAgg for p2
+    # mapper mapping file for variable name to descriptive name
+    # brewPalette: character string for a palette from RColorBrewer to be used (NA means default colors)    
+    
+    # Create plot for aggregates by sub-cluster
+    p1 <- dfDetail %>%
+        colSelector(vecSelect=c(detVar, aggVar, "date", p1Metrics)) %>%
+        pivot_longer(all_of(p1Metrics)) %>%
+        filter(!is.na(value)) %>%
+        group_by_at(detVar) %>%
+        filter(date==max(date)) %>%
+        ungroup() %>%
+        ggplot(aes(x=fct_reorder(get(detVar), 
+                                 value, 
+                                 .fun=function(x) { max(ifelse(name==p1Order, x, 0)) }
+                                 ),
+                   y=value
+                   )
+               ) + 
+        geom_col(aes(fill=cluster)) + 
+        facet_wrap(~mapper[name], scales="free_x") + 
+        coord_flip() + 
+        labs(title="Cumulative burden", x=NULL, y=NULL)
+    if (!is.na(brewPalette)) p1 <- p1 + scale_fill_brewer("Cluster", palette=brewPalette)
+    
+    # Create facetted burden trends by aggregate
+    p2 <- dfDetail %>%
+        colSelector(vecSelect=c(detVar, "date", aggVar, p2DetMetrics)) %>%
+        pivot_longer(all_of(p2DetMetrics)) %>%
+        filter(!is.na(value)) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes_string(group=detVar), color="grey", size=0.5) + 
+        facet_grid(mapper[name] ~ cluster, scales="free_y") + 
+        scale_x_date(date_breaks="2 months", date_labels="%b-%y") + 
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+        labs(x=NULL, y=NULL, title="Burden by cluster and metric")
+    aggPlot <- dfAgg %>% 
+        colSelector(vecSelect=c("date", aggVar, p2AggMetrics)) %>%
+        colRenamer(vecRename=purrr::set_names(p2DetMetrics, p2AggMetrics)) %>%
+        pivot_longer(all_of(p2DetMetrics)) %>%
+        filter(!is.na(value))
+    p2 <- p2 + 
+        geom_line(data=aggPlot, aes_string(color=aggVar, group=aggVar), size=1.5)
+    if (!is.na(brewPalette)) p2 <- p2 + 
+        scale_color_brewer("Cluster", palette=brewPalette) + 
+        theme(legend.position="none")
+    
+    print(p1)
+    print(p2)
+    
+}
+
+```
+
+The function is tested:  
+```{r, fig.height=9, fig.width=9}
+
+createDetailedSummaries(dfDetail=dfFull, dfAgg=dfAgg, brewPalette="Paired")
+
+```
+
+Plots appear to be generated as expected.  Next steps are to add a plot reflecting recent growth of burden and to further parameterize the process.
