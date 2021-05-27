@@ -2421,4 +2421,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v001 includes growth plots  
 * Coronavirus_CDC_Daily_v001 further parameterizes plot creation  
 * Coronavirus_CDC_Daily_v001 integrates all functions  
+* Coronavirus_CDC_Daily_v001 concluded, preparation to split off functions and move to _v002  
   
