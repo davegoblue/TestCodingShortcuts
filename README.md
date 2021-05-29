@@ -2425,4 +2425,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Generic_Added_Utility_Functions_202105_v001.R contains functions for data wrangling and analysis  
 * Coronavirus_CDC_Daily_Functions_v001.R contains functions for working with CDC daily data  
 * Coronavirus_CDC_Daily_Default_Mappings_v002.R contains mapping parameters for Coronavirus_CDC_Daily_v002  
+* Coronavirus_CDC_Daily_v002 created to use functions and parameters in .R files  
   
