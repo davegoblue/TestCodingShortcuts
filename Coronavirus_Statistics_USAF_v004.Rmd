@@ -1,0 +1,402 @@
+---
+title: "Coronavirus US - USA Facts"
+author: "davegoblue"
+date: "5/29/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+This module builds on code contained in Coronavirus_Statistics_USAF_v003.Rmd.  This file includes the latest code for analyzing data from [USA Facts](https://usafacts.org/visualizations/coronavirus-covid-19-spread-map/).  USA Facts maintains data on cases and deaths by county for coronavirus in the US.  Downloaded data are unique by county with date as a column and a separate file for each of cases, deaths, and population.
+
+The intent of this module is to rebuild the function readRunUSAFacts() so that it works with 2021 data as currently formatted by USA Facts.  The code will then be included in appropriate .R modules that can be sourced.
+
+## Sourcing Functions  
+The tidyverse library is loaded, and the functions used for CDC daily processing are sourced:  
+```{r}
+
+library(tidyverse)
+
+# Functions are available in source file
+source("./Generic_Added_Utility_Functions_202105_v001.R")
+source("./Coronavirus_CDC_Daily_Functions_v001.R")
+
+```
+
+## Updating Functions  
+The current readRunUSAFacts() function is copied:  
+```{r eval=FALSE}
+
+# Function to run the USA Facts (US county-level coronavirus data) clustering process
+readRunUSAFacts <- function(maxDate, 
+                            popLoc, 
+                            caseLoc, 
+                            deathLoc, 
+                            dlPop=FALSE, 
+                            dlCaseDeath=FALSE, 
+                            ovrWrite=FALSE, 
+                            ovrWriteError=TRUE, 
+                            oldFile=NULL, 
+                            showBurdenMinPop=10000, 
+                            minPopCluster=25000,
+                            existingStateClusters=NULL, 
+                            existingCountyClusters=NULL, 
+                            createClusters=FALSE, 
+                            hierarchical=FALSE,
+                            kCut=6,
+                            orderCluster=TRUE,
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # maxDate: the maximum data to use for data from the cases and deaths file
+    # popLoc: location where the county-level population data are stored
+    # caseLoc: location where the county-level cases data are stored
+    # deathLoc: location where the county-level deaths data are stored
+    # dlPop: boolean, should new population data be downloaded to popLoc
+    # dlCaseDeath: boolean, should new case data and death data be downloaded to caseLoc and deathLoc
+    # ovrWrite: boolean, if data are downloaded to an existing file, should it be over-written
+    # ovrWriteError: boolean, if ovrWrite is FALSE and an attempt to overwrite is made, should it error out?
+    # oldFile: old file for comparing metrics against (NULL means no old file for comarisons)
+    # showBurdenMinPop: minimum population for showing in burden by cluster plots (NULL means skip plot)
+    # minPopCluster: minimum population for including county in running cluster-level metrics
+    # existingStateClusters: location of an existing named vector with clusters by state (NULL means none)
+    # existingCountyClusters: location of an existing named vector with clusters by county (NULL means none)
+    #                         if existingStateClusters is not NULL, then existingCountyClusters is ignored
+    # createClusters: boolean, whether to create new clusters (only set up for kmeans)
+    # hierarchical: whether to create hierarchical clusters
+    #               TRUE means run hierarchical clustering
+    #               FALSE means run kmeans clustering
+    #               NA means run rules-based clustering
+    # kCut; if hierarchical clustering is used, what k (number of clusters in cutree) should be used?
+    # orderCluster: if FALSE, ignore; if TRUE, order by "dpm"; if anything else, order by orderCluster
+    # ...: other arguments that will be passed to prepClusterCounties
+    
+    # STEP 0: Download new files (if requested)
+    urlCase <- "https://usafactsstatic.blob.core.windows.net/public/data/covid-19/covid_confirmed_usafacts.csv"
+    urlDeath <- "https://usafactsstatic.blob.core.windows.net/public/data/covid-19/covid_deaths_usafacts.csv"
+    urlPop <- "https://usafactsstatic.blob.core.windows.net/public/data/covid-19/covid_county_population_usafacts.csv"
+    
+    # Helper function to download a file
+    helperDownload <- function(url, loc, ovrWrite=ovrWrite, ovrWriteError=ovrWriteError) {
+        # If the file exists, mention it and proceed as per the guard checks
+        if (file.exists(loc)) {
+            cat("\nFile:", loc, "already exists\n")
+            if (!ovrWrite & ovrWriteError) stop("\nExiting due to ovrWrite=FALSE and ovrWriteError=TRUE\n")
+            if (!ovrWrite & !ovrWriteError) {
+                cat("\nFile is NOT downloaded again\n")
+                return(NULL)
+            }
+        }
+        # Download the file and change to read-only
+        download.file(url, destfile=loc, method="curl")
+        Sys.chmod(loc, mode="0555", use_umask = FALSE)
+    }
+    
+    if (dlPop) helperDownload(urlPop, loc=popLoc)
+    if (dlCaseDeath) helperDownload(urlCase, loc=caseLoc)
+    if (dlCaseDeath) helperDownload(urlDeath, loc=deathLoc)
+    
+    # STEP 1: Read in the population file
+    pop <- readr::read_csv(popLoc) %>%
+        rename(countyName=`County Name`, state=State)
+    
+    # STEP 2: Read case and death data, combine, and add population totals and existing clusters
+    burdenData <- readUSAFacts(
+        caseFile=caseLoc, 
+        deathFile=deathLoc, 
+        countyPopFile=pop,
+        oldFile=oldFile,
+        showBurdenMinPop=showBurdenMinPop,
+        maxDate=maxDate,
+        stateClusters=existingStateClusters, 
+        countyClusters=existingCountyClusters, 
+        glimpseRaw=FALSE
+    )
+    
+    # STEP 3: Create appropriately filtered data, and new clusters if requested
+    clusterData <- prepClusterCounties(burdenFile=burdenData, 
+                                       maxDate=maxDate, 
+                                       minPop=minPopCluster,
+                                       createClusters=createClusters, 
+                                       hierarchical=hierarchical, 
+                                       returnList=TRUE,
+                                       ...
+    )
+    
+    # STEP 4: Assess clusters against the new data
+    # STEP 4a: Extract the county-level clusters (new clusters if created, existing otherwise)
+    if (createClusters) {
+        if (is.na(hierarchical)) clustVec <- clusterData$objCluster$objCluster
+        else if (hierarchical) clustVec <- cutree(clusterData$objCluster$objCluster, k=kCut)
+        else clustVec <- clusterData$objCluster$objCluster$cluster
+    }
+    else {
+        clustVec <- existingCountyClusters
+    }
+    
+    # STEP 4b: Show the cumulative data, order by cluster, and keep the plots together
+    helperACC_county <- helperAssessCountyClusters(vecCluster=clustVec, 
+                                                   dfPop=clusterData$countyFiltered, 
+                                                   dfBurden=clusterData$countyFiltered, 
+                                                   showCum=TRUE,
+                                                   thruLabel=format(as.Date(maxDate), "%b %d, %Y"), 
+                                                   plotsTogether=TRUE, 
+                                                   orderCluster=orderCluster
+    )
+    
+    # STEP 5: Add back clusters not used for analysis (code 999) and associated disease data
+    # May want to change the approach to population data
+    clusterStateData <- helperMakeClusterStateData(dfPlot=helperACC_county, 
+                                                   dfPop=usmap::countypop,
+                                                   dfBurden=clusterData$countyDailyPerCapita,
+                                                   orderCluster=orderCluster
+    )
+    
+    # STEP 6: Return a list of the key files
+    list(pop=pop, 
+         burdenData=burdenData, 
+         clusterData=clusterData, 
+         clustVec=clustVec, 
+         helperACC_county=helperACC_county, 
+         clusterStateData=clusterStateData,
+         maxDate=maxDate
+    )
+    
+}
+
+```
+
+The function is updated to make better use of the functional form.  Broadly, the process will include:  
+  
+* Step 1: Get county-level population data  
+* Step 2: Download and QC each requested data element  
+* Step 3: Process each requested data element  
+* Step 4: Integrate to create a per capita file  
+* Step 5: Create clusters  
+* Step 6: Assess clusters  
+  
+The function includes:  
+```{r}
+
+# Mapping for urlType to url
+usafMainURL <- "https://usafactsstatic.blob.core.windows.net/public/data/covid-19/"
+usafURLMapper_base <- c("usafCase"=paste0(usafMainURL, "covid_confirmed_usafacts.csv"), 
+                        "usafDeath"=paste0(usafMainURL, "covid_deaths_usafacts.csv"),
+                        "usafPop"=paste0(usafMainURL, "covid_county_population_usafacts.csv")
+                        )
+
+
+# Function to get county-level population data
+getCountyData <- function(df=readFromRDS("countyPop2021"), 
+                          renameVars=c("State"="state", "County Name"="countyName", "population"="pop"), 
+                          keepVars=c("countyFIPS", "countyName", "state", "pop")
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing state data
+    # renameVars: variables to be renamed, using named list with format "originalName"="newName"
+    # keepVars: variables to be kept in the final file (NULL means keep all)
+    
+    # Rename variables where appropriate
+    names(df) <- ifelse(is.na(renameVars[names(df)]), names(df), renameVars[names(df)])
+
+    # Keep all variables if keepVars is NULL
+    if (is.null(keepVars)) keepVars <- names(df)
+    
+    # Return file with only key variables kept
+    df %>%
+        select_at(vars(all_of(keepVars)))
+    
+}
+
+
+
+# Function to run the USA Facts (US county-level coronavirus data) clustering process
+readRunUSAFacts <- function(maxDate, 
+                            downloadTo=list("usafCase"=NA, "usafDeath"=NA),
+                            readFrom=downloadTo,
+                            compareFile=list("usafCase"=NA, "usafDeath"=NA),
+                            writeLog=NULL,
+                            ovrWriteLog=TRUE,
+                            dfPerCapita=NULL,
+                            showBurdenMinPop=10000, 
+                            minPopCluster=25000,
+                            existingStateClusters=NULL, 
+                            existingCountyClusters=NULL, 
+                            createClusters=FALSE, 
+                            hierarchical=FALSE,
+                            kCut=6,
+                            orderCluster=TRUE,
+                            skipAssessmentPlots=FALSE,
+                            brewPalette=NA,
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # maxDate: the maximum data to use for data from the cases and deaths file
+    # downloadTo: named list for locations to download data (usafCase, usafDeath, usafPop)
+    #             NA means do not download data for that particular element
+    # readFrom: named list for locations to read data from (defaults to donwloadTo)
+    # compareFile: named list for the reference file to be used for usafCase, usafDeath, usafPop
+    #              NA means do not use a reference file for that element
+    # writeLog: name of a separate log file for capturing detailed data on changes between files
+    #           NULL means no detailed data captured
+    # ovrwriteLog: boolean, should the log file be overwritten and started again from scratch?
+    # dfPerCapita: file can be passed directly, which bypasses the loading and processing steps
+    #              default NULL means create dfPerCapita using steps 2-4
+    # showBurdenMinPop: minimum population for showing in burden by cluster plots (NULL means skip plot)
+    # minPopCluster: minimum population for including county in running cluster-level metrics
+    # existingStateClusters: location of an existing named vector with clusters by state (NULL means none)
+    # existingCountyClusters: location of an existing named vector with clusters by county (NULL means none)
+    #                         if existingStateClusters is not NULL, then existingCountyClusters is ignored
+    # createClusters: boolean, whether to create new clusters (only set up for kmeans)
+    # hierarchical: whether to create hierarchical clusters
+    #               TRUE means run hierarchical clustering
+    #               FALSE means run kmeans clustering
+    #               NA means run rules-based clustering
+    # kCut; if hierarchical clustering is used, what k (number of clusters in cutree) should be used?
+    # orderCluster: if FALSE, ignore; if TRUE, order by "dpm"; if anything else, order by orderCluster
+    # skipAssessmentPlots: boolean, should cluster assessment plots be skipped?
+    # brewPalette: character vector length-1 referencing a color scheme from brewer_pal to use
+    #              NA means use R default color schemes
+    # ...: other arguments that will be passed to prepClusterCounties
+
+    # STEP 1: Get a county-level population file
+    countyData <- getCountyData()
+
+    # If a log file is requested, create the log file (allows for append=TRUE for all downstream functions)
+    if (!is.null(writeLog)) genNewLog(writeLog=writeLog, ovrwriteLog=ovrwriteLog)
+    
+    # Get the data types to be used (elements of readFrom) and create a file storage list
+    elemUsed <- names(readFrom)
+    dfRawList <- vector("list", length=length(elemUsed)) %>% purrr::set_names(elemUsed)
+    dfProcessList <- vector("list", length=length(elemUsed)) %>% purrr::set_names(elemUsed)
+    
+    # Steps 2-4 are required only if dfPerCapita has not been passed
+    if (is.null(dfPerCapita)) {
+    
+        # STEP 2: Download and QC each requested data element
+        for (elem in elemUsed) {
+            # dfRawList[[elem]] <- readQCRawCDCDaily(fileName=readFrom[[elem]], 
+            #                                        writeLog=writeLog, 
+            #                                        ovrwriteLog=FALSE,
+            #                                        urlType=elem, 
+            #                                        getData=if(is.na(downloadTo[[elem]])) FALSE else TRUE, 
+            #                                        dfRef=compareFile[[elem]]
+            #                                        )
+            # glimpseLog(dfRawList[[elem]], txt=paste0("\nRaw file for ", elem, ":\n"), logFile=writeLog)
+        }
+    
+        # STEP 3: Process all requested data
+        for (elem in elemUsed) {
+            # dfProcessList[[elem]] <- processRawFile(dfRawList[[elem]], 
+            #                                         vecRename=c(), # already handled in readQCRawCDCDaily()
+            #                                         vecSelect=vecSelectMapper[[elem]], 
+            #                                         lstCombo=lstComboMapper[[elem]], 
+            #                                         lstFilter=lstFilterMapper[[elem]]
+            #                                         )
+            # glimpseLog(dfProcessList[[elem]], txt=paste0("\nProcessed for ", elem, ":\n"), logFile=writeLog)
+        }
+    
+        # STEP 4: Integrate to create a per-capita data file
+        # dfPerCapita <- createPerCapita(dfProcessList, 
+        #                                uqBy=c("state", "date"), 
+        #                                popData=stateData, 
+        #                                mapper=perCapMapper
+        #                                )
+        # glimpseLog(dfPerCapita, txt="\nIntegrated per capita data file:\n", logFile=writeLog)
+    
+    } else {
+        dfRawList <- NULL
+        dfProcessList <- NULL
+    }
+    
+    # STEP 5: Create clusters (if requested)
+    if (isTRUE(createClusters)) {
+        # clData <- clusterStates(df=dfPerCapita, hierarchical=hierarchical, returnList=returnList, ...)
+        # useClusters <- getClusters(clData, hier=hierarchical, kCut=kCut, reAssign=reAssignState)
+    }
+    
+    # STEP 6: Assess clusters
+    
+    # Temporary return statement, since code below has not yet been modified
+    return(countyData)
+    
+    # STEP 2: Read case and death data, combine, and add population totals and existing clusters
+    burdenData <- readUSAFacts(
+        caseFile=caseLoc, 
+        deathFile=deathLoc, 
+        countyPopFile=pop,
+        oldFile=oldFile,
+        showBurdenMinPop=showBurdenMinPop,
+        maxDate=maxDate,
+        stateClusters=existingStateClusters, 
+        countyClusters=existingCountyClusters, 
+        glimpseRaw=FALSE
+    )
+    
+    # STEP 3: Create appropriately filtered data, and new clusters if requested
+    clusterData <- prepClusterCounties(burdenFile=burdenData, 
+                                       maxDate=maxDate, 
+                                       minPop=minPopCluster,
+                                       createClusters=createClusters, 
+                                       hierarchical=hierarchical, 
+                                       returnList=TRUE,
+                                       ...
+    )
+    
+    # STEP 4: Assess clusters against the new data
+    # STEP 4a: Extract the county-level clusters (new clusters if created, existing otherwise)
+    if (createClusters) {
+        if (is.na(hierarchical)) clustVec <- clusterData$objCluster$objCluster
+        else if (hierarchical) clustVec <- cutree(clusterData$objCluster$objCluster, k=kCut)
+        else clustVec <- clusterData$objCluster$objCluster$cluster
+    }
+    else {
+        clustVec <- existingCountyClusters
+    }
+    
+    # STEP 4b: Show the cumulative data, order by cluster, and keep the plots together
+    helperACC_county <- helperAssessCountyClusters(vecCluster=clustVec, 
+                                                   dfPop=clusterData$countyFiltered, 
+                                                   dfBurden=clusterData$countyFiltered, 
+                                                   showCum=TRUE,
+                                                   thruLabel=format(as.Date(maxDate), "%b %d, %Y"), 
+                                                   plotsTogether=TRUE, 
+                                                   orderCluster=orderCluster
+    )
+    
+    # STEP 5: Add back clusters not used for analysis (code 999) and associated disease data
+    # May want to change the approach to population data
+    clusterStateData <- helperMakeClusterStateData(dfPlot=helperACC_county, 
+                                                   dfPop=usmap::countypop,
+                                                   dfBurden=clusterData$countyDailyPerCapita,
+                                                   orderCluster=orderCluster
+    )
+    
+    # STEP 6: Return a list of the key files
+    list(pop=pop, 
+         burdenData=burdenData, 
+         clusterData=clusterData, 
+         clustVec=clustVec, 
+         helperACC_county=helperACC_county, 
+         clusterStateData=clusterStateData,
+         maxDate=maxDate
+    )
+    
+}
+
+```
+
+The function is tested as it evolves:  
+```{r, fig.height=9, fig.width=9}
+
+readRunUSAFacts(maxDate="2021-05-27")
+
+```
+
+* The function completes step 1, reading and formatting the county population data file  
