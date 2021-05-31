@@ -2428,3 +2428,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v002 created to use functions and parameters in .R files  
 * Coronavirus_Statistics_USAF_v004 created for updated processing of USA Facts data  
   
+### Expansions week of 31-MAY-2021  
+* Coronavirus_Statistics_USAF_v004 includes function for county-level clustering  
+  
