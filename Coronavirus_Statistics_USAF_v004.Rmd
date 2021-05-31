@@ -215,6 +215,72 @@ getCountyData <- function(df=readFromRDS("countyPop2021"),
 
 
 
+# Function to take county-level data, prepare for clusterStates, and return resulting outputs
+clusterCounties <- function(dfPerCapita, 
+                            hierarchical,
+                            vecRename=c(),
+                            clusterBy=c("state"),
+                            arrangeBy=c("date"),
+                            burdenMetrics=c("cpm", "dpm"),
+                            popVar=c("population"),
+                            vecSelect=c(clusterBy, arrangeBy, burdenMetrics, popVar),
+                            uniqueBy=c(clusterBy, arrangeBy),
+                            minPopCluster=1,
+                            defaultCluster="999",
+                            returnList=TRUE, 
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPerCapita: a county-level file with per-capita metrics
+    # hierarchical: whether to create hierarchical clusters
+    #               TRUE means run hierarchical clustering
+    #               FALSE means run kmeans clustering
+    #               NA means run rules-based clustering
+    # vecRename: renaming of input variables
+    # clusterBy: the variable name used for clustering
+    # arrangeBy: data will be sorted by this a mix of clusterBy and this variable
+    # burdenMetrics: the metrics to be used for burden in clustering
+    # popVar: the column containing population data
+    # vecSelect: selection of input variables
+    # uniqueBy: the input file must be unique by, and will then be sorted by, uniqueBy
+    # minPopCluster: minimum population for including county in running cluster-level metrics
+    # defaultCluster: cluster label to be assigned to any county with population less than minPopCluster
+    # returnList: boolean, if FALSE just the cluster object is returned
+    #                      if TRUE, a list is returned with dfCluster and the cluster object
+    # ...: other arguments that will be passed to clusterStates
+
+    # STEP 1: Select and rename variables from the dfPerCapita file
+    countyData <- dfPerCapita %>%
+        colRenamer(vecRename=vecRename) %>%
+        colSelector(vecSelect=vecSelect) %>%
+        checkUniqueRows(uniqueBy=uniqueBy, returnDF=TRUE) %>%
+        arrange(across(all_of(uniqueBy))) %>%
+        mutate(popThresh=(get(popVar)>=minPopCluster)) %>%
+        colMutater(selfList=c("state"=as.character))
+    
+    # STEP 2: Split data based on population threshold
+    countyFiltered <- countyData %>% filter(popThresh)
+    countyBelow <- countyData %>% filter(!popThresh)
+    
+    # STEP 2a: Confirm that no county is in both data sets
+    count(countyFiltered, a=get(clusterBy), popThresh) %>%
+        bind_rows(count(countyBelow, a=get(clusterBy), popThresh)) %>%
+        checkUniqueRows(uniqueBy=c("a"), returnDF=FALSE, noteUnique=FALSE)
+    
+    # STEP 3: Run county-level clusters
+    objCluster <- clusterStates(countyFiltered, hierarchical=hierarchical, returnList=returnList, ...)
+    
+    # Return all of the relevant objects
+    list(objCluster=objCluster, 
+         countyFiltered=countyFiltered, 
+         countyBelow=countyBelow
+    )
+    
+}
+
+
+
 # Function to run the USA Facts (US county-level coronavirus data) clustering process
 readRunUSAFacts <- function(maxDate, 
                             downloadTo=list("usafCase"=NA, "usafDeath"=NA),
@@ -317,7 +383,12 @@ readRunUSAFacts <- function(maxDate,
     
     # STEP 5: Create clusters (if requested)
     if (isTRUE(createClusters)) {
-        # clData <- clusterStates(df=dfPerCapita, hierarchical=hierarchical, returnList=returnList, ...)
+        clData <- clusterCounties(dfPerCapita=dfPerCapita, 
+                                  hierarchical=hierarchical, 
+                                  minPopCluster=minPopCluster,
+                                  returnList=returnList, 
+                                  ...
+                                  )
         # useClusters <- getClusters(clData, hier=hierarchical, kCut=kCut, reAssign=reAssignState)
     }
     
@@ -397,6 +468,24 @@ The function is tested as it evolves:
 
 readRunUSAFacts(maxDate="2021-05-27")
 
+testCluster <- clusterCounties(dfPerCapita=readFromRDS("cty_20201026")$clusterData$countyDailyPerCapita, 
+                               minPopCluster=25000, 
+                               hierarchical=NA,
+                               minShape="2020-04",
+                               maxShape="2020-09",
+                               ratioDeathvsCase = 0.001,
+                               ratioTotalvsShape = 0.25,
+                               minDeath=100,
+                               minCase=5000, 
+                               hmlSegs=3, 
+                               eslSegs=3, 
+                               seed=2010261358
+                               )
+table(testCluster$objCluster$objCluster, readFromRDS("cty_20201026")$clustVec)
+identical(names(testCluster$objCluster$objCluster), names(readFromRDS("cty_20201026")$clustVec))
+
 ```
 
 * The function completes step 1, reading and formatting the county population data file  
+* The clustering function works the same as previous, provided a properly formatted per capita data file  
+  

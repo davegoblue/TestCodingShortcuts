@@ -626,6 +626,72 @@ getCountyData &lt;- function(df=readFromRDS(&quot;countyPop2021&quot;),
 
 
 
+# Function to take county-level data, prepare for clusterStates, and return resulting outputs
+clusterCounties &lt;- function(dfPerCapita, 
+                            hierarchical,
+                            vecRename=c(),
+                            clusterBy=c(&quot;state&quot;),
+                            arrangeBy=c(&quot;date&quot;),
+                            burdenMetrics=c(&quot;cpm&quot;, &quot;dpm&quot;),
+                            popVar=c(&quot;population&quot;),
+                            vecSelect=c(clusterBy, arrangeBy, burdenMetrics, popVar),
+                            uniqueBy=c(clusterBy, arrangeBy),
+                            minPopCluster=1,
+                            defaultCluster=&quot;999&quot;,
+                            returnList=TRUE, 
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPerCapita: a county-level file with per-capita metrics
+    # hierarchical: whether to create hierarchical clusters
+    #               TRUE means run hierarchical clustering
+    #               FALSE means run kmeans clustering
+    #               NA means run rules-based clustering
+    # vecRename: renaming of input variables
+    # clusterBy: the variable name used for clustering
+    # arrangeBy: data will be sorted by this a mix of clusterBy and this variable
+    # burdenMetrics: the metrics to be used for burden in clustering
+    # popVar: the column containing population data
+    # vecSelect: selection of input variables
+    # uniqueBy: the input file must be unique by, and will then be sorted by, uniqueBy
+    # minPopCluster: minimum population for including county in running cluster-level metrics
+    # defaultCluster: cluster label to be assigned to any county with population less than minPopCluster
+    # returnList: boolean, if FALSE just the cluster object is returned
+    #                      if TRUE, a list is returned with dfCluster and the cluster object
+    # ...: other arguments that will be passed to clusterStates
+
+    # STEP 1: Select and rename variables from the dfPerCapita file
+    countyData &lt;- dfPerCapita %&gt;%
+        colRenamer(vecRename=vecRename) %&gt;%
+        colSelector(vecSelect=vecSelect) %&gt;%
+        checkUniqueRows(uniqueBy=uniqueBy, returnDF=TRUE) %&gt;%
+        arrange(across(all_of(uniqueBy))) %&gt;%
+        mutate(popThresh=(get(popVar)&gt;=minPopCluster)) %&gt;%
+        colMutater(selfList=c(&quot;state&quot;=as.character))
+    
+    # STEP 2: Split data based on population threshold
+    countyFiltered &lt;- countyData %&gt;% filter(popThresh)
+    countyBelow &lt;- countyData %&gt;% filter(!popThresh)
+    
+    # STEP 2a: Confirm that no county is in both data sets
+    count(countyFiltered, a=get(clusterBy), popThresh) %&gt;%
+        bind_rows(count(countyBelow, a=get(clusterBy), popThresh)) %&gt;%
+        checkUniqueRows(uniqueBy=c(&quot;a&quot;), returnDF=FALSE, noteUnique=FALSE)
+    
+    # STEP 3: Run county-level clusters
+    objCluster &lt;- clusterStates(countyFiltered, hierarchical=hierarchical, returnList=returnList, ...)
+    
+    # Return all of the relevant objects
+    list(objCluster=objCluster, 
+         countyFiltered=countyFiltered, 
+         countyBelow=countyBelow
+    )
+    
+}
+
+
+
 # Function to run the USA Facts (US county-level coronavirus data) clustering process
 readRunUSAFacts &lt;- function(maxDate, 
                             downloadTo=list(&quot;usafCase&quot;=NA, &quot;usafDeath&quot;=NA),
@@ -728,7 +794,12 @@ readRunUSAFacts &lt;- function(maxDate,
     
     # STEP 5: Create clusters (if requested)
     if (isTRUE(createClusters)) {
-        # clData &lt;- clusterStates(df=dfPerCapita, hierarchical=hierarchical, returnList=returnList, ...)
+        clData &lt;- clusterCounties(dfPerCapita=dfPerCapita, 
+                                  hierarchical=hierarchical, 
+                                  minPopCluster=minPopCluster,
+                                  returnList=returnList, 
+                                  ...
+                                  )
         # useClusters &lt;- getClusters(clData, hier=hierarchical, kCut=kCut, reAssign=reAssignState)
     }
     
@@ -816,8 +887,39 @@ readRunUSAFacts &lt;- function(maxDate,
 ##  9       1015 Calhoun County        AL    113605
 ## 10       1017 Chambers County       AL     33254
 ## # ... with 3,185 more rows</code></pre>
+<pre class="r"><code>testCluster &lt;- clusterCounties(dfPerCapita=readFromRDS(&quot;cty_20201026&quot;)$clusterData$countyDailyPerCapita, 
+                               minPopCluster=25000, 
+                               hierarchical=NA,
+                               minShape=&quot;2020-04&quot;,
+                               maxShape=&quot;2020-09&quot;,
+                               ratioDeathvsCase = 0.001,
+                               ratioTotalvsShape = 0.25,
+                               minDeath=100,
+                               minCase=5000, 
+                               hmlSegs=3, 
+                               eslSegs=3, 
+                               seed=2010261358
+                               )</code></pre>
+<pre><code>## 
+## *** File has been checked for uniqueness by: state date</code></pre>
+<pre class="r"><code>table(testCluster$objCluster$objCluster, readFromRDS(&quot;cty_20201026&quot;)$clustVec)</code></pre>
+<pre><code>##    
+##       1   2   3   4   5   6   7   8   9
+##   1 217   0   0   0   0   0   0   0   0
+##   2   0 113   0   0   0   0   0   0   0
+##   3   0   0 324   0   0   0   0   0   0
+##   4   0   0   0  39   0   0   0   0   0
+##   5   0   0   0   0  36   0   0   0   0
+##   6   0   0   0   0   0 151   0   0   0
+##   7   0   0   0   0   0   0 254   0   0
+##   8   0   0   0   0   0   0   0 209   0
+##   9   0   0   0   0   0   0   0   0 248</code></pre>
+<pre class="r"><code>identical(names(testCluster$objCluster$objCluster), names(readFromRDS(&quot;cty_20201026&quot;)$clustVec))</code></pre>
+<pre><code>## [1] TRUE</code></pre>
 <ul>
-<li>The function completes step 1, reading and formatting the county population data file</li>
+<li>The function completes step 1, reading and formatting the county population data file<br />
+</li>
+<li>The clustering function works the same as previous, provided a properly formatted per capita data file</li>
 </ul>
 </div>
 
