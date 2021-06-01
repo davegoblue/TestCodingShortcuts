@@ -215,6 +215,42 @@ getCountyData <- function(df=readFromRDS("countyPop2021"),
 
 
 
+# Function to obtain county clusters and return the county clusters vector
+getCountyClusters <- function(obj, 
+                              hierarchical=FALSE, 
+                              kCut=0, 
+                              reAssign=list(), 
+                              defaultCluster=NULL
+                              ) {
+
+    # FUNCTION ARGUMENTS
+    # obj: a clustering object returned by clusterCounties()
+    # hierarchical: whether the clustering object is based on hierarchical clusters
+    #               TRUE means from hierarchical clustering
+    #               FALSE means from kmeans clustering
+    #               NA means from rules-based clustering
+    # kCut; if hierarchical clustering is used, what k (number of clusters in cutree) should be used?
+    # reAssign: mapping file to change segments, as list('entity'='other entity cluster to use')
+    # defaultCluster: cluster label to be assigned to any county that is not in obj$objCluster
+    #                 NULL means do not add these to the clustering vector
+    
+    # Get the clusters from obj$objCluster
+    clust <- getClusters(obj$objCluster, hier=hierarchical, kCut=kCut, reAssign=reAssign)
+    
+    # Add the defaultCluster label to any county that does not have a cluster label
+    if (!is.null(defaultCluster)) {
+        ctyAdd <- obj$countyBelow %>% pull(state) %>% unique() %>% sort()
+        vecAdd <- rep(defaultCluster, length(ctyAdd)) %>% purrr::set_names(ctyAdd)
+        clust <- c(clust, vecAdd)
+    }
+    
+    # Return the cluster vector
+    clust
+    
+}
+
+
+
 # Function to take county-level data, prepare for clusterStates, and return resulting outputs
 clusterCounties <- function(dfPerCapita, 
                             hierarchical,
@@ -226,7 +262,6 @@ clusterCounties <- function(dfPerCapita,
                             vecSelect=c(clusterBy, arrangeBy, burdenMetrics, popVar),
                             uniqueBy=c(clusterBy, arrangeBy),
                             minPopCluster=1,
-                            defaultCluster="999",
                             returnList=TRUE, 
                             ...
                             ) {
@@ -245,7 +280,6 @@ clusterCounties <- function(dfPerCapita,
     # vecSelect: selection of input variables
     # uniqueBy: the input file must be unique by, and will then be sorted by, uniqueBy
     # minPopCluster: minimum population for including county in running cluster-level metrics
-    # defaultCluster: cluster label to be assigned to any county with population less than minPopCluster
     # returnList: boolean, if FALSE just the cluster object is returned
     #                      if TRUE, a list is returned with dfCluster and the cluster object
     # ...: other arguments that will be passed to clusterStates
@@ -291,12 +325,14 @@ readRunUSAFacts <- function(maxDate,
                             dfPerCapita=NULL,
                             showBurdenMinPop=10000, 
                             minPopCluster=25000,
+                            defaultCluster=NULL,
                             existingStateClusters=NULL, 
                             existingCountyClusters=NULL, 
                             createClusters=FALSE, 
                             hierarchical=FALSE,
                             kCut=6,
                             orderCluster=TRUE,
+                            reAssignCounty=list(),
                             skipAssessmentPlots=FALSE,
                             brewPalette=NA,
                             ...
@@ -316,6 +352,8 @@ readRunUSAFacts <- function(maxDate,
     #              default NULL means create dfPerCapita using steps 2-4
     # showBurdenMinPop: minimum population for showing in burden by cluster plots (NULL means skip plot)
     # minPopCluster: minimum population for including county in running cluster-level metrics
+    # defaultCluster: cluster label to be assigned to any county that falls below minPopCluster
+    #                 NULL means do not add these to the clustering vector
     # existingStateClusters: location of an existing named vector with clusters by state (NULL means none)
     # existingCountyClusters: location of an existing named vector with clusters by county (NULL means none)
     #                         if existingStateClusters is not NULL, then existingCountyClusters is ignored
@@ -326,6 +364,8 @@ readRunUSAFacts <- function(maxDate,
     #               NA means run rules-based clustering
     # kCut; if hierarchical clustering is used, what k (number of clusters in cutree) should be used?
     # orderCluster: if FALSE, ignore; if TRUE, order by "dpm"; if anything else, order by orderCluster
+    # reAssignCounty: mapping file for assigning a county to another county's cluster
+    #                format list("countyToChange"="countyClusterToAssign")
     # skipAssessmentPlots: boolean, should cluster assessment plots be skipped?
     # brewPalette: character vector length-1 referencing a color scheme from brewer_pal to use
     #              NA means use R default color schemes
@@ -380,16 +420,20 @@ readRunUSAFacts <- function(maxDate,
         dfRawList <- NULL
         dfProcessList <- NULL
     }
-    
+
     # STEP 5: Create clusters (if requested)
     if (isTRUE(createClusters)) {
         clData <- clusterCounties(dfPerCapita=dfPerCapita, 
                                   hierarchical=hierarchical, 
                                   minPopCluster=minPopCluster,
-                                  returnList=returnList, 
                                   ...
                                   )
-        # useClusters <- getClusters(clData, hier=hierarchical, kCut=kCut, reAssign=reAssignState)
+        useClusters <- getCountyClusters(clData, 
+                                         hier=hierarchical, 
+                                         kCut=kCut, 
+                                         reAssign=reAssignCounty, 
+                                         defaultCluster=defaultCluster
+                                         )
     }
     
     # STEP 6: Assess clusters
@@ -484,8 +528,20 @@ testCluster <- clusterCounties(dfPerCapita=readFromRDS("cty_20201026")$clusterDa
 table(testCluster$objCluster$objCluster, readFromRDS("cty_20201026")$clustVec)
 identical(names(testCluster$objCluster$objCluster), names(readFromRDS("cty_20201026")$clustVec))
 
+vecTestCluster_001 <- getCountyClusters(testCluster, hierarchical=NA, defaultCluster="999")
+vecTestCluster_002 <- getCountyClusters(testCluster, hierarchical=NA)
+usmap::plot_usmap(regions="counties", 
+                  data=vecToTibble(vecTestCluster_001, colNameName="fips"), 
+                  values="value"
+                  )
+usmap::plot_usmap(regions="counties", 
+                  data=vecToTibble(vecTestCluster_002, colNameName="fips") %>% mutate(value=factor(value)), 
+                  values="value"
+                  )
+
 ```
 
 * The function completes step 1, reading and formatting the county population data file  
 * The clustering function works the same as previous, provided a properly formatted per capita data file  
+* The function to create a cluster vector works on data returned by the clustering function  
   
