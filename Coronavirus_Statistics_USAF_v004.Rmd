@@ -182,14 +182,6 @@ The function is updated to make better use of the functional form.  Broadly, the
 The function includes:  
 ```{r}
 
-# Mapping for urlType to url
-usafMainURL <- "https://usafactsstatic.blob.core.windows.net/public/data/covid-19/"
-usafURLMapper_base <- c("usafCase"=paste0(usafMainURL, "covid_confirmed_usafacts.csv"), 
-                        "usafDeath"=paste0(usafMainURL, "covid_deaths_usafacts.csv"),
-                        "usafPop"=paste0(usafMainURL, "covid_county_population_usafacts.csv")
-                        )
-
-
 # Function to get county-level population data
 getCountyData <- function(df=readFromRDS("countyPop2021"), 
                           renameVars=c("State"="state", "County Name"="countyName", "population"="pop"), 
@@ -210,6 +202,468 @@ getCountyData <- function(df=readFromRDS("countyPop2021"),
     # Return file with only key variables kept
     df %>%
         select_at(vars(all_of(keepVars)))
+    
+}
+
+
+
+# Mapping list for combining data elements from raw files
+# Mapping for urlType to url
+usafMainURL <- "https://usafactsstatic.blob.core.windows.net/public/data/covid-19/"
+urlMapper <- c("cdcDaily"="https://data.cdc.gov/api/views/9mfq-cb36/rows.csv?accessType=DOWNLOAD", 
+               "cdcHosp"="https://beta.healthdata.gov/api/views/g62h-syeh/rows.csv?accessType=DOWNLOAD", 
+               "usafCase"=paste0(usafMainURL, "covid_confirmed_usafacts.csv"), 
+               "usafDeath"=paste0(usafMainURL, "covid_deaths_usafacts.csv"),
+               "usafPop"=paste0(usafMainURL, "covid_county_population_usafacts.csv")
+               )
+
+# Mapping for urlType to colRenamer(vecRename=...)
+renMapper <- list("cdcDaily"=c('submission_date'='date', 'new_case'='new_cases', 
+                               'tot_death'='tot_deaths', 'new_death'='new_deaths'
+                               ), 
+                  "cdcHosp"=c("inpatient_beds_used_covid"="inp", 
+                              "total_adult_patients_hospitalized_confirmed_and_suspected_covid"="hosp_adult", 
+                              "total_pediatric_patients_hospitalized_confirmed_and_suspected_covid"="hosp_ped"
+                              ), 
+                  "usafCase"=c("County Name"="countyName", "State"="state"), 
+                  "usafDeath"=c("County Name"="countyName", "State"="state"),
+                  "default"=c()
+                  )
+
+
+
+# Function for zero-padding a character string
+zeroPad <- function(x, width, side="left", pad="0", convChar=TRUE) {
+    stringr::str_pad(if(convChar) as.character(x) else x, width=width, side=side, pad=pad)
+}
+zeroPad5 <- function(x, ...) zeroPad(x, width=5, ...)
+zeroPad2 <- function(x, ...) zeroPad(x, width=2, ...)
+
+
+
+# Mapping for urlType to colMutater(selfList=...)
+selfListMapper <- list("cdcDaily"=list('date'=lubridate::mdy), 
+                       "cdcHosp"=list(), 
+                       "usafCase"=list('countyFIPS'=zeroPad5, 'stateFIPS'=zeroPad2), 
+                       "usafDeath"=list('countyFIPS'=zeroPad5, 'stateFIPS'=zeroPad2),
+                       "default"=list()
+                       )
+
+# Mapping for urlType to colMutater(fullList=...)
+fullListMapper <- list("cdcDaily"=list(), 
+                       "cdcHosp"=list(), 
+                       "usafCase"=list(),
+                       "usafDeath"=list(),
+                       "default"=list()
+                       )
+
+# Mapping for urlType to pivotData(pivotBy=...)
+pivotMapper <- list("usafCase"=c("countyFIPS", "countyName", "state", "stateFIPS"), 
+                    "usafDeath"=c("countyFIPS", "countyName", "state", "stateFIPS")
+                    )
+
+# Mapping for urlType to pivotted variable
+rawMakeVarMapper <- list("usafCase"=c("cases"), 
+                         "usafDeath"=c("deaths")
+                         )
+
+# Mapping for urlType to checkUniqueRows(uniqueBy=...)
+uqMapper <- list("cdcDaily"=c("state", "date"), 
+                 "cdcHosp"=c("state", "date"), 
+                 "usafCase"=c("countyFIPS", "stateFIPS", "date"), 
+                 "usafDeath"=c("countyFIPS", "stateFIPS", "date")
+                 )
+
+# Mapping list for rows to be filtered (typically, states to be kept)
+# Formatted as named list per urlType, with name being the field and element being the allowed values
+lstFilterMapper <- list("cdcDaily"=list("state"=c(state.abb, "DC")), 
+                        "cdcHosp"=list("state"=c(state.abb, "DC"))
+                        )
+
+# Mapping list for vector selection in processed data
+# Formatted as a named list where the names are urlType and the values are fields to be kept
+vecSelectMapper <- list("cdcDaily"=c("date", "state", "tot_cases", "tot_deaths", "new_cases", "new_deaths"), 
+                        "cdcHosp"=c("date", "state", "inp", "hosp_adult", "hosp_ped")
+                        )
+
+# Mapping file for group_by variable per urlType
+checkControlGroupMapper <- list("cdcDaily"="date",
+                                "cdcHosp"="date",
+                                "usafDeath"="date",
+                                "usafCase"="date",
+                                "default"=c()
+                                )
+
+# Mapping file for numerics to summarize by group_by variable per urlType
+checkControlVarsMapper <- list("cdcDaily"=c("new_cases", "new_deaths"),
+                               "cdcHosp"=c("inp", "hosp_adult", "hosp_ped"), 
+                               "usafDeath"=c("deaths", "new_deaths"), 
+                               "usafCase"=c("cases", "new_cases")
+                               )
+
+# Mapping for urlType to checkSimilarity(..., keyVars=); universe similarity checks to perform and report
+checkSimilarityMapper <- list("cdcDaily"=list(date=list(label='date', countOnly=TRUE, convChar=TRUE), 
+                                              state=list(label='state', countOnly=FALSE)
+                                              ), 
+                              "cdcHosp"=list(date=list(label='date', countOnly=TRUE, convChar=TRUE), 
+                                             state=list(label='state', countOnly=FALSE)
+                                             ), 
+                              "usafCase"=list(date=list(label='date', countOnly=TRUE, convChar=TRUE), 
+                                              countyFIPS=list(label='county', countOnly=FALSE)
+                                             ), 
+                              "usafDeath"=list(date=list(label='date', countOnly=TRUE, convChar=TRUE), 
+                                              countyFIPS=list(label='county', countOnly=FALSE)
+                                             ),                               
+                              "default"=list()
+                              )
+
+# Mapping for urlType to plotSimilarity(..., ); fields where change in universe should be reported
+plotSimilarityMapper <- list("cdcDaily"=c("date"), 
+                             "cdcHosp"=c("date"), 
+                             "usafCase"=c("date"),
+                             "usafDeath"=c("date"),
+                             "default"=c()
+                             )
+
+# Mapping file for aggregated control total checks to perform
+# Formatted as one list per urlType
+# Within each urlType list, sublists drive the grouping variable, numerical aggregates, and reporting
+keyAggMapper <- list("cdcDaily"=list("l1"=list("grpVar"="date",
+                                               "numVars"=c("new_cases", "new_deaths",
+                                                           "tot_cases", "tot_deaths"
+                                               ),
+                                               "sameUniverse"=NA,
+                                               "plotData"=TRUE,
+                                               "isLine"=TRUE,
+                                               "returnDelta"=TRUE,
+                                               "flagLargeDelta"=TRUE,
+                                               "pctTol"=0.05,
+                                               "absTol"=5,
+                                               "sortBy"=c("name", "pctDelta", "absDelta"),
+                                               "dropNA"=TRUE,
+                                               "printAll"=TRUE
+                                               ),
+                                     "l2"=list("grpVar"="state",
+                                               "numVars"=c("new_cases", "new_deaths"),
+                                               "sameUniverse"=NA,
+                                               "plotData"=TRUE,
+                                               "isLine"=FALSE,
+                                               "returnDelta"=FALSE,
+                                               "flagLargeDelta"=FALSE
+                                               ),
+                                     "l3"=list("grpVar"="state",
+                                               "numVars"=c("new_cases", "new_deaths",
+                                                           "tot_cases", "tot_deaths"
+                                                           ),
+                                               "sameUniverse"="date",
+                                               "plotData"=TRUE,
+                                               "isLine"=FALSE,
+                                               "returnDelta"=TRUE,
+                                               "flagLargeDelta"=TRUE,
+                                               "pctTol"=0.001,
+                                               "absTol"=0,
+                                               "sortBy"=c("name", "pctDelta", "absDelta"),
+                                               "dropNA"=TRUE,
+                                               "printAll"=TRUE
+                                               )
+                                     ),
+                     "cdcHosp"=list("l1"=list("grpVar"="date",
+                                              "numVars"=c("inp", "hosp_adult", "hosp_ped"),
+                                              "sameUniverse"=NA,
+                                              "plotData"=TRUE,
+                                              "isLine"=TRUE,
+                                              "returnDelta"=TRUE,
+                                              "flagLargeDelta"=TRUE,
+                                              "pctTol"=0.05,
+                                              "absTol"=5,
+                                              "sortBy"=c("name", "pctDelta", "absDelta"),
+                                              "dropNA"=TRUE,
+                                              "printAll"=TRUE
+                                              ),
+                                    "l2"=list("grpVar"="state",
+                                              "numVars"=c("inp", "hosp_adult", "hosp_ped"),
+                                              "sameUniverse"=NA,
+                                              "plotData"=TRUE,
+                                              "isLine"=FALSE,
+                                              "returnDelta"=FALSE,
+                                              "flagLargeDelta"=FALSE
+                                              ),
+                                    "l3"=list("grpVar"="state",
+                                              "numVars"=c("inp", "hosp_adult", "hosp_ped"),
+                                              "sameUniverse"="date",
+                                              "plotData"=TRUE,
+                                              "isLine"=FALSE,
+                                              "returnDelta"=TRUE,
+                                              "flagLargeDelta"=TRUE,
+                                              "pctTol"=0.001,
+                                              "absTol"=0,
+                                              "sortBy"=c("name", "pctDelta", "absDelta"),
+                                              "dropNA"=TRUE,
+                                              "printAll"=TRUE
+                                              )
+                                    ), 
+                     "usafDeath"=list("l1"=list("grpVar"="date",
+                                                "numVars"=c("deaths", "new_deaths"),
+                                                "sameUniverse"=NA,
+                                                "plotData"=TRUE,
+                                                "isLine"=TRUE,
+                                                "returnDelta"=TRUE,
+                                                "flagLargeDelta"=TRUE,
+                                                "pctTol"=0.05,
+                                                "absTol"=5,
+                                                "sortBy"=c("name", "pctDelta", "absDelta"),
+                                                "dropNA"=TRUE,
+                                                "printAll"=TRUE
+                                                ),
+                                      "l2"=list("grpVar"="state",
+                                                "numVars"=c("deaths", "new_deaths"),
+                                                "sameUniverse"=NA,
+                                                "plotData"=TRUE,
+                                                "isLine"=FALSE,
+                                                "returnDelta"=FALSE,
+                                                "flagLargeDelta"=FALSE
+                                                ),
+                                      "l3"=list("grpVar"=c("countyFIPS", "countyName", "state"),
+                                                "numVars"=c("deaths", "new_deaths"),
+                                                "sameUniverse"="date",
+                                                "plotData"=FALSE,
+                                                "isLine"=FALSE,
+                                                "returnDelta"=TRUE,
+                                                "flagLargeDelta"=TRUE,
+                                                "pctTol"=0.001,
+                                                "absTol"=0,
+                                                "sortBy"=c("name", "pctDelta", "absDelta"),
+                                                "dropNA"=TRUE,
+                                                "printAll"=TRUE
+                                                )
+                                      ), 
+                     "usafCase"=list("l1"=list("grpVar"="date",
+                                                "numVars"=c("cases", "new_cases"),
+                                                "sameUniverse"=NA,
+                                                "plotData"=TRUE,
+                                                "isLine"=TRUE,
+                                                "returnDelta"=TRUE,
+                                                "flagLargeDelta"=TRUE,
+                                                "pctTol"=0.05,
+                                                "absTol"=5,
+                                                "sortBy"=c("name", "pctDelta", "absDelta"),
+                                                "dropNA"=TRUE,
+                                                "printAll"=TRUE
+                                                ),
+                                      "l2"=list("grpVar"="state",
+                                                "numVars"=c("cases", "new_cases"),
+                                                "sameUniverse"=NA,
+                                                "plotData"=TRUE,
+                                                "isLine"=FALSE,
+                                                "returnDelta"=FALSE,
+                                                "flagLargeDelta"=FALSE
+                                                ),
+                                      "l3"=list("grpVar"=c("countyFIPS", "countyName", "state"),
+                                                "numVars"=c("cases", "new_cases"),
+                                                "sameUniverse"="date",
+                                                "plotData"=FALSE,
+                                                "isLine"=FALSE,
+                                                "returnDelta"=TRUE,
+                                                "flagLargeDelta"=TRUE,
+                                                "pctTol"=0.001,
+                                                "absTol"=0,
+                                                "sortBy"=c("name", "pctDelta", "absDelta"),
+                                                "dropNA"=TRUE,
+                                                "printAll"=TRUE
+                                                )
+                                      )
+                     )
+
+# Formatted as one list per urlType, with that list having one list for each combination of data
+lstComboMapper <- list("cdcDaily"=list("nyc"=list("comboVar"="state", 
+                                                  "uqVars"="date", 
+                                                  "vecCombo"=c("NY"="NY", "NYC"="NY"),
+                                                  "fn"=specNA(sum)
+                                                  )
+                                       ), 
+                       "cdcHosp"=list()
+                       )
+
+# Mapping file for creating per-capita metrics
+# Formatted as c('raw variable name'='associated per capita variable name')
+perCapMapper <- c("tot_cases"="tcpm", 
+                  "tot_deaths"="tdpm", 
+                  "new_cases"="cpm", 
+                  "new_deaths"="dpm", 
+                  "inp"="hpm", 
+                  "hosp_adult"="ahpm", 
+                  "hosp_ped"="phpm"
+                  )
+
+
+
+# Function to pivot the data file longer
+pivotData <- function(df, 
+                      pivotKeys, 
+                      nameVar="name", 
+                      valVar="value",
+                      toLonger=TRUE, 
+                      ...
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame
+    # pivotKeys: the keys (everything but cols for pivot_longer, id_cols for pivot_wider)
+    # nameVar: variable name for names_to or names_from
+    # valVar: variable name for values_to or values_from
+    # toLonger: boolean, should pivot_longer() be used rather than pivot_wider()?
+    # ...: other arguments to be passed to pivot_*()
+
+    if (isTRUE(toLonger)) pivot_longer(df, -all_of(pivotKeys), names_to=nameVar, values_to=valVar, ...)
+    else pivot_wider(df, all_of(pivotKeys), names_from=all_of(nameVar), values_from=all_of(valVar), ...)
+    
+}
+
+
+# Function to read and QC raw USA Facts data
+readQCRawUSAF <- function(fileName, 
+                          writeLog=NULL,
+                          ovrwriteLog=TRUE,
+                          dfRef=NULL,
+                          urlType=NULL, 
+                          url=NULL, 
+                          getData=TRUE, 
+                          ovrWriteDownload=FALSE, 
+                          vecRename=NULL, 
+                          selfList=NULL,
+                          fullList=NULL,
+                          uniqueBy=NULL, 
+                          pivotBy=NULL,
+                          rawMakeVar=NULL,
+                          step3Group=NULL,
+                          step3Vals=NULL, 
+                          step4KeyVars=NULL, 
+                          step5PlotItems=NULL,
+                          step6AggregateList=NULL,
+                          inferVars=list("url"=urlMapper, 
+                                         "vecRename"=renMapper, 
+                                         "selfList"=selfListMapper, 
+                                         "fullList"=fullListMapper, 
+                                         "uniqueBy"=uqMapper, 
+                                         "pivotBy"=pivotMapper,
+                                         "rawMakeVar"=rawMakeVarMapper,
+                                         "step3Group"=checkControlGroupMapper,
+                                         "step3Vals"=checkControlVarsMapper,
+                                         "step4KeyVars"=checkSimilarityMapper, 
+                                         "step5PlotItems"=plotSimilarityMapper,
+                                         "step6AggregateList"=keyAggMapper
+                                         )
+                          ) {
+    
+    # FUNCtiON ARGUMENTS:
+    # fileName: the location where downloaded data either is, or will be, stored
+    # writeLog: the external file location for printing (NULL means use the main log stdout)
+    # ovrwriteLog: boolean, if using an external log, should it be started from scratch (overwritten)?
+    # dfRef: a reference data frame for comparison (either NULL or NA means do not run comparisons)
+    # urlType: character vector that can be mapped using urlMapper and keyVarMapper
+    # url: direct URL passed as character string
+    #      NOTE that if both url and urlType are NULL, no file will be downloaded
+    # getData: boolean, should an attempt be made to get new data using urlType or url?
+    # ovrWriteDownload: boolean, if fileName already exists, should it be overwritten?
+    # vecRename: vector for renaming c('existing name'='new name'), can be any length from 0 to ncol(df)
+    #            NULL means infer from urlType, if not available there use c()
+    # selfList: list for functions to apply to self, list('variable'=fn) will apply variable=fn(variable)
+    #           processed in order, so more than one function can be applied to self
+    #           NULL means infer from urlType, if not available in mapping file use list()
+    # fullList: list for general functions to be applied, list('new variable'=expression(code))
+    #           will create 'new variable' as eval(expression(code))
+    #           for now, requires passing an expression
+    #           NULL means infer from urlType, use list() if not in mapping file
+    # pivotBy: combination of variables that should NOT be pivoted
+    # uniqueBy: combination of variables for checking uniqueness of pivoted file
+    #           NULL means infer from data, keep as NULL (meaning use-all) if cannot be inferred
+    # rawMakeVar: variable name to be used for the numeric data pivoted down from columns
+    #           NULL means infer from data, keep as NULL (meaning use-all) if cannot be inferred
+    # step3Group: variable to be used as the x-axis (grouping) for step 3 plots
+    #             NULL means infer from data
+    # step3Vals: values to be plotted on the y-axis for step 3 plots
+    #            NULL means infer from data
+    # step4KeyVars: list of parameters to be passed as keyVars= in step 4
+    #               NULL means infer from urlType
+    # step5PlotItems: items to be plotted in step 5
+    #                 NULL means infer from urlType
+    # step6AggregateList: drives the elements to be passed to compareAggregate() and flagLargeDelta()
+    #                     NULL means infer from urlType
+    # inferVars: vector of c('variable'='mapper') for inferring parameter values when passed as NULL    
+    
+    # Step 0a: Use urlType to infer key variables if passed as NULL
+    for (vrbl in names(inferVars)) {
+        mapper <- inferVars[[vrbl]]
+        if (is.null(get(vrbl))) {
+            if (urlType %in% names(mapper)) assign(vrbl, mapper[[urlType]])
+            else if ("default" %in% names(mapper)) assign(vrbl, mapper[["default"]])
+        }
+    }
+
+    # Step 1: Download a new file (if requested)
+    if (!is.null(url) & isTRUE(getData)) fileDownload(fileName=fileName, url=url, ovrWrite=ovrWriteDownload)
+    else cat("\nNo file has been downloaded, will use existing file:", fileName, "\n")
+
+    # Step 2: Read file, rename and mutate variables, confirm uniqueness by expected levels
+    dfRaw <- fileRead(fileName) %>% 
+        colRenamer(vecRename) %>% 
+        colMutater(selfList=selfList, fullList=fullList) %>%
+        checkUniqueRows(uniqueBy=pivotBy) %>%
+        pivotData(pivotKeys=pivotBy, nameVar="date", valVar=rawMakeVar) %>%
+        colMutater(selfList=list("date"=lubridate::mdy)) %>%
+        checkUniqueRows(uniqueBy=uniqueBy) %>%
+        arrange(across(c(setdiff(uniqueBy, "date"), "date"))) %>%
+        group_by(across(setdiff(uniqueBy, "date"))) %>%
+        mutate(newBurden=ifelse(row_number()==1, get(rawMakeVar), get(rawMakeVar)-lag(get(rawMakeVar)))) %>%
+        ungroup() %>%
+        colRenamer(vecRename=c("newBurden"=paste0("new_", rawMakeVar)))
+    
+    # Step 3: Plot basic control totals for new cases and new deaths by month
+    dfRaw %>%
+        checkControl(groupBy=step3Group, useVars=step3Vals, printControls=FALSE, na.rm=TRUE) %>%
+        helperLinePlot(x=step3Group, y="newValue", facetVar="name", facetScales="free_y", groupColor="name")
+    
+    # If there is no file for comparison, return the data
+    if (is.null(dfRef) | (if(length(dfRef)==1) is.na(dfRef) else FALSE)) return(dfRaw)
+
+    # Step 4b: Check similarity of existing and reference file
+    # ovrWriteLog=FALSE since everything should be an append after the opening text line in step 0
+    diffRaw <- checkSimilarity(df=dfRaw, 
+                               ref=dfRef, 
+                               keyVars=step4KeyVars, 
+                               writeLog=writeLog, 
+                               ovrwriteLog=FALSE
+                               )
+    
+    # Step 5: Plot the similarity checks
+    plotSimilarity(diffRaw, plotItems=step5PlotItems)
+    
+    # Step 6: Plot and report on differences in aggregates
+    helperAggMap <- function(x) {
+        h1 <- compareAggregate(df=dfRaw, ref=dfRef, grpVar=x$grpVar, numVars=x$numVars, 
+                               sameUniverse=x$sameUniverse, plotData=x$plotData, isLine=x$isLine, 
+                               returnDelta=x$returnDelta)
+        if (isTRUE(x$flagLargeDelta)) {
+            h2 <- flagLargeDelta(h1, pctTol=x$pctTol, absTol=x$absTol, sortBy=x$sortBy, 
+                                 dropNA=x$dropNA, printAll=x$printAll
+            )
+            if (is.null(writeLog)) print(h2)
+            else {
+                cat(nrow(h2), " records", sep="")
+                txt <- paste0("\n\n***Differences of at least ", 
+                              x$absTol, 
+                              " and at least ", 
+                              round(100*x$pctTol, 3), "%\n\n"
+                )
+                printLog(h2, txt=txt, writeLog=writeLog)
+            }
+        }
+    }
+    lapply(step6AggregateList, FUN=helperAggMap)
+    
+    cat("\n\n")
+
+    dfRaw
     
 }
 
@@ -539,9 +993,30 @@ usmap::plot_usmap(regions="counties",
                   values="value"
                   )
 
+testDFRefDeath <- readQCRawUSAF("./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20200917.csv", 
+                                getData=FALSE, 
+                                urlType="usafDeath"
+                                )
+usafDeathTest <- readQCRawUSAF("./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20210104.csv", 
+                               getData=FALSE, 
+                               urlType="usafDeath", 
+                               dfRef=testDFRefDeath
+                               )
+
+testDFRefCase <- readQCRawUSAF("./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20200917.csv", 
+                                getData=FALSE, 
+                                urlType="usafCase"
+                                )
+usafCaseTest <- readQCRawUSAF("./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20210104.csv", 
+                              getData=FALSE, 
+                              urlType="usafCase", 
+                              dfRef=testDFRefCase
+                              )
+
 ```
 
 * The function completes step 1, reading and formatting the county population data file  
 * The clustering function works the same as previous, provided a properly formatted per capita data file  
 * The function to create a cluster vector works on data returned by the clustering function  
+* The function to read and QC an existing downloaded file, with comparison to previous, is included  
   
