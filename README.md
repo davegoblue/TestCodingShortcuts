@@ -2431,4 +2431,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 31-MAY-2021  
 * Coronavirus_Statistics_USAF_v004 includes function for county-level clustering  
 * Coronavirus_Statistics_USAF_v004 converts county-level clustering output to vector  
+* Coronavirus_Statistics_USAF_v004 includes functions to read and QC raw USAF files  
   
