@@ -277,13 +277,25 @@ uqMapper <- list("cdcDaily"=c("state", "date"),
 # Mapping list for rows to be filtered (typically, states to be kept)
 # Formatted as named list per urlType, with name being the field and element being the allowed values
 lstFilterMapper <- list("cdcDaily"=list("state"=c(state.abb, "DC")), 
-                        "cdcHosp"=list("state"=c(state.abb, "DC"))
+                        "cdcHosp"=list("state"=c(state.abb, "DC")), 
+                        "usafCase"=list(), 
+                        "usafDeath"=list()
+                        )
+
+# Mapping list for rows to be filtered out (typically, unallocated counties to be deleted)
+# Formatted as named list per urlType, with name being the field and element being the disallowed values
+lstExcludeMapper <- list("cdcDaily"=list(), 
+                        "cdcHosp"=list(), 
+                        "usafCase"=list("countyFIPS"=c("00000", "00001")), 
+                        "usafDeath"=list("countyFIPS"=c("00000", "00001"))
                         )
 
 # Mapping list for vector selection in processed data
 # Formatted as a named list where the names are urlType and the values are fields to be kept
 vecSelectMapper <- list("cdcDaily"=c("date", "state", "tot_cases", "tot_deaths", "new_cases", "new_deaths"), 
-                        "cdcHosp"=c("date", "state", "inp", "hosp_adult", "hosp_ped")
+                        "cdcHosp"=c("date", "state", "inp", "hosp_adult", "hosp_ped"), 
+                        "usafCase"=c("countyFIPS", "state", "date", "cases", "new_cases"), 
+                        "usafDeath"=c("countyFIPS", "state", "date", "deaths", "new_deaths")
                         )
 
 # Mapping file for group_by variable per urlType
@@ -487,7 +499,9 @@ lstComboMapper <- list("cdcDaily"=list("nyc"=list("comboVar"="state",
 # Mapping file for creating per-capita metrics
 # Formatted as c('raw variable name'='associated per capita variable name')
 perCapMapper <- c("tot_cases"="tcpm", 
-                  "tot_deaths"="tdpm", 
+                  "tot_deaths"="tdpm",
+                  "cases"="tcpm", 
+                  "deaths"="tdpm",
                   "new_cases"="cpm", 
                   "new_deaths"="dpm", 
                   "inp"="hpm", 
@@ -825,8 +839,9 @@ readRunUSAFacts <- function(maxDate,
     #              NA means use R default color schemes
     # ...: other arguments that will be passed to prepClusterCounties
 
-    # STEP 1: Get a county-level population file
-    countyData <- getCountyData()
+    # STEP 1: Get a county-level population file (convert to zero pad 5 for compatibility)
+    countyData <- getCountyData() %>% 
+        colMutater(selfList=list("countyFIPS"=zeroPad5))
 
     # If a log file is requested, create the log file (allows for append=TRUE for all downstream functions)
     if (!is.null(writeLog)) genNewLog(writeLog=writeLog, ovrwriteLog=ovrwriteLog)
@@ -841,34 +856,36 @@ readRunUSAFacts <- function(maxDate,
     
         # STEP 2: Download and QC each requested data element
         for (elem in elemUsed) {
-            # dfRawList[[elem]] <- readQCRawCDCDaily(fileName=readFrom[[elem]], 
-            #                                        writeLog=writeLog, 
-            #                                        ovrwriteLog=FALSE,
-            #                                        urlType=elem, 
-            #                                        getData=if(is.na(downloadTo[[elem]])) FALSE else TRUE, 
-            #                                        dfRef=compareFile[[elem]]
-            #                                        )
-            # glimpseLog(dfRawList[[elem]], txt=paste0("\nRaw file for ", elem, ":\n"), logFile=writeLog)
+            dfRawList[[elem]] <- readQCRawUSAF(fileName=readFrom[[elem]],
+                                               writeLog=writeLog,
+                                               ovrwriteLog=FALSE,
+                                               urlType=elem,
+                                               getData=if(is.na(downloadTo[[elem]])) FALSE else TRUE,
+                                               dfRef=compareFile[[elem]]
+                                               )
+            glimpseLog(dfRawList[[elem]], txt=paste0("\nRaw file for ", elem, ":\n"), logFile=writeLog)
         }
     
         # STEP 3: Process all requested data
         for (elem in elemUsed) {
-            # dfProcessList[[elem]] <- processRawFile(dfRawList[[elem]], 
-            #                                         vecRename=c(), # already handled in readQCRawCDCDaily()
-            #                                         vecSelect=vecSelectMapper[[elem]], 
-            #                                         lstCombo=lstComboMapper[[elem]], 
-            #                                         lstFilter=lstFilterMapper[[elem]]
-            #                                         )
-            # glimpseLog(dfProcessList[[elem]], txt=paste0("\nProcessed for ", elem, ":\n"), logFile=writeLog)
+            dfProcessList[[elem]] <- processRawFile(dfRawList[[elem]],
+                                                    vecRename=c(), 
+                                                    vecSelect=vecSelectMapper[[elem]],
+                                                    lstCombo=lstComboMapper[[elem]],
+                                                    lstFilter=lstFilterMapper[[elem]], 
+                                                    lstExclude=lstExcludeMapper[[elem]]
+                                                    )
+            glimpseLog(dfProcessList[[elem]], txt=paste0("\nProcessed for ", elem, ":\n"), logFile=writeLog)
         }
-    
+
         # STEP 4: Integrate to create a per-capita data file
-        # dfPerCapita <- createPerCapita(dfProcessList, 
-        #                                uqBy=c("state", "date"), 
-        #                                popData=stateData, 
-        #                                mapper=perCapMapper
-        #                                )
-        # glimpseLog(dfPerCapita, txt="\nIntegrated per capita data file:\n", logFile=writeLog)
+        dfPerCapita <- createPerCapita(dfProcessList,
+                                       uqBy=c("countyFIPS", "state", "date"),
+                                       popData=countyData,
+                                       popJoinBy=c("countyFIPS", "state"),
+                                       mapper=perCapMapper
+                                       )
+        glimpseLog(dfPerCapita, txt="\nIntegrated per capita data file:\n", logFile=writeLog)
     
     } else {
         dfRawList <- NULL
@@ -888,74 +905,23 @@ readRunUSAFacts <- function(maxDate,
                                          reAssign=reAssignCounty, 
                                          defaultCluster=defaultCluster
                                          )
+    } else {
+        clData <- NULL
+        useClusters <- NULL # Should fix this to allow passing of clusters
     }
     
     # STEP 6: Assess clusters
     
-    # Temporary return statement, since code below has not yet been modified
-    return(countyData)
-    
-    # STEP 2: Read case and death data, combine, and add population totals and existing clusters
-    burdenData <- readUSAFacts(
-        caseFile=caseLoc, 
-        deathFile=deathLoc, 
-        countyPopFile=pop,
-        oldFile=oldFile,
-        showBurdenMinPop=showBurdenMinPop,
-        maxDate=maxDate,
-        stateClusters=existingStateClusters, 
-        countyClusters=existingCountyClusters, 
-        glimpseRaw=FALSE
-    )
-    
-    # STEP 3: Create appropriately filtered data, and new clusters if requested
-    clusterData <- prepClusterCounties(burdenFile=burdenData, 
-                                       maxDate=maxDate, 
-                                       minPop=minPopCluster,
-                                       createClusters=createClusters, 
-                                       hierarchical=hierarchical, 
-                                       returnList=TRUE,
-                                       ...
-    )
-    
-    # STEP 4: Assess clusters against the new data
-    # STEP 4a: Extract the county-level clusters (new clusters if created, existing otherwise)
-    if (createClusters) {
-        if (is.na(hierarchical)) clustVec <- clusterData$objCluster$objCluster
-        else if (hierarchical) clustVec <- cutree(clusterData$objCluster$objCluster, k=kCut)
-        else clustVec <- clusterData$objCluster$objCluster$cluster
-    }
-    else {
-        clustVec <- existingCountyClusters
-    }
-    
-    # STEP 4b: Show the cumulative data, order by cluster, and keep the plots together
-    helperACC_county <- helperAssessCountyClusters(vecCluster=clustVec, 
-                                                   dfPop=clusterData$countyFiltered, 
-                                                   dfBurden=clusterData$countyFiltered, 
-                                                   showCum=TRUE,
-                                                   thruLabel=format(as.Date(maxDate), "%b %d, %Y"), 
-                                                   plotsTogether=TRUE, 
-                                                   orderCluster=orderCluster
-    )
-    
-    # STEP 5: Add back clusters not used for analysis (code 999) and associated disease data
-    # May want to change the approach to population data
-    clusterStateData <- helperMakeClusterStateData(dfPlot=helperACC_county, 
-                                                   dfPop=usmap::countypop,
-                                                   dfBurden=clusterData$countyDailyPerCapita,
-                                                   orderCluster=orderCluster
-    )
-    
-    # STEP 6: Return a list of the key files
-    list(pop=pop, 
-         burdenData=burdenData, 
-         clusterData=clusterData, 
-         clustVec=clustVec, 
-         helperACC_county=helperACC_county, 
-         clusterStateData=clusterStateData,
-         maxDate=maxDate
-    )
+    # Return statement, still need to update Step 6 (cluster assessment)
+    return(list(countyData=countyData, 
+                dfRaw=dfRawList, 
+                dfProcess=dfProcessList, 
+                dfPerCapita=dfPerCapita, 
+                useClusters=useClusters, 
+                maxData=maxDate,
+                plotDataList=NULL
+                )
+           )
     
 }
 
@@ -963,8 +929,6 @@ readRunUSAFacts <- function(maxDate,
 
 The function is tested as it evolves:  
 ```{r, fig.height=9, fig.width=9}
-
-readRunUSAFacts(maxDate="2021-05-27")
 
 testCluster <- clusterCounties(dfPerCapita=readFromRDS("cty_20201026")$clusterData$countyDailyPerCapita, 
                                minPopCluster=25000, 
@@ -1013,10 +977,122 @@ usafCaseTest <- readQCRawUSAF("./RInputFiles/Coronavirus/covid_confirmed_usafact
                               dfRef=testDFRefCase
                               )
 
+usafProcessCaseTest <- processRawFile(usafCaseTest, 
+                                      vecRename=c(), 
+                                      vecSelect=c("countyFIPS", "state", "date", "cases", "new_cases"), 
+                                      lstCombo=list(), 
+                                      lstFilter=list(), 
+                                      lstExclude=list("countyFIPS"=c("00000", "00001"))
+                                      )
+usafProcessDeathTest <- processRawFile(usafDeathTest, 
+                                       vecRename=c(), 
+                                       vecSelect=c("countyFIPS", "state", "date", "deaths", "new_deaths"), 
+                                       lstCombo=list(), 
+                                       lstFilter=list(), 
+                                       lstExclude=list("countyFIPS"=c("00000", "00001"))
+                                       )
+
+usafPerCapitaTest <- createPerCapita(list(usafProcessCaseTest, usafProcessDeathTest), 
+                                     uqBy=c("countyFIPS", "state", "date"), 
+                                     popData=getCountyData() %>% 
+                                         colMutater(selfList=list("countyFIPS"=zeroPad5)), 
+                                     mapper=c("deaths"="tdpm", "new_deaths"="dpm", 
+                                              "cases"="tcpm", "new_cases"="cpm"
+                                              ),
+                                     popJoinBy=c("countyFIPS", "state"), 
+                                     popVar="pop"
+                                     )
+
 ```
 
 * The function completes step 1, reading and formatting the county population data file  
 * The clustering function works the same as previous, provided a properly formatted per capita data file  
 * The function to create a cluster vector works on data returned by the clustering function  
 * The function to read and QC an existing downloaded file, with comparison to previous, is included  
+* The function to process read files is included  
+* The function to integrate files and create per capita metrics is included  
   
+The overall function is then tested, with the cluster assessments to be added later:  
+```{r, fig.height=9, fig.width=9}
+
+# Create clusters from existing data frame
+testFullUSAF_v001 <- readRunUSAFacts(maxDate=NA, 
+                                     dfPerCapita=readFromRDS("cty_20201026")$clusterData$countyDailyPerCapita, 
+                                     createClusters=TRUE,
+                                     defaultCluster="999",
+                                     minPopCluster=25000, 
+                                     hierarchical=NA,
+                                     minShape="2020-04",
+                                     maxShape="2020-09",
+                                     ratioDeathvsCase = 0.001,
+                                     ratioTotalvsShape = 0.25,
+                                     minDeath=100,
+                                     minCase=5000, 
+                                     hmlSegs=3, 
+                                     eslSegs=3, 
+                                     seed=2010261358
+                                     )
+identical(testFullUSAF_v001$useClusters, vecTestCluster_001)
+
+
+# Assemble dfPerCapita from components
+readList <- list("usafCase"="./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20201026.csv", 
+                 "usafDeath"="./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20201026.csv"
+                 )
+compareList <- list("usafCase"=testDFRefCase, 
+                    "usafDeath"=testDFRefDeath
+                    )
+
+testFullUSAF_v002 <- readRunUSAFacts(maxDate=NA, 
+                                     downloadTo=lapply(readList, FUN=function(x) if(file.exists(x)) NA else x),
+                                     readFrom=readList, 
+                                     compareFile=compareList, 
+                                     writeLog=NULL, 
+                                     ovrWriteLog=TRUE,
+                                     createClusters=FALSE,
+                                     defaultCluster="999",
+                                     minPopCluster=25000, 
+                                     hierarchical=NA,
+                                     minShape="2020-04",
+                                     maxShape="2020-09",
+                                     ratioDeathvsCase = 0.001,
+                                     ratioTotalvsShape = 0.25,
+                                     minDeath=100,
+                                     minCase=5000, 
+                                     hmlSegs=3, 
+                                     eslSegs=3, 
+                                     seed=2010261358
+                                     )
+
+# Get previous per capita data for comparison
+compareDataTest <- readFromRDS("cty_20201026")$clusterStateData %>%
+    checkUniqueRows(uniqueBy=c("fipsCounty", "date"))
+# Only the counties with spelling mismatches should be in old but not in new
+compareDataTest %>% 
+    anti_join(testFullUSAF_v002$dfPerCapita, by=c("fipsCounty"="countyFIPS", "date"))
+# Primarily the counties with spelling mismatched should be in new but not in old
+# Should probably delete the 02270 and 06000 which both have population 0
+testFullUSAF_v002$dfPerCapita %>% 
+    anti_join(compareDataTest, by=c("countyFIPS"="fipsCounty", "date")) %>%
+    count(countyFIPS, state)
+# Compare values across files
+tmpCheck <- testFullUSAF_v002$dfPerCapita %>%
+    select(countyFIPS, date, state, 
+           cases_usaf=new_cases, deaths_usaf=new_deaths, cpm7_usaf=cpm7, dpm7_usaf=dpm7
+           ) %>%
+    inner_join(select(compareDataTest, fipsCounty, date, state, 
+                      cases_old=cases, deaths_old=deaths, cpm7_old=cpm7, dpm7_old=dpm7
+                      ), 
+               by=c("countyFIPS"="fipsCounty", "date", "state")
+               ) %>%
+    pivot_longer(-c(countyFIPS, date, state)) %>%
+    mutate(metric=stringr::str_split(name, pattern="_") %>% sapply("[", 1), 
+           src=stringr::str_split(name, pattern="_") %>% sapply("[", 2)
+           ) %>%
+    select(-name) %>%
+    pivot_wider(names_from=src, values_from=value) %>%
+    filter((is.na(usaf) & !is.na(old)) | (!is.na(usaf) & is.na(old)) | abs(usaf-old) > 0.000001)
+ tmpCheck %>% count(metric)
+```
+
+The data produced are broadly the same, with the exception of the misnamed counties (better in more recent) and elimination of zero population fips (better in previous).
