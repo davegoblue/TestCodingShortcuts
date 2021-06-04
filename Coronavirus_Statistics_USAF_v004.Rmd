@@ -185,24 +185,32 @@ The function includes:
 # Function to get county-level population data
 getCountyData <- function(df=readFromRDS("countyPop2021"), 
                           renameVars=c("State"="state", "County Name"="countyName", "population"="pop"), 
-                          keepVars=c("countyFIPS", "countyName", "state", "pop")
+                          keepVars=c("countyFIPS", "countyName", "state", "pop"), 
+                          selfList=list(),
+                          fullList=list(), 
+                          lstFilter=list(), 
+                          lstExclude=list()
                           ) {
     
     # FUNCTION ARGUMENTS:
     # df: the data frame containing state data
     # renameVars: variables to be renamed, using named list with format "originalName"="newName"
     # keepVars: variables to be kept in the final file (NULL means keep all)
+    # selfList: list for functions to apply to self, list('variable'=fn) will apply variable=fn(variable)
+    #           processed in order, so more than one function can be applied to self
+    # fullList: list for general functions to be applied, list('new variable'=expression(code))
+    #           will create 'new variable' as eval(expression(code))
+    #           for now, requires passing an expression
+    # lstFilter: a list for filtering records, of form list("field"=c("allowed values"))
+    # lstExclude: a list for filtering records, of form list("field"=c("disallowed values"))
     
-    # Rename variables where appropriate
-    names(df) <- ifelse(is.na(renameVars[names(df)]), names(df), renameVars[names(df)])
-
-    # Keep all variables if keepVars is NULL
-    if (is.null(keepVars)) keepVars <- names(df)
-    
-    # Return file with only key variables kept
+    # Read the file, rename and keep variables, apply functions as appropriate
     df %>%
-        select_at(vars(all_of(keepVars)))
-    
+        colRenamer(vecRename=renameVars) %>%
+        colSelector(vecSelect=keepVars) %>%
+        colMutater(selfList=selfList, fullList=fullList) %>%
+        rowFilter(lstFilter=lstFilter, lstExclude=lstExclude)
+
 }
 
 
@@ -839,9 +847,8 @@ readRunUSAFacts <- function(maxDate,
     #              NA means use R default color schemes
     # ...: other arguments that will be passed to prepClusterCounties
 
-    # STEP 1: Get a county-level population file (convert to zero pad 5 for compatibility)
-    countyData <- getCountyData() %>% 
-        colMutater(selfList=list("countyFIPS"=zeroPad5))
+    # STEP 1: Get a county-level population file, with fips as 5-digit character and non-zero population
+    countyData <- getCountyData(selfList=list("countyFIPS"=zeroPad5), lstExclude=list("pop"=c(0)))
 
     # If a log file is requested, create the log file (allows for append=TRUE for all downstream functions)
     if (!is.null(writeLog)) genNewLog(writeLog=writeLog, ovrwriteLog=ovrwriteLog)
@@ -911,6 +918,11 @@ readRunUSAFacts <- function(maxDate,
     }
     
     # STEP 6: Assess clusters
+    if (skipAssessmentPlots) {
+        plotDataList <- NULL
+    } else {
+        
+    }
     
     # Return statement, still need to update Step 6 (cluster assessment)
     return(list(countyData=countyData, 
@@ -919,7 +931,7 @@ readRunUSAFacts <- function(maxDate,
                 dfPerCapita=dfPerCapita, 
                 useClusters=useClusters, 
                 maxData=maxDate,
-                plotDataList=NULL
+                plotDataList=plotDataList
                 )
            )
     
@@ -1021,6 +1033,7 @@ testFullUSAF_v001 <- readRunUSAFacts(maxDate=NA,
                                      createClusters=TRUE,
                                      defaultCluster="999",
                                      minPopCluster=25000, 
+                                     skipAssessmentPlots=TRUE,
                                      hierarchical=NA,
                                      minShape="2020-04",
                                      maxShape="2020-09",
@@ -1050,6 +1063,7 @@ testFullUSAF_v002 <- readRunUSAFacts(maxDate=NA,
                                      writeLog=NULL, 
                                      ovrWriteLog=TRUE,
                                      createClusters=FALSE,
+                                     skipAssessmentPlots=TRUE,
                                      defaultCluster="999",
                                      minPopCluster=25000, 
                                      hierarchical=NA,
@@ -1095,4 +1109,252 @@ tmpCheck <- testFullUSAF_v002$dfPerCapita %>%
  tmpCheck %>% count(metric)
 ```
 
-The data produced are broadly the same, with the exception of the misnamed counties (better in more recent) and elimination of zero population fips (better in previous).
+The data produced are broadly the same, with the exception of the misnamed counties (better in more recent) and elimination of zero population fips (better in previous).  The issue of including zero-population counties has been addressed by eliminating them from the universe in step 1 (getCountyData()).
+
+A cluster assessment capability is also added:  
+```{r, fig.height=9, fig.width=9}
+
+# Create the integrated and aggregate data from lst
+dfFullUSAF <- integrateData(lst=list("stateData"=getCountyData(selfList=list("countyFIPS"=zeroPad5),
+                                                               lstExclude=list("pop"=c(0))
+                                                               ), 
+                                     "dfPerCapita"=testFullUSAF_v002$dfPerCapita, 
+                                     "useClusters"=clustersToFrame(testFullUSAF_v001$useClusters,
+                                                                   colNameName="countyFIPS"
+                                                                   ) %>%
+                                         colMutater(selfList=list("countyFIPS"=zeroPad5))
+                                     ), 
+                            lstExtract=list("stateData"=function(x) 
+                                colSelector(x, vecSelect=c("countyFIPS", "pop")),
+                                "dfPerCapita"=NULL, 
+                                "useClusters"=NULL
+                                ), 
+                            keyJoin="countyFIPS"
+                            )
+    
+dfAggUSAF <- combineAggData(dfFullUSAF, 
+                            aggBy=list("agg1"=list(aggFunc=specNA(specSumProd), 
+                                                   aggVars=c("pop"), 
+                                                   wtVar=NULL, 
+                                                   prefix=NULL
+                                                   ), 
+                                       "agg2"=list(aggFunc=specNA(weighted.mean), 
+                                                   aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7"), 
+                                                   wtVar="pop", 
+                                                   prefix="wm_"
+                                                   )
+                                       )
+                            )
+
+# Helper function to make a summary map
+helperSummaryMap <- function(df, 
+                             mapLevel="states", 
+                             keyCol="state",
+                             values="cluster",
+                             discreteValues=NULL,
+                             legend.position="right",
+                             labelScale=TRUE,
+                             extraArgs=list(),
+                             countOnly=FALSE,
+                             textLabel=c(),
+                             ...
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a data frame containing a level of geography and an associated cluster
+    # mapLevel: a parameter for whether the map is "states" or "counties"
+    # keyCol: the key column for plotting (usmap::plot_usmap is particular, and this must be 'state' or 'fips')
+    # values: the character name of the field containing the data to be plotted
+    # discreteValues: boolean for whether the values are discrete (if not, use continuous)
+    #                 NULL means infer from data
+    # legend.position: character for the location of the legend in the plot
+    # labelScale: boolean, should an scale_fill_ be created?  Use FALSE if contained in extraArgs
+    # extraArgs: list of other arguments that will be appended as '+' to the end of the usmap::plot_usmap call
+    # countOnly: should a bar plot of counts only be produced?
+    # textLabel: a list of elements that should be labelled as text on the plot (too small to see)
+    # ...: other parameters to be passed to usmap::plot_usmap (e.g., labels, include, exclude, etc.)
+    
+    # Modify the data frame to contain only the relevant data
+    df <- df %>%
+        select(all_of(c(keyCol, values))) %>%
+        distinct()
+    
+    # Determine the type of data being plotted
+    if (is.null(discreteValues)) discreteValues <- !is.numeric(df[[values]])
+    
+    # Convert data type if needed
+    if (isTRUE(discreteValues) & is.numeric(df[[values]])) 
+        df[[values]] <- factor(df[[values]])
+    
+    # If count only is needed, create a count map; otherwise create a map
+    if (isTRUE(countOnly)) { 
+        gg <- df %>%
+            ggplot(aes(x=fct_rev(get(values)))) + 
+            geom_bar(aes_string(fill=values)) + 
+            stat_count(aes(label=..count.., y=..count../2), 
+                       geom="text", 
+                       position="identity", 
+                       fontface="bold"
+                       ) +
+            coord_flip() + 
+            labs(y="Number of members", x="")
+    } else {
+        if(keyCol=="countyFIPS") {
+            df <- df %>% colRenamer(vecRename=c("countyFIPS"="fips"))
+            keyCol <- "fips"
+        }
+        gg <- usmap::plot_usmap(regions=mapLevel, data=df, values=values, ...)
+        if (length(textLabel) > 0) {
+            labDF <- df %>% 
+                filter(get(keyCol) %in% textLabel) %>%
+                mutate(rk=match(get(keyCol), textLabel)) %>%
+                arrange(rk) %>%
+                mutate(lon=-70.1-seq(0, 0.8*length(textLabel)-0.8, by=0.8), 
+                       lat=40.1-seq(0, 1.5*length(textLabel)-1.5, by=1.5)
+                       ) %>%
+                select(lon, lat, everything()) %>%
+                usmap::usmap_transform()
+            gg <- gg + geom_text(data=labDF, 
+                                 aes(x=lon.1, y=lat.1, label=paste(get(keyCol), get(values))), 
+                                 size=3.25
+                                 )
+        }
+    }
+    
+    # Position the legend as requested
+    gg <- gg + theme(legend.position=legend.position)
+    
+    # Create the scale if appropriate
+    if (isTRUE(labelScale)) gg <- gg + 
+        if(isTRUE(discreteValues)) scale_fill_discrete(values) else scale_fill_continuous(values)
+    
+    # Apply extra arguments
+    for (ctr in seq_along(extraArgs)) gg <- gg + extraArgs[[ctr]]
+    
+    # Return the map object
+    gg
+    
+}
+
+
+
+# Updated function for handling county-level clusters
+createSummary <- function(df, 
+                          stateClusterDF=NULL,
+                          brewPalette=NA, 
+                          dataType="state"
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: an integrated data frame by cluster-date
+    # stateClusterDF: a data frame containing state-cluster (NULL means it can be found in df)
+    # brewPalette: character string for a palette from RColorBrewer to be used (NA means default colors)
+    # dataType: the type of maps being produced ("state" or "county")
+    
+    # Create plots that can be relevant for a dashboard, including:
+    # 1. Map of segments
+    # 2. Bar plot of counts by segment
+    # 3. Facetted bar plot of segment descriptors (e.g., population, burden per million)
+    # 4. Facetted trend-line plot of burden by segments
+    
+    # Create a map of the clusters
+    p1 <- helperSummaryMap(if(is.null(stateClusterDF)) df else stateClusterDF, 
+                           mapLevel=if(dataType=="state") "states" else "counties",
+                           keyCol=if(dataType=="state") "state" else "countyFIPS",
+                           discreteValues=TRUE, 
+                           labelScale=is.na(brewPalette), 
+                           textLabel=if(dataType=="state") c("RI", "CT", "DE", "MD", "DC") else c(),
+                           extraArgs=if(is.na(brewPalette)) list() else 
+                               list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                           )
+    
+    # Create a bar plot of counts by segment
+    p2 <- helperSummaryMap(if(is.null(stateClusterDF)) df else stateClusterDF, 
+                           mapLevel=if(dataType=="state") "states" else "counties",
+                           keyCol=if(dataType=="state") "state" else "countyFIPS",
+                           discreteValues=TRUE, 
+                           labelScale=is.na(brewPalette), 
+                           countOnly=TRUE,
+                           extraArgs=if(is.na(brewPalette)) list() else 
+                               list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                           )
+    
+    # Create plot for population and burden by cluster
+    p3 <- df %>%
+        helperAggTotal(aggVars=c("pop", "wm_tcpm7", "wm_tdpm7"), 
+                       mapper=c("pop"="Population (millions)", 
+                                "wm_tcpm7"="Cases per thousand", 
+                                "wm_tdpm7"="Deaths per million"
+                                ), 
+                       xLab=NULL, 
+                       yLab=NULL, 
+                       title=NULL,
+                       divideBy=c("pop"=1000000, "wm_tcpm7"=1000), 
+                       extraArgs=if(is.na(brewPalette)) list() else 
+                           list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                       )
+    
+    # Create plot for cumulative burden per million over time
+    p4xtra <- list(arg1=scale_x_date(date_breaks="2 months", date_labels="%b-%y"), 
+                   arg2=theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+                   )
+    if(!is.na(brewPalette)) p4xtra$arg3 <- scale_color_brewer("Cluster", palette=brewPalette)
+    p4 <- df %>%
+        helperAggTrend(aggVars=append(c("wm_tcpm7", "wm_tdpm7"), if(dataType=="state") "wm_hpm7" else NULL), 
+                       mapper=c("wm_tcpm7"="Cases per thousand\n(cumulative)", 
+                                "wm_tdpm7"="Deaths per million\n(cumulative)", 
+                                "wm_hpm7"="Hospitalized per million\n(current)"
+                                ),
+                       yLab=NULL,
+                       title=NULL, 
+                       divideBy=c("wm_tcpm7"=1000), 
+                       linesize=0.75,
+                       extraArgs=p4xtra
+                       )
+    
+    list(p1=p1, p2=p2, p3=p3, p4=p4)
+    
+}
+
+    
+    
+# Create the main summary plots
+summaryPlotsUSAF <- createSummary(dfAggUSAF, 
+                                  stateClusterDF=clustersToFrame(testFullUSAF_v001$useClusters,
+                                                                 colNameName="countyFIPS"
+                                                                 ) %>%
+                                      colMutater(selfList=list("countyFIPS"=zeroPad5)), 
+                                  brewPalette="Paired", 
+                                  dataType="county"
+                                  )
+    
+
+
+
+
+
+# Create the detailed summaries
+detPlotsUSAF <- createDetailedSummaries(dfDetail=dfFullUSAF, 
+                                        dfAgg=dfAggUSAF, 
+                                        detVar=c("countyFIPS"),
+                                        p2DetMetrics=c("tcpm7", "tdpm7", "cpm7", "dpm7"),
+                                        brewPalette="Paired"
+                                        )
+    
+# Print the summary plots if requested
+if (isTRUE(TRUE)) {
+    gridExtra::grid.arrange(summaryPlotsUSAF$p1 + theme(legend.position="none"), 
+                            summaryPlotsUSAF$p3 + theme(legend.position="left"), 
+                            summaryPlotsUSAF$p4, 
+                            layout_matrix=rbind(c(1, 2), 
+                                                c(3, 3)
+                                                )
+                            )
+}
+    
+# Print the detailed plots if requested
+if (isTRUE(TRUE)) purrr::walk(detPlotsUSAF, .f=print)
+
+```
+
+The plots appear to be created as expected.  Next steps are to update the relevant functions so that plotting is an automatic component of data acquisition and clustering.
