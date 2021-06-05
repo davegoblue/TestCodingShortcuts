@@ -519,6 +519,32 @@ perCapMapper <- c("tot_cases"="tcpm",
 
 
 
+plotCombineAggByMapper <- list("state"=list(agg1 = list(aggFunc = specNA(specSumProd), 
+                                                        aggVars = c("pop"), 
+                                                        wtVar = NULL, 
+                                                        prefix = NULL
+                                                        ), 
+                                            agg2 = list(aggFunc = specNA(weighted.mean), 
+                                                        aggVars = c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"),
+                                                        wtVar = "pop", 
+                                                        prefix = "wm_"
+                                                        )
+                                            ), 
+                               "county"=list("agg1"=list(aggFunc=specNA(specSumProd), 
+                                                         aggVars=c("pop"), 
+                                                         wtVar=NULL, 
+                                                         prefix=NULL
+                                                         ), 
+                                             "agg2"=list(aggFunc=specNA(weighted.mean), 
+                                                         aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7"), 
+                                                         wtVar="pop", 
+                                                         prefix="wm_"
+                                                         )
+                                             )
+                               )
+
+
+
 # Function to pivot the data file longer
 pivotData <- function(df, 
                       pivotKeys, 
@@ -1330,9 +1356,6 @@ summaryPlotsUSAF <- createSummary(dfAggUSAF,
     
 
 
-
-
-
 # Create the detailed summaries
 detPlotsUSAF <- createDetailedSummaries(dfDetail=dfFullUSAF, 
                                         dfAgg=dfAggUSAF, 
@@ -1358,3 +1381,103 @@ if (isTRUE(TRUE)) purrr::walk(detPlotsUSAF, .f=print)
 ```
 
 The plots appear to be created as expected.  Next steps are to update the relevant functions so that plotting is an automatic component of data acquisition and clustering.
+
+An updated version of diagnoseClusters() is created:  
+```{r}
+
+# Function to create diagnoses and plots for clustering data
+diagnoseClusters <- function(lst, 
+                             lstExtract=fullListExtract,
+                             clusterFrame=NULL,
+                             brewPalette=NA, 
+                             clusterType="state",
+                             printSummary=TRUE, 
+                             printDetailed=TRUE
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a list containing processed clustering data
+    # lstExtract: the elements to extract from lst with an optional function for converting the elements
+    #             NULL means use the extracted element as-is
+    # clusterFrame: tibble of the clusters to be plotted
+    #               NULL means create from lst
+    # brewPalette: the color palette to use with scale_*_brewer()
+    #              default NA means use the standard color/fill profile
+    # clusterType: character variable of form "state" for state clusters and "county" for county
+    # printSummary: boolean, should summary plots be printed to the log?
+    # printDetailed: boolean, should detailed plots be printed to the log?
+ 
+    # Get the key variable (used for joins and the like)
+    if (clusterType=="state") keyVar <- "state"
+    else if (clusterType=="county") keyVar <- "countyFIPS"
+    else stop(paste0("\nThe passed clusterType: ", clusterType, " is not programmed\n"))
+    
+    # Create clusterFrame from lst if it has been passed as NULL
+    if (is.null(clusterFrame)) clusterFrame <- clustersToFrame(lst, colNameName=keyVar)
+    
+    # Create the integrated and aggregate data from lst
+    dfFull <- integrateData(lst, lstExtract=lstExtract, otherDF=list(clusterFrame), keyJoin=keyVar)
+    dfAgg <- combineAggData(dfFull, aggBy=plotCombineAggByMapper[[clusterType]])
+    
+    # Create the main summary plots
+    summaryPlots <- createSummary(dfAgg, 
+                                  stateClusterDF=clusterFrame, 
+                                  brewPalette=brewPalette, 
+                                  dataType=clusterType
+                                  )
+
+    # Create the detailed summaries
+    detPlots <- createDetailedSummaries(dfDetail=dfFull, 
+                                        dfAgg=dfAgg, 
+                                        detVar=keyVar,
+                                        p2DetMetrics=plotCombineAggByMapper[[clusterType]]$agg2$aggVars,
+                                        brewPalette=brewPalette
+                                        )
+    
+    # Print the summary plots if requested
+    if (isTRUE(printSummary)) {
+        gridExtra::grid.arrange(summaryPlots$p1 + theme(legend.position="none"), 
+                                summaryPlots$p3 + theme(legend.position="left"), 
+                                summaryPlots$p4, 
+                                layout_matrix=rbind(c(1, 2), 
+                                                    c(3, 3)
+                                )
+        )
+    }
+    
+    # Print the detailed plots if requested
+    if (isTRUE(printDetailed)) purrr::walk(detPlots, .f=print)
+    
+    # Return a list of the key plotting files
+    list(dfFull=dfFull, 
+         dfAgg=dfAgg, 
+         plotClusters=clusterFrame, 
+         summaryPlots=summaryPlots, 
+         detPlots=detPlots
+    )
+    
+}
+
+```
+
+The diagnosis process is tested on the existing list:  
+```{r, fig.height=9, fig.width=9}
+
+testDiagnose <- diagnoseClusters(lst=list("stateData"=testFullUSAF_v002$countyData, 
+                                          "dfPerCapita"=testFullUSAF_v002$dfPerCapita
+                                          ), 
+                                 lstExtract=list("stateData"=function(x) 
+                                     colSelector(x, vecSelect=c("countyFIPS", "pop")), 
+                                     "dfPerCapita"=NULL
+                                     ),
+                                 clusterFrame=clustersToFrame(testFullUSAF_v001$useClusters, 
+                                                              colNameName="countyFIPS"
+                                                              ) %>%
+                                     colMutater(selfList=list("countyFIPS"=zeroPad5)),
+                                 brewPalette="Paired", 
+                                 clusterType="county"
+                                 )
+
+```
+
+The process appears to be working for county-level data.  Next steps are to include the diagnoseClusters() function in readRunUSAFacts() so that the full process can be run in an integrated manner.
