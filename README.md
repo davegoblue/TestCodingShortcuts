@@ -2434,4 +2434,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v004 includes functions to read and QC raw USAF files  
 * Coronavirus_Statistics_USAF_v004 function readRunUSAFacts() includes all elements except assessment  
 * Coronavirus_Statistics_USAF_v004 includes functions to assess clusters  
+* Coronavirus_Statistics_USAF_v004 function diagnoseClusters() is updated  
   
