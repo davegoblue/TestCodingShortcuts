@@ -956,7 +956,7 @@ readRunUSAFacts <- function(maxDate,
                 dfProcess=dfProcessList, 
                 dfPerCapita=dfPerCapita, 
                 useClusters=useClusters, 
-                maxData=maxDate,
+                maxDate=maxDate,
                 plotDataList=plotDataList
                 )
            )
@@ -1480,4 +1480,321 @@ testDiagnose <- diagnoseClusters(lst=list("stateData"=testFullUSAF_v002$countyDa
 
 ```
 
-The process appears to be working for county-level data.  Next steps are to include the diagnoseClusters() function in readRunUSAFacts() so that the full process can be run in an integrated manner.
+The process appears to be working for county-level data.  Next steps are to include the diagnoseClusters() function in readRunUSAFacts() so that the full process can be run in an integrated manner:  
+```{r}
+
+# Function to run the USA Facts (US county-level coronavirus data) clustering process
+readRunUSAFacts <- function(maxDate, 
+                            downloadTo=list("usafCase"=NA, "usafDeath"=NA),
+                            readFrom=downloadTo,
+                            compareFile=list("usafCase"=NA, "usafDeath"=NA),
+                            writeLog=NULL,
+                            ovrwriteLog=TRUE,
+                            dfPerCapita=NULL,
+                            useClusters=NULL,
+                            showBurdenMinPop=10000, 
+                            minPopCluster=25000,
+                            defaultCluster=NULL,
+                            hierarchical=FALSE,
+                            kCut=6,
+                            orderCluster=TRUE,
+                            reAssignCounty=list(),
+                            skipAssessmentPlots=FALSE,
+                            brewPalette=NA,
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # maxDate: the maximum data to use for data from the cases and deaths file
+    # downloadTo: named list for locations to download data (usafCase, usafDeath, usafPop)
+    #             NA means do not download data for that particular element
+    # readFrom: named list for locations to read data from (defaults to donwloadTo)
+    # compareFile: named list for the reference file to be used for usafCase, usafDeath, usafPop
+    #              NA means do not use a reference file for that element
+    # writeLog: name of a separate log file for capturing detailed data on changes between files
+    #           NULL means no detailed data captured
+    # ovrwriteLog: boolean, should the log file be overwritten and started again from scratch?
+    # dfPerCapita: file can be passed directly, which bypasses the loading and processing steps
+    #              default NULL means create dfPerCapita using steps 2-4
+    # useClusters: named vector containing the clusters to use
+    #              NULL means create clusters from this data
+    # showBurdenMinPop: minimum population for showing in burden by cluster plots (NULL means skip plot)
+    # minPopCluster: minimum population for including county in running cluster-level metrics
+    # defaultCluster: cluster label to be assigned to any county that falls below minPopCluster
+    #                 NULL means do not add these to the clustering vector
+    # hierarchical: whether to create hierarchical clusters
+    #               TRUE means run hierarchical clustering
+    #               FALSE means run kmeans clustering
+    #               NA means run rules-based clustering
+    # kCut; if hierarchical clustering is used, what k (number of clusters in cutree) should be used?
+    # orderCluster: if FALSE, ignore; if TRUE, order by "dpm"; if anything else, order by orderCluster
+    # reAssignCounty: mapping file for assigning a county to another county's cluster
+    #                format list("countyToChange"="countyClusterToAssign")
+    # skipAssessmentPlots: boolean, should cluster assessment plots be skipped?
+    # brewPalette: character vector length-1 referencing a color scheme from brewer_pal to use
+    #              NA means use R default color schemes
+    # ...: other arguments that will be passed to prepClusterCounties
+
+    # STEP 1: Get a county-level population file, with fips as 5-digit character and non-zero population
+    countyData <- getCountyData(selfList=list("countyFIPS"=zeroPad5), lstExclude=list("pop"=c(0)))
+
+    # If a log file is requested, create the log file (allows for append=TRUE for all downstream functions)
+    if (!is.null(writeLog)) genNewLog(writeLog=writeLog, ovrwriteLog=ovrwriteLog)
+    
+    # Get the data types to be used (elements of readFrom) and create a file storage list
+    elemUsed <- names(readFrom)
+    dfRawList <- vector("list", length=length(elemUsed)) %>% purrr::set_names(elemUsed)
+    dfProcessList <- vector("list", length=length(elemUsed)) %>% purrr::set_names(elemUsed)
+    
+    # Steps 2-4 are required only if dfPerCapita has not been passed
+    if (is.null(dfPerCapita)) {
+    
+        # STEP 2: Download and QC each requested data element
+        for (elem in elemUsed) {
+            dfRawList[[elem]] <- readQCRawUSAF(fileName=readFrom[[elem]],
+                                               writeLog=writeLog,
+                                               ovrwriteLog=FALSE,
+                                               urlType=elem,
+                                               getData=if(is.na(downloadTo[[elem]])) FALSE else TRUE,
+                                               dfRef=compareFile[[elem]]
+                                               )
+            glimpseLog(dfRawList[[elem]], txt=paste0("\nRaw file for ", elem, ":\n"), logFile=writeLog)
+        }
+    
+        # STEP 3: Process all requested data
+        for (elem in elemUsed) {
+            dfProcessList[[elem]] <- processRawFile(dfRawList[[elem]],
+                                                    vecRename=c(), 
+                                                    vecSelect=vecSelectMapper[[elem]],
+                                                    lstCombo=lstComboMapper[[elem]],
+                                                    lstFilter=lstFilterMapper[[elem]], 
+                                                    lstExclude=lstExcludeMapper[[elem]]
+                                                    )
+            glimpseLog(dfProcessList[[elem]], txt=paste0("\nProcessed for ", elem, ":\n"), logFile=writeLog)
+        }
+
+        # STEP 4: Integrate to create a per-capita data file
+        dfPerCapita <- createPerCapita(dfProcessList,
+                                       uqBy=c("countyFIPS", "state", "date"),
+                                       popData=countyData,
+                                       popJoinBy=c("countyFIPS", "state"),
+                                       mapper=perCapMapper
+                                       )
+        glimpseLog(dfPerCapita, txt="\nIntegrated per capita data file:\n", logFile=writeLog)
+    
+    } else {
+        dfRawList <- NULL
+        dfProcessList <- NULL
+    }
+
+    # STEP 5: Create clusters (if passed as NULL)
+    if (is.null(useClusters)) {
+        # Add population back to dfPerCapita (should improve this process)
+        dfPerUse <- countyData %>%
+            select(countyFIPS, pop) %>%
+            mutate(countyFIPS=zeroPad5(countyFIPS)) %>%
+            right_join(dfPerCapita, by=c("countyFIPS"))
+        clData <- clusterCounties(dfPerCapita=dfPerUse, 
+                                  hierarchical=hierarchical, 
+                                  minPopCluster=minPopCluster,
+                                  ...
+                                  )
+        useClusters <- getCountyClusters(clData, 
+                                         hier=hierarchical, 
+                                         kCut=kCut, 
+                                         reAssign=reAssignCounty, 
+                                         defaultCluster=defaultCluster
+                                         )
+    }
+    
+    # STEP 6: Assess clusters
+    if (skipAssessmentPlots) {
+        plotDataList <- NULL
+    } else {
+        lstFuns <- list("stateData"=function(x) colSelector(x, vecSelect=c("countyFIPS", "pop")), 
+                        "dfPerCapita"=NULL
+                        )
+        clFrame <- useClusters %>%
+            clustersToFrame(colNameName="countyFIPS") %>%
+            colMutater(selfList=list("countyFIPS"=zeroPad5))
+        plotDataList <- diagnoseClusters(lst=list("stateData"=countyData, 
+                                                  "dfPerCapita"=dfPerCapita
+                                                  ), 
+                                         lstExtract=lstFuns,
+                                         clusterFrame=clFrame,
+                                         brewPalette=brewPalette, 
+                                         clusterType="county"
+                                         )
+    }
+    
+    # Return statement, still need to update Step 6 (cluster assessment)
+    return(list(countyData=countyData, 
+                dfRaw=dfRawList, 
+                dfProcess=dfProcessList, 
+                dfPerCapita=dfPerCapita, 
+                useClusters=useClusters, 
+                maxDate=maxDate,
+                plotDataList=plotDataList
+                )
+           )
+    
+}
+
+```
+
+The full function is then tested, using the existing October 26 data.  This requires an update to clusterCounties() as some of the data formats have changed:  
+```{r, fig.height=9, fig.width=9}
+
+# Function to take county-level data, prepare for clusterStates, and return resulting outputs
+clusterCounties <- function(dfPerCapita, 
+                            hierarchical,
+                            vecRename=c(),
+                            clusterBy=c("countyFIPS"),
+                            arrangeBy=c("date"),
+                            burdenMetrics=c("cpm", "dpm"),
+                            popVar=c("pop"),
+                            vecSelect=c(clusterBy, arrangeBy, burdenMetrics, popVar),
+                            uniqueBy=c(clusterBy, arrangeBy),
+                            minPopCluster=1,
+                            returnList=TRUE, 
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPerCapita: a county-level file with per-capita metrics
+    # hierarchical: whether to create hierarchical clusters
+    #               TRUE means run hierarchical clustering
+    #               FALSE means run kmeans clustering
+    #               NA means run rules-based clustering
+    # vecRename: renaming of input variables
+    # clusterBy: the variable name used for clustering
+    # arrangeBy: data will be sorted by this a mix of clusterBy and this variable
+    # burdenMetrics: the metrics to be used for burden in clustering
+    # popVar: the column containing population data
+    # vecSelect: selection of input variables
+    # uniqueBy: the input file must be unique by, and will then be sorted by, uniqueBy
+    # minPopCluster: minimum population for including county in running cluster-level metrics
+    # returnList: boolean, if FALSE just the cluster object is returned
+    #                      if TRUE, a list is returned with dfCluster and the cluster object
+    # ...: other arguments that will be passed to clusterStates
+
+    # STEP 1: Select and rename variables from the dfPerCapita file
+    countyData <- dfPerCapita %>%
+        colRenamer(vecRename=vecRename) %>%
+        colSelector(vecSelect=vecSelect) %>%
+        checkUniqueRows(uniqueBy=uniqueBy, returnDF=TRUE) %>%
+        arrange(across(all_of(uniqueBy))) %>%
+        mutate(popThresh=(get(popVar)>=minPopCluster))
+    
+    # STEP 2: Split data based on population threshold
+    countyFiltered <- countyData %>% filter(popThresh)
+    countyBelow <- countyData %>% filter(!popThresh)
+    
+    # STEP 2a: Confirm that no county is in both data sets
+    count(countyFiltered, a=get(clusterBy), popThresh) %>%
+        bind_rows(count(countyBelow, a=get(clusterBy), popThresh)) %>%
+        checkUniqueRows(uniqueBy=c("a"), returnDF=FALSE, noteUnique=FALSE)
+    
+    # STEP 3: Run county-level clusters
+    objCluster <- clusterStates(colRenamer(countyFiltered, vecRename=c("countyFIPS"="state")), # should fix
+                                hierarchical=hierarchical, 
+                                returnList=returnList, 
+                                ...
+                                )
+    
+    # Return all of the relevant objects
+    list(objCluster=objCluster, 
+         countyFiltered=countyFiltered, 
+         countyBelow=countyBelow
+    )
+    
+}
+
+
+
+# Function to obtain county clusters and return the county clusters vector
+getCountyClusters <- function(obj, 
+                              hierarchical=FALSE, 
+                              kCut=0, 
+                              reAssign=list(), 
+                              defaultCluster=NULL
+                              ) {
+
+    # FUNCTION ARGUMENTS
+    # obj: a clustering object returned by clusterCounties()
+    # hierarchical: whether the clustering object is based on hierarchical clusters
+    #               TRUE means from hierarchical clustering
+    #               FALSE means from kmeans clustering
+    #               NA means from rules-based clustering
+    # kCut; if hierarchical clustering is used, what k (number of clusters in cutree) should be used?
+    # reAssign: mapping file to change segments, as list('entity'='other entity cluster to use')
+    # defaultCluster: cluster label to be assigned to any county that is not in obj$objCluster
+    #                 NULL means do not add these to the clustering vector
+    
+    # Get the clusters from obj$objCluster
+    clust <- getClusters(obj$objCluster, hier=hierarchical, kCut=kCut, reAssign=reAssign)
+    
+    # Add the defaultCluster label to any county that does not have a cluster label
+    if (!is.null(defaultCluster)) {
+        ctyAdd <- obj$countyBelow %>% pull(countyFIPS) %>% unique() %>% sort()
+        vecAdd <- rep(defaultCluster, length(ctyAdd)) %>% purrr::set_names(ctyAdd)
+        clust <- c(clust, vecAdd)
+    }
+    
+    # Return the cluster vector
+    clust
+    
+}
+
+
+
+readList <- list("usafCase"="./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20201026.csv", 
+                 "usafDeath"="./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20201026.csv"
+                 )
+compareList <- list("usafCase"=testDFRefCase, 
+                    "usafDeath"=testDFRefDeath
+                    )
+
+# Run using existing clusters
+testFullUSAF_v003 <- readRunUSAFacts(maxDate=NA, 
+                                     downloadTo=lapply(readList, FUN=function(x) if(file.exists(x)) NA else x),
+                                     readFrom=readList, 
+                                     compareFile=compareList, 
+                                     writeLog="./RInputFiles/Coronavirus/USAF_Daily_Test_v003.log", 
+                                     ovrwriteLog=TRUE,
+                                     useClusters=testFullUSAF_v001$useClusters,
+                                     skipAssessmentPlots=FALSE, 
+                                     brewPalette="Paired"
+                                     )
+# Expected differences in useClusters (they exist) and plotDataList (they exist and have an environment)
+sapply(names(testFullUSAF_v003), FUN=function(x) identical(testFullUSAF_v003[[x]], testFullUSAF_v002[[x]]))
+
+# Create new clusters
+testFullUSAF_v004 <- readRunUSAFacts(maxDate=NA, 
+                                     downloadTo=lapply(readList, FUN=function(x) if(file.exists(x)) NA else x),
+                                     readFrom=readList, 
+                                     compareFile=compareList, 
+                                     writeLog="./RInputFiles/Coronavirus/USAF_Daily_Test_v004.log", 
+                                     ovrwriteLog=TRUE,
+                                     useClusters=NULL,
+                                     skipAssessmentPlots=FALSE,
+                                     brewPalette="Paired",
+                                     defaultCluster="999",
+                                     minPopCluster=25000, 
+                                     hierarchical=NA,
+                                     minShape="2020-04",
+                                     maxShape="2020-09",
+                                     ratioDeathvsCase = 0.001,
+                                     ratioTotalvsShape = 0.25,
+                                     minDeath=100,
+                                     minCase=5000, 
+                                     hmlSegs=3, 
+                                     eslSegs=3, 
+                                     seed=2010261358
+                                     )
+# Expected differences in useClusters (different data) and plotDataList (different data and environment)
+sapply(names(testFullUSAF_v004), FUN=function(x) identical(testFullUSAF_v004[[x]], testFullUSAF_v003[[x]]))
+
+```
+
+The updated functions appear to be working as intended.  Next steps are to download the latest data and refresh the segments.
