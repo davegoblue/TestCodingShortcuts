@@ -2437,3 +2437,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v004 function diagnoseClusters() is updated  
 * Coronavirus_Statistics_USAF_v004 function readRunUSAFacts() is updated  
   
+### Expansions week of 07-JUN-2021  
+* Coronavirus_USAF_Functions_v001 contains functions for working with USAF data  
+  
