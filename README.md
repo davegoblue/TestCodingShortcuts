@@ -2439,4 +2439,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 07-JUN-2021  
 * Coronavirus_USAF_Functions_v001 contains functions for working with USAF data  
+* Coronavirus_USAF_Default_Mappings_v001.R contains mapping parameters for working with USAF data  
   
