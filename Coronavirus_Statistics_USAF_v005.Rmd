@@ -233,37 +233,10 @@ pivotData <- function(df,
 
 ```
 
-An existing processed USA Facts list is loaded for use as the comparison set.  The countyFIPS used to be stored as a numeric and is treated as zeroPad5 in the new version.  The relevant comparison data files are updated to reflect this:  
+An existing processed USA Facts list is loaded for use as the comparison set:  
 ```{r}
 
-cty_old_20210104 <- readFromRDS("cty_old_20210104")
-
-# Population data
-cty_old_20210104$pop <- cty_old_20210104$pop %>% 
-    colMutater(selfList=list("countyFIPS"=zeroPad5)) %>%
-    checkUniqueRows(uniqueBy=c("countyFIPS", "state", "countyName"))
-
-# Burden data
-cty_old_20210104$burdenData <- cty_old_20210104$burdenData %>% 
-    colMutater(selfList=list("countyFIPS"=zeroPad5)) %>%
-    checkUniqueRows(uniqueBy=c("countyFIPS", "date"))
-
-# Clustering output vector
-names(cty_old_20210104$clustVec) <- zeroPad5(names(cty_old_20210104$clustVec))
-cty_old_20210104$clustVec %>%
-    vecToTibble(colNameName="cluster") %>%
-    checkUniqueRows(uniqueBy=c("cluster"), returnDF=FALSE)
-
-# Per capita data files
-cty_old_20210104$clusterData$countyFiltered <- cty_old_20210104$clusterData$countyFiltered %>% 
-    colMutater(selfList=list("state"=zeroPad5)) %>%
-    checkUniqueRows(uniqueBy=c("state", "date"))
-cty_old_20210104$clusterData$countyDailyPerCapita <- cty_old_20210104$clusterData$countyDailyPerCapita %>% 
-    colMutater(selfList=list("state"=zeroPad5)) %>%
-    checkUniqueRows(uniqueBy=c("state", "date"))
-cty_old_20210104$clusterData$countyCumPerCapita <- cty_old_20210104$clusterData$countyCumPerCapita %>% 
-    colMutater(selfList=list("state"=zeroPad5)) %>%
-    checkUniqueRows(uniqueBy=c("state", "date"))
+cty_newformat_20201026 <- readFromRDS("cty_newformat_20201026")
 
 ```
   
@@ -332,11 +305,42 @@ sparseCountyClusterMap <- function(vec,
 The function is then run using previously created segments:  
 ```{r, fig.height=9, fig.width=9}
 
-sparseCountyClusterMap(cty_old_20210104$clustVec, 
+sparseCountyClusterMap(cty_newformat_20201026$useClusters, 
                        brewPalette="Paired", 
                        caption="Counties with population under 25k are blank"
                        )
 
 ```
 
-Next steps are to load new data, compare against previous, and create new segments.
+Next steps are to load new data and compare against previous, while using existing segments:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+readList <- list("usafCase"="./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20210608.csv", 
+                 "usafDeath"="./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20210608.csv"
+                 )
+compareList <- list("usafCase"=cty_newformat_20201026$dfRaw$usafCase, 
+                    "usafDeath"=cty_newformat_20201026$dfRaw$usafDeath
+                    )
+
+# Create new clusters
+cty_newdata_20210608 <- readRunUSAFacts(maxDate="2021-06-06", 
+                                        downloadTo=lapply(readList, 
+                                                          FUN=function(x) if(file.exists(x)) NA else x
+                                                          ),
+                                        readFrom=readList, 
+                                        compareFile=compareList, 
+                                        writeLog="./RInputFiles/Coronavirus/USAF_NewData_20210608_v005.log", 
+                                        ovrwriteLog=TRUE,
+                                        useClusters=cty_newformat_20201026$useClusters,
+                                        skipAssessmentPlots=FALSE,
+                                        brewPalette="Paired"
+                                        )
+
+sparseCountyClusterMap(cty_newdata_20210608$useClusters, 
+                       brewPalette="Paired", 
+                       caption="Counties with population under 25k are blank"
+                       )
+
+```
+
+There has been significant convergence among segments in average deaths per million and cases per million.  This is suggestive of several possibilities, such as that growth in burden may be inversely proportional to previous burden.  Next steps are to create segments using the most recent data, seeking to identify differences in 1) cumulative burden, primarily defined by deaths, and 2) shape of the curve in getting to cumulative burden.
