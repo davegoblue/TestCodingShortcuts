@@ -2441,4 +2441,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_USAF_Functions_v001 contains functions for working with USAF data  
 * Coronavirus_USAF_Default_Mappings_v001.R contains mapping parameters for working with USAF data  
 * Coronavirus_Statistics_USAF_v005 created to use functions and parameters in .R files  
+* Coronavirus_Statistics_USAF_v005 downloads and processes new data  
   
