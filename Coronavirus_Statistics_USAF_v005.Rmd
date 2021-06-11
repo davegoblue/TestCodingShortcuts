@@ -381,3 +381,344 @@ sparseCountyClusterMap(cty_newsegs_20210608$useClusters,
 
 ```
 
+The function createSummary() is updated to 1) create the sparse summary map; and 2) exclude the small county segment from select plots:  
+```{r}
+
+# Function to create diagnoses and plots for clustering data
+diagnoseClusters <- function(lst, 
+                             lstExtract=fullListExtract,
+                             clusterFrame=NULL,
+                             brewPalette=NA, 
+                             clusterType="state",
+                             printSummary=TRUE, 
+                             printDetailed=TRUE
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a list containing processed clustering data
+    # lstExtract: the elements to extract from lst with an optional function for converting the elements
+    #             NULL means use the extracted element as-is
+    # clusterFrame: tibble of the clusters to be plotted
+    #               NULL means create from lst
+    # brewPalette: the color palette to use with scale_*_brewer()
+    #              default NA means use the standard color/fill profile
+    # clusterType: character variable of form "state" for state clusters and "county" for county
+    # printSummary: boolean, should summary plots be printed to the log?
+    # printDetailed: boolean, should detailed plots be printed to the log?
+    
+    # Get the key variable (used for joins and the like)
+    if (clusterType=="state") keyVar <- "state"
+    else if (clusterType=="county") keyVar <- "countyFIPS"
+    else stop(paste0("\nThe passed clusterType: ", clusterType, " is not programmed\n"))
+    
+    # Create clusterFrame from lst if it has been passed as NULL
+    if (is.null(clusterFrame)) clusterFrame <- clustersToFrame(lst, colNameName=keyVar)
+    
+    # Create the integrated and aggregate data from lst
+    dfFull <- integrateData(lst, lstExtract=lstExtract, otherDF=list(clusterFrame), keyJoin=keyVar)
+    dfAgg <- combineAggData(dfFull, aggBy=plotCombineAggByMapper[[clusterType]])
+    
+    # Create the main summary plots
+    summaryPlots <- createSummary(dfAgg, 
+                                  stateClusterDF=clusterFrame, 
+                                  brewPalette=brewPalette, 
+                                  dataType=clusterType
+    )
+    
+    # Create the detailed summaries
+    detPlots <- createDetailedSummaries(dfDetail=dfFull, 
+                                        dfAgg=dfAgg, 
+                                        detVar=keyVar,
+                                        p2DetMetrics=plotCombineAggByMapper[[clusterType]]$agg2$aggVars,
+                                        brewPalette=brewPalette
+    )
+    
+    # Print the summary plots if requested (use the sparse county plotting)
+    if (isTRUE(printSummary)) {
+        gridExtra::grid.arrange(summaryPlots$p5 + theme(legend.position="none"), 
+                                summaryPlots$p3 + theme(legend.position="left"), 
+                                summaryPlots$p4, 
+                                layout_matrix=rbind(c(1, 2), 
+                                                    c(3, 3)
+                                )
+        )
+    }
+    
+    # Print the detailed plots if requested
+    if (isTRUE(printDetailed)) purrr::walk(detPlots, .f=print)
+    
+    # Return a list of the key plotting files
+    list(dfFull=dfFull, 
+         dfAgg=dfAgg, 
+         plotClusters=clusterFrame, 
+         summaryPlots=summaryPlots, 
+         detPlots=detPlots
+    )
+    
+}
+
+
+
+# Function to create detailed cluster summaries
+createDetailedSummaries <- function(dfDetail, 
+                                    dfAgg, 
+                                    aggVar=c("cluster"), 
+                                    detVar=c("state"),
+                                    p1Metrics=c("tcpm", "tdpm"), 
+                                    p1Order=c("tdpm"), 
+                                    p2DetMetrics=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"),
+                                    p2AggMetrics=paste0("wm_", p2DetMetrics),
+                                    p3Metrics=p1Metrics,
+                                    p3Days=30,
+                                    p3Slope=0.25,
+                                    mapper=c("tcpm"="Cases per million\n(cumulative)", 
+                                             "tdpm"="Deaths per million\n(cumulative)", 
+                                             "cpm7"="Cases\nper million", 
+                                             "dpm7"="Deaths\nper million",
+                                             "hpm7"="Hospitalized\nper million",
+                                             "tdpm7"="Deaths (cum)\nper million",
+                                             "tcpm7"="Cases (cum)\nper million"
+                                    ),
+                                    brewPalette=NA
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfDetail: data frame or tibble containing detailed (sub-cluster) data
+    # dfAgg: data frame or tibble containing aggregated (cluster) data
+    # aggVar: variable reflecting the aggregate level
+    # detVar: variable reflecting the detailed level
+    # p1Metrics: metrics to be shown for plot 1 (will be faceted)
+    # p1Order: variable for ordering detVar in p1
+    # p2DetMetrics: variables to be included from dfDetail for p2
+    # p2AggMetrics: corresponding variables to be included from dfAgg for p2
+    # p3Metrics: metrics to be included in the growth plots
+    # p3Days: number of days to include for calculating growth
+    # p3Slope: the slope for the dashed line for growth in p3
+    # mapper mapping file for variable name to descriptive name
+    # brewPalette: character string for a palette from RColorBrewer to be used (NA means default colors)    
+    
+    # Create plot for aggregates by sub-cluster
+    if(detVar=="state") {
+        p1 <- dfDetail %>%
+            colSelector(vecSelect=c(detVar, aggVar, "date", p1Metrics)) %>%
+            pivot_longer(all_of(p1Metrics)) %>%
+            filter(!is.na(value)) %>%
+            group_by_at(detVar) %>%
+            filter(date==max(date)) %>%
+            ungroup() %>%
+            ggplot(aes(x=fct_reorder(get(detVar), 
+                                     value, 
+                                     .fun=function(x) { max(ifelse(name==p1Order, x, 0)) }
+                                     ),
+                       y=value
+                       )
+                   ) + 
+            geom_col(aes(fill=get(aggVar))) + 
+            facet_wrap(~mapper[name], scales="free_x") + 
+            coord_flip() + 
+            labs(title="Cumulative burden", x=NULL, y=NULL)
+        if (!is.na(brewPalette)) p1 <- p1 + scale_fill_brewer("Cluster", palette=brewPalette)
+    } else {
+        # Do not create the plot for other than state-level data
+        p1 <- NULL
+    }
+    
+    # Create facetted burden trends by aggregate
+    # For state-level, create each state as a line
+    # For anything else, create a 10%-90% range
+    if (detVar=="state") {
+        p2 <- dfDetail %>%
+            colSelector(vecSelect=c(detVar, "date", aggVar, p2DetMetrics)) %>%
+            pivot_longer(all_of(p2DetMetrics)) %>%
+            filter(!is.na(value)) %>%
+            ggplot(aes(x=date, y=value)) + 
+            geom_line(aes_string(group=detVar), color="grey", size=0.5) + 
+            facet_grid(mapper[name] ~ get(aggVar), scales="free_y") + 
+            scale_x_date(date_breaks="2 months", date_labels="%b-%y") + 
+            theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+            labs(x=NULL, y=NULL, title="Burden by cluster and metric")
+    } else {
+        p2 <- dfDetail %>%
+            colSelector(vecSelect=c(detVar, "date", aggVar, p2DetMetrics)) %>%
+            pivot_longer(all_of(p2DetMetrics)) %>%
+            filter(!is.na(value)) %>%
+            group_by_at(c(aggVar, "name", "date")) %>%
+            summarize(p10=unname(quantile(value, 0.1)), p90=unname(quantile(value, 0.9)), .groups="drop") %>%
+            ggplot(aes(x=date)) + 
+            geom_ribbon(aes(ymin=p10, ymax=p90), alpha=0.75) +
+            facet_grid(mapper[name] ~ get(aggVar), scales="free_y") + 
+            scale_x_date(date_breaks="2 months", date_labels="%b-%y") + 
+            theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+            labs(x=NULL, 
+                 y=NULL, 
+                 title="Burden by cluster and metric", 
+                 subtitle="Shaded region is 10%le through 90%le, solid line is weighted mean"
+                 )
+    }
+    aggPlot <- dfAgg %>% 
+        colSelector(vecSelect=c("date", aggVar, p2AggMetrics)) %>%
+        colRenamer(vecRename=purrr::set_names(p2DetMetrics, p2AggMetrics)) %>%
+        pivot_longer(all_of(p2DetMetrics)) %>%
+        filter(!is.na(value))
+    p2 <- p2 + 
+        geom_line(data=aggPlot, aes_string(color=aggVar, group=aggVar, y="value"), size=1.5)
+    if (!is.na(brewPalette)) p2 <- p2 + 
+        scale_color_brewer("Cluster", palette=brewPalette) + 
+        theme(legend.position="none")
+    
+    # Create growth trends plot
+    if (TRUE) {
+        if(detVar=="countyFIPS") p3 <- dfDetail %>% filter(cluster != "999") else p3 <- dfDetail
+        p3 <- p3 %>%
+            colSelector(vecSelect=c(detVar, aggVar, "date", p3Metrics)) %>%
+            pivot_longer(all_of(p3Metrics)) %>%
+            filter(!is.na(value)) %>%
+            group_by_at(c(detVar, "name")) %>%
+            filter(date %in% c(max(date), max(date)-lubridate::days(p3Days))) %>%
+            mutate(growth=max(value)-min(value)) %>%  # not ideal way to calculate
+            filter(date==max(date)) %>%
+            ungroup() %>%
+            ggplot(aes(x=value, y=growth))
+        if(detVar=="state") p3 <- p3 + geom_text(aes_string(color=aggVar, label=detVar), fontface="bold")
+        else p3 <- p3 + geom_point(aes_string(color=aggVar))
+        p3 <- p3 + 
+            facet_wrap(~mapper[name], scales="free") + 
+            labs(title=paste0("Current vs growth"), 
+                 subtitle=paste0("Dashed line represents ", 
+                                 round(100*p3Slope), 
+                                 "% growth rate over past ", 
+                                 p3Days, 
+                                 " days"
+                                 ),
+                 x="Most recent cumulative", 
+                 y=paste0("Growth over past ", p3Days, " days")
+                 ) + 
+            lims(y=c(0, NA), x=c(0, NA)) + 
+            theme(panel.background = element_rect(fill = "white", colour = "white"), 
+                  panel.grid.major = element_line(size = 0.25, linetype = 'solid', color = "grey")
+                  ) + 
+            geom_abline(slope=p3Slope, intercept=0, lty=2)
+        if (!is.na(brewPalette)) { 
+            p3 <- p3 + scale_color_brewer(stringr::str_to_title(aggVar), palette=brewPalette)
+        }
+        if(detVar=="countyFIPS") p3 <- p3 + labs(caption="Counties below population threshold excluded")
+    } else {
+        p3 <- NULL
+    }
+    
+    # Return a list of plot objects
+    list(p1=p1, p2=p2, p3=p3)
+    
+}
+
+
+
+# Updated function for handling county-level clusters
+createSummary <- function(df, 
+                          stateClusterDF=NULL,
+                          brewPalette=NA, 
+                          dataType="state"
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: an integrated data frame by cluster-date
+    # stateClusterDF: a data frame containing state-cluster (NULL means it can be found in df)
+    # brewPalette: character string for a palette from RColorBrewer to be used (NA means default colors)
+    # dataType: the type of maps being produced ("state" or "county")
+    
+    # Create plots that can be relevant for a dashboard, including:
+    # 1. Map of segments
+    # 2. Bar plot of counts by segment
+    # 3. Facetted bar plot of segment descriptors (e.g., population, burden per million)
+    # 4. Facetted trend-line plot of burden by segments
+    # 5. Sparse county cluster map (if dataType is "county")
+    
+    # Create a map of the clusters
+    p1 <- helperSummaryMap(if(is.null(stateClusterDF)) df else stateClusterDF, 
+                           mapLevel=if(dataType=="state") "states" else "counties",
+                           keyCol=if(dataType=="state") "state" else "countyFIPS",
+                           discreteValues=TRUE, 
+                           labelScale=is.na(brewPalette), 
+                           textLabel=if(dataType=="state") c("RI", "CT", "DE", "MD", "DC") else c(),
+                           extraArgs=if(is.na(brewPalette)) list() else 
+                               list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                           )
+    
+    # Create a bar plot of counts by segment
+    p2 <- helperSummaryMap(if(is.null(stateClusterDF)) df else stateClusterDF, 
+                           mapLevel=if(dataType=="state") "states" else "counties",
+                           keyCol=if(dataType=="state") "state" else "countyFIPS",
+                           discreteValues=TRUE, 
+                           labelScale=is.na(brewPalette), 
+                           countOnly=TRUE,
+                           extraArgs=if(is.na(brewPalette)) list() else 
+                               list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                           )
+    
+    # Create plot for population and burden by cluster
+    p3 <- df %>%
+        helperAggTotal(aggVars=c("pop", "wm_tcpm7", "wm_tdpm7"), 
+                       mapper=c("pop"="Population (millions)", 
+                                "wm_tcpm7"="Cases per thousand", 
+                                "wm_tdpm7"="Deaths per million"
+                                ), 
+                       xLab=NULL, 
+                       yLab=NULL, 
+                       title=NULL,
+                       divideBy=c("pop"=1000000, "wm_tcpm7"=1000), 
+                       extraArgs=if(is.na(brewPalette)) list() else 
+                           list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                       )
+    
+    # Create plot for cumulative burden per million over time
+    p4xtra <- list(arg1=scale_x_date(date_breaks="2 months", date_labels="%b-%y"), 
+                   arg2=theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+                   )
+    if(!is.na(brewPalette)) p4xtra$arg3 <- scale_color_brewer("Cluster", palette=brewPalette)
+    p4 <- df %>%
+        helperAggTrend(aggVars=append(c("wm_tcpm7", "wm_tdpm7"), if(dataType=="state") "wm_hpm7" else NULL), 
+                       mapper=c("wm_tcpm7"="Cases per thousand\n(cumulative)", 
+                                "wm_tdpm7"="Deaths per million\n(cumulative)", 
+                                "wm_hpm7"="Hospitalized per million\n(current)"
+                                ),
+                       yLab=NULL,
+                       title=NULL, 
+                       divideBy=c("wm_tcpm7"=1000), 
+                       linesize=0.75,
+                       extraArgs=p4xtra
+                       )
+    
+    # Create the sparse county plot (if it is county data) - assumes default that '999' is 'too small'
+    if (dataType=="county") {
+        vecFrame <- if(is.null(stateClusterDF)) df else stateClusterDF
+        vecFrame <- vecFrame %>% select(countyFIPS, cluster) %>%
+            distinct()
+        vecUse <- vecFrame$cluster %>% purrr::set_names(vecFrame$countyFIPS)
+        p5 <- sparseCountyClusterMap(vecUse, 
+                                     caption="Counties below population threshold left blank",
+                                     brewPalette=if(is.na(brewPalette)) NULL else brewPalette
+                                     )
+    } else {
+        p5 <- NULL
+    }
+    
+    list(p1=p1, p2=p2, p3=p3, p4=p4, p5=p5)
+    
+}
+
+```
+
+The updated functions are tested:  
+```{r, fig.height=9, fig.width=9}
+
+# Confirm that new cluster maps are working as intended
+cty_chksegs_20210608 <- readRunUSAFacts(maxDate="2021-06-06", 
+                                        dfPerCapita=cty_newsegs_20210608$dfPerCapita,
+                                        useClusters=cty_newsegs_20210608$useClusters,
+                                        skipAssessmentPlots=FALSE, 
+                                        brewPalette="Paired"
+                                        )
+
+```
+
+The updated maps blank out the '999' (small population) cluster as desired.
