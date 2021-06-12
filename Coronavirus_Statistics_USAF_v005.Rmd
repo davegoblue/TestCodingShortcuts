@@ -721,4 +721,151 @@ cty_chksegs_20210608 <- readRunUSAFacts(maxDate="2021-06-06",
 
 ```
 
-The updated maps blank out the '999' (small population) cluster as desired.
+The updated maps blank out the '999' (small population) cluster as desired.  The clusters are designed using a 3x3 of total burden (mainly death) and shape of the curve.  Shapes of the curve are plotted, normalized so that each curve sums to 100%:  
+```{r, fig.height=9, fig.width=9}
+
+p1Data <- cty_chksegs_20210608$plotDataList$dfAgg %>% 
+    pivotData(pivotKeys=c("cluster", "date", "pop")) %>% 
+    filter(!is.na(value), cluster!="999", name %in% c("wm_cpm7", "wm_dpm7")) %>% 
+    group_by(cluster, name) %>% 
+    mutate(pct=value/sum(value)) %>% 
+    ungroup()
+
+# Plot all together
+p1Data %>% 
+    ggplot(aes(x=date, y=pct)) + 
+    geom_line(aes(group=cluster, color=cluster), lwd=1) + 
+    facet_wrap(~c("wm_cpm7"="Rolling 7 cases", "wm_dpm7"="Rolling 7 deaths")[name]) + 
+    scale_color_brewer(palette="Paired") + 
+    labs(x=NULL, 
+         y="Percentage of total burden", 
+         main="Burden over time, normalized to 100% cumulative burden"
+         )
+
+# Plot as facets
+p1Data %>% 
+    ggplot(aes(x=date, y=pct)) + 
+    geom_line(aes(group=cluster, color=cluster), lwd=1) + 
+    facet_grid(c("wm_cpm7"="Rolling 7 cases", "wm_dpm7"="Rolling 7 deaths")[name]~cluster) + 
+    scale_color_brewer(palette="Paired") + 
+    labs(x=NULL, 
+         y="Percentage of total burden", 
+         main="Burden over time, normalized to 100% cumulative burden"
+         )
+
+```
+
+Broadly, the shapes selected by the clustering include:  
+  
+1. Two spikes, primary impact early  
+2. Two spikes, balanced early and late impact  
+3. One main spike, late  
+  
+Broadly, there are examples of relatively higher and lower burden within each of these shapes, though the highest burden clusters mainly had two spikes with primary impact early and the medium burden clusters rarely had the primary impact early.
+
+Next, all counties of at least 50,000 population are examined for the shape of the cumulative deaths curve:  
+```{r}
+
+p2Data <- cty_chksegs_20210608$plotDataList$dfFull %>% 
+    select(countyFIPS, pop, state, date, tdpm7, tcpm7) %>%
+    pivotData(pivotKeys=c("countyFIPS", "state", "date", "pop")) %>% 
+    filter(!is.na(value), pop>=50000) %>% 
+    group_by(countyFIPS, name) %>% 
+    mutate(pct=value/max(value)) %>% 
+    ungroup()
+
+p2Dist <- p2Data %>% 
+    filter(name=="tdpm7") %>% 
+    select(countyFIPS, date, pct) %>% 
+    pivotData(pivotKeys="countyFIPS", toLonger = FALSE, nameVar="date", valVar="pct") %>%
+    column_to_rownames("countyFIPS") %>%
+    as.matrix() %>%
+    dist()
+
+p2Complete <- hclust(p2Dist, method="complete")
+plot(p2Complete)
+
+p2Single <- hclust(p2Dist, method="single")
+plot(p2Single)
+
+```
+
+There is something peculiar about data in '32510'.  A plot is created:  
+```{r}
+
+p2Data %>%
+    ggplot(aes(x=date, y=pct)) +
+    geom_line(data=~filter(., countyFIPS=="32510"), aes(group=countyFIPS), color="red", lwd=2) + 
+    geom_line(data=~summarize(group_by(., name, date), pct=mean(pct), .groups="drop")) +
+    facet_wrap(~c("tcpm7"="Rolling 7 cases", "tdpm7"="Rolling 7 deaths")[name]) + 
+    labs(x=NULL, y="Percentage of total burden on day", title="Cluster 32510 is red, mean is black")
+
+```
+
+There is clearly a data issue with cluster 32510.  Clusters are examined at a variable number of cut points:  
+```{r, fig.height=9, fig.width=9}
+
+plotHierarchical <- function(obj, k, df) {
+    
+    # FUNCtION ARGuMENTS:
+    # obj: clustering object from hierarchical clustering
+    # k: number of clusters to create
+    # df: data frame with burden data
+    
+    # Counts by cluster
+    ctCluster <- cutree(obj, k=k) %>%
+        table() %>%
+        print()
+    
+    # Make clustering data frame
+    clData <- cutree(obj, k=k) %>%
+        clustersToFrame(colNameName="countyFIPS") %>%
+        joinFrames(df) %>%
+        group_by(countyFIPS, name) %>%
+        mutate(delta=ifelse(row_number()==1, pct, pct-lag(pct))) %>%
+        ungroup() %>%
+        group_by(cluster, date, name) %>%
+        summarize(p05cum=quantile(pct, 0.05), 
+                  mucum=mean(pct), 
+                  p95cum=quantile(pct, 0.95), 
+                  p05delta=quantile(delta, 0.05), 
+                  mudelta=mean(delta), 
+                  p95delta=quantile(delta, 0.95), 
+                  .groups="drop"
+                  )
+    
+    # Plot by cluster and metric
+    p1 <- clData %>%
+        ggplot(aes(x=date)) + 
+        geom_line(aes(color=cluster, y=mucum), lwd=1) + 
+        geom_ribbon(aes(ymin=p05cum, ymax=p95cum), alpha=0.25) +
+        facet_grid(c("tcpm7"="% cumulative cases", "tdpm7"="% cumulative deaths")[name]~cluster) + 
+        scale_color_brewer(palette="Set1") + 
+        labs(x=NULL, y="% of cumulative", title="Mean and 90% range by cluster and metric")
+    print(p1)
+    
+    # Plot incremental rather than cumulative
+    p2 <- clData %>%
+        ggplot(aes(x=date)) + 
+        geom_line(aes(color=cluster, y=mudelta), lwd=1) + 
+        geom_ribbon(aes(ymin=p05delta, ymax=p95delta), alpha=0.25) +
+        facet_grid(c("tcpm7"="% total cases", "tdpm7"="% total deaths")[name]~cluster) + 
+        scale_color_brewer(palette="Set1") + 
+        labs(x=NULL, y="% of total", title="Mean and 90% range by cluster and metric")
+    print(p2)
+    
+    # Return the clustering frame
+    clData
+    
+}
+
+plotList <- lapply(2:5, FUN=function(x) plotHierarchical(p2Complete, k=x, df=p2Data))
+
+```
+
+* The first split is between early (15%) and late (85%) burden  
+* The second and third splits, both applied to the 'late' cluster, merit further exploration  
+* The fourth split is of the early bucket, split in to early/late and mainly early  
+  
+At a glance, with 5 clusters, there is a clear early cluster, a clear early/late cluster, and a group of three seemingly similar clusters (primarily late).  Further exploration of these three clusters may be merited.
+  
