@@ -2444,4 +2444,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 downloads and processes new data  
 * Coronavirus_Statistics_USAF_v005 creates segments using new data  
 * Coronavirus_Statistics_USAF_v005 updates plots to manage small counties  
+* Coronavirus_Statistics_USAF_v005 explores hierarchical clustering for shape of curve  
   
