@@ -2447,3 +2447,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 explores hierarchical clustering for shape of curve  
 * Coronavirus_Statistics_USAF_v005 plots differences in hierarchical clusters  
   
+### Expansions week of 14-JUN-2021  
+* Coronavirus_Statistics_USAF_v005 creates maps by shape of the curve  
+  
