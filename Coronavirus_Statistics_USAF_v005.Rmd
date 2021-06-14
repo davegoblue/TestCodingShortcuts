@@ -252,17 +252,22 @@ sparseCountyClusterMap <- function(vec,
     
     # FUNCTION ARGUMENTS:
     # vec: a named vector where the names are countyFIPS and the values are the clusters
+    #      can also be a data.frame, in which case clustersToFrame() and clustRemap are not used
     # clustRemap: remapping vector for clusters
     # caption: caption to be included (NULL means no caption)
     # brewPalette: name of a palette for scale_fill_brewer()
     #              NULL means use scale_fill_discrete() instead
     # naFill: fill to use for NA counties
     
-    # Convert to a tibble for use with usmap
-    df <- clustersToFrame(vec, colNameName="fips", convFactor=FALSE) %>%
-        mutate(cluster=as.character(cluster), 
-               cluster=ifelse(cluster %in% names(clustRemap), clustRemap[cluster], cluster)
-               )
+    # Convert to a tibble for use with usmap if not already a data.frame
+    if ("data.frame" %in% class(vec)) {
+        df <- vec
+    } else {
+        df <- clustersToFrame(vec, colNameName="fips", convFactor=FALSE) %>%
+            mutate(cluster=as.character(cluster), 
+                   cluster=ifelse(cluster %in% names(clustRemap), clustRemap[cluster], cluster)
+                   )
+    }
     
     # Create a blank state map with black lines
     blankStates <- usmap::plot_usmap("states")
@@ -288,8 +293,9 @@ sparseCountyClusterMap <- function(vec,
         coord_equal() + 
         ggthemes::theme_map()
     
-    # Add the appropriate fill
+    # Add the appropriate fill (can use viridis_d also)
     if (is.null(brewPalette)) p1 <- p1 + scale_fill_discrete("Cluster", na.value=naFill)
+    else if (brewPalette=="viridis") p1 <- p1 + scale_fill_viridis_d("Cluster", na.value=naFill)
     else p1 <- p1 + scale_fill_brewer("Cluster", palette=brewPalette, na.value=naFill)
     
     # Add caption if requested
@@ -914,5 +920,36 @@ Visually, there are meaningful distinctions in the clusters when overlaid, parti
 * There is a pronounced early segment and a more balanced early/late segment  
 * The "late" segments differ based on having (relatively) more deaths early, middle, or late, though all have their primary peak late  
   
-Next steps are to create curves using larger counties, then assess how well they fit the shape of the curves in the smaller counties.
+The geographic locations of the five hierarchical cluster types are plotted:  
+```{r, fig.height=9, fig.width=9}
+
+tempMapper <- function(obj, 
+                       k, 
+                       regions="counties", 
+                       varName=if(regions=="counties") "fips" else "state", 
+                       values="cluster", 
+                       lvlOrder=NULL, 
+                       title=if(is.null(lvlOrder)) NULL else "Lightest colors have earliest burden",
+                       caption=NULL
+                       ) {
+    
+    df <- cutree(obj, k=k) %>%
+        clustersToFrame(colNameName=varName) 
+    
+    if (!is.null(lvlOrder)) df[[values]] <- factor(df[[values]], levels=lvlOrder)
+    
+    df %>%
+        sparseCountyClusterMap(brewPalette="viridis", caption=caption) + 
+        labs(title=title)
+    
+}
+
+tmpText <- "Plots only counties with at least 50k population"
+tempMapper(p2Complete, k=2, lvlOrder=c(1, 2), caption=tmpText)
+tempMapper(p2Complete, k=3, lvlOrder=c(2, 1, 3), caption=tmpText)
+tempMapper(p2Complete, k=4, lvlOrder=c(3, 2, 1, 4), caption=tmpText)
+tempMapper(p2Complete, k=5, lvlOrder=c(3, 2, 1, 4, 5), caption=tmpText)
+
+```
   
+Next steps are to create curves using larger counties, then assess how well they fit the shape of the curves in the smaller counties.
