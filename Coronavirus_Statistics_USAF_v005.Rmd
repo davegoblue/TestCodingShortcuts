@@ -993,7 +993,103 @@ tempBurdenMapper(cty_chksegs_20210608$plotDataList$dfFull, tgtBPM=2500, with_yea
 tempBurdenMapper(cty_chksegs_20210608$plotDataList$dfFull, popMin=25000, tgtBPM=2500, with_year=TRUE)
 tempBurdenMapper(cty_chksegs_20210608$plotDataList$dfFull, popMax=25000, tgtBPM=2500, with_year=TRUE)
 
-
 ```
   
 Next steps are to create curves using larger counties, then assess how well they fit the shape of the curves in the smaller counties.
+
+A function is created to calculate the distances from each of the cluster means:  
+```{r}
+
+tempDistCluster <- function(dfClust, dfAll, metType="tdpm7", metClust="mucum") {
+    
+    dfClust <- dfClust %>%
+        filter(name==metType) %>%
+        colSelector(vecSelect=c("cluster", "date", metClust)) %>%
+        colRenamer(vecRename=c("pct") %>% purrr::set_names(metClust))
+    
+    dfAll <- dfAll %>%
+        filter(name==metType) %>%
+        colSelector(vecSelect=c("countyFIPS", "date", "pct"))
+    
+    dfClust %>%
+        left_join(dfAll, by="date") %>%
+        mutate(delta2=(ifelse(is.na(pct.x), 0, pct.x)-ifelse(is.na(pct.y), 0, pct.y))**2) %>%
+        group_by(cluster, countyFIPS) %>%
+        summarize(dist=sum(delta2), .groups="drop") %>%
+        arrange(countyFIPS, dist)
+    
+}
+
+# Create data for all counties
+p2All <- cty_chksegs_20210608$plotDataList$dfFull %>% 
+    select(countyFIPS, pop, state, date, tdpm7, tcpm7) %>%
+    pivotData(pivotKeys=c("countyFIPS", "state", "date", "pop")) %>% 
+    filter(!is.na(value), pop>0) %>% 
+    group_by(countyFIPS, name) %>% 
+    mutate(pct=value/max(value)) %>% 
+    ungroup()
+
+# Calculate distances to cluster mean, then print
+countyClusterDist <- tempDistCluster(dfClust=plotList[[4]], dfAll=p2All)
+countyClusterDist
+
+# Assess overlap of cluster for counties already clusterd
+tmpDistDF <- cutree(p2Complete, k=5) %>%
+    vecToTibble(colNameName="countyFIPS", colNameData="hierCluster") %>%
+    left_join(countyClusterDist, by="countyFIPS") %>%
+    arrange(countyFIPS, dist)
+tmpDistDF %>%
+    group_by(countyFIPS) %>%
+    filter(row_number()==1) %>%
+    ungroup() %>%
+    mutate(cluster=as.integer(as.character(cluster))) %>%
+    count(hierCluster, cluster) %>%
+    group_by(hierCluster) %>%
+    mutate(pct=n/sum(n)) %>%
+    ungroup() %>%
+    ggplot(aes(x=cluster, y=hierCluster)) + 
+    geom_tile(aes(fill=pct)) +
+    geom_text(aes(label=paste0("n=", n, "\n(", round(100*pct), "%)"))) + 
+    scale_fill_continuous(low="white", high="lightgreen") +
+    labs(title="Overlap of assigned hierarchical cluster and closest hierarchical cluster mean", 
+         x="Closest hierarchical cluster mean (k=5)", 
+         y="Assigned hierarchical cluster (k=5)"
+         )
+
+```
+  
+Most counties are closest to the mean of the hierarchical cluster they are assigned to.  There are some differences, as expected since method="complete" was chosen for the hierarchical clusters.  Assignments are then made for all counties, and then plotted:  
+```{r}
+
+# Full clustering database
+distOnlyClust <- countyClusterDist %>%
+    arrange(countyFIPS, dist) %>%
+    group_by(countyFIPS) %>%
+    filter(row_number()==1) %>%
+    ungroup() %>%
+    left_join(cutree(p2Complete, k=5) %>% 
+                  vecToTibble(colNameName="countyFIPS", colNameData="hierCluster"), 
+              by="countyFIPS"
+              )
+
+# Cluster assignments depending on size of county
+distOnlyClust %>%
+    ggplot(aes(x=cluster)) + 
+    geom_bar(fill="lightblue") + 
+    geom_text(stat="count", aes(y=..count../2, label=..count..)) +
+    facet_wrap(~ifelse(is.na(hierCluster), "Not in hierarchical data", "In hierarchical data"), 
+               scales="free_y"
+               ) + 
+    labs(title="Closest hierarchical cluster")
+
+# Plot all counties based on closest cluster
+sparseCountyClusterMap(rename(distOnlyClust, fips=countyFIPS) %>% 
+                           mutate(cluster=factor(cluster, levels=c(3, 2, 1, 4, 5))), 
+                       brewPalette="viridis", 
+                       caption="Closest hierarchical cluster mean (euclidean distance of % cumulative death)"
+                       ) + 
+    labs(title="Lighter clusters have higher percentage of burden early")
+
+```
+  
+There are clear geographic patterns to the data, with counties having earlier disease generally being surrounded by other counties with (relatively) earlier disease.
