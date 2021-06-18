@@ -1153,3 +1153,142 @@ p2Merge %>%
 ```
 
 Larger counties appear to generally have had lower burdens, with the exception of very low burden, where there is some crossing of the curves at around 500 deaths per million.
+
+Suppose that counties are clustered based on cumulative deaths (not percentage) by month, with focus on larger counties first:  
+```{r, fig.height=9, fig.width=9}
+
+# Include all counties with population greater than 0
+p2DataAll <- cty_chksegs_20210608$plotDataList$dfFull %>% 
+    select(countyFIPS, pop, state, date, tdpm7, tcpm7) %>%
+    pivotData(pivotKeys=c("countyFIPS", "state", "date", "pop")) %>% 
+    filter(!is.na(value), pop>=1) %>% 
+    group_by(countyFIPS, name) %>% 
+    mutate(pct=value/max(value)) %>% 
+    ungroup()
+
+# Create distance matrix and hierarchical clusters
+p2DistValue100k <- p2DataAll %>% 
+    filter(name=="tdpm7", pop>=100000) %>% 
+    select(countyFIPS, date, value) %>% 
+    pivotData(pivotKeys="countyFIPS", toLonger = FALSE, nameVar="date", valVar="value") %>%
+    column_to_rownames("countyFIPS") %>%
+    as.matrix() %>%
+    dist()
+
+# Run clustering with method "complete"
+p2CompleteValue100k <- hclust(p2DistValue100k, method="complete")
+plot(p2CompleteValue100k)
+
+```
+  
+There appears to be a branch of counties that are unique:  
+```{r, fig.height=9, fig.width=9}
+
+cutree(p2CompleteValue100k, k=2) %>% 
+    vecToTibble(colNameName="countyFIPS", colNameData="cluster") %>%
+    group_by(cluster) %>%
+    mutate(n=n()) %>%
+    ungroup() %>%
+    filter(n==min(n)) %>%
+    left_join(p2DataAll, by="countyFIPS") %>%
+    left_join(select(getCountyData(), countyFIPS, countyName, state)) %>%
+    filter(name=="tdpm7") %>%
+    mutate(countyName=paste0(countyFIPS, " - ", 
+                             stringr::str_replace(countyName, " County", ""), 
+                             " (", 
+                             state, 
+                             ")"
+                             )
+           ) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line() + 
+    facet_wrap(~countyName) + 
+    labs(x=NULL, y="Deaths per million", title="Counties in the first, small segment")
+
+```
+
+These counties have high total burdens combined with shapes differing from the norm.  This leads them to become their own clusters, requiring a greater number of clusters to get at the main groupings:  
+```{r, fig.height=9, fig.width=9}
+
+# Updated to allow for variable other than pct
+plotHierarchical <- function(obj, k, df, keyVar="pct", facetScale="fixed") {
+    
+    # FUNCtION ARGuMENTS:
+    # obj: clustering object from hierarchical clustering
+    # k: number of clusters to create
+    # df: data frame with burden data
+    # keyVar: the key variable to use in df
+    
+    # Counts by cluster
+    ctCluster <- cutree(obj, k=k) %>%
+        table() %>%
+        print()
+    
+    # Make clustering data frame
+    clData <- cutree(obj, k=k) %>%
+        clustersToFrame(colNameName="countyFIPS") %>%
+        joinFrames(df) %>%
+        group_by(countyFIPS, name) %>%
+        mutate(delta=ifelse(row_number()==1, get(keyVar), get(keyVar)-lag(get(keyVar)))) %>%
+        ungroup() %>%
+        group_by(cluster, date, name) %>%
+        summarize(p05cum=quantile(get(keyVar), 0.05), 
+                  mucum=mean(get(keyVar)), 
+                  p95cum=quantile(get(keyVar), 0.95), 
+                  p05delta=quantile(delta, 0.05), 
+                  mudelta=mean(delta), 
+                  p95delta=quantile(delta, 0.95), 
+                  .groups="drop"
+                  )
+    
+    # Plot by cluster and metric
+    p1 <- clData %>%
+        ggplot(aes(x=date)) + 
+        geom_line(aes(color=cluster, y=mucum), lwd=1) + 
+        geom_ribbon(aes(ymin=p05cum, ymax=p95cum), alpha=0.25) +
+        facet_grid(c("tcpm7"="Cumulative cases", "tdpm7"="Cumulative deaths")[name]~cluster, 
+                   scales=facetScale
+                   ) + 
+        scale_color_brewer(palette="Set1") + 
+        labs(x=NULL, y="Cumulative", title="Mean and 90% range by cluster and metric")
+    print(p1)
+    
+    # Plot incremental rather than cumulative
+    p2 <- clData %>%
+        ggplot(aes(x=date)) + 
+        geom_line(aes(color=cluster, y=mudelta), lwd=1) + 
+        geom_ribbon(aes(ymin=p05delta, ymax=p95delta), alpha=0.25) +
+        facet_grid(c("tcpm7"="Cases", "tdpm7"="Deaths")[name]~cluster, scales=facetScale) + 
+        scale_color_brewer(palette="Set1") + 
+        labs(x=NULL, y="Burden", title="Mean and 90% range by cluster and metric")
+    print(p2)
+    
+    # Return the clustering frame
+    clData
+    
+}
+
+plotListValue100k <- lapply(2:9, 
+                            FUN=function(x) plotHierarchical(p2CompleteValue100k, 
+                                                             k=x, 
+                                                             df=filter(p2DataAll, pop>=100000), 
+                                                             keyVar="value", 
+                                                             facetScale="free_y"
+                                                             )
+                            )
+
+```
+
+With 9 segments, the following shapes and burdens (using deaths as the metric) are noted:  
+  
+* One large cluster (319 counties) has around 1000 deaths per million  
+    * Burden generally is a single peak in early 2021  
+* One large cluster (144 counties) and one small cluster (11 counties) have around 2000 deaths per million  
+    * Both have a peak in early 2021, while the small cluster also has a peak in 2020  
+* One medium cluster (81 counties) and one small cluster (23 counties) have around 2500 deaths per million  
+    * The medium cluster has a single peak in early 2021 while the small cluster has a single peak in 2020  
+* Several small clusters (4, 8, 7, and 2 counties) have 3000+ deaths per million  
+    * All have an early peak, while some have an additional later peak  
+  
+Separating counties with very high burden and very low burden appears reasonable.  Clustering can be re-run with only the counties showing moderate disease burden, where shape is a more meaningful factor.
+  
