@@ -2453,4 +2453,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 maps smaller counties to 'most similar' cluster  
 * Coronavirus_Statistics_USAF_v005 plots total deaths per million vs shape clusters  
 * Coronavirus_Statistics_USAF_v005 creates county clusters based on dpm7 by date  
+* Coronavirus_Statistics_USAF_v005 assigns each smaller county to closest cluster  
   
