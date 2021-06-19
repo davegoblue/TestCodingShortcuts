@@ -1292,3 +1292,188 @@ With 9 segments, the following shapes and burdens (using deaths as the metric) a
   
 Separating counties with very high burden and very low burden appears reasonable.  Clustering can be re-run with only the counties showing moderate disease burden, where shape is a more meaningful factor.
   
+Segments are selected using k=8, with the four smallest buckets consolidated:  
+```{r}
+
+dfClust100k_k8 <- cutree(p2CompleteValue100k, k=8) %>%
+    vecToTibble(colNameData="tempCluster", colNameName="countyFIPS") %>%
+    group_by(tempCluster) %>%
+    mutate(cluster=factor(ifelse(n()>=20, tempCluster, 9))) %>%
+    ungroup()
+
+dfClust100k_k8
+count(dfClust100k_k8, cluster)
+
+```
+  
+The plotHierarchical function is updated to allow for passing clusters to it directly:  
+```{r, fig.height=9, fig.width=9}
+
+# Updated to allow for variable other than pct and obj that is of class data.frame
+plotHierarchical <- function(obj, k, df, keyVar="pct", facetScale="fixed") {
+    
+    # FUNCtION ARGuMENTS:
+    # obj: clustering object from hierarchical clustering OR df with countyFIPS-cluster
+    # k: number of clusters to create
+    # df: data frame with burden data
+    # keyVar: the key variable to use in df
+    
+    # Convert obj to a data frame if obj has been passed as an hclust object
+    if (!("data.frame") %in% class(obj)) {
+        
+        if (!("hclust") %in% class(obj)) 
+            stop("\nMust pass object that is member of class data.frame or hclust\n")
+        
+        # Print counts by cluster
+        cutree(obj, k=k) %>%
+            table() %>%
+            print()
+        
+        # Convert obj to relevant data frame
+        obj <- cutree(obj, k=k) %>%
+            clustersToFrame(colNameName="countyFIPS")
+        
+    }
+    
+    # Make clustering data frame (obj has been converted to data.frame above if not already passed that way)
+    clData <- obj %>%
+        joinFrames(df) %>%
+        group_by(countyFIPS, name) %>%
+        mutate(delta=ifelse(row_number()==1, get(keyVar), get(keyVar)-lag(get(keyVar)))) %>%
+        ungroup() %>%
+        group_by(cluster, date, name) %>%
+        summarize(p05cum=quantile(get(keyVar), 0.05), 
+                  mucum=mean(get(keyVar)), 
+                  p95cum=quantile(get(keyVar), 0.95), 
+                  p05delta=quantile(delta, 0.05), 
+                  mudelta=mean(delta), 
+                  p95delta=quantile(delta, 0.95), 
+                  .groups="drop"
+                  )
+    
+    # Plot by cluster and metric
+    p1 <- clData %>%
+        ggplot(aes(x=date)) + 
+        geom_line(aes(color=cluster, y=mucum), lwd=1) + 
+        geom_ribbon(aes(ymin=p05cum, ymax=p95cum), alpha=0.25) +
+        facet_grid(c("tcpm7"="Cumulative cases", "tdpm7"="Cumulative deaths")[name]~cluster, 
+                   scales=facetScale
+                   ) + 
+        scale_color_brewer(palette="Set1") + 
+        labs(x=NULL, y="Cumulative", title="Mean and 90% range by cluster and metric")
+    print(p1)
+    
+    # Plot incremental rather than cumulative
+    p2 <- clData %>%
+        ggplot(aes(x=date)) + 
+        geom_line(aes(color=cluster, y=mudelta), lwd=1) + 
+        geom_ribbon(aes(ymin=p05delta, ymax=p95delta), alpha=0.25) +
+        facet_grid(c("tcpm7"="Cases", "tdpm7"="Deaths")[name]~cluster, scales=facetScale) + 
+        scale_color_brewer(palette="Set1") + 
+        labs(x=NULL, y="Burden", title="Mean and 90% range by cluster and metric")
+    print(p2)
+    
+    # Return the clustering frame
+    clData
+    
+}
+
+clData_100k_k8 <- plotHierarchical(obj=select(dfClust100k_k8, countyFIPS, cluster), 
+                                   df=p2DataAll, 
+                                   keyVar="value", 
+                                   facetScale="free_y"
+                                   )
+
+```
+  
+Next, the existing algorithm is updated to assign every cluster to the closest cluster mean:  
+```{r, fig.height=9, fig.width=9}
+
+tempDistCluster <- function(dfClust, dfAll, metType="tdpm7", metClust="mucum", typeUse="pct") {
+    
+    dfClust <- dfClust %>%
+        filter(name==metType) %>%
+        colSelector(vecSelect=c("cluster", "date", metClust)) %>%
+        colRenamer(vecRename=c("keyMetric") %>% purrr::set_names(metClust))
+    
+    dfAll <- dfAll %>%
+        filter(name==metType) %>%
+        colSelector(vecSelect=c("countyFIPS", "date", typeUse)) %>%
+        colRenamer(vecRename=c("keyMetric") %>% purrr::set_names(typeUse))
+    
+    dfClust %>%
+        left_join(dfAll, by="date") %>%
+        mutate(dx=ifelse(is.na(keyMetric.x), 0, keyMetric.x), 
+               dy=ifelse(is.na(keyMetric.y), 0, keyMetric.y),
+               delta2=(dx-dy)**2
+               ) %>%
+        group_by(cluster, countyFIPS) %>%
+        summarize(dist=sum(delta2), .groups="drop") %>%
+        arrange(countyFIPS, dist)
+    
+}
+
+# Calculate distances to cluster mean, then print
+countyClusterDist_new <- tempDistCluster(dfClust=clData_100k_k8, dfAll=p2DataAll, typeUse="value")
+countyClusterDist_new
+
+# Assess overlap of cluster for counties already clustered
+tmpDistDF_new <- dfClust100k_k8 %>%
+    select(countyFIPS, hierCluster=cluster) %>%
+    left_join(countyClusterDist_new, by="countyFIPS") %>%
+    arrange(countyFIPS, dist)
+tmpDistDF_new %>%
+    group_by(countyFIPS) %>%
+    filter(row_number()==1) %>%
+    ungroup() %>%
+    mutate(cluster=factor(as.integer(as.character(cluster)))) %>%
+    count(hierCluster, cluster) %>%
+    group_by(hierCluster) %>%
+    mutate(pct=n/sum(n)) %>%
+    ungroup() %>%
+    ggplot(aes(x=cluster, y=hierCluster)) + 
+    geom_tile(aes(fill=pct)) +
+    geom_text(aes(label=paste0("n=", n, "\n(", round(100*pct), "%)"))) + 
+    scale_fill_continuous(low="white", high="lightgreen") +
+    labs(title="Overlap of assigned hierarchical cluster and closest hierarchical cluster mean", 
+         x="Closest hierarchical cluster mean (k=5)", 
+         y="Assigned hierarchical cluster (k=5)"
+         )
+
+```
+
+While there are some minor differences, overwhelmingly counties are already aligned to the closest cluster mean.  The approach is then extended to counties with populations under 100k:  
+```{r, fig.height=9, fig.width=9}
+
+# Full clustering database
+distOnlyClust_new <- countyClusterDist_new %>%
+    arrange(countyFIPS, dist) %>%
+    group_by(countyFIPS) %>%
+    filter(row_number()==1) %>%
+    ungroup() %>%
+    left_join(select(dfClust100k_k8, countyFIPS, hierCluster=cluster), by="countyFIPS")
+
+# Cluster assignments depending on size of county
+distOnlyClust_new %>%
+    ggplot(aes(x=cluster)) + 
+    geom_bar(fill="lightblue") + 
+    geom_text(stat="count", aes(y=..count../2, label=..count..)) +
+    facet_wrap(~ifelse(is.na(hierCluster), "Not in hierarchical data", "In hierarchical data"), 
+               scales="free_y"
+               ) + 
+    labs(title="Closest hierarchical cluster")
+
+# Plot all counties based on closest cluster
+sparseCountyClusterMap(rename(distOnlyClust_new, fips=countyFIPS) %>% 
+                           mutate(cluster=factor(cluster, levels=c(1, 3, 2, 9, 5))), 
+                       brewPalette="viridis", 
+                       caption="Closest hierarchical cluster mean (euclidean distance of tdpm7)"
+                       ) + 
+    labs(title="Lighter clusters generally have higher/earlier burden")
+
+```
+  
+There continue to be meaningful geographic trends, with counties frequently adjacent to other counties in the same segment.  Smaller counties are over-represented in groups with relatively high burden (9 and 2).
+
+Next steps are to try to bring the shape dimension slightly more to the surface (in particular for segments 2 and 3 which have a fat 90% range early in the pandemic).
+
