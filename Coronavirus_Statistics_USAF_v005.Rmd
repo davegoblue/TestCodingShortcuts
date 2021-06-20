@@ -1477,3 +1477,71 @@ There continue to be meaningful geographic trends, with counties frequently adja
 
 Next steps are to try to bring the shape dimension slightly more to the surface (in particular for segments 2 and 3 which have a fat 90% range early in the pandemic).
 
+Data for segments 2 and 3 are extracted, then clustering is run solely for these groups:  
+```{r, fig.height=9, fig.width=9}
+
+# Create data containing only clusters 2 and 3
+p2Data_Seg_23 <- distOnlyClust_new %>%
+    filter(hierCluster %in% c(2, 3)) %>%
+    select(countyFIPS, hierCluster) %>%
+    left_join(p2DataAll, by="countyFIPS")
+p2Data_Seg_23
+
+# Create distance matrix and hierarchical clusters
+p2Dist_Seg_23 <- p2Data_Seg_23 %>% 
+    filter(name=="tdpm7") %>% 
+    select(countyFIPS, date, value) %>% 
+    pivotData(pivotKeys="countyFIPS", toLonger = FALSE, nameVar="date", valVar="value") %>%
+    column_to_rownames("countyFIPS") %>%
+    as.matrix() %>%
+    dist()
+
+# Run clustering with method "complete"
+p2Complete_Seg_23 <- hclust(p2Dist_Seg_23, method="complete")
+plot(p2Complete_Seg_23)
+
+# Plot cluster summaries
+plotList_Seg_23 <- lapply(2:5, 
+                          FUN=function(x) plotHierarchical(p2Complete_Seg_23, 
+                                                           k=x, 
+                                                           df=filter(p2Data_Seg_23, pop>=100000), 
+                                                           keyVar="value", 
+                                                           facetScale="free_y"
+                                                           )
+                          )
+
+# Create the four cluster summary
+dfClust_Seg_23_k4 <- cutree(p2Complete_Seg_23, k=4) %>%
+    vecToTibble(colNameData="tempCluster", colNameName="countyFIPS") %>%
+    mutate(cluster=factor(tempCluster))
+
+# Comparison to original hierarchical cluster
+dfClust_Seg_23_k4 %>%
+    left_join(select(distOnlyClust_new, countyFIPS, hierCluster), by="countyFIPS") %>%
+    count(hierCluster, cluster)
+
+# Map of the new clusters
+dfClust_Seg_23_k4 %>%
+    select(fips=countyFIPS, cluster) %>%
+    usmap::plot_usmap(regions="counties", data=., values="cluster") + 
+    scale_fill_brewer("Cluster", palette="Set1")
+
+# Plot the four cluster summary
+clData_Seg_23_k4 <- plotHierarchical(obj=select(dfClust_Seg_23_k4, countyFIPS, cluster), 
+                                     df=p2Data_Seg_23, 
+                                     keyVar="value", 
+                                     facetScale="free_y"
+                                     )
+
+```
+
+As expected, each of the original segments is split, helping to bring out a mix of shape and total burden:  
+  
+* Large cluster with ~2000 deaths per million with somewhat more peaking late than early  
+* Small cluster with ~2000 deaths per million with significantly more peaking early than late  
+* Medium cluster with ~2500 deaths per million with primary peak late  
+* Medium cluster with ~2500 deaths per million with somewhat more peaking early than late  
+  
+While small, there is meaningful value in the ~2000 deaths per million cluster with early disease.  It is focused on major metros (Chicago, Detroit, Philadelphia, New Orleans, NYC collar) that had early spikes similar to core NYC counties but without the associated high levels of total burden.  These are distinct from the much larger group of counties that got to ~2000 deaths per million with a much later timing.
+
+Next steps are to create a full clustering database and extend to counties with under 100k population.
