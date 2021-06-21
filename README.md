@@ -2456,3 +2456,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 assigns each smaller county to closest cluster  
 * Coronavirus_Statistics_USAF_v005 further splits subset of county clusters  
   
+### Expansions week of 21-JUN-2021  
+* Coronavirus_Statistics_USAF_v005 integrates county clusters for populations of 100k+  
+  
