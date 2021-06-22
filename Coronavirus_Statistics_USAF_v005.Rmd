@@ -1547,7 +1547,7 @@ While small, there is meaningful value in the ~2000 deaths per million cluster w
 Next steps are to create a full clustering database and extend to counties with under 100k population.
 
 First, the segments for counties with 100k+ are combined:  
-```{r}
+```{r, fig.height=9, fig.width=9}
 
 dfClust100k_full <- dfClust100k_k8 %>%
     select(countyFIPS, origCluster=cluster) %>%
@@ -1577,3 +1577,62 @@ dfClust100k_full %>%
 
 ```
 
+Smaller counties are then mapped to the nearest segment average:  
+```{r, fig.height=9, fig.width=9}
+
+# Calculate distances to cluster mean, then print
+countyClusterDist_100k_full <- tempDistCluster(dfClust=clData_Seg_100k_full, dfAll=p2All, typeUse="value")
+countyClusterDist_100k_full
+
+# Assess overlap of cluster for counties already clusterd
+tmpDistDF_100k_full <- dfClust100k_full %>%
+    select(countyFIPS, finalCluster) %>%
+    left_join(countyClusterDist_100k_full, by="countyFIPS") %>%
+    arrange(countyFIPS, dist)
+tmpDistDF_100k_full %>%
+    group_by(countyFIPS) %>%
+    filter(row_number()==1) %>%
+    ungroup() %>%
+    mutate(cluster=factor(as.integer(as.character(cluster)))) %>%
+    count(hierCluster=finalCluster, cluster) %>%
+    group_by(hierCluster) %>%
+    mutate(pct=n/sum(n)) %>%
+    ungroup() %>%
+    ggplot(aes(x=cluster, y=hierCluster)) + 
+    geom_tile(aes(fill=pct)) +
+    geom_text(aes(label=paste0("n=", n, "\n(", round(100*pct), "%)"))) + 
+    scale_fill_continuous(low="white", high="lightgreen") +
+    labs(title="Overlap of assigned hierarchical cluster and closest hierarchical cluster mean", 
+         x="Closest hierarchical cluster mean (k=5)", 
+         y="Assigned hierarchical cluster (k=5)"
+         )
+
+# Full clustering database
+distOnlyClust_100k_full <- countyClusterDist_100k_full %>%
+    arrange(countyFIPS, dist) %>%
+    group_by(countyFIPS) %>%
+    filter(row_number()==1) %>%
+    ungroup() %>%
+    left_join(select(dfClust100k_full, countyFIPS, hierCluster=finalCluster), by="countyFIPS")
+
+# Cluster assignments depending on size of county
+distOnlyClust_100k_full %>%
+    ggplot(aes(x=cluster)) + 
+    geom_bar(fill="lightblue") + 
+    geom_text(stat="count", aes(y=..count../2, label=..count..)) +
+    facet_wrap(~ifelse(is.na(hierCluster), "Not in hierarchical data", "In hierarchical data"), 
+               scales="free_y"
+               ) + 
+    labs(title="Closest hierarchical cluster")
+
+# Plot all counties based on closest cluster
+sparseCountyClusterMap(rename(distOnlyClust_100k_full, fips=countyFIPS) %>% 
+                           mutate(cluster=factor(cluster, levels=c(1, 32, 34, 21, 23, 5, 9))), 
+                       brewPalette="viridis", 
+                       caption="Closest hierarchical cluster mean (euclidean distance of % cumulative death)"
+                       ) + 
+    labs(title="Lighter clusters have higher burden and/or higher percentage of burden early")
+
+```
+
+There continues to be meaningful patterns by geography.  Next steps are to download the latest data and run the full segment diagnostics.
