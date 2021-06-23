@@ -2459,4 +2459,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 21-JUN-2021  
 * Coronavirus_Statistics_USAF_v005 integrates county clusters for populations of 100k+  
 * Coronavirus_Statistics_USAF_v005 assigns clusters to all counties  
+* Coronavirus_Statistics_USAF_v005 downloads latest data and assesses new clusters  
   
