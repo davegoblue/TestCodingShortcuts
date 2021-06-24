@@ -1,0 +1,218 @@
+---
+title: "Coronavirus US - CDC"
+author: "davegoblue"
+date: "06/23/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+  
+## Background  
+This module extends code contained in Coronavirus_Statistics_v003.Rmd to include 2020-2021 data.  This file includes the latest code for analyzing all-cause death data from [CDC Weekly Deaths by Jurisdiction](https://catalog.data.gov/dataset/weekly-counts-of-deaths-by-jurisdiction-and-age-group).  CDC maintains data on deaths by week, age cohort, and state in the US.  Downloaded data are unique by state, epidemiological week, year, age, and type (actual vs. predicted/projected).
+
+These data are known to have a lag between death and reporting, and the CDC back-correct to report deaths at the time the death occurred even if the death is reported in following weeks.  This means totals for recent weeks tend to run low (lag), and the CDC run a projection of the expected total number of deaths given the historical lag times.  Per other analysts on the internet, there is currently significant supra-lag, with lag times much longer than historical averages causing CDC projected deaths for recent weeks to be low.
+
+Functions for the previous module are available in Coronavirus_Statistics_Functions_CDC_v003.R and Coronavirus_Statistics_Functions_Shared_v003.R.  The appropriate subset of these functions are copied and edited for use in this module.  The code leverages tidyverse and a variable mapping file throughout:  
+```{r}
+
+# All functions assume that tidyverse and its components are loaded and available
+library(tidyverse)
+
+# If the same function is in both files, use the version from the more specific source
+source("./Generic_Added_Utility_Functions_202105_v001.R")
+# source("./Coronavirus_Statistics_Functions_USAF_v003.R")
+
+```
+  
+## Running Code  
+The main function is readRunCDCAllCause(), which performs multiple tasks:  
+  
+STEP 0: Optionally, downloads the latest data file from CDC
+STEP 1: Reads and processes a data file has been downloaded from CDC to local  
+STEP 2: Extract relevant data from a processed state-level COVID Tracking Project list  
+STEP 3: Basic plots of the CDC data  
+STEP 4: Basic excess-deaths analysis  
+STEP 5: Create cluster-level aggregate plots  
+STEP 6: Create state-level aggregate plots  
+STEP 7: Create age-cohort aggregate plots  
+STEP 8: Returns a list of key data frames, modeling objects, named cluster vectors, etc.  
+  
+#### _Modifications: Main function_  
+The main function to be edited is readRunCDCAllCause():  
+```{r}
+
+# Function to read and run the CDC all-cause deaths analysis
+readRunCDCAllCause <- function(loc, 
+                               startYear, 
+                               curYear,
+                               weekThru, 
+                               startWeek, 
+                               lst, 
+                               cvDeathThru,
+                               epiMap=readFromRDS("epiMonth"),
+                               agePopData=readFromRDS("usPopBucket2020"),
+                               cdcPlotStartWeek=startWeek,
+                               periodKeep=paste0(startYear, "-", curYear-1), 
+                               url="https://data.cdc.gov/api/views/y5bj-9g5w/rows.csv?accessType=DOWNLOAD",
+                               dlData=isFALSE(file.exists(paste0(dir, loc))), 
+                               dir="./RInputFiles/Coronavirus/", 
+                               stateNoCheck=c()
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # loc: the CDC .csv file name (without path)
+    # startYear: the starting year in the CDC data
+    # curYear: the current analyis year in the CDC data
+    # weekThru: how many weeks of the current year are the data valid thru?
+    # startWeek: the starting week to use for cumulative sum of difference in expected all-cause deaths
+    # lst: a state clustering process output list
+    # epiMap: a mapping file of ew-month-quarter that mas epiweek (ew) to an appropriate month and quarter
+    # agePopData: data containing US population as age (fct) - pop (int)
+    # cvDeathThru: the date to use for pulling the CV death data
+    # cdcPlotStartWeek: start week for CDC plots (10 is March which avoids a 1-week February outlier)
+    # periodKeep: the period of previous data in the CDC all-cause deaths file (should be kept regardless)
+    # url: the url for downloading CDC data
+    # dlData: should CDC data be downloaded?  default is to not overwrite an existing file
+    # dir: the CDC .csv directory (will use paste0(dir, loc) as the file location)
+    # stateNoCheck: vector of states that should not error out for failing suppression checks
+    
+    # STEP 0: Download CDC data if requested
+    if (dlData) fileDownload(fileName=paste0(dir, loc), url=url)
+    
+    return()
+    
+    # STEP 1: Read and process the CDC data
+    cdc <- readProcessCDC(loc, weekThru=weekThru, periodKeep=periodKeep, fDir=dir, stateNoCheck=stateNoCheck)
+    
+    # STEP 2: Create the key data required for using state-level clusters
+    clusterList <- helperKeyStateClusterMetrics(lst)
+    
+    # STEP 3: Generate plots of the processed CDC data
+    cdcBasicPlots(cdc, clustVec=clusterList$clData, stateExclude=stateNoCheck)
+
+    # Exclude stateNoCheck states
+    cat("\nPlots will be run after excluding stateNoCheck states\n")
+    cdcUse <- cdc %>% filter(!(state %in% stateNoCheck))
+    
+    # STEP 4: Full US excess deaths
+    list_allUS <- cdcCohortAnalysis(cohortName="all US", 
+                                    df=cdcUse,
+                                    curYear=curYear, 
+                                    startYear=startYear,
+                                    startWeek=startWeek,
+                                    plotTitle="All-cause US total deaths",
+                                    predActualPlotsOnePage=TRUE
+    )
+    # cat("\n\n\n*** THROUGH STEP 4 ***\n\n\n")
+    
+    # STEP 5: Generate cluster-level aggregate plots
+    clusterAgg <- cdcAggregateSummary(df=cdcUse, 
+                                      critVar="state", 
+                                      critSubsets=clusterList$stateCluster,
+                                      startWeek=startWeek, 
+                                      critListNames=paste0("cluster ", 1:length(clusterList$stateCluster)),
+                                      factorCritList=FALSE,
+                                      popData=clusterList$pop,
+                                      cvDeathData=clusterList$deaths,
+                                      idVarName="cluster"
+    )
+    # cat("\n\n\n*** THROUGH STEP 5 ***\n\n\n")
+    
+    # STEP 6: Generate state-level aggregate data, then plot
+    stateAgg <- cdcAggregateSummary(df=cdcUse, 
+                                    critVar="state", 
+                                    critSubsets=setdiff(names(clusterList$clData), stateNoCheck),
+                                    startWeek=startWeek, 
+                                    idVarName="state", 
+                                    subListNames=setdiff(names(clusterList$clData), stateNoCheck),
+                                    showAllPlots=FALSE
+    )
+    # cat("\n\n\n*** THROUGH STEP 6a ***\n\n\n")
+    
+    helperKeyStateExcessPlots(df=stateAgg, 
+                              epiMonth=epiMap,
+                              cvDeaths=lst$consolidatedPlotData,
+                              startWeek=cdcPlotStartWeek,
+                              cvDeathDate=as.Date(cvDeathThru),
+                              subT=paste0("CDC data through week ", weekThru, " of ", curYear)
+    )
+    # cat("\n\n\n*** THROUGH STEP 6b ***\n\n\n")
+    
+    # STEP 7: Generate age-level aggregate data, then plot
+    ageAgg <- cdcAggregateSummary(df=cdcUse, 
+                                  critVar="age", 
+                                  critSubsets=levels(cdc$age),
+                                  startWeek=startWeek, 
+                                  idVarName="age", 
+                                  subListNames=levels(cdc$age),
+                                  showAllPlots=TRUE
+    )
+    helperKeyAgeExcessPlots(df=ageAgg, 
+                            epiMonth=epiMap,
+                            cvDeaths=lst$consolidatedPlotData,
+                            popData=agePopData,
+                            startWeek=cdcPlotStartWeek,
+                            cvDeathDate=as.Date(cvDeathThru),
+                            subT=paste0("CDC data through week ", weekThru, " of ", curYear)
+    )
+    
+    # STEP 8: Return a list of key files
+    list(cdc=cdc, 
+         clusterList=clusterList, 
+         allUSAgg=list_allUS$preds,
+         clusterAgg=clusterAgg, 
+         stateAgg=stateAgg, 
+         ageAgg=ageAgg
+    )
+    
+}
+
+
+```
+
+#### _Modifications: Additional functions_  
+The data are initially run to download the latest CDC data:  
+```{r cache=TRUE}
+
+cdcLoc <- "Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20210623.csv"
+readRunCDCAllCause(loc=cdcLoc)
+
+```
+
+The data are inspected to check that they are sufficient for the next steps:  
+```{r, fig.height=9, fig.width=9}
+
+remapVars=c('Jurisdiction'='fullState', 
+            'Week Ending Date'='weekEnding', 
+            'State Abbreviation'='state', 
+            'Age Group'='Age', 
+            'Number of Deaths'='deaths', 
+            'Time Period'='timePeriod'
+            )
+
+cdcRaw <- fileRead(paste0("./RInputFiles/Coronavirus/", cdcLoc), col_types="cccddcdcccc") %>%
+    colRenamer(vecRename=remapVars)
+
+cdcRaw
+cdcRaw %>% 
+    group_by(state, Type) %>% 
+    summarize(deaths=sum(deaths, na.rm=TRUE)) %>%
+    arrange(-deaths)
+
+cdcRaw %>%
+    mutate(subUnit=ifelse(state=="US", "whole", "components")) %>%
+    group_by(subUnit, Type, Year) %>%
+    summarize(deaths=sum(deaths, na.rm=TRUE), .groups="drop") %>%
+    ggplot(aes(x=Year)) + 
+    geom_col(aes(y=deaths), fill="lightblue") + 
+    geom_text(aes(y=deaths/2, label=paste0(round(deaths/1000000, 2), " MM")), size=3) + 
+    facet_grid(Type~subUnit) + 
+    labs(x=NULL, y="Deaths", title="Raw CDC Summed Deaths")
+
+```
+
+Back of the envelope, the data appear reasonable for use in refining code.
+
+Next steps are to update readProcessCDC().
