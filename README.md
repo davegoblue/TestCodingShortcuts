@@ -2462,4 +2462,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 downloads latest data and assesses new clusters  
 * Coronavirus_Statistics_CDC_v004 created for CDC all-cause excess death analysis  
 * Coronavirus_Statistics_CDC_v004 downloads new data  
+* Coronavirus_Statistics_CDC_v004 updates function readProcessCDC()  
   
