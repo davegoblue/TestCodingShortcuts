@@ -218,7 +218,7 @@ cdcRaw %>%
 Back of the envelope, the data appear reasonable for use in refining code.
 
 The readrProcessCDC() function is updated:  
-```{r}
+```{r, fig.height=9, fig.width=9}
 
 ageLevels <- c("Under 25 years", "25-44 years", "45-64 years", 
                "65-74 years", "75-84 years", "85 years and older"
@@ -249,79 +249,101 @@ readProcessCDC <- function(fName,
     
     # STEP 1: Read the CSV data
     cdcRaw <- fileRead(paste0(fDir, fName), col_types=col_types)
-    glimpse(cdcRaw)
+    # glimpse(cdcRaw)
     
     # STEP 2: Rename the variables for easier interpretation
     cdcRenamed <- cdcRaw %>%
         colRenamer(vecRename=renameVars) %>%
         colMutater(selfList=list("weekEnding"=lubridate::mdy))
-    glimpse(cdcRenamed)
-    
-    # STEP 2a: Check control levels for key variables in renamed file
-    # cat("\nCheck Control Levels and Record Counts for Renamed Data:\n")
-    # helperCDCFields("age", df=cdcRenamed) %>% print()
-    # helperCDCFields(c("period", "year", "type"), df=cdcRenamed) %>% print()
-    # helperCDCFields(c("period", "Suppress"), df=cdcRenamed) %>% print()
-    # helperCDCFields(c("period", "Note"), df=cdcRenamed) %>% print()
-    # helperCDCFields(c("state", "Jurisdiction"), df=cdcRenamed) %>% 
-    #     arrange(-deaths) %>% 
-    #     as.data.frame() %>% 
-    #     print()
-    # p1 <- helperCDCFields(c("year", "week"), df=cdcRenamed) %>% 
-    #     ggplot(aes(x=week, y=deaths, group=factor(year), color=factor(year))) + 
-    #     geom_line() + 
-    #     labs(y="Deaths (multiple counting on several dimensions", x="Epidemiological Week") + 
-    #     scale_color_discrete("Year") +
-    #     ylim(c(0, NA))
-    # print(p1)
+    # glimpse(cdcRenamed)
     
     # STEP 3: Convert to factored data
     cdcFactored <- cdcRenamed %>%
         colMutater(selfList=list("age"=factor), levels=ageLevels) %>%
         colMutater(selfList=list("period"=factor), levels=periodLevels) %>%
         colMutater(selfList=list("year"=factor), levels=yearLevels)
-    glimpse(cdcFactored)
+    # glimpse(cdcFactored)
     
     # STEP 4: Filter the data to include only weighted deaths and only through the desired time period
     cdcFiltered <- cdcFactored %>%
         rowFilter(lstFilter=list("Type"="Predicted (weighted)")) %>%
         filter(period %in% all_of(periodKeep) | week <= weekThru)
-    glimpse(cdcFiltered)
+    # glimpse(cdcFiltered)
     
     # STEP 4a: Check that all suppressed data and NA deaths have been eliminated
     cat("\n\n *** Data suppression checks *** \n")
-    suppressData <- cdcFiltered %>%
-        filter(!is.na(Suppress) | is.na(deaths))
-    print(suppressData)
-    nProblem <- suppressData %>% 
-        filter(year == periodKeep | week != weekThru) %>%
-        nrow()
-    if ((nrow(suppressData) <= maxSuppressAllowed) & (nProblem==0)) {
-        cat("\nData suppression checks OK -", nrow(suppressData), "records in current week/year suppressed\n")
-        cdcFiltered <- cdcFiltered %>%
-            filter(!is.na(deaths))
-    } else {
-        cat("\n *** Data suppression checks failed - total of", nrow(suppressData), "suppressions")
-        cat("\n *** Of these suppressions,", nProblem, "are NOT from weekThru of current year")
-        if (nrow(filter(suppressData, state %in% stateNoCheck))==nrow(suppressData)) {
-            cat("\nContinuing since all states with problems are in stateNoCheck\n")
-        } else {
-            stop("\nInvestigate data suppression issues and re-run with updated parameters or cleaned data\n")
-        }
+    checkProblems <- cdcFiltered %>% 
+        mutate(problem=(!is.na(Suppress) | is.na(deaths)), 
+               curWeek=(!(year %in% all_of(periodKeep)) & week==weekThru), 
+               noCheck=state %in% all_of(stateNoCheck)
+               ) %>%
+        group_by(noCheck, state, problem, curWeek) %>%
+        summarize(n=n(), deaths=specNA(sum)(deaths), .groups="drop")
+    errorProblems <- checkProblems %>%
+        filter(problem)
+    print(errorProblems)
+    errorProblems <- errorProblems %>%
+        group_by(noCheck, curWeek) %>%
+        summarize(n=sum(n), .groups="drop")
+    print(errorProblems)
+    nPrev <- errorProblems %>% filter(!noCheck, !curWeek) %>% pull(n) %>% sum()
+    nCur <- errorProblems %>% filter(!noCheck, curWeek) %>% pull(n) %>% sum()
+    if (nPrev > 0) stop(paste0("\n\n", nPrev, " records not from current week/year with problems.  Fix and retry\n"))
+    if (nCur > maxSuppressAllowed) {
+        cat("\n\n", nCur, " records from current week/year with problems, exceeds tolerance of ", maxSuppressAllowed)
+        stop("\nFix and retry\n")
     }
+
+    cat("\n\nData suppression checks passed\n\n")
     
-    # STEP 5: Delete the US record and convert YC to be part of NY
+    # STEP 5: Remove any NA death fields, delete the US record, convert YC to be part of NY
     cdcProcessed <- cdcFiltered %>%
-        rowFilter(lstExclude=list("state"=c("US", "PR"))) %>%
+        rowFilter(lstExclude=list("state"=c("US", "PR"), "deaths"=c(NA))) %>%
         mutate(state=ifelse(state=="YC", "NY", state), 
                fullState=ifelse(state %in% c("NY", "YC"), "New York State (NY plus YC)", fullState)
         ) %>%
         group_by(fullState, weekEnding, state, year, week, age, period, Type, Suppress) %>%
         arrange(!is.na(Note)) %>%
-        summarize(n=n(), deaths=sum(deaths), Note=first(Note)) %>%
+        summarize(n=n(), deaths=sum(deaths), Note=first(Note), .groups="drop") %>%
         ungroup() %>%
         checkUniqueRows(uniqueBy=c("state", "year", "week", "age"))
     glimpse(cdcProcessed)
+    
+    # STEP 5a: Check control levels for key variables in processed file
+    cat("\nCheck Control Levels and Record Counts for Processed Data:\n")
+    cdcCheck <- cdcProcessed %>% mutate(n=1, n_deaths_na=ifelse(is.na(deaths), 1, 0))
+    purrr::walk(list(c("age"), c("period", "year", "Type"), c("period", "Suppress"), c("period", "Note")), 
+                .f=function(x) {
+                    cat("\n\nChecking variable combination:", x, "\n")
+                    checkControl(cdcCheck, groupBy=x, useVars=c("n", "n_deaths_na", "deaths"), fn=specNA(sum))
+                    }
+                )
+    p1 <- checkControl(cdcCheck, 
+                       groupBy=c("state"), 
+                       useVars=c("deaths"), 
+                       fn=specNA(sum), 
+                       printControls=FALSE, 
+                       pivotData=FALSE
+                       ) %>%
+        ggplot(aes(x=fct_reorder(state, deaths), y=deaths)) + 
+        geom_col(fill="lightblue") + 
+        geom_text(aes(y=deaths, label=paste0(round(deaths/1000), "k")), hjust=0, size=3) + 
+        coord_flip() +
+        labs(y="Total deaths", x=NULL, title="Total deaths by state in all years in processed file")
+    print(p1)
+    p2 <- checkControl(cdcCheck, 
+                       groupBy=c("year", "week"), 
+                       useVars=c("deaths"), 
+                       fn=specNA(sum), 
+                       printControls=FALSE, 
+                       pivotData=FALSE
+                       ) %>%
+        ggplot(aes(x=week, y=deaths)) + 
+        geom_line(aes(group=year, color=year)) + 
+        labs(title="Deaths by year and epidemiological week", x="Epi week", y="US deaths") + 
+        scale_color_discrete("Year") + 
+        lims(y=c(0, NA))
+    print(p2)
     
     # STEP 6: Return the processed data file
     cdcProcessed
@@ -332,4 +354,4 @@ readProcessCDC(cdcLoc, weekThru=17, stateNoCheck=c("NC"))
 
 ```
   
-There are still significant edits to make, but the routine creates a usable CDC deaths database.
+The process now reads and processes the file and runs diagnostics for sanity checks.  Next steps are to enable printing to an external log file and to integrate in to the main function.
