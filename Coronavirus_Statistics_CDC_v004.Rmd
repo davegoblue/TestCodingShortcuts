@@ -350,8 +350,63 @@ readProcessCDC <- function(fName,
     
 }
 
-readProcessCDC(cdcLoc, weekThru=17, stateNoCheck=c("NC"))
+cdc_temp <- readProcessCDC(cdcLoc, weekThru=17, stateNoCheck=c("NC"))
+cdc_temp
 
 ```
   
-The process now reads and processes the file and runs diagnostics for sanity checks.  Next steps are to enable printing to an external log file and to integrate in to the main function.
+The process now reads and processes the file and runs diagnostics for sanity checks.  
+
+The helperKeyStateClusterMetrics() function is also updated:  
+```{r, fig.height=9, fig.width=9}
+
+# Convert the output of a state-level clustering list to population, membership, and deaths
+helperKeyStateClusterMetrics <- function(lst) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: the list containing the outputs of the state clustering routing
+    
+    # Extract the relevant elements from lst
+    plotClusters <- lst[["plotDataList"]][["plotClusters"]]
+    dfFull <- lst[["plotDataList"]][["dfFull"]] %>% select(state, date, pop, tot_deaths, new_deaths)
+    
+    # Create the aggregated data
+    df <- joinFrames(plotClusters, dfFull, keyJoin="state")
+    
+    # Create reported cvDeaths by cluster
+    dfWeekly <- df %>%
+        mutate(year=lubridate::epiyear(date), week=lubridate::epiweek(date), cluster=as.character(cluster)) %>%
+        group_by(state, cluster, year, week) %>%
+        summarize(pop=max(pop), 
+                  tot_deaths=specNA(max)(tot_deaths), 
+                  new_deaths=specNA(sum)(new_deaths), 
+                  .groups="drop"
+                  ) %>%
+        group_by(cluster, year, week) %>%
+        summarize(pop=sum(pop), 
+                  tot_deaths=specNA(sum)(tot_deaths), 
+                  new_deaths=specNA(sum)(new_deaths), 
+                  .groups="drop"
+                  ) %>%
+        checkUniqueRows(uniqueBy=c("cluster", "year", "week"))
+    
+    list(deaths=dfWeekly, useClusters=lst[["useClusters"]])
+    
+}
+
+# Get a state-level clustering file
+cdc_daily_210528 <- readFromRDS("cdc_daily_210528")
+clusterList_temp <- helperKeyStateClusterMetrics(cdc_daily_210528)
+clusterList_temp
+
+clusterList_temp$deaths %>%
+    pivot_longer(-c("cluster", "year", "week")) %>%
+    filter(name %in% c("tot_deaths", "new_deaths"), !is.na(value)) %>%
+    ggplot(aes(x=week, y=value)) + 
+    geom_line(aes(group=cluster, color=cluster)) + 
+    facet_grid(name~year, scales="free_y") + 
+    labs(x="Epi Week", y="Deaths (total or incremental)", title="Evolution of deaths by cluster")
+
+```
+
+Data appear to be usable for the next steps in CDC processing
