@@ -409,4 +409,116 @@ clusterList_temp$deaths %>%
 
 ```
 
-Data appear to be usable for the next steps in CDC processing
+Data appear to be usable for the next steps in CDC processing.  The function cdcBasicPlots() is updated:  
+```{r, fig.height=9, fig.width=9}
+
+# Basic plots of the CDC data, including by a state-level cluster (passed as argument)
+cdcBasicPlots <- function(df, 
+                          weekThru=NULL, 
+                          curYear=NULL, 
+                          p5Years=curYear,
+                          clustVec=NULL, 
+                          stateExclude=c()
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a processed CDC data file
+    # weekThru: week of the current year that data are thru (NULL means infer from data)
+    # curYear: current year (NULL means infer from data)
+    # p5Years: years for plotting deaths by week/cohort (defaults to only current year)
+    # clustVec: clustering vector with names as state abbreviations (NULL means no plots by cluster)
+    # stateExclude: vector of states to exclude from the analysis
+    
+    # Get the week and year if passed as NULL
+    if (is.null(curYear)) { curYear <- df %>% pull(year) %>% as.character() %>% as.integer() %>% max() }
+    if (is.null(weekThru)) { weekThru <- df %>% filter(year==curYear) %>% pull(week) %>% max() }
+    
+    # Filter to exclude stateExclude
+    df <- df %>%
+        filter(!(state %in% stateExclude))
+    
+    # Update subtitle appropriately
+    subT <- NULL
+    if (length(stateExclude) > 0) subT <- paste0("Excludes ", paste0(stateExclude, collapse=", "))
+    
+    # Plot of total deaths by year (50 states plus DC)
+    p1 <- df %>%
+        group_by(year) %>%
+        summarize(deaths=sum(deaths), .groups="drop") %>%
+        ggplot(aes(x=year, y=deaths/1000)) + 
+        geom_col(fill="lightblue") + 
+        geom_text(aes(y=deaths/2000, label=round(deaths/1000))) + 
+        labs(title=paste0("CDC Deaths for 50 states plus DC through week ", weekThru, " of ", curYear), 
+             x="", 
+             y="Deaths (000s)"
+        )
+    if (!is.null(subT)) p1 <- p1 + labs(subtitle=subT)
+    print(p1)
+    
+    # Plot of total deaths by week by year
+    p2 <- df %>%
+        group_by(year, week) %>%
+        summarize(deaths=sum(deaths), .groups="drop") %>%
+        ggplot(aes(x=week, y=deaths, group=year, color=year)) + 
+        geom_line() +
+        ylim(c(0, NA)) + 
+        labs(x="Week of Year", y="Deaths", title="US deaths per week by year")
+    if (!is.null(subT)) p2 <- p2 + labs(subtitle=subT)
+    print(p2)
+    
+    # Plot of total deaths by year by age cohort
+    p3 <- df %>%
+        group_by(year, week, age) %>%
+        summarize(deaths=sum(deaths), .groups="drop") %>%
+        ggplot(aes(x=week, y=deaths, group=year, color=year)) + 
+        geom_line() +
+        ylim(c(0, NA)) + 
+        facet_wrap(~age) +
+        labs(x="Week of Year", y="Deaths", title="US deaths per week by year")
+    if (!is.null(subT)) p3 <- p3 + labs(subtitle=subT)
+    print(p3)
+    
+    # Plots of total deaths by week by year by cluster
+    if (!is.null(clustVec)) {
+        p4 <- df %>%
+            mutate(cluster=clustVec[state]) %>%
+            group_by(year, week, cluster) %>%
+            summarize(deaths=sum(deaths), .groups="drop") %>%
+            ggplot(aes(x=week, y=deaths, group=year, color=year)) + 
+            geom_line() +
+            ylim(c(0, NA)) + 
+            facet_wrap(~cluster, scales="free_y") +
+            labs(x="Week of Year", 
+                 y="Deaths", 
+                 title="US deaths per week by year"
+            )
+        if (is.null(subT)) p4 <- p4 + labs(subtitle="Facetted by state cluster")
+        else p4 <- p4 + labs(subtitle=paste0("Facetted by state cluster\n", subT))
+        print(p4)
+        
+        p5 <- df %>%
+            mutate(cluster=clustVec[state]) %>%
+            filter(year %in% p5Years) %>%
+            group_by(year, age, week, cluster) %>%
+            summarize(deaths=sum(deaths), .groups="drop") %>%
+            mutate(weekUse=week+53*(as.integer(as.character(year))-curYear)) %>%
+            ggplot(aes(x=weekUse, y=deaths, fill=age)) + 
+            geom_col(position="stack") +
+            ylim(c(0, NA)) + 
+            facet_wrap(~cluster, scales="free_y") +
+            labs(x="Week of Year", 
+                 y="Deaths", 
+                 title=paste0("US deaths per week (Week 1 is start of year ", curYear, ")")
+            )
+        if (is.null(subT)) p5 <- p5 + labs(subtitle="Facetted by state cluster")
+        else p5 <- p5 + labs(subtitle=paste0("Facetted by state cluster\n", subT))
+        print(p5)
+    }
+    
+}
+
+
+cdcBasicPlots(cdc_temp, clustVec=clusterList_temp$useClusters, stateExclude="NC", p5Years=2019:2021)
+
+```
+
