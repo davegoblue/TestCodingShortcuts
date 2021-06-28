@@ -2465,3 +2465,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v004 updates function readProcessCDC()  
 * Coronavirus_Statistics_CDC_v004 updates function helperKeyStateClusterMetrics()  
   
+### Expansions week of 28-JUN-2021  
+* Coronavirus_Statistics_CDC_v004 updates function cdcBasicPlots()  
+  
