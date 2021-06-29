@@ -522,3 +522,312 @@ cdcBasicPlots(cdc_temp, clustVec=clusterList_temp$useClusters, stateExclude="NC"
 
 ```
 
+The function cdcCohortAnalysis() is updated:  
+```{r, fig.height=9, fig.width=9}
+
+# Function to subset CDC data
+subsetCDC <- function(df, 
+                      critFilter=vector("list", 0), 
+                      showPlot=TRUE, 
+                      plotTitle=NULL, 
+                      curYear=2020:2021, 
+                      prevYears=paste0("2015-", min(curYear)-1)
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the processed CDC data
+    # critFilter: a filtering list of the form variable=c(possibleValues)
+    # showPlot: boolean, whether to show plots of deaths by week and year
+    # plotTitle: the title to be used for the plot (NULL will use a default title)
+    # curYear: the current year (will be excluded from the mean and standard deviation plot)
+    
+    # Filter such that only matches to critFilter are included
+    for (xNum in seq_len(length(critFilter))) {
+        df <- df %>%
+            filter_at(vars(all_of(names(critFilter)[xNum])), ~. %in% critFilter[[xNum]])
+    }
+    
+    # Create a default title if none provided
+    if (is.null(plotTitle)) plotTitle <- "All-cause deaths for filtered cohort"
+    
+    # All deaths by week and year for the filtered cohort
+    allDeath <- df %>%
+        group_by(year, week) %>%
+        summarize(deaths=sum(deaths), .groups="drop") %>%
+        mutate(weekfct=factor(week), yearint=as.integer(as.character(year)))
+    
+    # Show plots if requested
+    if (showPlot) {
+        # Plot of all deaths for the filtered cohort by week and year
+        p1 <- allDeath %>%
+            ggplot(aes(x=week, y=deaths, color=year, group=year)) + 
+            geom_line() + 
+            ylim(c(0, NA)) + 
+            labs(x="Week", y="Deaths", title=plotTitle)
+        print(p1)
+        
+        # Plot of mean and standard deviation from previous years
+        p2 <- allDeath %>%
+            filter(!(year %in% curYear)) %>%
+            group_by(week) %>%
+            summarize(mean=mean(deaths), sd=sd(deaths), .groups="drop") %>%
+            ggplot(aes(x=week)) + 
+            geom_line(aes(y=mean), color="red", size=2) + 
+            geom_ribbon(aes(ymin=mean-sd, ymax=mean+sd), fill="pink", alpha=0.5) +
+            labs(x="Week", 
+                 y="Deaths", 
+                 title=paste0(prevYears, " ", plotTitle), 
+                 subtitle=paste0("Line is ", 
+                                 prevYears, 
+                                 " annual mean deaths, ribbon is +/- 1 standard deviation"
+                 )
+            ) + 
+            ylim(c(0, NA))
+        print(p2)
+        
+    }
+    
+    # Return the processed data frame
+    allDeath
+    
+}
+
+
+
+# Function to run the linear model to predict CDC deaths by week and year
+cdcRegression <- function(df, 
+                          curYear=2020:2021, 
+                          startYear=2015
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the processed CDC data
+    # curYear: the current year(s)
+    # startYear: the year that is defined as the zero-point for the regression
+    
+    # Very basic linear model for deaths vs. week and year
+    df %>%
+        filter(!(year %in% curYear)) %>%
+        lm(deaths ~ weekfct + I(yearint-startYear) + 0, data=.)
+    
+}
+
+
+
+# Function to make predictions based on the regression
+cdcPrediction <- function(df, 
+                          lmReg
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame or tibble containing the data
+    # lmReg: the linear regression model
+    
+    # Predictions and deltas
+    allPred <- df %>%
+        mutate(oldweekfct=weekfct, weekfct=factor(ifelse(weekfct==53, 52, weekfct))) %>%
+        mutate(pred=predict(lmReg, newdata=.), delta=(deaths-pred)) %>%
+        group_by(year) %>%
+        arrange(week) %>%
+        mutate(cumDelta=cumsum(delta), cumPred=cumsum(pred), weekfct=oldweekfct) %>%
+        select(-oldweekfct) %>%
+        ungroup()
+    
+    # Return the predictions and deltas    
+    allPred
+    
+}
+
+
+
+# Function to make plots of the predictions
+cdcPredictedvsActual <- function(df, 
+                                 cohortName,
+                                 curYear=2020:2021, 
+                                 prevYears=paste0("2015-", min(curYear)-1), 
+                                 startWeek=1, 
+                                 showCurrentPredvsPrev=TRUE, 
+                                 showActualsvsPred=TRUE,
+                                 showActualsvsPredRatio=TRUE, 
+                                 showExcessDeaths=TRUE, 
+                                 predActualPlotsOnePage=FALSE
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing actual and predicted deaths
+    # cohortName: cohort name to use for plot titles
+    # curYear: the current year
+    # prevYears: the previous years
+    # startWeek: week to use for starting the counts of cumulative excess deaths
+    # showCurrentPredvsPrev: boolean, whether to plot current year predictions vs. previous years
+    # showActualsvsPred: boolean, whether to plot actuals vs. predictions by year
+    # showActualsvsPredRatio: boolean, whether to plot actuals vs. predictions ratios by yrea
+    # showExcessDeaths: boolean, whether to plot estimated excess deaths
+    # predActualPlotsOnePage: boolean, whether to place the predicted vs. actual plots all on one page
+    
+    if (showCurrentPredvsPrev) {
+        # Current year predictions vs. previous year actuals
+        p1 <- df %>%
+            ggplot(aes(x=week)) + 
+            geom_line(data=~filter(., !(year %in% curYear)), aes(y=deaths, color=year, group=year)) + 
+            geom_line(data=~filter(., year %in% curYear), aes(y=pred, group=year, color=year), lty=2, size=1) +
+            ylim(c(0, NA)) + 
+            labs(x="Week", 
+                 y="Deaths", 
+                 title=paste0("All-cause deaths for ", cohortName, " cohort"), 
+                 subtitle=paste0("Solid lines are actual ", 
+                                 prevYears, 
+                                 ", dashed line is predicted ", 
+                                 if(length(curYear)>1) range(curYear) %>% paste0(collapse="-") else curYear
+                 )
+            )
+        if (!predActualPlotsOnePage) print(p1)
+    }
+    
+    if (showActualsvsPred) {
+        # Plot of predictions and actuals facetted by year - deaths
+        p2 <- df %>%
+            select(year, week, deaths, pred) %>%
+            pivot_longer(c(deaths, pred)) %>%
+            mutate(name=ifelse(name=="deaths", "Actual", "Predicted")) %>%
+            ggplot(aes(x=week)) + 
+            geom_line(aes(y=value, color=name, group=name)) + 
+            ylim(c(0, NA)) + 
+            facet_wrap(~year) + 
+            labs(x="Week", 
+                 y="Deaths", 
+                 title=paste0("All-cause deaths for ", cohortName, " cohort"), 
+                 subtitle=paste0("Predictions based on simple linear model for ", prevYears, " data")
+            ) + 
+            scale_color_discrete("Deaths")
+        if (!predActualPlotsOnePage) print(p2)
+    }
+    
+    if (showActualsvsPredRatio) {
+        # Plot of predictions and actuals facetted by year - ratios
+        p3 <- df %>%
+            mutate(rat=deaths/pred) %>%
+            ggplot(aes(x=week)) + 
+            geom_line(aes(y=rat)) + 
+            facet_wrap(~year) + 
+            geom_hline(yintercept=1, lty=2) +
+            labs(x="Week", 
+                 y="Ratio (Actual vs. Predicted Deaths)", 
+                 title=paste0("Actual vs. predicted deaths for ", cohortName, " cohort"), 
+                 subtitle=paste0("Predictions based on simple linear model for ", prevYears, " data")
+            )
+        if (!predActualPlotsOnePage) print(p3)
+    }
+    
+    if (showExcessDeaths) {
+        # Plot of excess deaths after a starting week
+        p4 <- df %>%
+            select(-cumDelta, -cumPred) %>%
+            filter(week >= startWeek) %>%
+            group_by(year) %>%
+            arrange(week) %>%
+            mutate(cumDelta=cumsum(delta)) %>%
+            ggplot(aes(x=week)) + 
+            geom_line(aes(y=cumDelta)) + 
+            facet_wrap(~year) + 
+            geom_hline(yintercept=0, lty=2) +
+            labs(x="Week", 
+                 y=paste0("Deaths vs. prediction (cumulative from week ", startWeek, ")"), 
+                 title=paste0("Cumulative estimated excess deaths starting week ", 
+                              startWeek, 
+                              "\nfor ", 
+                              cohortName, 
+                              " cohort"
+                 ), 
+                 subtitle=paste0("Predictions based on simple linear model for ", prevYears, " data")
+            )
+        if (!predActualPlotsOnePage) print(p4)
+    }
+    
+    # Create a one-page summary
+    if (predActualPlotsOnePage) {
+        if (!exists("p1", inherits=FALSE)) p1 <- ggplot()
+        if (!exists("p2", inherits=FALSE)) p2 <- ggplot()
+        if (!exists("p3", inherits=FALSE)) p3 <- ggplot()
+        if (!exists("p4", inherits=FALSE)) p4 <- ggplot()
+        gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2)
+    }
+    
+}
+
+
+
+# Integrated function with all steps
+cdcCohortAnalysis <- function(cohortName, 
+                              df=cdcProcessed, 
+                              critFilter=vector("list", 0), 
+                              plotTitle=NULL, 
+                              curYear=2020:2021, 
+                              startYear=2015,
+                              prevYears=paste0(startYear, "-", min(curYear)-1), 
+                              startWeek=1, 
+                              showSubsetPlots=TRUE, 
+                              showPredActualPlots=TRUE, 
+                              predActualPlotsOnePage=FALSE
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # cohortName: the name of the cohort
+    # df: the processed CDC death data
+    # critFilter: the filtering criteria in the form of a named list "variable"=c("possibleValues")
+    # plotTitle: title to be used for plot in subsetCDC()
+    # curYear: the current year(s) for the death data
+    # startYear: the starting year for the death data
+    # prevYears: the previous years for the death data (used for making predictions)
+    # startWeek: the starting week for counting excess deaths
+    # showSubsetPlots: boolean, whether to show the two plots in subsetCDC()
+    # showPredActualPlots: boolean, whether to show the four plots in cdcPredictedvsActual()
+    # predActualPlotsOnePage: boolean, whether to place the predicted vs. actual plots all on one page
+    
+    # Subset the data (will show both plots by default)
+    allDeath_cohort <- subsetCDC(df=df, 
+                                 critFilter=critFilter,
+                                 showPlot=showSubsetPlots,
+                                 plotTitle=plotTitle, 
+                                 curYear=curYear,
+                                 prevYears=prevYears
+                                 )
+    
+    # Create the linear model for the subsetted data
+    lm_cohort <- cdcRegression(df=allDeath_cohort, curYear=curYear, startYear=startYear)
+    
+    # Apply the predictions to the data
+    allPred_cohort <- cdcPrediction(df=allDeath_cohort, lmReg=lm_cohort)
+    
+    # Plots for predicted vs. actual (will show all plots by default)
+    cdcPredictedvsActual(df=allPred_cohort, 
+                         cohortName=cohortName, 
+                         curYear=curYear,
+                         prevYears=prevYears,
+                         startWeek=startWeek, 
+                         showCurrentPredvsPrev=showPredActualPlots,
+                         showActualsvsPred=showPredActualPlots,
+                         showActualsvsPredRatio=showPredActualPlots,
+                         showExcessDeaths=showPredActualPlots, 
+                         predActualPlotsOnePage=predActualPlotsOnePage
+    )
+    
+    # Return a list containing the lm model and the filtered data
+    list(lmReg=lm_cohort, preds=allPred_cohort)
+    
+}
+
+
+
+list_allUS_temp <- cdcCohortAnalysis(cohortName="all US", 
+                                     df=cdc_temp %>% filter(!(state %in% c("NC"))),
+                                     curYear=2020:2021, 
+                                     startYear=2015,
+                                     startWeek=1,
+                                     plotTitle="All-cause US total deaths",
+                                     predActualPlotsOnePage=TRUE
+                                     )
+list_allUS_temp
+
+```
+
