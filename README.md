@@ -2468,4 +2468,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 28-JUN-2021  
 * Coronavirus_Statistics_CDC_v004 updates function cdcBasicPlots()  
 * Coronavirus_Statistics_CDC_v004 updates function cdcCohortAnalysis()  
+* Coronavirus_Statistics_CDC_v004 updates function cdcAggregateSummary()  
   
