@@ -1020,3 +1020,155 @@ ageAgg_temp
 
 ```
 
+The function helperKeyStateExcessPlots() is updated:  
+```{r, fig.height=9, fig.width=9}
+
+# Create plots for state-level excess deaths
+helperKeyStateExcessPlots <- function(df, 
+                                      epiMonth,
+                                      cvDeaths,
+                                      subT,
+                                      startWeek,
+                                      cvDeathDate,
+                                      curYear=2020:2021, 
+                                      popData=select(usmap::statepop, state=abbr, pop=pop_2015)
+                                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the processed state-level excess deaths data
+    # epiMonth: a mapping file with columns ew-month-quarter that maps an epiweek to a month/quarter
+    # cvDeaths: a file containing cv deaths that includes state-date-name-vpm
+    # subT: the subtitle to be used for the plots 9describe the vintage of the CDC data)
+    # startWeek: the starting week for the analysis (data from min(curYear) is deleted if week < startWeek)
+    # cvDeathDate: the date to use for puling deaths from the cvDeaths file
+    # curYear: the current year(s)
+    # popData: a file containing only state-pop, with population by state
+    
+    # STEP 0: Create a general plotting database with quarter and month
+    plotData <- df %>%
+        filter(year %in% curYear) %>%
+        left_join(epiMonth, by=c("week"="ew")) %>%
+        mutate(quarter=factor(paste0(year, "-", "Q", quarter)), 
+               postStart=ifelse(week>=startWeek | yearint>min(curYear), 1, 0)
+               ) %>%
+        group_by(state, yearint, quarter, month, postStart) %>%
+        summarize(excess=sum(delta), .groups="drop") %>%
+        left_join(popData, by="state") %>%
+        mutate(excesspm=excess*1000000/pop)
+    
+    # STEP 1: Plot of excess deaths by quarter
+    p1 <- plotData %>%
+        group_by(state, quarter) %>%
+        summarize(excess=sum(excess), .groups="drop") %>%
+        ggplot(aes(x=fct_reorder(state, excess, .fun=sum), y=excess/1000, fill=fct_rev(quarter))) + 
+        geom_col(position="stack") + 
+        coord_flip() + 
+        labs(x="State", 
+             y="Excess Deaths (000s)", 
+             title=paste0("All-cause excess deaths in ", 
+                          if(length(curYear)==1) curYear else paste0(curYear, collapse="-")
+                          ), 
+             subtitle=subT
+        ) +
+        scale_fill_discrete("Quarter")
+    print(p1)
+    
+    # STEP 2: Plot of excess deaths per million by state by quarter
+    p2 <- plotData %>%
+        group_by(state, quarter) %>%
+        summarize(excesspm=sum(excesspm), .groups="drop") %>%
+        ggplot(aes(x=fct_reorder(state, excesspm, .fun=sum), y=excesspm, fill=fct_rev(quarter))) + 
+        geom_col(position="stack") + 
+        coord_flip() + 
+        labs(x="State", 
+             y="Excess Deaths (per million people)", 
+             title=paste0("All-cause excess deaths per million people in ", 
+                          if(length(curYear)==1) curYear else paste0(curYear, collapse="-")
+                          ), 
+             subtitle=subT
+        ) +
+        scale_fill_discrete("Quarter")
+    print(p2)
+    
+    # STEP 3: Plot of excess deaths by epi-month
+    pes_001 <- plotData %>%
+        filter(postStart==1) %>%
+        ggplot(aes(x=fct_reorder(state, excesspm, .fun=sum))) + 
+        geom_col(aes(y=excesspm, fill=fct_rev(paste0(yearint, "-", match(month, month.abb) %>% zeroPad2()))), 
+                 position="stack"
+                 ) + 
+        coord_flip() + 
+        labs(x="State", 
+             y="Excess Deaths (per million people)", 
+             title=paste0("All-cause excess deaths per million people in ", 
+                          if(length(curYear)==1) curYear else paste0(curYear, collapse="-")
+                          ), 
+             subtitle=subT, 
+             caption="Epi week converted to month based on most frequent month in epi week"
+        ) +
+        scale_fill_discrete("Epi Month")
+    print(pes_001)
+    
+    # STEP 4: Layer on the reported coronavirus deaths data
+    cumDeath <- cvDeaths %>% 
+        filter(name=="deaths", state != "cluster") %>% 
+        group_by(state) %>% 
+        mutate(cumdpm=cumsum(vpm)) %>%
+        filter(date %in% c(cvDeathDate, max(date)))
+    pes_002 <- pes_001 + 
+        geom_point(data=filter(cumDeath, date==cvDeathDate), aes(x=fct_reorder(state, cumdpm), y=cumdpm), size=2) + 
+        labs(title=paste0("Deaths per million people using data through ", format(cvDeathDate, "%b %d, %Y")), 
+             subtitle="Bars based on excess CDC all-cause deaths, points are reported coronavirus deaths", 
+             y="Deaths (per million people)"
+        )
+    print(pes_002)
+    
+    # STEP 5: Show ratio of estimated all-cause deaths to reported coronavirus deaths
+    p5 <- plotData %>%
+        filter(postStart==1) %>%
+        group_by(state) %>%
+        summarize(excesspm=sum(excesspm)) %>%
+        inner_join(select(filter(cumDeath, date==cvDeathDate), state, cumdpm)) %>%
+        mutate(rat=excesspm/cumdpm) %>%
+        ggplot(aes(x=fct_reorder(state, rat), y=rat)) + 
+        geom_col(fill="lightblue") + 
+        geom_text(aes(y=rat/2, label=paste0(round(100*rat), "%"))) + 
+        coord_flip() + 
+        labs(x="State", 
+             y="Ratio of estimated all-cause excess deaths to reported coronavirus deaths", 
+             title="Ratio of estimated all-cause excess deaths to reported coronavirus deaths", 
+             subtitle=paste0("All data through ", format(cvDeathDate, "%b %d, %Y"))
+        ) + 
+        ylim(c(0, NA)) + 
+        geom_hline(aes(yintercept=1), lty=2)
+    print(p5)
+    
+    # STEP n: Return the plotting data
+    plotData
+    
+}
+
+
+weekThru <- 17
+curYear <- 2020:2021
+cvDeathThru <- "2021-05-26"
+stateExcessPlot_temp <- helperKeyStateExcessPlots(df=stateAgg_temp, 
+                                                  epiMonth=readFromRDS("epiMonth"),
+                                                  cvDeaths=readFromRDS("cdc_daily_210528")$plotDataList$dfFull %>% 
+                                                      select(state, date, vpm=dpm) %>% 
+                                                      mutate(name="deaths") %>% 
+                                                      filter(!is.na(vpm)),
+                                                  startWeek=10,
+                                                  cvDeathDate=as.Date(cvDeathThru),
+                                                  subT=paste0("CDC data through week ", 
+                                                              weekThru, 
+                                                              " of ", 
+                                                              max(curYear)
+                                                              ), 
+                                                  curYear=curYear, 
+                                                  popData=readFromRDS("statePop2019") %>% 
+                                                      select(state=stateAbb, pop=pop_2019)
+                                                  )
+
+```
+
