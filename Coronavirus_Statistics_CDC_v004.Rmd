@@ -1172,3 +1172,97 @@ stateExcessPlot_temp <- helperKeyStateExcessPlots(df=stateAgg_temp,
 
 ```
 
+The function helperKeyAgeExcessPlots() is updated:  
+```{r, fig.height=9, fig.width=9}
+
+
+# Create plots for age-cohort excess deaths
+helperKeyAgeExcessPlots <- function(df, 
+                                    epiMonth,
+                                    popData,
+                                    subT,
+                                    startWeek,
+                                    curYear=2020:2021
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the processed state-level excess deaths data
+    # epiMonth: a mapping file with columns ew-month-quarter that maps an epiweek to a month/quarter
+    # popData: a file containing only age-pop, with population by age cohort
+    # subT: the subtitle to be used for the plots 9describe the vintage of the CDC data)
+    # startWeek: the starting week for the analysis (only data in year==curYear with week>=startWeek used)
+    # curYear: the current year
+    
+    # STEP 0: Create a general plotting database with quarter and month
+    plotData <- df %>%
+        filter(year %in% curYear) %>%
+        left_join(epiMonth, by=c("week"="ew")) %>%
+        mutate(quarter=factor(paste0(year, "-", "Q", quarter)), 
+               postStart=ifelse(week>=startWeek | yearint>min(curYear), 1, 0)
+               ) %>%
+        group_by(age, yearint, quarter, month, postStart) %>%
+        summarize(excess=sum(delta), .groups="drop") %>%
+        left_join(popData, by="age") %>%
+        mutate(excesspm=excess*1000000/pop)
+    
+    # STEP 1: Plot of excess deaths by quarter
+    p1 <- plotData %>%
+        group_by(age, quarter) %>%
+        summarize(excess=sum(excess), .groups="drop") %>%
+        ggplot(aes(x=fct_reorder(age, excess, .fun=sum), y=excess/1000, fill=fct_rev(quarter))) + 
+        geom_col(position="stack") + 
+        coord_flip() + 
+        labs(x="Age Group", 
+             y="Excess Deaths (000s)", 
+             title=paste0("All-cause excess deaths in ", 
+                          if(length(curYear)==1) curYear else paste0(curYear, collapse="-")
+                          ), 
+             subtitle=subT
+        ) +
+        scale_fill_discrete("Quarter")
+    print(p1)
+    
+    # STEP 2: Plot of excess deaths by epi-month
+    pea_001 <- plotData %>%
+        filter(postStart==1) %>%
+        ggplot(aes(x=fct_reorder(age, excesspm, .fun=sum))) + 
+        geom_col(aes(y=excesspm, fill=fct_rev(paste0(yearint, "-", match(month, month.abb) %>% zeroPad2()))), 
+                 position="stack"
+                 ) + 
+        coord_flip() + 
+        labs(x="Age Group", 
+             y="Excess Deaths (per million people)", 
+             title=paste0("All-cause excess deaths in ", 
+                          if(length(curYear)==1) curYear else paste0(curYear, collapse="-")
+                          ), 
+             subtitle=subT, 
+             caption="Epi week converted to month based on most frequent month in epi week"
+        ) +
+        geom_text(data=. %>% group_by(age) %>% summarize(excesspm=sum(excesspm)), 
+                  aes(y=excesspm+100, label=round(excesspm), hjust=0)
+        ) +
+        scale_fill_discrete("Epi Month")
+    print(pea_001)
+    
+    # STEP 3: Return the plotting data
+    plotData
+    
+}
+
+curYear <- 2020:2021
+ageExcessPlot_temp <- helperKeyAgeExcessPlots(df=ageAgg_temp, 
+                                              epiMonth=readFromRDS("epiMonth"),
+                                              popData=readFromRDS("usPopBucket2020"),
+                                              startWeek=10,
+                                              subT=paste0("CDC data through week ", 
+                                                          weekThru, 
+                                                          " of ", 
+                                                          max(curYear)
+                                                          ), 
+                                              curYear=curYear
+                                              )
+
+
+```
+
+Next steps are to integrate the functions in readRunCDCAllCause()
