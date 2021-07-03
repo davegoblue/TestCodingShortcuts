@@ -2471,4 +2471,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v004 updates function cdcAggregateSummary()  
 * Coronavirus_Statistics_CDC_v004 updates function helperKeyStateExcessPlots()  
 * Coronavirus_Statistics_CDC_v004 updates function helperKeyAgeExcessPlots()  
+* Coronavirus_Statistics_CDC_v004 includes PDF option for cdcAggregateSummary()  
   
