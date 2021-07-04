@@ -1469,4 +1469,175 @@ ageAgg_temp
 
 ```
   
-Next steps are to integrate the functions in readRunCDCAllCause()
+Next steps are to integrate the functions in readRunCDCAllCause():  
+```{r}
+
+# Function to read and run the CDC all-cause deaths analysis
+readRunCDCAllCause <- function(loc, 
+                               startYear, 
+                               curYear,
+                               weekThru, 
+                               startWeek, 
+                               lst, 
+                               cvDeathThru,
+                               epiMap=readFromRDS("epiMonth"),
+                               agePopData=readFromRDS("usPopBucket2020"),
+                               cdcPlotStartWeek=startWeek,
+                               periodKeep=c("2015-2019", "2020"), 
+                               url="https://data.cdc.gov/api/views/y5bj-9g5w/rows.csv?accessType=DOWNLOAD",
+                               dlData=isFALSE(file.exists(paste0(dir, loc))), 
+                               dir="./RInputFiles/Coronavirus/", 
+                               stateNoCheck=c()
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # loc: the CDC .csv file name (without path)
+    # startYear: the starting year in the CDC data
+    # curYear: the current analyis year in the CDC data
+    # weekThru: how many weeks of the current year are the data valid thru?
+    # startWeek: the starting week to use for cumulative sum of difference in expected all-cause deaths
+    # lst: a state clustering process output list
+    # epiMap: a mapping file of ew-month-quarter that mas epiweek (ew) to an appropriate month and quarter
+    # agePopData: data containing US population as age (fct) - pop (int)
+    # cvDeathThru: the date to use for pulling the CV death data
+    # cdcPlotStartWeek: start week for CDC plots (10 is March which avoids a 1-week February outlier)
+    # periodKeep: the period of previous data in the CDC all-cause deaths file (should be kept regardless)
+    # url: the url for downloading CDC data
+    # dlData: should CDC data be downloaded?  default is to not overwrite an existing file
+    # dir: the CDC .csv directory (will use paste0(dir, loc) as the file location)
+    # stateNoCheck: vector of states that should not error out for failing suppression checks
+    
+    # STEP 0: Download CDC data if requested
+    if (dlData) fileDownload(fileName=paste0(dir, loc), url=url)
+    
+    # STEP 1: Read and process the CDC data
+    cdc <- readProcessCDC(loc, weekThru=weekThru, periodKeep=periodKeep, fDir=dir, stateNoCheck=stateNoCheck)
+
+    # STEP 2: Create the key data required for using state-level clusters
+    clusterList <- helperKeyStateClusterMetrics(lst)
+    
+    # STEP 3: Generate plots of the processed CDC data
+    cdcBasicPlots(cdc, clustVec=clusterList$clData, stateExclude=stateNoCheck, p5Years=2019:curYear)
+
+    # Exclude stateNoCheck states
+    cat("\nPlots will be run after excluding stateNoCheck states\n")
+    cdcUse <- cdc %>% filter(!(state %in% stateNoCheck))
+    
+    # STEP 4: Full US excess deaths
+    list_allUS <- cdcCohortAnalysis(cohortName="all US", 
+                                    df=cdcUse,
+                                    curYear=2020:curYear, 
+                                    startYear=startYear,
+                                    startWeek=startWeek,
+                                    plotTitle="All-cause US total deaths",
+                                    predActualPlotsOnePage=TRUE
+    )
+    # cat("\n\n\n*** THROUGH STEP 4 ***\n\n\n")
+
+    # STEP 5: Generate cluster-level aggregate plots
+    clNames <- clusterList$useClusters %>% unique()
+    clValues <- lapply(clNames, FUN=function(x) names(clusterList$useClusters)[clusterList$useClusters==x])
+    clusterAgg <- cdcAggregateSummary(df=cdcUse, 
+                                      critVar="state", 
+                                      critSubsets=clValues,
+                                      startWeek=startWeek, 
+                                      subListNames=clNames,
+                                      critListNames=paste0("cluster ", clNames),
+                                      factorCritList=FALSE,
+                                      popData=clusterList$deaths %>% 
+                                           group_by(cluster) %>% 
+                                           summarize(pop=max(pop), .groups="drop"),
+                                      cvDeathData=clusterList$deaths %>% 
+                                           select(cluster, year, week, cvDeaths=new_deaths),
+                                      idVarName="cluster", 
+                                      pdfFile=NULL, 
+                                      showAllPlots=TRUE
+                                      )
+    # cat("\n\n\n*** THROUGH STEP 5 ***\n\n\n")
+    # print(clusterAgg)
+    # print(cdcUse)
+    # print(clusterList$useClusters)
+
+    # STEP 6: Generate state-level aggregate data, then plot
+    stateAgg <- cdcAggregateSummary(df=cdcUse, 
+                                    critVar="state", 
+                                    critSubsets=setdiff(names(clusterList$useClusters), stateNoCheck),
+                                    startWeek=startWeek, 
+                                    idVarName="state", 
+                                    subListNames=setdiff(names(clusterList$useClusters), stateNoCheck),
+                                    showAllPlots=FALSE
+                                    )
+    # cat("\n\n\n*** THROUGH STEP 6a ***\n\n\n")
+    # print(stateAgg)
+    helperKeyStateExcessPlots(df=stateAgg, 
+                              epiMonth=epiMap,
+                              cvDeaths=lst$plotDataList$dfFull %>% 
+                                  select(state, date, vpm=dpm) %>% 
+                                  mutate(name="deaths") %>% 
+                                  filter(!is.na(vpm)),
+                              startWeek=cdcPlotStartWeek,
+                              cvDeathDate=as.Date(cvDeathThru),
+                              subT=paste0("CDC data through week ", 
+                                          weekThru, 
+                                          " of ", 
+                                          max(curYear)
+                                          ), 
+                              curYear=2020:curYear, 
+                              popData=readFromRDS("statePop2019") %>% 
+                                  select(state=stateAbb, pop=pop_2019)
+                              )
+    # cat("\n\n\n*** THROUGH STEP 6b ***\n\n\n")
+    
+    # STEP 7: Generate age-level aggregate data, then plot
+    ageAgg <- cdcAggregateSummary(df=cdcUse, 
+                                  critVar="age", 
+                                  critSubsets=levels(cdc$age),
+                                  startWeek=startWeek, 
+                                  idVarName="age", 
+                                  subListNames=levels(cdc$age),
+                                  showAllPlots=TRUE, 
+                                  pdfFile=NULL
+    )
+    helperKeyAgeExcessPlots(df=ageAgg, 
+                            epiMonth=epiMap,
+                            popData=agePopData,
+                            startWeek=cdcPlotStartWeek,
+                            subT=paste0("CDC data through week ", 
+                                        weekThru, 
+                                        " of ", 
+                                        max(curYear)
+                                        ), 
+                            curYear=2020:curYear
+                            )
+
+    # STEP 8: Return a list of key files
+    list(cdc=cdc, 
+         clusterList=clusterList, 
+         allUSAgg=list_allUS$preds,
+         clusterAgg=clusterAgg, 
+         stateAgg=stateAgg, 
+         ageAgg=ageAgg
+    )
+    
+}
+
+```
+
+The function is then tested on previously downloaded data:  
+```{r, fig.height=9, fig.width=9}
+
+cdcLoc <- "Weekly_counts_of_deaths_by_jurisdiction_and_age_group_downloaded_20210623.csv"
+cdcList_20210703 <- readRunCDCAllCause(loc=cdcLoc, 
+                                       startYear=2015, 
+                                       curYear=2021, 
+                                       weekThru=17, 
+                                       startWeek=1, 
+                                       lst=readFromRDS("cdc_daily_210528"), 
+                                       cvDeathThru="2021-05-26", 
+                                       dlData=FALSE, 
+                                       stateNoCheck=c("NC")
+                                       )
+
+```
+
+Next steps are to enable the PDF printing capability as an option in the main function.
