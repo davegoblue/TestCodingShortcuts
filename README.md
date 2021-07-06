@@ -2476,4 +2476,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 05-JUL-2021  
 * Coronavirus_Statistics_CDC_v004 updates default arguments in readRunCDCAllCause()  
+* Coronavirus_Statistics_CDC_v004 includes PDF options for readRunCDCAllCause()  
   
