@@ -2480,4 +2480,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Excess_Functions_v001.R contains functions and parameters for working with CDC all-cause deaths data   
 * Coronavirus_Statistics_CDC_v005 created to use functions and parameters in .R files  
 * Coronavirus_CDC_Daily_v002 downloads and processes latest data  
+* Coronavirus_Statistics_CDC_v005 downloads and processes latest data  
   
