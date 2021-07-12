@@ -2483,3 +2483,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 downloads and processes latest data  
 * Coronavirus_Statistics_CDC_v005 updates readProcessCDC() to better handle supressed data  
   
+### Expansions week of 12-JUL-2021  
+* Coronavirus_Statistics_CDC_v005 includes plotQCReadProcessCDC() for control total checks  
+  
