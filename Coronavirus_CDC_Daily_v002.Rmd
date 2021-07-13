@@ -158,3 +158,102 @@ saveToRDS(cdc_daily_210708, ovrWrite=FALSE, ovrWriteError=FALSE)
 
 ```
 
+Vaccines data are also available for download on the [CDC website](https://data.cdc.gov/api/views/unsk-b7fc/rows.csv?accessType=DOWNLOAD):  
+```{r cache=TRUE}
+
+urlVaccine <- "https://data.cdc.gov/api/views/unsk-b7fc/rows.csv?accessType=DOWNLOAD"
+locVaccine <- "./RInputFiles/Coronavirus/CDC_vax_downloaded_210712.csv"
+
+fileDownload(locVaccine, urlVaccine)
+
+```
+
+The file has many fields, including:  
+  
+* Location - state abbreviation
+* Date - date of reporting
+* MMWR_week - epidemiological week
+* Administered - total doses administered
+* Administered_[12Plus|18Plus|65Plus] - age breakdown of administered doses  
+* Admin_per_100k - per capita doses administered  
+* Admin_per_100k_[12Plus|18Plus|65Plus] - per capita administered doses by age bucket  
+* Recip_Administered - total number of administered vaccines based on jurisdiction of residence  
+* Series_Complete_Yes - number of people fully vaccinated  
+* Series_Complete_[12Plus|18Plus|65Plus] - age breakdown of fully vaccinated  
+* Series_Complete_Pop_Pct - percent of population fully vaccinated  
+* Series_Complete_[12Plus|18Plus|65Plus]Pop_Pct - fully vaccinated percent by age bucket  
+  
+An individual can live in one state but be vaccinated in another state.  Per the [CDC field descriptions](https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-Jurisdi/unsk-b7fc):  
+  
+* Administered - based on state of receiving vaccine  
+* Recip_Administered - based on state where recipient lives  
+* Administered_[age] - based on state where recipient lives  
+* Admin_per_100k and Admin_per_100k_[age] - based on state where recipient lives  
+* Series_Complete[all] - based on state where recipient lives  
+  
+Fully vaccinated (series complete) metrics is defined as "Total number of people who are fully vaccinated (have second dose of a two-dose vaccine or one dose of a single-dose vaccine) based on the jurisdiction where recipient lives"
+  
+```{r}
+
+vaxRaw_210712 <- fileRead(locVaccine)
+glimpse(vaxRaw_210712)
+
+vaxRenamer <- c("Location"="state", 
+                "Date"="date", 
+                "Admin_Per_100K"="Admin_Per_100k"
+                )
+vaxKeeper <- c("state", "date", "MMWR_week", 
+               "Administered", "Administered_12Plus", "Administered_18Plus", "Administered_65Plus", 
+               "Admin_Per_100k", "Admin_Per_100k_12Plus", "Admin_Per_100k_18Plus", "Admin_Per_100k_65Plus", 
+               "Recip_Administered", 
+               "Series_Complete_Yes", 
+               "Series_Complete_12Plus", "Series_Complete_18Plus", "Series_Complete_65Plus",
+               "Series_Complete_Pop_Pct",
+               "Series_Complete_12PlusPop_Pct", "Series_Complete_18PlusPop_Pct", "Series_Complete_65PlusPop_Pct"
+               )
+
+vaxProcessed_210712 <- vaxRaw_210712 %>%
+    colRenamer(vecRename=vaxRenamer) %>%
+    colSelector(vecSelect=vaxKeeper) %>%
+    colMutater(selfList=list("date"=lubridate::mdy))
+glimpse(vaxProcessed_210712)
+
+```
+  
+Counts by state are created:  
+```{r, fig.height=9, fig.width=9}
+
+vaxState <- vaxProcessed_210712 %>%
+    group_by(state) %>%
+    filter(date==max(date)) %>%
+    select(state, date, Administered, Recip_Administered, Series_Complete_Yes) %>%
+    ungroup() %>%
+    arrange(-Administered)
+vaxState
+vaxState %>%
+    filter(!(state %in% c(state.abb, "DC")))
+vaxState %>%
+    filter(!(state == "US")) %>%
+    mutate(pctComplete=Series_Complete_Yes/sum(Series_Complete_Yes)) %>%
+    mutate(is50DC=state %in% c(state.abb, "DC")) %>%
+    group_by(is50DC) %>%
+    summarize(n=n(), across(where(is.numeric), sum), .groups="drop")
+
+vaxProcessed_210712 %>%
+    filter(state=="US") %>%
+    select(state, date, Administered, Recip_Administered, Series_Complete_Yes) %>%
+    pivot_longer(-c(state, date)) %>%
+    ggplot(aes(x=date, y=value/1000000)) + 
+    geom_line(aes(group=name, color=name)) + 
+    labs(x="", y="Number of Doses/People (millions)", title="All-US Vaccination totals")
+    
+```
+  
+* Shots administered in LTC are being tracked back to the location where the recipient lives  
+* Shots administered by VA, DOD, Indian Health, etc., do not appear to map back to one of the 50 states or DC  
+* Data for territories are included  
+* A US total is included  
+  
+Roughly 5% of completely vaccinated individuals are tracked to entities that do not map back to states.  These will be deleted for further analysis, which may lead to some disconnects.
+
+Next steps are to continue processing the data and to integrate with the other state-level metrics.
