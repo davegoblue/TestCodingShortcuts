@@ -257,3 +257,82 @@ vaxProcessed_210712 %>%
 Roughly 5% of completely vaccinated individuals are tracked to entities that do not map back to states.  These will be deleted for further analysis, which may lead to some disconnects.
 
 Next steps are to continue processing the data and to integrate with the other state-level metrics.
+
+Implied populations and vaccinations by subgroup are calculated:  
+```{r, fig.height=9, fig.width=9}
+
+vaxImplied_210712 <- vaxProcessed_210712 %>%
+    mutate(popTot=100*Series_Complete_Yes/Series_Complete_Pop_Pct, 
+           pop65Plus=100*Series_Complete_65Plus/Series_Complete_65PlusPop_Pct, 
+           pop18Plus=100*Series_Complete_18Plus/Series_Complete_18PlusPop_Pct, 
+           pop12Plus=100*Series_Complete_12Plus/Series_Complete_12PlusPop_Pct, 
+           pop1864=pop18Plus-pop65Plus,
+           pop1217=pop12Plus-pop18Plus,
+           pop0011=popTot-pop12Plus, 
+           vax65Plus=Series_Complete_65Plus,
+           vax1864=Series_Complete_18Plus-Series_Complete_65Plus,
+           vax1217=Series_Complete_12Plus-Series_Complete_18Plus,
+           vax0011=Series_Complete_Yes-Series_Complete_12Plus
+           )
+
+popData <- vaxImplied_210712 %>%
+    filter(state %in% c(state.abb, "DC", "PR", "US")) %>%
+    group_by(state) %>%
+    summarize(across(.cols=c(pop65Plus, pop1864, pop1217, pop0011), 
+                     .fns=list(mu=~mean(.x, na.rm=TRUE), 
+                               sdmu=~sd(.x, na.rm=TRUE)/mean(.x, na.rm=TRUE),
+                               rangemu=~diff(range(.x, na.rm=TRUE)/mean(.x, na.rm=TRUE))
+                               )
+                     ), 
+              .groups="drop"
+              )
+
+popData %>%
+    select(state, contains("_rangemu")) %>%
+    pivot_longer(-state) %>%
+    ggplot(aes(x=fct_reorder(state, value, .fun=max), y=value)) + 
+    geom_point() + 
+    coord_flip() + 
+    facet_wrap(~name, nrow=1) + 
+    labs(y="Range divided by mean", x=NULL, title="Consistency of population estimates by subgroup and state")
+
+popData %>%
+    select(state, contains("_mu")) %>%
+    pivot_longer(-state) %>%
+    group_by(state) %>%
+    mutate(pct65Plus=sum(ifelse(name=="pop65Plus_mu", value, 0))/sum(value)) %>%
+    ungroup() %>%
+    ggplot(aes(x=fct_reorder(state, pct65Plus), y=value)) + 
+    geom_col(aes(fill=name), position="fill") +
+    coord_flip() +
+    scale_fill_discrete("") +
+    labs(y="Proportion of population", x=NULL, title="Population breakout by state")
+
+vaxImplied_210712 %>%
+    filter(state=="US") %>%
+    select(state, date, starts_with("vax")) %>%
+    pivot_longer(-c(state, date)) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=name, color=name))
+
+vaxImplied_210712 %>%
+    filter(state=="US") %>%
+    select(state, date, starts_with("vax")) %>%
+    pivot_longer(-c(state, date)) %>% 
+    mutate(eq0=(value==0), lt0=(value<0)) %>%
+    filter(value<=0) %>%
+    group_by(eq0, lt0, name) %>% 
+    summarize(across(date, .fns=list(min=min, max=max)), .groups="drop")
+
+```
+
+Population estimates are generally consistent by state across dates, with the greatest variability in the 12-17 age estimates (expected since it is the smallest group where rounded percent vaccinated would have the most impact).
+
+Distributions by age and state appear reasonable.
+
+There has clearly been a change in tracking where fully vaccinated are tracked using age buckets:  
+  
+* 2020-12-13 through 2021-03-04 has no age breakouts  
+* 2021-03-05 through 2021-05-12 has no age breakouts for 12-17 years old  
+  
+Next steps are to modify code so that subtotal statistics by age bucket are used only when where appropriate.
