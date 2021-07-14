@@ -2486,4 +2486,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 12-JUL-2021  
 * Coronavirus_Statistics_CDC_v005 includes plotQCReadProcessCDC() for control total checks  
 * Coronavirus_CDC_Daily_v002 downloads vaccine data  
+* Coronavirus_CDC_Daily_v002 reads and explores vaccine data  
   
