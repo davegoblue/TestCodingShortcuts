@@ -2487,4 +2487,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 includes plotQCReadProcessCDC() for control total checks  
 * Coronavirus_CDC_Daily_v002 downloads vaccine data  
 * Coronavirus_CDC_Daily_v002 reads and explores vaccine data  
+* Coronavirus_CDC_Daily_v002 explores availability of vaccine by age data  
   
