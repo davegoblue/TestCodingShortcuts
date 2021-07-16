@@ -371,3 +371,123 @@ vaxProcessed_210712 %>%
 In general, the sum of the states and DC are close to the total for US.  Per capita and percentage metrics cannot be summed and were not compared directly.
 
 Next steps are to adapt the population splits to account for the variable timing of initial data availability  A heuristic can likely be used for the split of 65Plus in the early days, with 12Plus and 18Plus assumed to be equal (no usage in 0-17 group) prior to age being broken out.
+
+An assumption is made that Series_Complete_Yes maps to the oldest group still left to populate when data breakouts are incomplete:  
+```{r, fig.height=9, fig.width=9}
+
+vaxImplied_210712_v2 <- vaxProcessed_210712 %>%
+    mutate(popTot=100*Series_Complete_Yes/Series_Complete_Pop_Pct, 
+           pop65Plus=100*Series_Complete_65Plus/Series_Complete_65PlusPop_Pct, 
+           pop18Plus=100*Series_Complete_18Plus/Series_Complete_18PlusPop_Pct, 
+           pop12Plus=100*Series_Complete_12Plus/Series_Complete_12PlusPop_Pct, 
+           pop1864=pop18Plus-pop65Plus,
+           pop1217=pop12Plus-pop18Plus,
+           pop0011=popTot-pop12Plus, 
+           vax65Plus=Series_Complete_65Plus,
+           vax1864=Series_Complete_18Plus-Series_Complete_65Plus,
+           vax1217=ifelse(Series_Complete_12Plus>0, Series_Complete_12Plus, Series_Complete_Yes)-Series_Complete_18Plus,
+           vax0011=Series_Complete_Yes-vax65Plus-vax1864-vax1217
+           )
+
+popData_v2 <- vaxImplied_210712_v2 %>%
+    filter(state %in% c(state.abb, "DC", "US")) %>%
+    group_by(state) %>%
+    summarize(across(.cols=c(popTot, pop65Plus, pop1864, pop1217, pop0011), 
+                     .fns=list(mu=~mean(.x, na.rm=TRUE), 
+                               sdmu=~sd(.x, na.rm=TRUE)/mean(.x, na.rm=TRUE),
+                               rangemu=~diff(range(.x, na.rm=TRUE)/mean(.x, na.rm=TRUE))
+                               )
+                     ), 
+              .groups="drop"
+              )
+
+popData_v2 %>%
+    select(state, contains("_rangemu")) %>%
+    pivot_longer(-state) %>%
+    ggplot(aes(x=fct_reorder(state, value, .fun=max), y=value)) + 
+    geom_point() + 
+    coord_flip() + 
+    facet_wrap(~name, nrow=1) + 
+    labs(y="Range divided by mean", 
+         x=NULL, 
+         title="Consistency of population estimates by subgroup and state"
+         )
+
+popData_v2 %>%
+    select(state, contains("_mu"), -contains("popTot")) %>%
+    pivot_longer(-state) %>%
+    group_by(state) %>%
+    mutate(pct65Plus=sum(ifelse(name=="pop65Plus_mu", value, 0))/sum(value)) %>%
+    ungroup() %>%
+    ggplot(aes(x=fct_reorder(state, pct65Plus), y=value)) + 
+    geom_col(aes(fill=name), position="fill") +
+    coord_flip() +
+    scale_fill_discrete("") +
+    labs(y="Proportion of population", x=NULL, title="Population breakout by state")
+
+vaxImplied_210712_v2 %>%
+    filter(state=="US") %>%
+    select(state, date, starts_with("vax")) %>%
+    pivot_longer(-c(state, date)) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=name, color=name))
+
+vaxImplied_210712_v2 %>%
+    filter(state=="US") %>%
+    select(state, date, starts_with("vax")) %>%
+    pivot_longer(-c(state, date)) %>% 
+    mutate(eq0=(value==0), lt0=(value<0)) %>%
+    filter(value<=0) %>%
+    group_by(eq0, lt0, name) %>% 
+    summarize(across(date, .fns=list(min=min, max=max)), .groups="drop")
+
+```
+
+Data appear reasonable for further use, though with some anomalies still related to the breakouts by age.  Metrics per million on a rolling-7 basis are created:  
+```{r, fig.height=9, fig.width=9}
+
+popDataUse <- popData_v2 %>%
+    filter(state %in% c(state.abb, "DC")) %>%
+    select(state, contains("_mu")) %>%
+    pivot_longer(-state) %>%
+    mutate(ageGroup=stringr::str_replace_all(name, "pop|_mu", "")) %>%
+    rename(pop=value) %>%
+    select(state, ageGroup, pop)
+
+vaxDataUse <- vaxImplied_210712_v2 %>%
+    filter(state %in% c(state.abb, "DC")) %>%
+    select(state, date, vaxTot=Series_Complete_Yes, starts_with("vax")) %>%
+    pivot_longer(-c(state, date)) %>%
+    mutate(ageGroup=stringr::str_replace_all(name, "vax", "")) %>%
+    rename(vax=value) %>%
+    select(state, date, ageGroup, vax)
+
+popVaxData <- vaxDataUse %>%
+    inner_join(popDataUse, by=c("state", "ageGroup")) %>%
+    mutate(vaxpct=vax/pop) %>%
+    arrange(state, ageGroup, date) %>%
+    group_by(state, ageGroup) %>%
+    helperRollingAgg(origVar="vaxpct", newName="vaxpct7") %>%
+    ungroup()
+
+popVaxData %>%
+    filter(!is.na(vaxpct7)) %>%
+    ggplot(aes(x=date, y=vaxpct7)) + 
+    geom_line(aes(group=state, color=state.region[match(state, state.abb)]), alpha=0.5) + 
+    lims(y=c(0, 1)) +
+    facet_wrap(~ageGroup) + 
+    labs(title="Percent Fully Vaccinated", x=NULL, y="Rolling 7 'Series Complete' percentage") + 
+    scale_color_discrete("Census\nRegion")
+
+popVaxData %>%
+    filter(!is.na(vaxpct7)) %>%
+    ggplot(aes(x=date, y=vaxpct7)) + 
+    geom_line(aes(group=ageGroup, color=ageGroup)) + 
+    lims(y=c(0, 1)) +
+    facet_wrap(~state) + 
+    labs(title="Percent Fully Vaccinated", x=NULL, y="Rolling 7 'Series Complete' percentage") + 
+    scale_color_discrete("Age")
+
+```
+
+Next steps are to incorporate these steps as a reproducible function.
