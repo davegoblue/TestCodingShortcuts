@@ -2489,4 +2489,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v002 reads and explores vaccine data  
 * Coronavirus_CDC_Daily_v002 explores availability of vaccine by age data  
 * Coronavirus_CDC_Daily_v002 adjusts for varying vaccine data availability by age cohort  
+* Coronavirus_CDC_Daily_v002 uses readQCRawCDCDaily() to read a vaccine data file  
   
