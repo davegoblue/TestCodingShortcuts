@@ -732,3 +732,87 @@ vaxRaw_210717_func <- readQCRawCDCDaily(fileName="./RInputFiles/Coronavirus/CDC_
 ```
   
 The function works well for reading a raw vaccines data file, running basic checks, and comparing to a previous vaccines data file.  Next steps are to adapt the function for processing a vaccines data file.
+
+The function processRawFile() is leveraged:  
+```{r}
+
+# Generic function for processing a raw file
+processRawFile <- function(df, 
+                           vecRename=c(), 
+                           vecSelect=NULL,
+                           lstCombo=list(), 
+                           lstFilter=list(), 
+                           lstExclude=list()
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the raw data frame or tibble
+    # vecRename: vector for renaming c('existing name'='new name'), can be any length from 0 to ncol(df)
+    # vecSelect: vector of columns to select (run after vecRename), NULL means select all columns
+    # lstCombo: a nested list of combinations to be applied
+    #           each element of the list should include comboVar, uqVars, vecCombo, and fn
+    # lstFilter: a list for filtering records, of form list("field"=c("allowed values"))
+    # lstExclude: a list for filtering records, of form list("field"=c("disallowed values"))
+    
+    # STEP 1: Rename and select variables (selection occurs AFTER renaming)
+    dfProcess <- df %>%
+        colRenamer(vecRename=vecRename) %>%
+        colSelector(vecSelect=vecSelect)
+    
+    # STEP 2: Combine multiple records to a single record
+    for (ctr in seq_along(lstCombo)) {
+        dfProcess <- dfProcess %>%
+            combineRows(comboVar=lstCombo[[ctr]]$comboVar, 
+                        uqVars=lstCombo[[ctr]]$uqVars, 
+                        vecCombo=lstCombo[[ctr]]$vecCombo, 
+                        fn=lstCombo[[ctr]]$fn
+            )
+    }
+    
+    # STEP 3: Filter records
+    qcOrig <- dfProcess %>% 
+        summarize(across(where(is.numeric), sum, na.rm=TRUE), n=n()) %>% 
+        mutate(isType="before")
+    dfProcess <- dfProcess %>% 
+        rowFilter(lstFilter=lstFilter, lstExclude=lstExclude)
+    
+    # STEP 4: Report on differences
+    cat("\nColumn sums before and after applying filtering rules:\n")
+    dfProcess %>% 
+        summarize(across(where(is.numeric), sum, na.rm=TRUE), n=n()) %>% 
+        mutate(isType="after") %>%
+        bind_rows(qcOrig) %>%
+        arrange(desc(isType)) %>%
+        bind_rows(mutate(summarize(., across(where(is.numeric), function(x) (max(x)-min(x))/max(x))), 
+                         isType="pctchg"
+                         )
+                  ) %>%
+        select(isType, everything()) %>%
+        print()
+    cat("\n")
+    
+    # Return the processed data file
+    dfProcess
+    
+}
+
+
+
+vaxProc_210717_func <- processRawFile(vaxRaw_210717_func, 
+                                      vecRename=c(),
+                                      vecSelect=c("date", "state", "MMWR_week", 
+                                                  "Administered", "Admin_Per_100k",
+                                                  "Series_Complete_Yes", "Series_Complete_Pop_Pct",
+                                                  "Series_Complete_12Plus", "Series_Complete_12PlusPop_Pct",  
+                                                  "Series_Complete_18Plus", "Series_Complete_18PlusPop_Pct",  
+                                                  "Series_Complete_65Plus", "Series_Complete_65PlusPop_Pct"
+                                                  ), 
+                                      lstCombo=list(), 
+                                      lstFilter=list("state"=c(state.abb, "DC")),
+                                      lstExclude=list()
+                                      )
+vaxProc_210717_func
+
+```
+
+Next steps are to run the per-capita process for conversion of Administered and Series_Complete_Yes based on the same state population data used for cases, deaths, and hospitalizations.
