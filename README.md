@@ -2492,3 +2492,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v002 uses readQCRawCDCDaily() to read a vaccine data file  
 * Coronavirus_CDC_Daily_v002 uses full functionality of readQCRawCDCDaily() for vaccine data files  
   
+### Expansions week of 19-JUL-2021  
+* Coronavirus_CDC_Daily_v002 uses processRawFile() for vaccine data files  
+  
