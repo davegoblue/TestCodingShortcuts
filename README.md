@@ -1,4 +1,4 @@
-# TestCodingShortcuts
+  # TestCodingShortcuts
 Testing some coding shortcuts that I will want to use later in R
 
 A few things that I want to learn how to implement in R based on what I have seen on the internet
@@ -2494,4 +2494,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 19-JUL-2021  
 * Coronavirus_CDC_Daily_v002 uses processRawFile() for vaccine data files  
+* Coronavirus_CDC_Daily_v002 uses createPerCapita() for vaccine data files  
   
