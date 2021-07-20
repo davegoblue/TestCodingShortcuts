@@ -816,3 +816,60 @@ vaxProc_210717_func
 ```
 
 Next steps are to run the per-capita process for conversion of Administered and Series_Complete_Yes based on the same state population data used for cases, deaths, and hospitalizations.
+
+The function createPerCapita() is leveraged:  
+```{r, fig.height=9, fig.width=9}
+
+# Function to extract and format key state data
+getStateData <- function(df=readFromRDS("statePop2019"), 
+                         renameVars=c("stateAbb"="state", "NAME"="name", "pop_2019"="pop"), 
+                         keepVars=c("state", "name", "pop")
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing state data
+    # renameVars: variables to be renamed, using named list with format "originalName"="newName"
+    # keepVars: variables to be kept in the final file
+    
+    # Rename variables where appropriate
+    names(df) <- ifelse(is.na(renameVars[names(df)]), names(df), renameVars[names(df)])
+    
+    # Return file with only key variables kept
+    df %>%
+        select_at(vars(all_of(keepVars)))
+    
+}
+
+
+useVars <- c("state", "date", "Administered", "Series_Complete_Yes")
+
+
+vaxPerCap_210717_func <- createPerCapita(select(vaxProc_210717_func, all_of(useVars)), 
+                                         uqBy=c("state", "date"), 
+                                         popData=getStateData(), 
+                                         mapper=c("Administered"="vxapm", "Series_Complete_Yes"="vxcpm"), 
+                                         )
+vaxPerCap_210717_func
+
+vaxPerCap_210717_func %>%
+    select(state, date, vxapm7, vxcpm7) %>%
+    pivot_longer(-c(state, date)) %>%
+    filter(!is.na(value), name=="vxcpm7") %>%
+    mutate(region=ifelse(state=="DC", "South Atlantic", as.character(state.division)[match(state, state.abb)])) %>%
+    ggplot(aes(x=date, y=value/1000000)) + 
+    geom_line(aes(group=state), alpha=0.25) + 
+    geom_line(data=~summarize(group_by(., region, date), value=median(value), .groups="drop"), 
+              aes(color=region)
+              ) +
+    facet_wrap(~region) + 
+    lims(y=c(0, 1)) +
+    labs(x=NULL, 
+         y="Proportion Fully Vaccinated (of total population)", 
+         title="Evolution of fully vaccinated by state and census division", 
+         subtitle="Colored line is median in region, gray line is individual states in region"
+         ) + 
+    theme(legend.position="none")
+
+```
+  
+Next steps are to modify the approach so extra variables can be included without converting them to per capita.
