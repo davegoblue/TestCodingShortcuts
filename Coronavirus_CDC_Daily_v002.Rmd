@@ -872,4 +872,120 @@ vaxPerCap_210717_func %>%
 
 ```
   
-Next steps are to modify the approach so extra variables can be included without converting them to per capita.
+The createPerCapita() function is updated to allow for keeping variables without calculating per-million or rolling-7 aggregates:  
+```{r}
+
+# Generic function to create per-capita metrics using an existing file and source of population data
+createPerCapita <- function(lst, 
+                            uqBy,
+                            popData,
+                            mapper,
+                            asIsVars=c(),
+                            lstSortBy=uqBy,
+                            fnJoin=dplyr::full_join, 
+                            popJoinBy="state",
+                            popVar="pop",
+                            k=7,
+                            mult=1000000,
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: A list containing one or more files to be joined OR a data frame that is already joined
+    # uqBy: character string that the input file is unique by (will be the join keys if a list is passed)
+    # popData: file containing population data that can be joined to the processed lst
+    # mapper: mapping file of c('current name'='per capita name') for mapping variables
+    # asIsVars: variables to be kept, but without creating pm or pm7
+    # lstSortBy: the sorting that should be used for creating rolling metrics
+    # fnJoin: The function to be used for joining files
+    # popJoinBy: character string for the variable(s) to be used in joining popData to lst
+    # popVar: character string for the variable in popData that represents population
+    # k: time perior for rolling aggregations
+    # mult: the unit for the per-capita data (default 1 million means make metrics per million)
+    # ...: other arguments to be passed to combineFiles()
+    
+    # Step 1: If a list has been passed, use a joining process to create a data frame
+    if ("list" %in% class(lst)) lst <- combineFiles(lst, byVars=uqBy, fn=fnJoin, ...)
+    
+    # Step 2: Sort the data using sortBy
+    df <- dplyr::arrange(lst, across(all_of(lstSortBy)))
+    
+    # Step 3: Check that all variables other than uqBy and asIsVars can be mapped using mapper
+    keyVars <- setdiff(names(df), c(uqBy, asIsVars))
+    if (any(isFALSE(keyVars %in% mapper))) stop("\nVariable is missing in per capita mapper file\n")
+    
+    # Step 4: Run the per capita mapping process
+    df <- helperMakePerCapita(df, 
+                              mapVars=mapper[keyVars], 
+                              popData=popData, 
+                              k=k, 
+                              byVar=popJoinBy, 
+                              sortVar=setdiff(lstSortBy, popJoinBy), 
+                              popVar=popVar, 
+                              mult=mult
+    )
+    
+    # Return the data frame
+    df
+    
+}
+
+```
+
+The updated process is then run, keeping the breakout for 65+ and 18+:  
+```{r, fig.height=9, fig.width=9}
+
+uqVars <- c("state", "date")
+perCapVars <- c("Administered", "Series_Complete_Yes")
+asIsVars <- c("Series_Complete_65Plus", "Series_Complete_65PlusPop_Pct", 
+              "Series_Complete_18Plus", "Series_Complete_18PlusPop_Pct", 
+              "Admin_Per_100k", "Series_Complete_Pop_Pct"
+              )
+
+
+vaxPerCap_210717_func_v2 <- createPerCapita(select(vaxProc_210717_func, all_of(c(uqVars, perCapVars, asIsVars))), 
+                                            uqBy=uqVars, 
+                                            asIsVars=asIsVars,
+                                            popData=getStateData(), 
+                                            mapper=c("Administered"="vxapm", "Series_Complete_Yes"="vxcpm")
+                                            ) %>%
+    colRenamer(c("Series_Complete_Yes"="vxc", 
+                 "Administered"="vxa", 
+                 "Series_Complete_Pop_Pct"="vxcpoppct",
+                 "Series_Complete_65Plus"="vxcgte65",
+                 "Series_Complete_65PlusPop_Pct"="vxcgte65pct", 
+                 "Series_Complete_18Plus"="vxcgte18",
+                 "Series_Complete_18PlusPop_Pct"="vxcgte18pct"
+                 )
+               )
+vaxPerCap_210717_func_v2 
+
+# Check consistency of 'Admin_Per_100k' and 'vxapm'
+vaxPerCap_210717_func_v2 %>%
+    filter(date==max(date)) %>%
+    ggplot(aes(x=Admin_Per_100k, y=vxapm)) + 
+    geom_text(aes(label=state)) + 
+    geom_abline(slope=10, intercept=0, lty=2) +
+    labs(x="Raw data administered per 100k", 
+         y="Function-calculated adminsitered per million",
+         title="Consistency of raw data and function-calculated per capita data",
+         subtitle="Dotted line is per-million at 10x per-100k (expected)"
+         )
+
+# Check consistency of 'vxcpoppct' and 'vxcpm'
+vaxPerCap_210717_func_v2 %>%
+    filter(date==max(date)) %>%
+    ggplot(aes(x=vxcpoppct, y=vxcpm)) + 
+    geom_text(aes(label=state)) + 
+    geom_abline(slope=10000, intercept=0, lty=2) +
+    labs(x="Raw data percent of population completely vaccinated", 
+         y="Function-calculated completely vaccinated per million",
+         title="Consistency of raw data and function-calculated per capita data",
+         subtitle="Dotted line is per-million at 10,000x per-100 (expected)"
+         )
+
+```
+  
+The raw data and per-capita totals are aligned, suggesting that population estimates used in the datasets are very similar (functions use 2019 estimates as per getStateData()).
+
+Next steps are to update plots to include vaccines data
