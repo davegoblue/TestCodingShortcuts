@@ -2495,4 +2495,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 19-JUL-2021  
 * Coronavirus_CDC_Daily_v002 uses processRawFile() for vaccine data files  
 * Coronavirus_CDC_Daily_v002 uses createPerCapita() for vaccine data files  
+* Coronavirus_CDC_Daily_v002 updates createPerCapita() to keep variables without rolling 7 per-million calculations  
   
