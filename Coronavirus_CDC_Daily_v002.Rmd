@@ -988,4 +988,77 @@ vaxPerCap_210717_func_v2 %>%
   
 The raw data and per-capita totals are aligned, suggesting that population estimates used in the datasets are very similar (functions use 2019 estimates as per getStateData()).
 
-Next steps are to update plots to include vaccines data
+The colMutater() function is added to include:  
+  
+1. Counts for 18-64 and 0-17 based on subtraction  
+2. Daily change in administered and completed by day (rather than raw data cumulative)  
+  
+Variables are added as follows:  
+```{r, fig.height=9, fig.width=9}
+
+# Conversions for 18-64 and 0-17
+subGroupList <- list("vxc1864"=expression(vxcgte18-vxcgte65), 
+                     "vxc0017"=expression(vxc-vxcgte18)
+                     )
+
+# Conversions for per-day
+perDayFunc <- function(x) ifelse(row_number()==1, x, ifelse(lag(x)==0, 0, x-lag(x)))
+perDayList <- list("vxa_perday"=expression(perDayFunc(vxa)), 
+                   "vxc_perday"=expression(perDayFunc(vxc)), 
+                   "vxcgte65_perday"=expression(perDayFunc(vxcgte65)), 
+                   "vxc1864_perday"=expression(perDayFunc(vxc1864)), 
+                   "vxc0017_perday"=expression(perDayFunc(vxc0017))
+                   )
+
+vaxPerCap_210717_func_v3 <- vaxPerCap_210717_func_v2 %>%
+    colMutater(fullList=subGroupList) %>%
+    arrange(date, state) %>%
+    group_by(state) %>%
+    colMutater(fullList=perDayList) %>%
+    ungroup()
+
+# Check that files are identical for same variables
+sapply(names(vaxPerCap_210717_func_v2), 
+       FUN=function(x) all.equal(vaxPerCap_210717_func_v2[[x]], vaxPerCap_210717_func_v3[[x]])
+       ) %>% 
+    t() %>% 
+    t()
+
+# Plot evolution of vaccines by age
+vaxPerCap_210717_func_v3 %>%
+    select(date, vxc, vxcgte65, vxc1864, vxc0017) %>%
+    group_by(date) %>%
+    summarize(across(.fns=sum)) %>%
+    pivot_longer(-date) %>%
+    ggplot(aes(x=date)) + 
+    geom_point(data=~filter(., name=="vxc"), aes(y=value/1000000)) + 
+    geom_col(data=~filter(., name!="vxc"), aes(y=value/1000000, fill=name), position="stack") + 
+    labs(x=NULL, 
+         y="Completely Vaccinated (millions)", 
+         title="Evolution of fully vaccinated by age group", 
+         subtitle="Dots are total people fully vaccinated"
+         ) + 
+    scale_fill_discrete("Age")
+
+# Plot evolution of vaccines administered per day
+vaxPerCap_210717_func_v3 %>%
+    select(date, vxa, vxa_perday) %>%
+    group_by(date) %>%
+    summarize(across(where(is.numeric), sum)) %>%
+    pivot_longer(-date) %>%
+    group_by(name) %>%
+    mutate(value7=zoo::rollmean(value, k=7, fill=NA)) %>%
+    ungroup() %>%
+    ggplot(aes(x=date)) + 
+    geom_line(aes(y=value/1000000)) + 
+    geom_line(data=~filter(., name=="vxa_perday", !is.na(value7)), aes(y=value7/1000000), color="red", lwd=2) +
+    facet_wrap(~c("vxa"="Cumulative", "vxa_perday"="Daily")[name], scales="free_y") + 
+    labs(x=NULL, 
+         y="Vaccines Adminsitered (millions)", 
+         title="Evolution of vaccines administered", 
+         subtitle="Red line is rolling 7-day average"
+         )
+
+```
+
+Variables appear to be created as intended.
