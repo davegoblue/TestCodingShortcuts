@@ -2497,4 +2497,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v002 uses createPerCapita() for vaccine data files  
 * Coronavirus_CDC_Daily_v002 updates createPerCapita() to keep variables without rolling 7 per-million calculations  
 * Coronavirus_CDC_Daily_v002 creates daily metrics and age-group metrics  
+* Coronavirus_CDC_Daily_v002 estimates total population and per-capita by state  
   
