@@ -2499,4 +2499,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v002 creates daily metrics and age-group metrics  
 * Coronavirus_CDC_Daily_v002 estimates total population and per-capita by state  
 * Coronavirus_CDC_Daily_v002 estimates population by age bucket by state  
+* Coronavirus_CDC_Daily_v002 estimates evolution of completely vaccinated proportion by age bucket by state  
   
