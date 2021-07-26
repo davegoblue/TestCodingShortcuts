@@ -2501,3 +2501,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v002 estimates population by age bucket by state  
 * Coronavirus_CDC_Daily_v002 estimates evolution of completely vaccinated proportion by age bucket by state  
   
+### Expansions week of 26-JUL-2021  
+* Coronavirus_CDC_Daily_v002 investigates implied negative spikes in vaccination  
+  
