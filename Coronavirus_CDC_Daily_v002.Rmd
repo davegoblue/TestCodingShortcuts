@@ -1141,7 +1141,7 @@ popEstAgeState %>%
 ```
 
 Metrics for evolution of complete vaccination by age cohort are calculated and plotted:  
-```{r}
+```{r, fig.height=9, fig.width=9}
 
 popState <- popEstAgeState %>%
     select(state, popgte65, pop1864, pop0017) %>%
@@ -1175,3 +1175,96 @@ vaxPerCap_210717_func_v3 %>%
 ```
   
 There are discontinuities in the data, particularly for the age group 0-17 bucket.  This is likely driven by differences in timing of age breakouts based on authorizations for vaccines by age cohort.  Next steps are to investigate and correct for discontinuities, particularly those showing negative completed vaccinations.
+
+The big spike then decline in 0017 is investigated:  
+```{r, fig.height=9, fig.width=9}
+
+deltaData_210717 <- vaxPerCap_210717_func_v3 %>%
+    select(state, date, vxc, vxcgte65, vxcgte18) %>%
+    group_by(date) %>%
+    summarize(across(where(is.numeric), sum)) %>%
+    mutate(across(where(is.numeric), .fn=function(x) ifelse(lag(x)==0, NA, x - lag(x)), .names="d_{.col}")) 
+
+deltaData_210717 %>%
+    select(date, starts_with("d")) %>%
+    pivot_longer(-date) %>%
+    filter(!is.na(value)) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=name, color=name))
+
+deltaData_210717 %>%
+    filter(d_vxc < d_vxcgte18)
+
+deltaData_210717 %>%
+    filter(date %in% (as.Date("2021-04-01")+0:10))
+
+```
+
+There is a situation on April 4-6 where age breakouts for vaccination increases do not make sense.  An assumption is made for April 4-6 that d_vxcgte18 will be set to d_vxc for each state:  
+```{r, fig.height=9, fig.width=9}
+
+# Conversions for per-day
+perDayFunc <- function(x) ifelse(row_number()==1, x, ifelse(lag(x)==0, 0, x-lag(x)))
+perDayList <- list("vxa_perday"=expression(perDayFunc(vxa)), 
+                   "vxc_perday"=expression(perDayFunc(vxc)), 
+                   "vxcgte65_perday"=expression(perDayFunc(vxcgte65)), 
+                   "vxc1864_perday"=expression(perDayFunc(vxc1864)), 
+                   "vxc0017_perday"=expression(perDayFunc(vxc0017))
+                   )
+
+vaxPerCap_210717_func_v4 <- vaxPerCap_210717_func_v2 %>%
+    arrange(state, date) %>%
+    group_by(state) %>%
+    mutate(vxcgte18=ifelse(date %in% c(as.Date("2021-04-04")), lag(vxcgte18) + vxc - lag(vxc), vxcgte18)) %>%
+    mutate(vxcgte18=ifelse(date %in% c(as.Date("2021-04-05")), lag(vxcgte18) + vxc - lag(vxc), vxcgte18)) %>%
+    mutate(vxcgte18=ifelse(date %in% c(as.Date("2021-04-06")), lag(vxcgte18) + vxc - lag(vxc), vxcgte18)) %>%
+    ungroup() %>%
+    colMutater(fullList=subGroupList) %>%
+    arrange(date, state) %>%
+    group_by(state) %>%
+    colMutater(fullList=perDayList) %>%
+    ungroup()
+all.equal(vaxPerCap_210717_func_v4, vaxPerCap_210717_func_v3)
+all.equal(vaxPerCap_210717_func_v4[!(vaxPerCap_210717_func_v3$date %in% c(as.Date("2021-04-04")+0:3)), ], 
+          vaxPerCap_210717_func_v3[!(vaxPerCap_210717_func_v3$date %in% c(as.Date("2021-04-04")+0:3)), ]
+          )
+
+deltaData_210717_v4 <- vaxPerCap_210717_func_v4 %>%
+    select(state, date, vxc, vxcgte65, vxcgte18) %>%
+    group_by(date) %>%
+    summarize(across(where(is.numeric), sum)) %>%
+    mutate(across(where(is.numeric), .fn=function(x) ifelse(lag(x)==0, NA, x - lag(x)), .names="d_{.col}")) 
+deltaData_210717_v4 %>%
+    select(date, starts_with("d")) %>%
+    pivot_longer(-date) %>%
+    filter(!is.na(value)) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=name, color=name))
+deltaData_210717_v4 %>%
+    filter(d_vxc < d_vxcgte18)
+
+vaxPerCap_210717_func_v4 %>%
+    select(state, date, vxcgte65_perday, vxc1864_perday, vxc0017_perday) %>%
+    pivot_longer(-c(state, date)) %>%
+    mutate(age=stringr::str_replace_all(name, "vxc|_perday", "")) %>%
+    select(state, date, age, perday=value) %>%
+    left_join(popState, by=c("state", "age")) %>%
+    mutate(perday_percap=perday/pop) %>%
+    arrange(state, date, age) %>%
+    group_by(state, age) %>%
+    helperRollingAgg("perday_percap", newName="perday_percap7") %>%
+    ungroup() %>% 
+    filter(!is.na(perday_percap7), state != "DC") %>%
+    ggplot(aes(x=date, y=1000*perday_percap7)) + 
+    geom_line(aes(group=state, color=state.region[match(state, state.abb)])) + 
+    labs(x=NULL, 
+         y="Completed per thousand (rolling 7-day)", 
+         title="Newly fully vaccinated by day", 
+         subtitle="Persons vaccinated before age-breakouts included NOT counted"
+         ) +
+    facet_wrap(~age) + 
+    scale_color_discrete("Census\nRegion")
+
+```
+  
+The data appear improved, though there are still a handful of states with negative vaccinations completed on given days.  This is an area for further investigation.
