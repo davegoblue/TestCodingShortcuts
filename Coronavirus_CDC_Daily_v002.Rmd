@@ -1268,3 +1268,103 @@ vaxPerCap_210717_func_v4 %>%
 ```
   
 The data appear improved, though there are still a handful of states with negative vaccinations completed on given days.  This is an area for further investigation.
+
+A function is written to update key variables by day:  
+```{r, fig.height=9, fig.width=9}
+
+updateByDay <- function(df, 
+                        dateStart, 
+                        dateEnd=NULL,
+                        nDates=NULL,
+                        varGroup=c("state"), 
+                        varSort=c("date"), 
+                        exprList=list()
+                        ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: the data frame to be processed
+
+    # Convert dateStart to date if not already in that format
+    if ("character" %in% class(dateStart)) dateStart <- as.Date(dateStart)
+    if (!("Date") %in% class(dateStart)) stop("\nArgument dateStart must be a Date object or character YYYY-MM-DD\n")
+    
+    # Create dateEnd from nDates if needed
+    if (is.null(dateEnd)) {
+        if (is.null(nDates)) stop("\nMust pass either dateEnd or nDates\n")
+        dateEnd <- dateStart + nDates - 1
+    }
+    if ("character" %in% class(dateEnd)) dateEnd <- as.Date(dateEnd)
+    if (!("Date") %in% class(dateEnd)) stop("\nArgument dateEnd must be a Date object or character YYYY-MM-DD\n")
+    
+    # Declare the dates to be investigated
+    keyDates <- seq.Date(from=dateStart, to=dateEnd, by=1)
+    cat("\nData will be modified as needed for dates:",  keyDates, "\n")
+    
+    # Arrange and group the data as requested
+    df <- df %>%
+        arrange(across(all_of(c(varGroup, varSort)))) %>%
+        group_by(across(all_of(varGroup)))
+    
+    # Make updates for each of the keyDates
+    for (keyDate in keyDates) {
+        df <- df %>%
+            mutate(modThis=(date %in% keyDate)) %>%
+            colMutater(fullList=exprList) %>%
+            select(-modThis)
+    }
+    
+    df
+    
+}
+
+modList <- list("vxcgte18"=expression(ifelse(modThis, lag(vxcgte18) + vxc - lag(vxc), vxcgte18)))
+
+vaxPerCap_210717_func_v4 <- updateByDay(vaxPerCap_210717_func_v2, 
+                                        dateStart="2021-04-03", 
+                                        dateEnd="2021-04-06", 
+                                        exprList=modList
+                                        ) %>%
+    colMutater(fullList=subGroupList) %>%
+    colMutater(fullList=perDayList) %>%
+    ungroup()
+
+vaxPerCap_210717_func_v4 %>%
+    select(state, date, vxcgte65_perday, vxc1864_perday, vxc0017_perday) %>%
+    pivot_longer(-c(state, date)) %>%
+    mutate(age=stringr::str_replace_all(name, "vxc|_perday", "")) %>%
+    select(state, date, age, perday=value) %>%
+    left_join(popState, by=c("state", "age")) %>%
+    mutate(perday_percap=perday/pop) %>%
+    arrange(state, date, age) %>%
+    group_by(state, age) %>%
+    helperRollingAgg("perday_percap", newName="perday_percap7") %>%
+    ungroup() %>% 
+    filter(!is.na(perday_percap7), state != "DC") %>%
+    ggplot(aes(x=date, y=1000*perday_percap7)) + 
+    geom_line(aes(group=state, color=state.region[match(state, state.abb)])) + 
+    labs(x=NULL, 
+         y="Completed per thousand (rolling 7-day)", 
+         title="Newly fully vaccinated by day", 
+         subtitle="Persons vaccinated before age-breakouts included NOT counted"
+         ) +
+    facet_wrap(~age) + 
+    scale_color_discrete("Census\nRegion")
+
+vaxPerCap_210717_func_v4 %>% 
+    filter(vxcgte65_perday < 0) %>% 
+    arrange(vxcgte65_perday) %>% 
+    select(state, date, vxcgte65_perday, vxc1864_perday, vxc0017_perday, everything())
+
+vaxPerCap_210717_func_v4 %>% 
+    filter(vxc1864_perday < 0) %>% 
+    arrange(vxc1864_perday) %>% 
+    select(state, date, vxcgte65_perday, vxc1864_perday, vxc0017_perday, everything())
+
+vaxPerCap_210717_func_v4 %>% 
+    filter(vxc0017_perday < 0) %>% 
+    arrange(vxc0017_perday) %>% 
+    select(state, date, vxcgte65_perday, vxc1864_perday, vxc0017_perday, everything())
+
+```
+
+The data continue to be in better shape, with rolling-7 smoothing out many of the negative/positive swings.  Next steps are to further investigate Texas (65+) and the April 6 data for 65+ and 18-64.  It appears that most of the 65+ data is a bolus on April 6, which may need to be smoothed backwards.
