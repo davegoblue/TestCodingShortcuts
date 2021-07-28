@@ -1368,3 +1368,174 @@ vaxPerCap_210717_func_v4 %>%
 ```
 
 The data continue to be in better shape, with rolling-7 smoothing out many of the negative/positive swings.  Next steps are to further investigate Texas (65+) and the April 6 data for 65+ and 18-64.  It appears that most of the 65+ data is a bolus on April 6, which may need to be smoothed backwards.
+
+Function updateByDay() is updated to allow for subsetting by specific states:  
+```{r, fig.height=9, fig.width=9}
+
+updateByDay <- function(df, 
+                        dateStart, 
+                        dateEnd=NULL,
+                        nDates=NULL,
+                        allDates=FALSE,
+                        updateStates=NULL,
+                        varGroup=c("state"), 
+                        varSort=c("date"), 
+                        exprList=list()
+                        ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: the data frame to be processed
+    # dateStart: the starting date for the changes
+    # dateEnd: the ending date for the changes (NULL means infer from dateStart and nDates)
+    # nDates: the number of days to include (if not NULL, dateEnd is set to dateStart + nDates - 1)
+    # allDates: boolean, if TRUE run the function for all dates at once rather than date by date
+    # updateStates: the states to be updated (NULL means all)
+    # varGroup: data should be grouped by this variable
+    # exprList: expression list for variable changes, passed as fullList to colMutater()
+
+    # Convert dateStart to date if not already in that format
+    if ("character" %in% class(dateStart)) dateStart <- as.Date(dateStart)
+    if (!("Date") %in% class(dateStart)) stop("\nArgument dateStart must be a Date object or character YYYY-MM-DD\n")
+    
+    # Create dateEnd from nDates if needed
+    if (is.null(dateEnd) & !isTRUE(allDates)) {
+        if (is.null(nDates)) stop("\nMust pass either dateEnd or nDates or specify allDates=TRUE\n")
+        dateEnd <- dateStart + nDates - 1
+    }
+    if ("character" %in% class(dateEnd)) dateEnd <- as.Date(dateEnd)
+    if (!("Date") %in% class(dateEnd) & !isTRUE(allDates)) 
+        stop("\nArgument allDates must be TRUE or dateEnd must be a Date object or character YYYY-MM-DD\n")
+    
+    # Declare the dates to be investigated
+    if (!isTRUE(allDates)) { 
+        keyDates <- seq.Date(from=dateStart, to=dateEnd, by=1)
+        cat("\nData will be modified as needed for dates:",  keyDates, "\n")
+    }
+    
+    # Set the key states to be investigated if passed as NULL
+    if (is.null(updateStates)) updateStates <- df %>% pull(state) %>% unique() %>% sort()
+    
+    # Arrange and group the data as requested
+    df <- df %>%
+        arrange(across(all_of(c(varGroup, varSort)))) %>%
+        group_by(across(all_of(varGroup)))
+    
+    # Make updates for each of the keyDates
+    if (!isTRUE(allDates)) {
+        for (keyDate in keyDates) {
+            df <- df %>%
+                mutate(modThis=(date %in% keyDate) & (state %in% updateStates)) %>%
+                colMutater(fullList=exprList) %>%
+                select(-modThis)
+        }
+    } else {
+        df <- df %>%
+            mutate(modThis=state %in% updateStates) %>%
+            colMutater(fullList=exprList) %>%
+            select(-modThis)
+    }
+    
+    df
+    
+}
+
+fullModList <- list("vxcgte18"=expression(ifelse(modThis, lag(vxcgte18) + vxc - lag(vxc), vxcgte18)))
+txModList <- list("vxc"=expression(ifelse(modThis, zoo::rollmean(vxc, k=7, fill=NA), vxc)), 
+                  "vxcgte18"=expression(ifelse(modThis, zoo::rollmean(vxcgte18, k=7, fill=NA), vxcgte18)),
+                  "vxcgte65"=expression(ifelse(modThis, zoo::rollmean(vxcgte65, k=7, fill=NA), vxcgte65))
+                  )
+
+vaxPerCap_210717_func_v4_new <- updateByDay(vaxPerCap_210717_func_v2, 
+                                            dateStart="2021-04-03", 
+                                            dateEnd="2021-04-06", 
+                                            exprList=fullModList
+                                            ) %>%
+    updateByDay(dateStart="2020-01-01", allDates=TRUE, updateStates=c("TX"), exprList=txModList) %>%
+    colMutater(fullList=subGroupList) %>%
+    colMutater(fullList=perDayList) %>%
+    ungroup()
+
+vaxPerCap_210717_func_v4_new %>%
+    select(state, date, vxcgte65_perday, vxc1864_perday, vxc0017_perday) %>%
+    pivot_longer(-c(state, date)) %>%
+    mutate(age=stringr::str_replace_all(name, "vxc|_perday", "")) %>%
+    select(state, date, age, perday=value) %>%
+    left_join(popState, by=c("state", "age")) %>%
+    mutate(perday_percap=perday/pop) %>%
+    arrange(state, date, age) %>%
+    group_by(state, age) %>%
+    helperRollingAgg("perday_percap", newName="perday_percap7") %>%
+    ungroup() %>% 
+    filter(!is.na(perday_percap7), state != "DC") %>%
+    ggplot(aes(x=date, y=1000*perday_percap7)) + 
+    geom_line(aes(group=state, color=state.region[match(state, state.abb)])) + 
+    labs(x=NULL, 
+         y="Completed per thousand (rolling 7-day)", 
+         title="Newly fully vaccinated by day", 
+         subtitle="Persons vaccinated before age-breakouts included NOT counted"
+         ) +
+    facet_wrap(~age) + 
+    scale_color_discrete("Census\nRegion")
+
+vaxPerCap_210717_func_v4_new %>% 
+    filter(vxcgte65_perday < 0) %>% 
+    arrange(vxcgte65_perday) %>% 
+    select(state, date, vxcgte65_perday, vxc1864_perday, vxc0017_perday, everything())
+
+vaxPerCap_210717_func_v4_new %>% 
+    filter(vxc1864_perday < 0) %>% 
+    arrange(vxc1864_perday) %>% 
+    select(state, date, vxcgte65_perday, vxc1864_perday, vxc0017_perday, everything())
+
+vaxPerCap_210717_func_v4_new %>% 
+    filter(vxc0017_perday < 0) %>% 
+    arrange(vxc0017_perday) %>% 
+    select(state, date, vxcgte65_perday, vxc1864_perday, vxc0017_perday, everything())
+
+vaxPerCap_210717_func_v4_new %>% 
+    filter(state=="TX") %>% 
+    select(date, vxc, vxcgte65, vxcgte18) %>% 
+    mutate(across(where(is.numeric), ~.-lag(.), .names="d_{.col}")) %>% 
+    pivot_longer(-date) %>% 
+    group_by(name) %>% 
+    filter(!is.na(value), lag(value) != 0) %>% 
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(color=name, group=name)) + 
+    facet_wrap(~name, scales="free_y")
+
+vaxPerCap_210717_func_v4_new %>% 
+    filter(state=="TX") %>% 
+    select(date, vxc, vxcgte65, vxcgte18) %>% 
+    mutate(across(where(is.numeric), ~.-lag(.), .names="d_{.col}")) %>% 
+    select(date, starts_with("d_")) %>%
+    pivot_longer(-date) %>% 
+    group_by(name) %>% 
+    filter(!is.na(value), lag(value) != 0) %>% 
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(color=name, group=name))
+
+vaxPerCap_210717_func_v4_new %>% 
+    filter(state=="FL") %>% 
+    select(date, vxc, vxcgte65, vxcgte18) %>% 
+    mutate(across(where(is.numeric), ~.-lag(.), .names="d_{.col}")) %>% 
+    pivot_longer(-date) %>% 
+    group_by(name) %>% 
+    filter(!is.na(value), lag(value) != 0) %>% 
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(color=name, group=name)) + 
+    facet_wrap(~name, scales="free_y")
+
+vaxPerCap_210717_func_v4_new %>% 
+    filter(state=="FL") %>% 
+    select(date, vxc, vxcgte65, vxcgte18) %>% 
+    mutate(across(where(is.numeric), ~.-lag(.), .names="d_{.col}")) %>% 
+    select(date, starts_with("d_")) %>%
+    pivot_longer(-date) %>% 
+    group_by(name) %>% 
+    filter(!is.na(value), lag(value) != 0) %>% 
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(color=name, group=name))
+
+```
+
+There is still work to do with the timing by age cohort, particularly around April 6.
