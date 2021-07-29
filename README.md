@@ -2505,4 +2505,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v002 investigates implied negative spikes in vaccination  
 * Coronavirus_CDC_Daily_v002 includes updateByDay() for negative spikes in vaccination  
 * Coronavirus_CDC_Daily_v002 continues exploring age-bucket vaccination splits  
+* Coronavirus_CDC_Daily_v002 adapts readRunCDCDaily() to read and process vaccines data  
   
