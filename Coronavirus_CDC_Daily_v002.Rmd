@@ -1962,3 +1962,48 @@ cdc_daily_210728_vaxonly$dfPerCapita %>%
 ```
 
 The process appears to read and process vaccines data as intended.  Next steps are to update the plotting routines for segments to include vaccines data.
+
+A plot is created for the per-capita hospitalizations by state, with vaccines data overlaid:  
+```{r, fig.height=9, fig.width=9}
+
+newHosp_210727 <- readFromRDS("cdc_daily_210727")[["dfRaw"]][["cdcHosp"]] %>% 
+    select(state, date, contains("_covid_confirmed"), -contains("coverage")) %>% 
+    group_by(date, grp=state) %>% 
+    summarize(across(where(is.numeric), sum, na.rm=TRUE), .groups="drop") %>% 
+    pivot_longer(-c(date, grp)) %>% 
+    filter(value >= 0, grepl(pattern="_[2-8]", name), date >= "2020-08-01") %>% 
+    mutate(name=stringr::str_replace(name, pattern="previous_day_admission_", replacement="")) %>% 
+    group_by(name, grp) %>% 
+    helperRollingAgg(origVar="value", newName="value7") %>% ungroup() %>% 
+    filter(!is.na(value7)) %>% 
+    inner_join(getStateData(keepVars=c("state", "pop")), by=c("grp"="state"))
+
+newHosp_210727 %>%
+    ggplot(aes(x=date, y=1000000*value7/pop)) + 
+    geom_col(aes(fill=stringr::str_replace(name, pattern="adult_covid_confirmed_", replacement="")), 
+             position="stack"
+             ) + 
+    geom_line(data=cdc_daily_210728_vaxonly$dfPerCapita %>%
+                  select(date, grp=state, vxcpm) %>%
+                  mutate(vxcpct=100*vxcpm/1000000) %>%
+                  filter(date >= "2020-08-01"), 
+              aes(x=date, y=vxcpct), 
+              lty=2
+              ) +
+    facet_wrap(~grp) + 
+    scale_fill_discrete("Age Bucket") + 
+    labs(x=NULL, 
+         y="Newly hospitalized (per million total population in state)", 
+         title="Newly hospitalized for COVID (Aug 2020 - Jul 2021)", 
+         subtitle="Denominator is always total state population, not population by cohort"
+         ) + 
+    scale_x_date(date_breaks="3 months", date_labels="%b-%y") + 
+    scale_y_continuous(sec.axis=sec_axis(~., name="Percent fully vaccinated (dotted line)")) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), 
+          legend.position="bottom"
+          ) + 
+    guides(fill = guide_legend(nrow = 1))
+
+```
+  
+Plotting on the secondary axis should be updated so it does not depend on the current good fortune that maximum newly hospitalized per day is 100.
