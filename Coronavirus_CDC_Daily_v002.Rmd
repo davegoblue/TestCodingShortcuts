@@ -2007,3 +2007,207 @@ newHosp_210727 %>%
 ```
   
 Plotting on the secondary axis should be updated so it does not depend on the current good fortune that maximum newly hospitalized per day is 100.
+
+Function diagnoseClusters() and related functions are updated to include vaccines data:  
+```{r, fig.height=9, fig.width=9}
+
+# Updated function for more flexibility in creating weighted aggregates
+combineAggData <- function(df, 
+                           aggTo=c("cluster", "date"), 
+                           wm_aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"),
+                           aggBy=list("agg1"=list(aggFunc=specNA(specSumProd), 
+                                                  aggVars=c("pop"), 
+                                                  wtVar=NULL, 
+                                                  prefix=NULL
+                                                  ), 
+                                      "agg2"=list(aggFunc=specNA(weighted.mean), 
+                                                  aggVars=wm_aggVars, 
+                                                  wtVar="pop", 
+                                                  prefix="wm_"
+                                                  )
+                                      ),
+                           fnJoin=dplyr::full_join
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a data frame containing data for summarizing to an aggregate
+    # aggTo: the level to which data should be aggregated
+    # wm_aggVars: variables for which a population weighted mean should be created for the cluster total
+    # aggBy: a list of lists directing the creation of aggregates
+    # fnJoin: a function for joining the relevant aggTo aggregates
+    
+    # Create an empty aggregation list
+    aggList <- list()
+    
+    # Create the aggregates based on the instruction list
+    # Potentially update later so that the instructions can be skipped when the defaults should be used
+    for (ctr in seq_along(aggBy)) {
+        aggList[[ctr]] <- df %>%
+            createGroupAgg(aggTo=aggTo, 
+                           aggFunc=aggBy[[ctr]]$aggFunc, 
+                           aggVars=aggBy[[ctr]]$aggVars,
+                           wtVar=aggBy[[ctr]]$wtVar, 
+                           prefix=aggBy[[ctr]]$prefix
+            )
+    }
+    
+    # Return the joined data
+    joinFrames(aggList, fnJoin=fnJoin, keyJoin=aggTo)
+    
+}
+
+
+
+# Updated for more options in plot 4, including vaccinated (total and 65+)
+createSummary <- function(df, 
+                          p4AggVars=c("wm_tcpm7", "wm_tdpm7", "wm_hpm7"),
+                          stateClusterDF=NULL,
+                          brewPalette=NA
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: an integrated data frame by cluster-date
+    # p4AggVars: variables to be used for aggregates in plot 4
+    # stateClusterDF: a data frame containing state-cluster (NULL means it can be found in df)
+    # brewPalette: character string for a palette from RColorBrewer to be used (NA means default colors)
+    
+    # Create plots that can be relevant for a dashboard, including:
+    # 1. Map of segments
+    # 2. Bar plot of counts by segment
+    # 3. Facetted bar plot of segment descriptors (e.g., population, burden per million)
+    # 4. Facetted trend-line plot of burden by segments
+    
+    # Create a map of the clusters
+    p1 <- helperSummaryMap(if(is.null(stateClusterDF)) df else stateClusterDF, 
+                           discreteValues=TRUE, 
+                           labelScale=is.na(brewPalette), 
+                           textLabel=c("RI", "CT", "DE", "MD", "DC"),
+                           extraArgs=if(is.na(brewPalette)) list() else 
+                               list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                           )
+    
+    # Create a bar plot of counts by segment
+    p2 <- helperSummaryMap(if(is.null(stateClusterDF)) df else stateClusterDF, 
+                           discreteValues=TRUE, 
+                           labelScale=is.na(brewPalette), 
+                           countOnly=TRUE,
+                           extraArgs=if(is.na(brewPalette)) list() else 
+                               list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                           )
+    
+    # Create plot for population and burden by cluster
+    p3 <- df %>%
+        helperAggTotal(aggVars=c("pop", "wm_tcpm7", "wm_tdpm7"), 
+                       mapper=c("pop"="Population (millions)", 
+                                "wm_tcpm7"="Cases per thousand", 
+                                "wm_tdpm7"="Deaths per million"
+                                ), 
+                       xLab=NULL, 
+                       yLab=NULL, 
+                       title=NULL,
+                       divideBy=c("pop"=1000000, "wm_tcpm7"=1000), 
+                       extraArgs=if(is.na(brewPalette)) list() else 
+                           list("arg1"=scale_fill_brewer("Cluster", palette=brewPalette))
+                       )
+    
+    # Create plot for cumulative burden per million over time
+    p4xtra <- list(arg1=scale_x_date(date_breaks="2 months", date_labels="%b-%y"), 
+                   arg2=theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+                   )
+    if(!is.na(brewPalette)) p4xtra$arg3 <- scale_color_brewer("Cluster", palette=brewPalette)
+    p4 <- df %>%
+        helperAggTrend(aggVars=p4AggVars, 
+                       mapper=c("wm_tcpm7"="Cases per thousand\n(cumulative)", 
+                                "wm_tdpm7"="Deaths per million\n(cumulative)", 
+                                "wm_hpm7"="Hospitalized per million\n(current)", 
+                                "wm_vxcpm7"="Fully vaccinated\n(% of total pop)",
+                                "wm_vxcgte65pct"="Fully vaccinated\n(% of total pop 65+)"
+                                ),
+                       yLab=NULL,
+                       title=NULL, 
+                       divideBy=c("wm_tcpm7"=1000, "wm_vxcpm7"=1000000, "wm_vxcgte65pct"=100), 
+                       linesize=0.75,
+                       extraArgs=p4xtra
+                       )
+    
+    list(p1=p1, p2=p2, p3=p3, p4=p4)
+    
+}
+
+
+
+# Function to create diagnoses and plots for clustering data
+diagnoseClusters <- function(lst, 
+                             lstExtract=fullListExtract,
+                             clusterFrame=clustersToFrame(lst),
+                             wm_aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"),
+                             brewPalette=NA, 
+                             printSummary=TRUE, 
+                             printDetailed=TRUE
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a list containing processed clustering data
+    # lstExtract: the elements to extract from lst with an optional function for converting the elements
+    #             NULL means use the extracted element as-is
+    # clusterFrame: the clusters to be plotted (default is to match to useClusters)
+    # wm_aggVars: variables where a population-weighted mean should be produced for the cluster-aggregate
+    # brewPalette: the color palette to use with scale_*_brewer()
+    #              default NA means use the standard color/fill profile
+    # printSummary: boolean, should summary plots be printed to the log?
+    # printDetailed: boolean, should detailed plots be printed to the log?
+    
+    # Create the integrated and aggregate data from lst
+    dfFull <- integrateData(lst, lstExtract=lstExtract, otherDF=list(clusterFrame))
+    dfAgg <- combineAggData(dfFull, wm_aggVars=wm_aggVars)
+    
+    # Create the main summary plots
+    summaryPlots <- createSummary(dfAgg, stateClusterDF=clusterFrame, brewPalette=brewPalette)
+    
+    # Create the detailed summaries
+    detPlots <- createDetailedSummaries(dfDetail=dfFull, dfAgg=dfAgg, brewPalette=brewPalette)
+    
+    # Print the summary plots if requested
+    if (isTRUE(printSummary)) {
+        gridExtra::grid.arrange(summaryPlots$p1 + theme(legend.position="none"), 
+                                summaryPlots$p3 + theme(legend.position="left"), 
+                                summaryPlots$p4, 
+                                layout_matrix=rbind(c(1, 2), 
+                                                    c(3, 3)
+                                )
+        )
+    }
+    
+    # Print the detailed plots if requested
+    if (isTRUE(printDetailed)) purrr::walk(detPlots, .f=print)
+    
+    # Return a list of the key plotting files
+    list(dfFull=dfFull, 
+         dfAgg=dfAgg, 
+         plotClusters=clusterFrame, 
+         summaryPlots=summaryPlots, 
+         detPlots=detPlots
+    )
+    
+}
+
+```
+  
+The updated functions are run to confirm that they still work with legacy (no vaccines) data:  
+```{r, fig.height=9, fig.width=9}
+
+# Create the cluster assessments
+plotDataList_210727 <- diagnoseClusters(lst=list("stateData"=readFromRDS("cdc_daily_210727")[["stateData"]], 
+                                                 "dfPerCapita"=readFromRDS("cdc_daily_210727")[["dfPerCapita"]], 
+                                                 "useClusters"=readFromRDS("cdc_daily_210727")[["useClusters"]]
+                                                 ), 
+                                        lstExtract=list("stateData"=
+                                                            function(x) colSelector(x, vecSelect=c("state", "pop")), 
+                                                        "dfPerCapita"=NULL
+                                                        ),
+                                        brewPalette="Paired"
+                                        )
+
+```
+  
+The defaults continue to work for legacy (no vaccines) data.  Next steps are to mock up a full dfPerCapita and update plots for vaccines data.
