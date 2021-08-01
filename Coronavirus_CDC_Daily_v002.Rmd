@@ -2210,4 +2210,118 @@ plotDataList_210727 <- diagnoseClusters(lst=list("stateData"=readFromRDS("cdc_da
 
 ```
   
-The defaults continue to work for legacy (no vaccines) data.  Next steps are to mock up a full dfPerCapita and update plots for vaccines data.
+The defaults continue to work for legacy (no vaccines) data.  
+
+Vaccines data are integrated with burden data for a full per-capita file, and diagnoseClusters() is further updated for a complete plot by cluster:  
+```{r, fig.height=9, fig.width=9}
+
+# Function to create diagnoses and plots for clustering data
+diagnoseClusters <- function(lst, 
+                             lstExtract=fullListExtract,
+                             clusterFrame=clustersToFrame(lst),
+                             wm_aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"),
+                             summaryAggVars=c("wm_tcpm7", "wm_tdpm7", "wm_hpm7"),
+                             detailAggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"),
+                             brewPalette=NA, 
+                             printSummary=TRUE, 
+                             printDetailed=TRUE
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a list containing processed clustering data
+    # lstExtract: the elements to extract from lst with an optional function for converting the elements
+    #             NULL means use the extracted element as-is
+    # clusterFrame: the clusters to be plotted (default is to match to useClusters)
+    # wm_aggVars: variables where a population-weighted mean should be produced for the cluster-aggregate
+    # summaryAggVars: variables to be included in plot 4 for the overall summary
+    # detailAggVars: variables to be included in plot 2 for the detailed summary
+    # brewPalette: the color palette to use with scale_*_brewer()
+    #              default NA means use the standard color/fill profile
+    # printSummary: boolean, should summary plots be printed to the log?
+    # printDetailed: boolean, should detailed plots be printed to the log?
+    
+    # Create the integrated and aggregate data from lst
+    dfFull <- integrateData(lst, lstExtract=lstExtract, otherDF=list(clusterFrame))
+    dfAgg <- combineAggData(dfFull, wm_aggVars=wm_aggVars)
+    
+    # Create the main summary plots
+    summaryPlots <- createSummary(dfAgg, 
+                                  stateClusterDF=clusterFrame, 
+                                  brewPalette=brewPalette, 
+                                  p4AggVars=summaryAggVars
+                                  )
+    
+    # Create the detailed summaries
+    detPlots <- createDetailedSummaries(dfDetail=dfFull, 
+                                        dfAgg=dfAgg, 
+                                        brewPalette=brewPalette, 
+                                        p2DetMetrics=detailAggVars, 
+                                        mapper=c("tcpm"="Cases per million\n(cumulative)", 
+                                                 "tdpm"="Deaths per million\n(cumulative)", 
+                                                 "cpm7"="Cases\nper million", 
+                                                 "dpm7"="Deaths\nper million",
+                                                 "hpm7"="Hospitalized\nper million",
+                                                 "tdpm7"="Deaths (cum)\nper million",
+                                                 "tcpm7"="Cases (cum)\nper million", 
+                                                 "vxcpm7"="Fully vaccinated\nper million", 
+                                                 "vxcgte65pct"="Fully vacinated\n65+ (%)"
+                                                 )
+                                        )
+    
+    # Print the summary plots if requested
+    if (isTRUE(printSummary)) {
+        gridExtra::grid.arrange(summaryPlots$p1 + theme(legend.position="none"), 
+                                summaryPlots$p3 + theme(legend.position="left"), 
+                                summaryPlots$p4, 
+                                layout_matrix=rbind(c(1, 2), 
+                                                    c(3, 3)
+                                )
+        )
+    }
+    
+    # Print the detailed plots if requested
+    if (isTRUE(printDetailed)) purrr::walk(detPlots, .f=print)
+    
+    # Return a list of the key plotting files
+    list(dfFull=dfFull, 
+         dfAgg=dfAgg, 
+         plotClusters=clusterFrame, 
+         summaryPlots=summaryPlots, 
+         detPlots=detPlots
+    )
+    
+}
+
+
+
+vaxNames <- names(vaxPerCap_210717_func_v4_new)
+burdenNames <- names(readFromRDS("cdc_daily_210727")[["dfPerCapita"]])
+cat("\nVariables in both burden data and vaccines data are:", intersect(vaxNames, burdenNames), "\n")
+
+# Create updated dfPerCapita
+dfPerCapita_210716 <- readFromRDS("cdc_daily_210727")[["dfPerCapita"]] %>%
+    filter(date <= "2021-07-16") %>%
+    left_join(vaxPerCap_210717_func_v4_new, by=c("state", "date")) %>%
+    checkUniqueRows(uniqueBy=c("state", "date"))
+
+# Create the cluster assessments
+plotDataList_210716 <- diagnoseClusters(lst=list("stateData"=readFromRDS("cdc_daily_210727")[["stateData"]], 
+                                                 "dfPerCapita"=dfPerCapita_210716, 
+                                                 "useClusters"=readFromRDS("cdc_daily_210727")[["useClusters"]]
+                                                 ), 
+                                        lstExtract=list("stateData"=
+                                                            function(x) colSelector(x, vecSelect=c("state", "pop")), 
+                                                        "dfPerCapita"=NULL
+                                                        ),
+                                        wm_aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7", 
+                                                     "vxcpm7", "vxcgte65pct"
+                                                     ),
+                                        detailAggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7", 
+                                                        "vxcpm7", "vxcgte65pct"
+                                                        ),
+                                        brewPalette="Paired"
+                                        )
+
+```
+  
+Next steps are to make two plots for the detailed summary and to include vaccinations as a chart of total vs. growth.
