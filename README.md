@@ -2508,4 +2508,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v002 adapts readRunCDCDaily() to read and process vaccines data  
 * Coronavirus_CDC_Daily_v002 plots hospitalization and vaccination by state  
 * Coronavirus_CDC_Daily_v002 adapts diagnoseClusters() for vaccination by state  
+* Coronavirus_CDC_Daily_v002 adapts diagnoseClusters() for additional weighted metrics  
   
