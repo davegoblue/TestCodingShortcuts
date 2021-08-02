@@ -2510,3 +2510,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v002 adapts diagnoseClusters() for vaccination by state  
 * Coronavirus_CDC_Daily_v002 adapts diagnoseClusters() for additional weighted metrics  
   
+### Expansions week of 26-JUL-2021  
+* Coronavirus_CDC_Daily_v002 adapts readRunCDCDaily() to integrate cases, deaths, hospitalizations, and vaccines data  
+  
