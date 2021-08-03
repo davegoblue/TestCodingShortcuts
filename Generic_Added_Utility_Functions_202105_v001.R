@@ -35,6 +35,9 @@
 # 32. helperPerCapita() -  generic function for making rolling per-capita data for a column
 # 33. helperRollingAgg() - generic function to make rolling-k data
 # 34. helperElbow() - generic function to make elbow and silhouette plots from kmeans and distance data
+# 35. zeroPad() - generic function for zero-padding a number/character (output as character)
+# 36. zeroPad2() - zeroPad() with argument width=2 preset
+# 37. zeroPad5() - zeroPad() with argument width=5 preset
 
 # Function for saving an R object to RDS, including a check for whether the object already exists
 saveToRDS <- function(obj, 
@@ -318,17 +321,24 @@ checkControl <- function(df,
 # Generic function for filtering rows based on criteria
 rowFilter <- function(df, 
                       lstFilter=list(), 
+                      lstExclude=list(),
                       ...
                       ) {
     
     # FUNCTION ARGUMENTS
     # df: tibble or data frame
     # lstFilter: a list for filtering records, of form list("field"=c("allowed values"))
+    # lstExclude: a list for filtering records, of form list("field"=c("disallowed values"))
     # ...: additional arguments (not currently used)
     
     # Run the filtering for each element of lstFilter
     for (colName in names(lstFilter)) {
         df <- df %>% filter(.data[[colName]] %in% lstFilter[[colName]])
+    }
+    
+    # Run the filtering for each element of lstExclude
+    for (colName in names(lstExclude)) {
+        df <- df %>% filter(!(.data[[colName]] %in% lstExclude[[colName]]))
     }
     
     # Return the filtered data frame
@@ -868,12 +878,13 @@ genNewLog <- function(writeLog, ovrwriteLog=TRUE) {
 
 
 
-# Generic function for processing a raw file
+# Generic function for processing a raw file (last updated 02-AUG-2021)
 processRawFile <- function(df, 
                            vecRename=c(), 
                            vecSelect=NULL,
                            lstCombo=list(), 
-                           lstFilter=list()
+                           lstFilter=list(), 
+                           lstExclude=list()
                            ) {
     
     # FUNCTION ARGUMENTS:
@@ -883,6 +894,7 @@ processRawFile <- function(df,
     # lstCombo: a nested list of combinations to be applied
     #           each element of the list should include comboVar, uqVars, vecCombo, and fn
     # lstFilter: a list for filtering records, of form list("field"=c("allowed values"))
+    # lstExclude: a list for filtering records, of form list("field"=c("disallowed values"))
     
     # STEP 1: Rename and select variables (selection occurs AFTER renaming)
     dfProcess <- df %>%
@@ -896,7 +908,7 @@ processRawFile <- function(df,
                         uqVars=lstCombo[[ctr]]$uqVars, 
                         vecCombo=lstCombo[[ctr]]$vecCombo, 
                         fn=lstCombo[[ctr]]$fn
-            )
+                        )
     }
     
     # STEP 3: Filter records
@@ -904,7 +916,7 @@ processRawFile <- function(df,
         summarize(across(where(is.numeric), sum, na.rm=TRUE), n=n()) %>% 
         mutate(isType="before")
     dfProcess <- dfProcess %>% 
-        rowFilter(lstFilter=lstFilter)
+        rowFilter(lstFilter=lstFilter, lstExclude=lstExclude)
     
     # STEP 4: Report on differences
     cat("\nColumn sums before and after applying filtering rules:\n")
@@ -929,10 +941,12 @@ processRawFile <- function(df,
 
 
 # Generic function to create per-capita metrics using an existing file and source of population data
+# (last updated 02-AUG-2021)
 createPerCapita <- function(lst, 
                             uqBy,
                             popData,
                             mapper,
+                            asIsVars=c(),
                             lstSortBy=uqBy,
                             fnJoin=dplyr::full_join, 
                             popJoinBy="state",
@@ -947,6 +961,7 @@ createPerCapita <- function(lst,
     # uqBy: character string that the input file is unique by (will be the join keys if a list is passed)
     # popData: file containing population data that can be joined to the processed lst
     # mapper: mapping file of c('current name'='per capita name') for mapping variables
+    # asIsVars: variables to be kept, but without creating pm or pm7
     # lstSortBy: the sorting that should be used for creating rolling metrics
     # fnJoin: The function to be used for joining files
     # popJoinBy: character string for the variable(s) to be used in joining popData to lst
@@ -961,8 +976,8 @@ createPerCapita <- function(lst,
     # Step 2: Sort the data using sortBy
     df <- dplyr::arrange(lst, across(all_of(lstSortBy)))
     
-    # Step 3: Check that all variables other than uqBy can be mapped using mapper
-    keyVars <- setdiff(names(df), uqBy)
+    # Step 3: Check that all variables other than uqBy and asIsVars can be mapped using mapper
+    keyVars <- setdiff(names(df), c(uqBy, asIsVars))
     if (any(isFALSE(keyVars %in% mapper))) stop("\nVariable is missing in per capita mapper file\n")
     
     # Step 4: Run the per capita mapping process
@@ -974,7 +989,7 @@ createPerCapita <- function(lst,
                               sortVar=setdiff(lstSortBy, popJoinBy), 
                               popVar=popVar, 
                               mult=mult
-    )
+                              )
     
     # Return the data frame
     df
@@ -1145,3 +1160,14 @@ helperElbow <- function(mtx,
     }
     
 }
+
+
+
+# Function for zero-padding a character string
+zeroPad <- function(x, width, side="left", pad="0", convChar=TRUE) {
+    stringr::str_pad(if(convChar) as.character(x) else x, width=width, side=side, pad=pad)
+}
+zeroPad2 <- function(x, ...) zeroPad(x, width=2, ...)
+zeroPad5 <- function(x, ...) zeroPad(x, width=5, ...)
+
+
