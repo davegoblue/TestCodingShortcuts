@@ -2512,4 +2512,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 26-JUL-2021  
 * Coronavirus_CDC_Daily_v002 adapts readRunCDCDaily() to integrate cases, deaths, hospitalizations, and vaccines data  
+* Coronavirus_CDC_Daily_Functions_v001.R contains functions for working with CDC daily data  
   
