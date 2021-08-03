@@ -16,11 +16,11 @@
 # 13. createDetailedSummaries() - function for creating detailed summaries by cluster
 # 14. clustersToFrame() - function to convert useClusters to an appropriate tibble for further analysis
 
-# Function to download/load, process, segment, and analyze data for CDC daily
+# Function to download/load, process, segment, and analyze data for CDC daily (last updated 02-AUG-2021)
 readRunCDCDaily <- function(thruLabel, 
-                            downloadTo=list("cdcDaily"=NA, "cdcHosp"=NA), 
+                            downloadTo=list("cdcDaily"=NA, "cdcHosp"=NA, "vax"=NA), 
                             readFrom=downloadTo, 
-                            compareFile=list("cdcDaily"=NA, "cdcHosp"=NA),
+                            compareFile=list("cdcDaily"=NA, "cdcHosp"=NA, "vax"=NA),
                             writeLog=NULL,
                             ovrwriteLog=TRUE,
                             dfPerCapita=NULL,
@@ -29,6 +29,8 @@ readRunCDCDaily <- function(thruLabel,
                             returnList=!isTRUE(hierarchical), 
                             kCut=6,
                             reAssignState=vector("list", 0),
+                            weightedMeanAggs=eval(formals(diagnoseClusters)$wm_aggVars),
+                            detailedPlotAggs=weightedMeanAggs,
                             skipAssessmentPlots=FALSE,
                             brewPalette=NA,
                             ...
@@ -55,6 +57,8 @@ readRunCDCDaily <- function(thruLabel,
     # kCut: number of segments when cutting the hierarchical tree
     # reAssignState: mapping file for assigning a state to another state's cluster
     #                format list("stateToChange"="stateClusterToAssign")
+    # weightedMeanAggs: variables where a population-weighted cluster mean should be created
+    # detailedPlotAggs: variables that should be included in the cluster-level disease evolution detailed plots
     # skipAssessmentPlots: boolean to skip the plots for assessClusters()
     #                      especially useful if just exploring dendrograms or silhouette widths
     # brewPalette: create plots using this color scheme (needs to be valid in ggplot2::scale_*_brewer())
@@ -69,7 +73,7 @@ readRunCDCDaily <- function(thruLabel,
              dfPerCapita=dfPerCapita, 
              useClusters=useClusters, 
              plotDataList=if(plots) plotDataList else NULL
-        )
+             )
     }
     
     # STEP 1: Get state data
@@ -113,7 +117,8 @@ readRunCDCDaily <- function(thruLabel,
         dfPerCapita <- createPerCapita(dfProcessList, 
                                        uqBy=c("state", "date"), 
                                        popData=stateData, 
-                                       mapper=perCapMapper
+                                       mapper=perCapMapper, 
+                                       asIsVars=if(isTRUE(exists("asIsMapper"))) asIsMapper[[elem]] else c()
                                        )
         glimpseLog(dfPerCapita, txt="\nIntegrated per capita data file:\n", logFile=writeLog)
         
@@ -141,6 +146,8 @@ readRunCDCDaily <- function(thruLabel,
                                               "useClusters"=useClusters
                                               ), 
                                      lstExtract=lstFuns,
+                                     wm_aggVars=weightedMeanAggs,
+                                     detailAggVars=detailedPlotAggs,
                                      brewPalette=brewPalette
                                      )
     
@@ -151,7 +158,7 @@ readRunCDCDaily <- function(thruLabel,
 
 
 
-# Function to extract and format key state data
+# Function to extract and format key state data (last updated 02-AUG-2021)
 getStateData <- function(df=readFromRDS("statePop2019"), 
                          renameVars=c("stateAbb"="state", "NAME"="name", "pop_2019"="pop"), 
                          keepVars=c("state", "name", "pop")
@@ -173,7 +180,7 @@ getStateData <- function(df=readFromRDS("statePop2019"),
 
 
 
-# Function to read and check a raw data file
+# Function to read and check a raw data file (last updated 02-AUG-2021)
 readQCRawCDCDaily <- function(fileName, 
                               writeLog=NULL,
                               ovrwriteLog=TRUE,
@@ -284,7 +291,7 @@ readQCRawCDCDaily <- function(fileName,
         if (isTRUE(x$flagLargeDelta)) {
             h2 <- flagLargeDelta(h1, pctTol=x$pctTol, absTol=x$absTol, sortBy=x$sortBy, 
                                  dropNA=x$dropNA, printAll=x$printAll
-            )
+                                 )
             if (is.null(writeLog)) print(h2)
             else {
                 cat(nrow(h2), " records", sep="")
@@ -292,7 +299,7 @@ readQCRawCDCDaily <- function(fileName,
                               x$absTol, 
                               " and at least ", 
                               round(100*x$pctTol, 3), "%\n\n"
-                )
+                              )
                 printLog(h2, txt=txt, writeLog=writeLog)
             }
         }
@@ -500,10 +507,13 @@ getClusters <- function(clData, hier=FALSE, kCut=0, reAssign=list()) {
 
 
 
-# Function to create diagnoses and plots for clustering data
+# Function to create diagnoses and plots for clustering data (last updated 02-AUG-2021)
 diagnoseClusters <- function(lst, 
                              lstExtract=fullListExtract,
                              clusterFrame=clustersToFrame(lst),
+                             wm_aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"),
+                             summaryAggVars=c("wm_tcpm7", "wm_tdpm7", "wm_hpm7"),
+                             detailAggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"),
                              brewPalette=NA, 
                              printSummary=TRUE, 
                              printDetailed=TRUE
@@ -514,6 +524,9 @@ diagnoseClusters <- function(lst,
     # lstExtract: the elements to extract from lst with an optional function for converting the elements
     #             NULL means use the extracted element as-is
     # clusterFrame: the clusters to be plotted (default is to match to useClusters)
+    # wm_aggVars: variables where a population-weighted mean should be produced for the cluster-aggregate
+    # summaryAggVars: variables to be included in plot 4 for the overall summary
+    # detailAggVars: variables to be included in plot 2 for the detailed summary
     # brewPalette: the color palette to use with scale_*_brewer()
     #              default NA means use the standard color/fill profile
     # printSummary: boolean, should summary plots be printed to the log?
@@ -521,13 +534,31 @@ diagnoseClusters <- function(lst,
     
     # Create the integrated and aggregate data from lst
     dfFull <- integrateData(lst, lstExtract=lstExtract, otherDF=list(clusterFrame))
-    dfAgg <- combineAggData(dfFull)
+    dfAgg <- combineAggData(dfFull, wm_aggVars=wm_aggVars)
     
     # Create the main summary plots
-    summaryPlots <- createSummary(dfAgg, stateClusterDF=clusterFrame, brewPalette=brewPalette)
+    summaryPlots <- createSummary(dfAgg, 
+                                  stateClusterDF=clusterFrame, 
+                                  brewPalette=brewPalette, 
+                                  p4AggVars=summaryAggVars
+                                  )
     
     # Create the detailed summaries
-    detPlots <- createDetailedSummaries(dfDetail=dfFull, dfAgg=dfAgg, brewPalette=brewPalette)
+    detPlots <- createDetailedSummaries(dfDetail=dfFull, 
+                                        dfAgg=dfAgg, 
+                                        brewPalette=brewPalette, 
+                                        p2DetMetrics=detailAggVars, 
+                                        mapper=c("tcpm"="Cases per million\n(cumulative)", 
+                                                 "tdpm"="Deaths per million\n(cumulative)", 
+                                                 "cpm7"="Cases\nper million", 
+                                                 "dpm7"="Deaths\nper million",
+                                                 "hpm7"="Hospitalized\nper million",
+                                                 "tdpm7"="Deaths (cum)\nper million",
+                                                 "tcpm7"="Cases (cum)\nper million", 
+                                                 "vxcpm7"="Fully vaccinated\nper million", 
+                                                 "vxcgte65pct"="Fully vacinated\n65+ (%)"
+                                                 )
+    )
     
     # Print the summary plots if requested
     if (isTRUE(printSummary)) {
@@ -549,7 +580,7 @@ diagnoseClusters <- function(lst,
          plotClusters=clusterFrame, 
          summaryPlots=summaryPlots, 
          detPlots=detPlots
-    )
+         )
     
 }
 
@@ -560,7 +591,7 @@ integrateData <- function(lst=NULL,
                           lstExtract=list("useClusters"=function(x) clustersToFrame(x), 
                                           "stateData"=function(x) colSelector(x, vecSelect=c("state", "pop")), 
                                           "dfPerCapita"=NULL
-                          ),
+                                          ),
                           keyJoin="state",
                           fnJoin=dplyr::inner_join,
                           otherDF=list()
@@ -594,16 +625,17 @@ integrateData <- function(lst=NULL,
 
 
 
-# Function for creating an aggregate-level frame
+# Function for creating an aggregate-level frame (last updated 02-AUG-2021)
 combineAggData <- function(df, 
                            aggTo=c("cluster", "date"), 
+                           wm_aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"),
                            aggBy=list("agg1"=list(aggFunc=specNA(specSumProd), 
                                                   aggVars=c("pop"), 
                                                   wtVar=NULL, 
                                                   prefix=NULL
                                                   ), 
                                       "agg2"=list(aggFunc=specNA(weighted.mean), 
-                                                  aggVars=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7"), 
+                                                  aggVars=wm_aggVars, 
                                                   wtVar="pop", 
                                                   prefix="wm_"
                                                   )
@@ -614,6 +646,7 @@ combineAggData <- function(df,
     # FUNCTION ARGUMENTS:
     # df: a data frame containing data for summarizing to an aggregate
     # aggTo: the level to which data should be aggregated
+    # wm_aggVars: variables for which a population weighted mean should be created for the cluster total
     # aggBy: a list of lists directing the creation of aggregates
     # fnJoin: a function for joining the relevant aggTo aggregates
     
@@ -629,7 +662,7 @@ combineAggData <- function(df,
                            aggVars=aggBy[[ctr]]$aggVars,
                            wtVar=aggBy[[ctr]]$wtVar, 
                            prefix=aggBy[[ctr]]$prefix
-            )
+                           )
     }
     
     # Return the joined data
@@ -639,14 +672,16 @@ combineAggData <- function(df,
 
 
 
-# Function for creating plots that can be combined on a dashboard page
+# Function for creating plots that can be combined on a dashboard page (last updated 02-AUG-2021)
 createSummary <- function(df, 
+                          p4AggVars=c("wm_tcpm7", "wm_tdpm7", "wm_hpm7"),
                           stateClusterDF=NULL,
                           brewPalette=NA
                           ) {
     
     # FUNCTION ARGUMENTS:
     # df: an integrated data frame by cluster-date
+    # p4AggVars: variables to be used for aggregates in plot 4
     # stateClusterDF: a data frame containing state-cluster (NULL means it can be found in df)
     # brewPalette: character string for a palette from RColorBrewer to be used (NA means default colors)
     
@@ -695,17 +730,19 @@ createSummary <- function(df,
                    )
     if(!is.na(brewPalette)) p4xtra$arg3 <- scale_color_brewer("Cluster", palette=brewPalette)
     p4 <- df %>%
-        helperAggTrend(aggVars=c("wm_tcpm7", "wm_tdpm7", "wm_hpm7"), 
+        helperAggTrend(aggVars=p4AggVars, 
                        mapper=c("wm_tcpm7"="Cases per thousand\n(cumulative)", 
                                 "wm_tdpm7"="Deaths per million\n(cumulative)", 
-                                "wm_hpm7"="Hospitalized per million\n(current)"
+                                "wm_hpm7"="Hospitalized per million\n(current)", 
+                                "wm_vxcpm7"="Fully vaccinated\n(% of total pop)",
+                                "wm_vxcgte65pct"="Fully vaccinated\n(% of total pop 65+)"
                                 ),
                        yLab=NULL,
                        title=NULL, 
-                       divideBy=c("wm_tcpm7"=1000), 
+                       divideBy=c("wm_tcpm7"=1000, "wm_vxcpm7"=1000000, "wm_vxcgte65pct"=100), 
                        linesize=0.75,
                        extraArgs=p4xtra
-                       )
+        )
     
     list(p1=p1, p2=p2, p3=p3, p4=p4)
     
@@ -948,77 +985,111 @@ createDetailedSummaries <- function(dfDetail,
     # brewPalette: character string for a palette from RColorBrewer to be used (NA means default colors)    
     
     # Create plot for aggregates by sub-cluster
-    p1 <- dfDetail %>%
-        colSelector(vecSelect=c(detVar, aggVar, "date", p1Metrics)) %>%
-        pivot_longer(all_of(p1Metrics)) %>%
-        filter(!is.na(value)) %>%
-        group_by_at(detVar) %>%
-        filter(date==max(date)) %>%
-        ungroup() %>%
-        ggplot(aes(x=fct_reorder(get(detVar), 
-                                 value, 
-                                 .fun=function(x) { max(ifelse(name==p1Order, x, 0)) }
-                                 ),
-                   y=value
-                   )
-               ) + 
-        geom_col(aes(fill=cluster)) + 
-        facet_wrap(~mapper[name], scales="free_x") + 
-        coord_flip() + 
-        labs(title="Cumulative burden", x=NULL, y=NULL)
-    if (!is.na(brewPalette)) p1 <- p1 + scale_fill_brewer("Cluster", palette=brewPalette)
+    if(detVar=="state") {
+        p1 <- dfDetail %>%
+            colSelector(vecSelect=c(detVar, aggVar, "date", p1Metrics)) %>%
+            pivot_longer(all_of(p1Metrics)) %>%
+            filter(!is.na(value)) %>%
+            group_by_at(detVar) %>%
+            filter(date==max(date)) %>%
+            ungroup() %>%
+            ggplot(aes(x=fct_reorder(get(detVar), 
+                                     value, 
+                                     .fun=function(x) { max(ifelse(name==p1Order, x, 0)) }
+                                     ),
+                       y=value
+                       )
+                   ) + 
+            geom_col(aes(fill=get(aggVar))) + 
+            facet_wrap(~mapper[name], scales="free_x") + 
+            coord_flip() + 
+            labs(title="Cumulative burden", x=NULL, y=NULL)
+        if (!is.na(brewPalette)) p1 <- p1 + scale_fill_brewer("Cluster", palette=brewPalette)
+    } else {
+        # Do not create the plot for other than state-level data
+        p1 <- NULL
+    }
     
     # Create facetted burden trends by aggregate
-    p2 <- dfDetail %>%
-        colSelector(vecSelect=c(detVar, "date", aggVar, p2DetMetrics)) %>%
-        pivot_longer(all_of(p2DetMetrics)) %>%
-        filter(!is.na(value)) %>%
-        ggplot(aes(x=date, y=value)) + 
-        geom_line(aes_string(group=detVar), color="grey", size=0.5) + 
-        facet_grid(mapper[name] ~ cluster, scales="free_y") + 
-        scale_x_date(date_breaks="2 months", date_labels="%b-%y") + 
-        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
-        labs(x=NULL, y=NULL, title="Burden by cluster and metric")
+    # For state-level, create each state as a line
+    # For anything else, create a 10%-90% range
+    if (detVar=="state") {
+        p2 <- dfDetail %>%
+            colSelector(vecSelect=c(detVar, "date", aggVar, p2DetMetrics)) %>%
+            pivot_longer(all_of(p2DetMetrics)) %>%
+            filter(!is.na(value)) %>%
+            ggplot(aes(x=date, y=value)) + 
+            geom_line(aes_string(group=detVar), color="grey", size=0.5) + 
+            facet_grid(mapper[name] ~ get(aggVar), scales="free_y") + 
+            scale_x_date(date_breaks="2 months", date_labels="%b-%y") + 
+            theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+            labs(x=NULL, y=NULL, title="Burden by cluster and metric")
+    } else {
+        p2 <- dfDetail %>%
+            colSelector(vecSelect=c(detVar, "date", aggVar, p2DetMetrics)) %>%
+            pivot_longer(all_of(p2DetMetrics)) %>%
+            filter(!is.na(value)) %>%
+            group_by_at(c(aggVar, "name", "date")) %>%
+            summarize(p10=unname(quantile(value, 0.1)), p90=unname(quantile(value, 0.9)), .groups="drop") %>%
+            ggplot(aes(x=date)) + 
+            geom_ribbon(aes(ymin=p10, ymax=p90), alpha=0.75) +
+            facet_grid(mapper[name] ~ get(aggVar), scales="free_y") + 
+            scale_x_date(date_breaks="2 months", date_labels="%b-%y") + 
+            theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+            labs(x=NULL, 
+                 y=NULL, 
+                 title="Burden by cluster and metric", 
+                 subtitle="Shaded region is 10%le through 90%le, solid line is weighted mean"
+                 )
+    }
     aggPlot <- dfAgg %>% 
         colSelector(vecSelect=c("date", aggVar, p2AggMetrics)) %>%
         colRenamer(vecRename=purrr::set_names(p2DetMetrics, p2AggMetrics)) %>%
         pivot_longer(all_of(p2DetMetrics)) %>%
         filter(!is.na(value))
     p2 <- p2 + 
-        geom_line(data=aggPlot, aes_string(color=aggVar, group=aggVar), size=1.5)
+        geom_line(data=aggPlot, aes_string(color=aggVar, group=aggVar, y="value"), size=1.5)
     if (!is.na(brewPalette)) p2 <- p2 + 
         scale_color_brewer("Cluster", palette=brewPalette) + 
         theme(legend.position="none")
     
     # Create growth trends plot
-    p3 <- dfDetail %>%
-        colSelector(vecSelect=c(detVar, aggVar, "date", p3Metrics)) %>%
-        pivot_longer(all_of(p3Metrics)) %>%
-        filter(!is.na(value)) %>%
-        group_by_at(c(detVar, "name")) %>%
-        filter(date %in% c(max(date), max(date)-lubridate::days(p3Days))) %>%
-        mutate(growth=max(value)-min(value)) %>%  # not ideal way to calculate
-        filter(date==max(date)) %>%
-        ungroup() %>%
-        ggplot(aes(x=value, y=growth)) + 
-        geom_text(aes_string(color=aggVar, label=detVar), fontface="bold") + 
-        facet_wrap(~mapper[name], scales="free") + 
-        labs(title=paste0("Current vs growth"), 
-             subtitle=paste0("Dashed line represents ", 
-                             round(100*p3Slope), 
-                             "% growth rate over past ", 
-                             p3Days, 
-                             " days"
-             ),
-             x="Most recent cumulative", 
-             y=paste0("Growth over past ", p3Days, " days")
-        ) + 
-        lims(y=c(0, NA), x=c(0, NA)) + 
-        theme(panel.background = element_rect(fill = "white", colour = "white"), 
-              panel.grid.major = element_line(size = 0.25, linetype = 'solid', color = "grey")
-        ) + 
-        geom_abline(slope=p3Slope, intercept=0, lty=2)
-    if (!is.na(brewPalette)) p3 <- p3 + scale_color_brewer(stringr::str_to_title(aggVar), palette=brewPalette)
+    if (TRUE) {
+        p3 <- dfDetail %>%
+            colSelector(vecSelect=c(detVar, aggVar, "date", p3Metrics)) %>%
+            pivot_longer(all_of(p3Metrics)) %>%
+            filter(!is.na(value)) %>%
+            group_by_at(c(detVar, "name")) %>%
+            filter(date %in% c(max(date), max(date)-lubridate::days(p3Days))) %>%
+            mutate(growth=max(value)-min(value)) %>%  # not ideal way to calculate
+            filter(date==max(date)) %>%
+            ungroup() %>%
+            ggplot(aes(x=value, y=growth))
+        if(detVar=="state") p3 <- p3 + geom_text(aes_string(color=aggVar, label=detVar), fontface="bold")
+        else p3 <- p3 + geom_point(aes_string(color=aggVar)) 
+        p3 <- p3 + 
+            facet_wrap(~mapper[name], scales="free") + 
+            labs(title=paste0("Current vs growth"), 
+                 subtitle=paste0("Dashed line represents ", 
+                                 round(100*p3Slope), 
+                                 "% growth rate over past ", 
+                                 p3Days, 
+                                 " days"
+                                 ),
+                 x="Most recent cumulative", 
+                 y=paste0("Growth over past ", p3Days, " days")
+                 ) + 
+            lims(y=c(0, NA), x=c(0, NA)) + 
+            theme(panel.background = element_rect(fill = "white", colour = "white"), 
+                  panel.grid.major = element_line(size = 0.25, linetype = 'solid', color = "grey")
+                  ) + 
+            geom_abline(slope=p3Slope, intercept=0, lty=2)
+        if (!is.na(brewPalette)) { 
+            p3 <- p3 + scale_color_brewer(stringr::str_to_title(aggVar), palette=brewPalette)
+        }
+    } else {
+        p3 <- NULL
+    }
     
     # Return a list of plot objects
     list(p1=p1, p2=p2, p3=p3)
