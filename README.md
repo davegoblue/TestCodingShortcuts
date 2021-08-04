@@ -2514,4 +2514,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v002 adapts readRunCDCDaily() to integrate cases, deaths, hospitalizations, and vaccines data  
 * Coronavirus_CDC_Daily_Functions_v001.R contains updated functions for working with CDC daily data, including vaccines  
 * Generic_Added_Utility_Functions_202105_v001.R contains updated functions for data wrangling and analysis  
+* Coronavirus_CDC_Daily_Default_Mappings_v002.R contains updated mapping parameters for Coronavirus_CDC_Daily_v003  
   
