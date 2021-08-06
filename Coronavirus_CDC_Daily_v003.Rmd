@@ -131,3 +131,38 @@ saveToRDS(cdc_daily_210804)
 
 ```
 
+The raw hospital data is explored for admissions with confirmed/suspected coronavirus:  
+```{r, fig.height=9, fig.width=9}
+
+cdcHospAdmit_210804 <- cdc_daily_210804$dfRaw$cdcHosp %>%
+    select(state, date, ends_with("confirmed"), ends_with("suspected")) %>%
+    filter(state %in% c(state.abb, "DC")) %>%
+    arrange(date, state) %>%
+    pivot_longer(-c(state, date)) %>%
+    mutate(name=stringr::str_replace(name, pattern="previous_day_admission_", replacement=""), 
+           name=stringr::str_replace(name, pattern="_covid", replacement="")
+           ) %>%
+    left_join(getStateData(keepVars=c("state", "pop")), by="state") %>%
+    mutate(vpm=1000000*value/pop) %>%
+    group_by(state, name) %>%
+    mutate(vpm7=zoo::rollmean(vpm, k=7, fill=NA)) %>%
+    ungroup()
+
+cdcHospAdmit_210804 %>%
+    filter(!is.na(vpm7), state %in% state.abb) %>%
+    mutate(div=as.character(state.division)[match(state, state.abb)]) %>%
+    group_by(div, date, name) %>%
+    summarize(wt_vpm7=sum(pop*vpm7)/sum(pop), tot_pop=sum(pop), .groups="drop") %>%
+    ggplot(aes(x=date, y=wt_vpm7)) + 
+    geom_col(aes(fill=name), position="stack") + 
+    facet_wrap(~div) + 
+    scale_fill_discrete("Metric") + 
+    labs(x=NULL, 
+         y="Newly admitted for COVID per million (rolling 7-day)", 
+         title="Hospital admissions for COVID", 
+         subtitle="All metrics divided by total population (all ages) for states reporting"
+         )
+
+```
+
+Hospital coverage data became robust about a year ago.  The overwhelming majority of admissions are adult, split between confirmed and suspected cases.  Next steps are to explore changes in admissions by age groups.
