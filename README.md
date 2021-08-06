@@ -2517,4 +2517,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_Default_Mappings_v002.R contains updated mapping parameters for Coronavirus_CDC_Daily_v003  
 * Coronavirus_CDC_Daily_v003 created to run updated functions and mappings that include vaccines data  
 * Coronavirus_CDC_Daily_v003 run with latest data  
+* Coronavirus_CDC_Daily_v003 explores latest raw hospitalization data  
   
