@@ -165,4 +165,74 @@ cdcHospAdmit_210804 %>%
 
 ```
 
-Hospital coverage data became robust about a year ago.  The overwhelming majority of admissions are adult, split between confirmed and suspected cases.  Next steps are to explore changes in admissions by age groups.
+Hospital coverage data became robust about a year ago.  The overwhelming majority of admissions are adult, split between confirmed and suspected cases.  Next steps are to explore changes in admissions by age groups:  
+```{r, fig.height=9, fig.width=9}
+
+hospAge_210804 <- cdc_daily_210804$dfRaw$cdcHosp %>%
+    select(state, 
+           date, 
+           grep(x=names(.), pattern="ed_\\d.*[9+]$", value=TRUE), 
+           grep(x=names(.), pattern="pediatric.*ed$", value=TRUE)
+           ) %>% 
+    pivot_longer(-c(state, date)) %>% 
+    mutate(confSusp=ifelse(grepl(x=name, pattern="confirmed"), "confirmed", "suspected"), 
+           adultPed=ifelse(grepl(x=name, pattern="adult"), "adult", "ped"), 
+           age=ifelse(adultPed=="ped", "0-17", stringr::str_replace_all(string=name, pattern=".*_", replacement="")), 
+           age=ifelse(age %in% c("0-17", "18-19"), "0-19", age), 
+           div=as.character(state.division)[match(state, state.abb)]
+           ) 
+hospAge_210804
+
+# Plot for overall trends by age group
+p1 <- hospAge_210804 %>% 
+    filter(state %in% c(state.abb, "DC"), !is.na(value)) %>% 
+    mutate(ageBucket=age) %>% 
+    group_by(date, ageBucket) %>% 
+    summarize(value=sum(value), .groups="drop") %>% 
+    arrange(date) %>%
+    group_by(ageBucket) %>% 
+    mutate(value7=zoo::rollmean(value, k=7, fill=NA)) %>% 
+    filter(date >= "2020-08-01") %>% 
+    ggplot(aes(x=date, y=value7)) + 
+    labs(x=NULL, 
+         y="Confirmed or suspected COVID admissions (rolling-7 mean)", 
+         title="Hospital admissions for COVID by age bucket (Aug 2020 - Jul 2021)", 
+         subtitle="50 states and DC (includes confirmed and suspected from CDC data)"
+         ) + 
+    lims(y=c(0, NA))
+
+# Line plots by age group
+p1 + 
+    geom_line(aes(group=ageBucket, color=ageBucket), size=1) + 
+    scale_color_discrete("Age\nbucket")
+# Stacked bar plots by age group
+p1 + 
+    geom_col(aes(fill=ageBucket), position="stack") + 
+    scale_color_discrete("Age\nbucket")
+# Proportions by age group
+p1 + 
+    geom_col(aes(fill=ageBucket), position="fill") + 
+    scale_color_discrete("Age\nbucket")
+
+# Plot for overall trends by age group
+hospAge_210804 %>% 
+    filter(state %in% state.abb, !is.na(value)) %>% 
+    mutate(ageBucket=ifelse(age >= "60", "60+", ifelse(age=="0-19", "0-19", "20-59"))) %>% 
+    group_by(date, state, ageBucket) %>% 
+    summarize(value=sum(value), .groups="drop") %>% 
+    group_by(ageBucket, state) %>% 
+    mutate(value7=zoo::rollmean(value, k=7, fill=NA)) %>% 
+    filter(date >= "2020-06-01") %>% 
+    ggplot(aes(x=date, y=value7)) + 
+    geom_line(aes(color=ageBucket, group=ageBucket)) + 
+    scale_color_discrete("Age\nbucket") + 
+    labs(x=NULL, 
+         y="Confirmed or suspected COVID admissions (rolling-7 mean)", 
+         title="Hospital admissions for COVID by age bucket (Aug 2020 - Jul 2021)"
+         ) + 
+    lims(y=c(0, NA)) + 
+    facet_wrap(~state, scales="free_y")
+
+```
+
+Next steps are to explore alignment of the hospitalization and case/death curves.
