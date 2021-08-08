@@ -2510,7 +2510,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v002 adapts diagnoseClusters() for vaccination by state  
 * Coronavirus_CDC_Daily_v002 adapts diagnoseClusters() for additional weighted metrics  
   
-### Expansions week of 26-JUL-2021  
+### Expansions week of 02-AUG-2021  
 * Coronavirus_CDC_Daily_v002 adapts readRunCDCDaily() to integrate cases, deaths, hospitalizations, and vaccines data  
 * Coronavirus_CDC_Daily_Functions_v001.R contains updated functions for working with CDC daily data, including vaccines  
 * Generic_Added_Utility_Functions_202105_v001.R contains updated functions for data wrangling and analysis  
@@ -2519,4 +2519,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 run with latest data  
 * Coronavirus_CDC_Daily_v003 explores latest raw hospitalization data  
 * Coronavirus_CDC_Daily_v003 explores hospitalization by age  
+* Coronavirus_CDC_Daily_v003 explores alignment of cases, hospitalizations, and deaths for a single state  
   
