@@ -2521,3 +2521,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 explores hospitalization by age  
 * Coronavirus_CDC_Daily_v003 explores alignment of cases, hospitalizations, and deaths for a single state  
   
+### Expansions week of 02-AUG-2021  
+* Coronavirus_CDC_Daily_v003 includes functional form for curve alignment  
+  
