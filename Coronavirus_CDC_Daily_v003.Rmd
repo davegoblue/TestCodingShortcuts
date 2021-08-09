@@ -349,4 +349,157 @@ allPivot_210804 %>%
 
 At a glance, the Michigan data appear reasonably well aligned.  Hospital admissions run at ~10% of confirmed cases with a small delay.  Deaths run at ~20% of hospital admissions in the mid-winter wave and ~10% of admissions in the spring wave.  These are consistent with estimates of ~1.5% CFR and ~5 cases per diagnosed cases (fatality rate ~0.3%).
 
-Next steps are to convert this process to functional form, automate selection of scaling parameters, and explore other states of interest.
+Next steps are to convert this process to functional form, automate selection of scaling parameters, and explore other states of interest:  
+```{r}
+
+# Function to create case-hospital-death file
+makeCaseHospDeath <- function(dfHosp, dfCaseDeath) {
+
+    # FUNCTION ARGUMENTS:
+    # dfHosp: the tibble or data.frame containing the hospital data by date-state
+    # dfCaseDeath: the tibble or data.frame containing the case and death data by date-state
+    
+    allHosp <- dfHosp %>%
+        mutate(ageBucket=ifelse(age >= "60", "60+", ifelse(age=="0-19", "0-19", "20-59"))) %>% 
+        group_by(date, state, ageBucket) %>% 
+        summarize(value=sum(value), .groups="drop") %>% 
+        group_by(ageBucket, state) %>% 
+        mutate(value7=zoo::rollmean(value, k=7, fill=NA)) %>%
+        ungroup() %>%
+        left_join(getStateData(keepVars=c("state", "pop"))) %>%
+        mutate(vpm7=1000000*value7/pop)
+
+    allCaseDeath <- dfCaseDeath %>%
+        select(state, date, new_cases, new_deaths, vxa, vxc, cpm7, dpm7, vxapm7, vxcpm7) %>%
+        pivot_longer(-c(state, date))
+
+    allPivot <- allHosp %>%
+        select(state, date, name=ageBucket, value=vpm7) %>%
+        bind_rows(allCaseDeath) %>%
+        checkUniqueRows(uniqueBy=c("state", "date", "name"))
+    
+    allPivot
+    
+}
+
+alignCaseHospDeath <- function(dfPivot=NULL, 
+                               dfHosp=NULL, 
+                               dfCaseDeath=NULL, 
+                               typeMapper=c("cases"="1. Cases per million per day (rolling 7 mean)", 
+                                            "deaths"="2. Deaths per million per day (rolling 7 mean)", 
+                                            "hosp"="3. Admitted to hospital per million per day (rolling 7 mean)", 
+                                            "vax"="4. Vaccinated per capita (administered, completed)"
+                                            ), 
+                               keyState="MI", 
+                               hospCaseScalar=10, 
+                               hospDeathScalar=0.2, 
+                               returnPlots=FALSE
+                               ) 
+    {
+    
+    # FUNCTION ARGUMENTS:
+    # dfPivot: the tibble or data.frame containing integrated case-hospital-death data 
+    #          (if NULL, build from dfHosp and dfCaseDeath)
+    # dfHosp: the tibble or data.frame containing the hospital data by date-state
+    # dfCaseDeath: the tibble or data.frame containing the case and death data by date-state
+    # typeMapper: mapping file for labelling facets
+    # keyState: the state to explore
+    # hospCaseScalar: the scalar to be applied for placing cases and hospitalizations on the same plot
+    # hospDeathScalar: the scalar to be applied for placing hospitalizations and deaths on the same plot
+    
+    # Create the pivoted data if it was not passed
+    if (is.null(dfPivot)) {
+        if (is.null(dfHosp) | is.null(dfCaseDeath)) stop("\nMust pass dfPivot OR both of dfHosp and dfCaseDeath\n")
+        dfPivot <- makeCaseHospDeath(dfHosp=dfHosp, dfCaseDeath=dfCaseDeath)
+    }
+
+    # Create the plotting data
+    plotData <- dfPivot %>%
+        filter(state==keyState, !is.na(value)) %>%
+        mutate(plotType=case_when(name %in% c("0-19", "20-59", "60+") ~ "hosp", 
+                                  name %in% c("vxapm7", "vxcpm7") ~ "vax", 
+                                  name=="cpm7" ~ "cases", 
+                                  name=="dpm7" ~ "deaths", 
+                                  TRUE ~ "notuse"
+                                  )
+               )
+    
+    # Create overall plot
+    p1 <- plotData %>%
+        filter(plotType != "notuse") %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(data=~filter(., plotType=="cases"), color="blue", size=1) +
+        geom_line(data=~filter(., plotType=="deaths"), color="red", size=1) +
+        geom_line(data=~filter(., plotType=="vax"), aes(color=name, group=name, y=value/1000000)) +
+        geom_col(data=~filter(., plotType=="hosp"), aes(fill=name), position="stack") + 
+        scale_color_discrete("Vaccine\nMetric") + 
+        scale_fill_discrete("Hospitalized\nby Age") +
+        facet_wrap(~typeMapper[plotType], scales="free_y") + 
+        labs(x=NULL, y=NULL, title=paste0("Key coronavirus metrics for state: ", keyState)) +
+        lims(y=c(0, NA))
+    print(p1)
+
+    p2 <- plotData %>%
+        filter(plotType %in% c("cases", "hosp")) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_col(data=~filter(., plotType=="hosp"), aes(fill=name, y=hospCaseScalar*value), position="stack") + 
+        geom_line(data=~filter(., plotType=="cases"), color="black", size=1) +
+        scale_fill_discrete("Hospital Admssions by Age") + 
+        scale_y_continuous("Cases per million (rolling 7 mean per day)", 
+                           sec.axis = sec_axis(~ . / hospCaseScalar, 
+                                               name = "Hospital admissions per million (rolling 7 mean per day"
+                                               )
+                           ) +
+        labs(x=NULL, 
+             title=paste0("Alignment of ", keyState, " cases and hospitalizations data"), 
+             subtitle=paste0("Ratio of ", 
+                             hospCaseScalar, 
+                             ":1 applied (cases are black line, hospital admissions are stacked bar)"
+                             )
+             ) + 
+        theme(legend.position="bottom")
+    print(p2)
+
+    p3 <- plotData %>%
+        filter(plotType %in% c("deaths", "hosp")) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_col(data=~filter(., plotType=="hosp"), aes(fill=name, y=hospDeathScalar*value), position="stack") + 
+        geom_line(data=~filter(., plotType=="deaths"), color="black", size=1) +
+        scale_fill_discrete("Hospital Admssions by Age") + 
+        scale_y_continuous("Deaths per million (rolling 7 mean per day)", 
+                           sec.axis = sec_axis(~ . / hospDeathScalar, 
+                                               name = "Hospital admissions per million (rolling 7 mean per day"
+                                               )
+                           ) +
+        labs(x=NULL, 
+             title=paste0("Alignment of ", keyState, " deaths and hospitalizations data"), 
+             subtitle=paste0("Ratio of ", 
+                             hospDeathScalar, 
+                             ":1 applied (deaths are black line, hospital admissions are stacked bar)"
+                             )
+             ) + 
+        theme(legend.position="bottom")
+    print(p3)
+    
+    if(isTRUE(returnPlots)) list(p1=p1, p2=p2, p3=p3)
+    
+}
+
+```
+
+The function is tested for MI, FL, and TX:  
+```{r, fig.height=9, fig.width=9}
+
+dfPivot_210804 <- makeCaseHospDeath(dfHosp=hospAge_210804, dfCaseDeath=cdc_daily_210804$dfPerCapita)
+dfPivot_210804
+
+miAlign <- alignCaseHospDeath(dfPivot_210804, keyState="MI", returnPlots=TRUE)
+flAlign <- alignCaseHospDeath(dfPivot_210804, keyState="FL", returnPlots=TRUE, hospDeathScalar=0.14)
+txAlign <- alignCaseHospDeath(dfPivot_210804, keyState="TX", returnPlots=TRUE, hospDeathScalar=0.14)
+
+# Key plots on a single page
+gridExtra::grid.arrange(miAlign$p1, flAlign$p1, txAlign$p1, nrow=2)
+gridExtra::grid.arrange(miAlign$p2, flAlign$p2, txAlign$p2, nrow=1)
+gridExtra::grid.arrange(miAlign$p3, flAlign$p3, txAlign$p3, nrow=1)
+```
+
