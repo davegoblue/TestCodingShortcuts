@@ -503,3 +503,107 @@ gridExtra::grid.arrange(miAlign$p2, flAlign$p2, txAlign$p2, nrow=1)
 gridExtra::grid.arrange(miAlign$p3, flAlign$p3, txAlign$p3, nrow=1)
 ```
 
+Next, an implied CFR (deaths per case) rate is calculated for inclusion:  
+```{r, fig.height=9, fig.width=9}
+
+# Filter to single-state data
+miData <- dfPivot_210804 %>%
+    filter(state=="MI", name %in% c("cpm7", "dpm7"), !is.na(value))
+
+# Plot core metrics
+miData %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=name, color=name)) + 
+    facet_wrap(~c("cpm7"="Cases per million", "dpm7"="Deaths per million")[name], scales="free_y") + 
+    labs(x=NULL, y="Value per million (rolling 7-day mean)", title="Coronavirus burden in state: MI") + 
+    theme(legend.position="none")
+
+# Create correlation for assigned lag/lead and variables in a data frame
+lagCorrCheck <- function(df, lagLead=0, varFix="dpm7", varMove="cpm7") {
+    df %>%
+        mutate(lagVar=if(lagLead >= 0) lag(get(varMove), lagLead) else lead(get(varMove), abs(lagLead))) %>%
+        filter(!is.na(lagVar)) %>%
+        summarize(correl=cor(lagVar, get(varFix))) %>%
+        pull(correl)
+}
+
+miCorrDF <- miData %>%
+    select(date, name, value) %>%
+    pivot_wider(date)
+miCorrDF
+
+# Assessing best lag/lead for full dataset
+lagLeads=-10:40
+miRhoFull <- tibble::tibble(lagLead=lagLeads, 
+                            rho=sapply(lagLeads, FUN=function(x) lagCorrCheck(miCorrDF, lagLead=x))
+                            )
+bestFull <- miRhoFull %>% filter(rho==max(rho))
+miRhoFull %>% 
+    ggplot(aes(x=lagLead, y=rho)) + 
+    geom_point() + 
+    geom_hline(data=bestFull, aes(yintercept=rho), lty=2) +
+    geom_vline(data=bestFull, aes(xintercept=lagLead), lty=2) +
+    labs(x="Lag or lead of cases", 
+         y="Correlation to deaths", 
+         title="All Michigan case and death data", 
+         subtitle=paste0("Best correlation ", 
+                         round(bestFull$rho, 3), 
+                         " obtained at lag/lead of: ", 
+                         bestFull$lagLead
+                         )
+         )
+
+# Assessing best lag/lead for August 2020 and beyond
+lagLeads=-10:40
+miRhoLate <- tibble::tibble(lagLead=lagLeads, 
+                            rho=sapply(lagLeads, 
+                                       FUN=function(x) lagCorrCheck(miCorrDF %>% filter(date >= "2020-08-01"), 
+                                                                    lagLead=x
+                                                                    )
+                                       )
+                            )
+bestLate <- miRhoLate %>% filter(rho==max(rho))
+miRhoLate %>% 
+    ggplot(aes(x=lagLead, y=rho)) + 
+    geom_point() + 
+    geom_hline(data=bestLate, aes(yintercept=rho), lty=2) +
+    geom_vline(data=bestLate, aes(xintercept=lagLead), lty=2) +
+    labs(x="Lag or lead of cases", 
+         y="Correlation to deaths", 
+         title="Michigan case and death data (August 2020 to present)", 
+         subtitle=paste0("Best correlation ", 
+                         round(bestLate$rho, 3), 
+                         " obtained at lag/lead of: ", 
+                         bestLate$lagLead
+                         )
+         )
+
+miCorrDF %>%
+    mutate(lag20=lag(cpm7, 20)) %>%
+    filter(!is.na(lag20), lag20 > 0) %>%
+    ggplot(aes(x=date)) + 
+    geom_line(aes(y=cpm7), color="navy") + 
+    geom_line(aes(y=lag20), color="navy", lty=2) + 
+    geom_line(aes(y=8000*pmin(0.1, dpm7/lag20)), color="red") + 
+    scale_y_continuous("Cases per million (rolling 7 mean per day) - actual and 20-day lag", 
+                       sec.axis = sec_axis(~ . / 8000, 
+                                           name = "Implied CFR (capped at 10%)"
+                                           )
+                       ) +
+    labs(x=NULL, title="Implied case fatality rate using 20-day lag in Michigan")
+
+miCorrDF %>%
+    mutate(lag20=lag(cpm7, 20)) %>%
+    filter(!is.na(lag20)) %>%
+    ggplot(aes(x=date)) + 
+    geom_line(aes(y=cpm7), color="navy") + 
+    geom_line(aes(y=lag20), color="navy", lty=2) + 
+    geom_line(aes(y=50*dpm7), color="red") + 
+    labs(x=NULL, 
+         y="Per million (7-day rolling mean)\nCases, Lag-20 cases, and 50*Deaths", 
+         title="Burden metrics for Michigan"
+         )
+
+```
+  
+Michigan appears to fairly consistently have a lag of 2-3 weeks between cases and deaths.  The CFR during spikes has consistently declined from over 10% to around 2% to around 1%.  The estimated CFR outside of spikes appears noisy.  Next steps are to convert to functional form and run for other states.
