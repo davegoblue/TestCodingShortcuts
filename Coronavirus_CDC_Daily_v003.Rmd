@@ -606,4 +606,106 @@ miCorrDF %>%
 
 ```
   
-Michigan appears to fairly consistently have a lag of 2-3 weeks between cases and deaths.  The CFR during spikes has consistently declined from over 10% to around 2% to around 1%.  The estimated CFR outside of spikes appears noisy.  Next steps are to convert to functional form and run for other states.
+Michigan appears to fairly consistently have a lag of 2-3 weeks between cases and deaths.  The CFR during spikes has consistently declined from over 10% to around 2% to around 1%.  The estimated CFR outside of spikes appears noisy.  Next steps are to convert to functional form and run for other states:  
+```{r, fig.height=9, fig.width=9}
+
+# Create correlation for assigned lag/lead and variables in a data frame
+lagCorrCheck <- function(df, lagLead=0, varFix="dpm7", varMove="cpm7") {
+    df %>%
+        mutate(lagVar=if(lagLead >= 0) lag(get(varMove), lagLead) else lead(get(varMove), abs(lagLead))) %>%
+        filter(!is.na(lagVar)) %>%
+        summarize(correl=cor(lagVar, get(varFix))) %>%
+        pull(correl)
+}
+
+
+findCorrAlign <- function(df, 
+                          keyState, 
+                          varFix="dpm7", 
+                          varMove="cpm7", 
+                          lagLeads=-10:40,
+                          minDate=NULL, 
+                          maxDate=NULL,
+                          varMapper=c("cpm7"="Cases per million", "dpm7"="Deaths per million"), 
+                          yLab="Value per million (rolling 7-day mean)", 
+                          returnData=FALSE
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: pivoted data frame with state-date-name-value
+    # keyState: state to include
+    # varFix: metric to be held constant
+    # varMove: metric to be lagged/led
+    # lagLeads: lags and leads for the variable that moves
+    # minDate: minimum date for lag/lead (NULL means data-driven)
+    # maxDate: maximum date for lag/lead (NULL means data-driven)
+    # varMapper: mapping file for varFix and varMove to descriptive labels
+    # yLab: label for the y-axis in the first plot
+    # returnData: boolean, should the data frames be returned as a list?
+    
+    # Set minDate and maxDate to the actual minmax if passed as NULL 
+    if (is.null(minDate)) minDate <- df %>% summarize(date=min(date)) %>% pull(date)
+    if (is.null(maxDate)) maxDate <- df %>% summarize(date=max(date)) %>% pull(date)
+    
+    # Filter to relevant data
+    df <- df %>%
+        filter(state %in% all_of(keyState), name %in% all_of(c(varFix, varMove)), !is.na(value))
+
+    # Plot core metrics for requested states
+    p1 <- df %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(group=name, color=name)) + 
+        facet_wrap(~varMapper[name], scales="free_y") + 
+        labs(x=NULL, y=yLab, title=paste0("Metrics by state for: ", paste0(keyState, collapse=", "))) + 
+        theme(legend.position="none")
+    print(p1)
+
+    # Create dataset for correlations
+    dfCorr <- df %>%
+        select(date, name, value) %>%
+        pivot_wider(date)
+
+    # Find correlation by lag/lead for dataset
+    dfRho <- tibble::tibble(lagLead=lagLeads, 
+                            rho=sapply(lagLeads, 
+                                       FUN=function(x) {
+                                           lagCorrCheck(dfCorr %>% filter(date >= minDate, date <= maxDate), 
+                                                        lagLead=x
+                                                        )
+                                           }
+                                       )
+                            )
+    
+    # Find best correlation and lag/lead
+    bestRho <- dfRho %>% 
+        filter(rho==max(rho))
+
+    # Plot correlations by lag/lead
+    p2 <- dfRho %>% 
+        ggplot(aes(x=lagLead, y=rho)) + 
+        geom_point() + 
+        geom_hline(data=bestRho, aes(yintercept=rho), lty=2) +
+        geom_vline(data=bestRho, aes(xintercept=lagLead), lty=2) +
+        labs(x=paste0("Lag or lead of ", varMapper[varMove]), 
+             y=paste0("Correlation to ", varMapper[varFix]), 
+             title=paste0("Correlations by lag/lead for state: ", keyState), 
+             subtitle=paste0("Best correlation ", 
+                             round(bestRho$rho, 3), 
+                             " obtained at lag/lead of: ", 
+                             bestRho$lagLead
+                             )
+             )
+    print(p2)
+
+    if (returnData) list(dfRho=dfRho, bestRho=bestRho, dfCorr=dfCorr)
+    
+}
+
+findCorrAlign(dfPivot_210804, keyState="MI")
+findCorrAlign(dfPivot_210804, keyState="MI", minDate="2020-08-01", returnData=TRUE)
+findCorrAlign(dfPivot_210804, keyState="FL")
+findCorrAlign(dfPivot_210804, keyState="TX", minDate="2020-10-01")
+
+```
+
+Next steps are to create functional form for calculating IFR and aligning plots.
