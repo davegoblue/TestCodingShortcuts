@@ -501,6 +501,7 @@ txAlign <- alignCaseHospDeath(dfPivot_210804, keyState="TX", returnPlots=TRUE, h
 gridExtra::grid.arrange(miAlign$p1, flAlign$p1, txAlign$p1, nrow=2)
 gridExtra::grid.arrange(miAlign$p2, flAlign$p2, txAlign$p2, nrow=1)
 gridExtra::grid.arrange(miAlign$p3, flAlign$p3, txAlign$p3, nrow=1)
+
 ```
 
 Next, an implied CFR (deaths per case) rate is calculated for inclusion:  
@@ -708,4 +709,96 @@ findCorrAlign(dfPivot_210804, keyState="TX", minDate="2020-10-01")
 
 ```
 
-Next steps are to create functional form for calculating IFR and aligning plots.
+Next steps are to create functional form for calculating IFR and aligning plots:  
+```{r, fig.height=9, fig.width=9}
+
+plotCFRLag <- function(lst, 
+                       lagUse=NULL, 
+                       scaleUse=NULL, 
+                       cfrCap=0.06, 
+                       multDeath=50,
+                       mainTitle="Coronavirus data for selected geography: "
+                       ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: data frame with date-cpm7-dpm7 OR list with both dfCorr and bestRho
+    # lagUse: the lag to use (if NULL, use the value in bestRho$lagLead)
+    # scaleUse: scalar for secondary y-axis (NULL means calculate from data)
+    # cfrCap: the cap for all values of CFR
+    # multDeath: multiplier for death data in plot 2
+    # mainTitle: main title for plots
+    
+    # Create dfCorr and lagUse
+    if ("list" %in% class(lst)) {
+        dfCorr <- lst[["dfCorr"]]
+        if (is.null(lagUse)) lagUse <- lst[["bestRho"]]$lagLead
+    } else {
+        dfCorr <- lst
+    }
+    
+    # Check that dfCorr is a data frame with date-cpm7-dpm7 and lagUse is not NULL
+    if (!("data.frame" %in% class(dfCorr))) stop("\nMust have a data frame for lst/dfCorr\n")
+    if (!(all(c("date", "cpm7", "dpm7") %in% names(dfCorr)))) stop("\ndfCorr must have date-cpm7-dpm7\n")
+    if (is.null(lagUse)) stop("\nMust have a value for lagUse\n")
+    
+    # Create scaleUse if not passed
+    if (is.null(scaleUse)) scaleUse <- 500*ceiling(max(dfCorr$cpm7)/cfrCap/500)
+    
+    # Create plot of CFR by date, showing lagged cases
+    basePlot <- dfCorr %>%
+        mutate(lagData=if(lagUse >= 0) lag(cpm7, lagUse) else lead(cpm7, -lagUse)) %>%
+        filter(!is.na(lagData), lagData > 0) %>%
+        ggplot(aes(x=date)) + 
+        geom_line(aes(y=cpm7), color="navy") + 
+        geom_line(aes(y=lagData), color="navy", lty=2)
+    p1 <- basePlot + 
+        geom_line(aes(y=scaleUse*pmin(cfrCap, dpm7/lagData)), color="red") + 
+        scale_y_continuous(paste0("Cases per million (rolling 7 mean per day) - actual and ", 
+                                  abs(lagUse),
+                                  "-day ", 
+                                  if(lagUse > 0) "lag" else "lead"
+                                  ), 
+                           sec.axis = sec_axis(~ . / scaleUse, 
+                                               name = paste0("Implied CFR (capped at ", 
+                                                             round(100*cfrCap, 1), 
+                                                             "%)"
+                                                             )
+                                               )
+                           ) +
+        labs(x=NULL, 
+             title=mainTitle, 
+             subtitle=paste0("Red line (right axis) is implied fatality rate\n", 
+                             "Blue line (left axis) is cases with and without lag"
+                             )
+             )
+    print(p1)
+    
+    # Apply a CFR to the data and show alignment
+    p2 <- basePlot +
+        geom_line(aes(y=multDeath*dpm7), color="red") + 
+        labs(x=NULL, 
+             y="Per million (7-day rolling mean)", 
+             title=mainTitle, 
+             subtitle=paste0("Red line is ", 
+                             multDeath, 
+                             "*deaths\n", 
+                             "Blue line is cases with and without ", 
+                             abs(lagUse), 
+                             "-day ", 
+                             if(lagUse > 0) "lag" else "lead"
+                             )
+         )
+    print(p2)
+    
+}
+
+# Run for Michigan, Florida, California
+findCorrAlign(dfPivot_210804, keyState="MI", minDate="2020-08-01", returnData=TRUE) %>%
+    plotCFRLag(mainTitle=paste0(formals(plotCFRLag)$mainTitle, "MI"))
+findCorrAlign(dfPivot_210804, keyState="FL", returnData=TRUE) %>%
+    plotCFRLag(mainTitle=paste0(formals(plotCFRLag)$mainTitle, "FL"), multDeath=100)
+findCorrAlign(dfPivot_210804, keyState="CA", returnData=TRUE) %>%
+    plotCFRLag(mainTitle=paste0(formals(plotCFRLag)$mainTitle, "CA"), multDeath=70)
+
+```
+
