@@ -2526,4 +2526,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 explores correlations by lag for cases and deaths  
 * Coronavirus_CDC_Daily_v003 includes functional form for correlations by lag  
 * Coronavirus_CDC_Daily_v003 includes functional form for CFR estimates  
+* Coronavirus_CDC_Daily_v003 includes single page summary for CFR estimates  
   
