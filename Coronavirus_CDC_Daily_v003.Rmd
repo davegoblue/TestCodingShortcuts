@@ -629,6 +629,8 @@ findCorrAlign <- function(df,
                           maxDate=NULL,
                           varMapper=c("cpm7"="Cases per million", "dpm7"="Deaths per million"), 
                           yLab="Value per million (rolling 7-day mean)", 
+                          printPlots=TRUE, 
+                          returnPlots=FALSE,
                           returnData=FALSE
                           ) {
     
@@ -642,6 +644,8 @@ findCorrAlign <- function(df,
     # maxDate: maximum date for lag/lead (NULL means data-driven)
     # varMapper: mapping file for varFix and varMove to descriptive labels
     # yLab: label for the y-axis in the first plot
+    # printPlots: boolean, should the plots be printed?
+    # returnPlots: boolean, should the plots be returned?
     # returnData: boolean, should the data frames be returned as a list?
     
     # Set minDate and maxDate to the actual minmax if passed as NULL 
@@ -659,7 +663,7 @@ findCorrAlign <- function(df,
         facet_wrap(~varMapper[name], scales="free_y") + 
         labs(x=NULL, y=yLab, title=paste0("Metrics by state for: ", paste0(keyState, collapse=", "))) + 
         theme(legend.position="none")
-    print(p1)
+    if(isTRUE(printPlots)) print(p1)
 
     # Create dataset for correlations
     dfCorr <- df %>%
@@ -696,9 +700,16 @@ findCorrAlign <- function(df,
                              bestRho$lagLead
                              )
              )
-    print(p2)
+    if(isTRUE(printPlots)) print(p2)
 
-    if (returnData) list(dfRho=dfRho, bestRho=bestRho, dfCorr=dfCorr)
+    if (isTRUE(returnData) | isTRUE(returnPlots)) {
+        list(dfRho=if(isTRUE(returnData)) dfRho else NULL, 
+             bestRho=if(isTRUE(returnData)) bestRho else NULL, 
+             dfCorr=if(isTRUE(returnData)) dfCorr else NULL, 
+             p1=if(isTRUE(returnPlots)) p1 else NULL, 
+             p2=if(isTRUE(returnPlots)) p2 else NULL
+             )
+    }
     
 }
 
@@ -717,7 +728,9 @@ plotCFRLag <- function(lst,
                        scaleUse=NULL, 
                        cfrCap=0.06, 
                        multDeath=50,
-                       mainTitle="Coronavirus data for selected geography: "
+                       mainTitle="Coronavirus data for selected geography: ", 
+                       printPlots=TRUE, 
+                       returnPlots=FALSE
                        ) {
     
     # FUNCTION ARGUMENTS:
@@ -727,6 +740,8 @@ plotCFRLag <- function(lst,
     # cfrCap: the cap for all values of CFR
     # multDeath: multiplier for death data in plot 2
     # mainTitle: main title for plots
+    # printPlots: boolean, should the plots be printed?
+    # returnPlots: boolean, should the plots be returned?
     
     # Create dfCorr and lagUse
     if ("list" %in% class(lst)) {
@@ -753,11 +768,7 @@ plotCFRLag <- function(lst,
         geom_line(aes(y=lagData), color="navy", lty=2)
     p1 <- basePlot + 
         geom_line(aes(y=scaleUse*pmin(cfrCap, dpm7/lagData)), color="red") + 
-        scale_y_continuous(paste0("Cases per million (rolling 7 mean per day) - actual and ", 
-                                  abs(lagUse),
-                                  "-day ", 
-                                  if(lagUse > 0) "lag" else "lead"
-                                  ), 
+        scale_y_continuous(paste0("Cases per million\n(rolling 7-day mean)"), 
                            sec.axis = sec_axis(~ . / scaleUse, 
                                                name = paste0("Implied CFR (capped at ", 
                                                              round(100*cfrCap, 1), 
@@ -768,10 +779,13 @@ plotCFRLag <- function(lst,
         labs(x=NULL, 
              title=mainTitle, 
              subtitle=paste0("Red line (right axis) is implied fatality rate\n", 
-                             "Blue line (left axis) is cases with and without lag"
+                             "Blue line is cases with and without ", 
+                             abs(lagUse), 
+                             "-day ", 
+                             if(lagUse > 0) "lag" else "lead"
                              )
              )
-    print(p1)
+    if (isTRUE(printPlots)) print(p1)
     
     # Apply a CFR to the data and show alignment
     p2 <- basePlot +
@@ -788,7 +802,9 @@ plotCFRLag <- function(lst,
                              if(lagUse > 0) "lag" else "lead"
                              )
          )
-    print(p2)
+    if (isTRUE(printPlots))print(p2)
+    
+    if (isTRUE(returnPlots)) list(p1=p1, p2=p2)
     
 }
 
@@ -799,6 +815,52 @@ findCorrAlign(dfPivot_210804, keyState="FL", returnData=TRUE) %>%
     plotCFRLag(mainTitle=paste0(formals(plotCFRLag)$mainTitle, "FL"), multDeath=100)
 findCorrAlign(dfPivot_210804, keyState="CA", returnData=TRUE) %>%
     plotCFRLag(mainTitle=paste0(formals(plotCFRLag)$mainTitle, "CA"), multDeath=70)
+
+```
+
+Functions have been updated so that plots can be returned and/or printed.  A new function allows for creating all plots for state on a single page:  
+```{r, fig.height=9, fig.width=9}
+
+# Function to plot all states on the same page
+onePageCFRPlot <- function(df, keyState, multDeath=100, cfrCap=0.06, ...) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing state-date-name-value
+    # keyState: the key state to be analyzed
+    # multDeath: multiplier for death in the death/lagged cases chart of plotCFRLag()
+    # ...: other arguments to be passed to findCorrAlign()
+    
+    # Find the correlations data
+    corrData <- findCorrAlign(df, 
+                              keyState=keyState, 
+                              yLab="Value per million\n(rolling 7-day mean)", 
+                              printPlots=FALSE, 
+                              returnPlots=TRUE, 
+                              returnData=TRUE, 
+                              ...
+                              )
+    
+    # Find CFR
+    cfrData <- plotCFRLag(corrData, 
+                          cfrCap=cfrCap, 
+                          multDeath=multDeath, 
+                          mainTitle=paste0(formals(plotCFRLag)$mainTitle, keyState), 
+                          printPlots=FALSE, 
+                          returnPlots=TRUE
+                          )
+    
+    # Create single-page summary
+    gridExtra::grid.arrange(corrData$p1, corrData$p2, cfrData$p1, cfrData$p2, nrow=2)
+    
+}
+
+# Run for Michigan, Florida, California, Texas, New York, South Dakota
+onePageCFRPlot(dfPivot_210804, keyState="MI", minDate="2020-08-01")
+onePageCFRPlot(dfPivot_210804, keyState="FL", multDeath=100)
+onePageCFRPlot(dfPivot_210804, keyState="CA", multDeath=70)
+onePageCFRPlot(dfPivot_210804, keyState="TX", multDeath=70)
+onePageCFRPlot(dfPivot_210804, keyState="NY", multDeath=10, cfrCap=0.1)
+onePageCFRPlot(dfPivot_210804, keyState="SD", multDeath=70)
 
 ```
 
