@@ -2521,10 +2521,11 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 explores hospitalization by age  
 * Coronavirus_CDC_Daily_v003 explores alignment of cases, hospitalizations, and deaths for a single state  
   
-### Expansions week of 02-AUG-2021  
+### Expansions week of 09-AUG-2021  
 * Coronavirus_CDC_Daily_v003 includes functional form for curve alignment  
 * Coronavirus_CDC_Daily_v003 explores correlations by lag for cases and deaths  
 * Coronavirus_CDC_Daily_v003 includes functional form for correlations by lag  
 * Coronavirus_CDC_Daily_v003 includes functional form for CFR estimates  
 * Coronavirus_CDC_Daily_v003 includes single page summary for CFR estimates  
+* Coronavirus_Statistics_USAF_v005 downloads latest data and assesses existing clusters  
   
