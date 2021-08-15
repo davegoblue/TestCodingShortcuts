@@ -2528,4 +2528,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 includes functional form for CFR estimates  
 * Coronavirus_CDC_Daily_v003 includes single page summary for CFR estimates  
 * Coronavirus_Statistics_USAF_v005 downloads latest data and assesses existing clusters  
+* Coronavirus_Statistics_USAF_v005 explores records with negative cases  
   
