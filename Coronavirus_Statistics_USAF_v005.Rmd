@@ -1733,3 +1733,101 @@ saveToRDS(cty_newdata_20210813, ovrWriteError=FALSE)
 ```
 
 There is a very large restatement of new_cases data occurring on or around July 8-11, 2021.  Perhaps smoothing can be considered where each value for July 8-11, 2021 data is treated as the average across those four days.  There is a similar though smaller anomaly in the December 24-29, 2020 range.
+
+Dates are examined for those with the largest number of negative revisions in new_cases and/or new_deaths:  
+```{r, fig.height=9, fig.width=9}
+
+# All restatements
+plotData <- cty_newdata_20210813$dfPerCapita %>% 
+    select(date, new_cases, new_deaths, cpm7, dpm7) %>%
+    pivot_longer(-date) %>%
+    filter(!is.na(value)) %>%
+    group_by(date, name) %>% 
+    summarize(nNeg=sum(value <= -1), sumNeg=sum(ifelse(value < 0, value, 0)), .groups="drop")
+
+tempMapper <- c("cpm7"="Cases per million (7-day mean)", 
+                "dpm7"="Deaths per million (7-day mean)", 
+                "new_cases"="New cases", 
+                "new_deaths"="New deaths"
+                )
+
+plotData %>%
+    ggplot(aes(x=date, y=nNeg)) + 
+    geom_line() + 
+    facet_wrap(~tempMapper[name]) + 
+    labs(x=NULL, 
+         y="Number of records", 
+         title="Counties reporting less than or equal to -1 for metric on day"
+         )
+
+plotData %>%
+    ggplot(aes(x=date, y=sumNeg)) + 
+    geom_line() + 
+    facet_wrap(~tempMapper[name], scales="free_y") + 
+    labs(x=NULL, 
+         y="Sum of value for counties recording negative", 
+         title="Counties reporting less than 0 for metric on day"
+         )
+
+```
+  
+For records with negative values, the rolling-7 is calculated around the day of the negative:  
+```{r, fig.height=9, fig.width=9}
+
+# All restatements
+plotData <- cty_newdata_20210813$dfPerCapita %>% 
+    select(date, countyFIPS, new_cases, new_deaths, cpm7, dpm7) %>%
+    pivot_longer(-c(date, countyFIPS)) %>%
+    filter(!is.na(value)) %>%
+    group_by(countyFIPS, name) %>% 
+    arrange(date) %>%
+    mutate(value7=zoo::rollmean(value, k=7, fill=NA), 
+           isNeg=(value <= -1), 
+           isNeg7=(is.na(value7) | value7 < 0)
+           ) %>%
+    group_by(date, name) %>%
+    summarize(nNeg=sum(isNeg & isNeg7), sumNeg=sum(ifelse(isNeg & isNeg7, value, 0)), .groups="drop")
+
+tempMapper <- c("cpm7"="Cases per million (7-day mean)", 
+                "dpm7"="Deaths per million (7-day mean)", 
+                "new_cases"="New cases", 
+                "new_deaths"="New deaths"
+                )
+
+plotData %>%
+    ggplot(aes(x=date, y=nNeg)) + 
+    geom_line() + 
+    facet_wrap(~tempMapper[name]) + 
+    labs(x=NULL, 
+         y="Number of records", 
+         title="Counties reporting negative value that are also negative over the 7-day window"
+         )
+
+plotData %>%
+    ggplot(aes(x=date, y=sumNeg)) + 
+    geom_line() + 
+    facet_wrap(~tempMapper[name], scales="free_y") + 
+    labs(x=NULL, 
+         y="Sum of value", 
+         title="Counties reporting less than 0 for metric on day that are also negative over the 7-day window"
+         )
+
+cty_newdata_20210813$dfPerCapita %>% 
+    select(date, countyFIPS, new_cases, new_deaths, cpm7, dpm7) %>%
+    pivot_longer(-c(date, countyFIPS)) %>%
+    filter(!is.na(value)) %>%
+    group_by(countyFIPS, name) %>% 
+    arrange(date) %>%
+    mutate(value7=zoo::rollmean(value, k=7, fill=NA), 
+           isNeg=(value <= -1), 
+           isNeg7=(is.na(value7) | value7 < 0)
+    ) %>% 
+    ungroup() %>% 
+    group_by(name, isNeg, isNeg7) %>% 
+    summarize(n=n(), sumValue=sum(value))
+
+```
+
+Making an adjustment for situations where a metrics is negative but the 7-day total is non-negative can help to smooth some restatement anomalies.  There sill still be restatements in the data, and these seem to increasein the more recent months of the data.
+
+Next steps are to build a function to manage the smoothing, with a goal to incorporate this as part of per-capita processing.
