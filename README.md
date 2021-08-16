@@ -2530,3 +2530,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 downloads latest data and assesses existing clusters  
 * Coronavirus_Statistics_USAF_v005 explores records with negative cases  
   
+### Expansions week of 16-AUG-2021  
+* Coronavirus_Statistics_USAF_v005 explores smoothing for nearby negative and positive spikes  
+  
