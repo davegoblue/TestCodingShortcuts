@@ -1831,3 +1831,118 @@ cty_newdata_20210813$dfPerCapita %>%
 Making an adjustment for situations where a metrics is negative but the 7-day total is non-negative can help to smooth some restatement anomalies.  There sill still be restatements in the data, and these seem to increasein the more recent months of the data.
 
 Next steps are to build a function to manage the smoothing, with a goal to incorporate this as part of per-capita processing.
+
+A function is built to take an ordered vector and to replace negative values, and all of the surrounding n values, with the mean of those n values:  
+```{r, fig.height=9, fig.width=9}
+
+smoothNegativeValues <- function(x, 
+                                 negTol=-0.001, 
+                                 windowSize=3, 
+                                 windowAlign="center", 
+                                 ...
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # x: a vector that has been sorted such that successive observations are sequential
+    # negTol: tolerance for considering a value in x to be negative
+    # windowSize: the size for the window to use
+    # windowAlign: the alignment for the window (passed to zoo::rollmean)
+    # ...: any other arguments to pass to zoo::rollmean
+    
+    # Get the rolling means for x
+    muRoll <- zoo::rollmean(x, k=windowSize, fill=NA, align=windowAlign, ...)
+    
+    # Find the negative values and those that can be replaced
+    negVals <- which(x < negTol)
+    okFix <- which(!is.na(muRoll) & muRoll >= negTol)
+    negFix <- intersect(negVals, okFix)
+    
+    # Replace the negative values with the rolling mean
+    # CAUTION: this will double over-write if negative values are very close to each other
+    # CAUTION: only works for centering for the time being
+    eachSide <- ceiling((windowSize-1)/2)
+    for (idxFix in negFix) x[(idxFix-eachSide):(idxFix+eachSide)] <- muRoll[idxFix]
+    
+    # Return the updated vector
+    x
+    
+}
+
+# Simple example, works well
+smoothNegativeValues(c(1:5, 10, -2, 10, 5:1))
+
+# More complex example, double overwriting leads to incorrect vector sum
+smoothNegativeValues(c(1:5, 14, -2, -2, 14, 5:1)) %>% round(1)
+
+# All counties with negatives
+allNegCases <- cty_newdata_20210813$dfPerCapita %>% 
+    select(countyFIPS, state, date, new_cases) %>% 
+    group_by(countyFIPS) %>% 
+    filter(new_cases <= -0.5) %>% 
+    ungroup() %>% 
+    arrange(new_cases) 
+allNegCases
+allNegCases %>%
+    summarize(n=n(), new_cases=sum(new_cases))
+
+# Function to check data in a key county
+countyCheck <- function(df, keyDate, keyFIPS, windowSize=7) {
+
+    if (!("Date" %in% class(keyDate))) keyDate <- as.Date(keyDate)
+    
+    ctyData <- df %>% 
+        filter(countyFIPS==keyFIPS) 
+    ctyData %>%
+        filter(round(new_cases) < 0) %>%
+        print()
+    ctyData <- ctyData %>%
+        mutate(smoothCases=smoothNegativeValues(new_cases, windowSize=windowSize))
+    ctyData %>%
+        filter(date >= keyDate - ceiling((windowSize-1)/2), date <= keyDate + ceiling((windowSize-1)/2)) %>%
+        select(countyFIPS, state, date, cases, new_cases, smoothCases) %>%
+        print()
+    p1 <- ctyData %>%
+        select(countyFIPS, state, date, new_cases, smoothCases) %>%
+        pivot_longer(-c(countyFIPS, state, date)) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(group=name, color=name)) + 
+        facet_wrap(~c("new_cases"="Raw cases", "smoothCases"="Smoothed cases")[name]) +
+        labs(x=NULL, y="Cases", title=paste0("Cases data for county ", keyFIPS)) + 
+        theme(legend.position="none")
+    print(p1)
+    ctyData %>%
+        select(countyFIPS, state, date, new_cases, smoothCases) %>%
+        summarize(across(where(is.numeric), sum, na.rm=TRUE)) %>%
+        print()
+    
+}
+
+# Data for countyFIPS 48113 (Texas, negative values on July 9)
+countyCheck(cty_newdata_20210813$dfPerCapita, keyDate="2021-07-09", keyFIPS="48113")
+
+# Examples with repeating negative values
+repNegCases <- cty_newdata_20210813$dfPerCapita %>% 
+    select(countyFIPS, state, date, new_cases) %>% 
+    group_by(countyFIPS) %>% 
+    filter(new_cases <= -0.5, (lag(new_cases) <= -0.5 | lead(new_cases) <= -0.5)) %>% 
+    ungroup() %>% 
+    arrange(new_cases)
+repNegCases
+repNegCases %>%
+    summarize(n=n(), new_cases=sum(new_cases))
+
+
+# Data for countyFIPS 48471 (Texas, repeating negative values on/around July 9)
+countyCheck(cty_newdata_20210813$dfPerCapita, keyDate="2021-07-09", keyFIPS="48471")
+
+```
+  
+* There are 18,291 records with negative values for new_cases, totaling -715,000 cases  
+* There are 2,278 records with negative values that are next to another record with negative values, totaling -16,000 cases  
+
+Curing the single negative value issue addresses over 95% of the observed issue with new_cases.
+
+* County 48113, with just a single negative case, works well with the algorithm  
+* County 48471, with multiple negative cases, is not addressed as well by the approach  
+  
+Despite the limitations, this appears promising for further exploration.
