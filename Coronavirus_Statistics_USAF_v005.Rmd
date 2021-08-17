@@ -1945,4 +1945,91 @@ Curing the single negative value issue addresses over 95% of the observed issue 
 * County 48113, with just a single negative case, works well with the algorithm  
 * County 48471, with multiple negative cases, is not addressed as well by the approach  
   
-Despite the limitations, this appears promising for further exploration.
+Despite the limitations, this appears promising for further exploration.  The function is applied to the full per-capita dataset:  
+```{r, fig.height=9, fig.width=9}
+
+# Smoothed cases for all counties
+perCapTemp <- cty_newdata_20210813$dfPerCapita %>%
+    select(countyFIPS, state, date, cases, new_cases) %>%
+    group_by(countyFIPS, state) %>%
+    mutate(smoothCases=smoothNegativeValues(new_cases, windowSize=7), 
+           cumNew=cumsum(new_cases), 
+           cumSmooth=cumsum(smoothCases), 
+           smooth7=zoo::rollmean(smoothCases, k=7, fill=NA), 
+           cases7=zoo::rollmean(new_cases, k=7, fill=NA)
+           ) %>%
+    ungroup()
+perCapTemp
+
+perCapTemp %>%
+    summarize(across(where(is.numeric), sum, na.rm=TRUE))
+
+plotTemp <- perCapTemp %>%
+    group_by(date) %>%
+    summarize(across(where(is.numeric), specNA(sum))) %>%
+    pivot_longer(-date) 
+
+# Plot #1: Cumulative cases by technique
+plotTemp %>%
+    filter(name %in% c("cases", "cumNew", "cumSmooth")) %>%
+    ggplot(aes(x=date, y=value/1000000)) + 
+    geom_line(aes(group=name, 
+                  color=c("cases"="Cases", "cumNew"="Sum new_cases", "cumSmooth"="Sum smoothed cases")[name]
+                  )
+              ) + 
+    labs(x=NULL, y="Cumulative Cases (millions)", title="Cumulative case evolution by approach") + 
+    scale_color_discrete("Technique") + 
+    theme(legend.position="bottom")
+
+# Plot #2: new_cases vs smoothed cases
+plotTemp %>%
+    filter(name %in% c("new_cases", "smoothCases")) %>%
+    ggplot(aes(x=date, y=value/1000)) + 
+    geom_line(aes(group=name, 
+                  color=c("new_cases"="Raw new_cases", "smoothCases"="Smoothed cases")[name]
+                  )
+              ) + 
+    labs(x=NULL, y="New Cases (000s)", title="New case evolution by approach") + 
+    scale_color_discrete("Technique") + 
+    theme(legend.position="bottom")
+
+# Plot #3: Rolling-7 mean for new_cases vs smoothed cases
+plotTemp %>%
+    filter(name %in% c("cases7", "smooth7")) %>%
+    ggplot(aes(x=date, y=value/1000)) + 
+    geom_line(aes(group=name, 
+                  color=c("cases7"="new_cases", "smooth7"="Smoothed cases")[name]
+                  )
+              ) + 
+    labs(x=NULL, y="New Cases (000s) - rolling 7-day mean", title="New case evolution by approach") + 
+    scale_color_discrete("Technique") + 
+    theme(legend.position="bottom")
+
+```
+
+At a national level, the smoothing significantly helps with the July negative/positive restatement, as well as providing some assistance in other time periods.  Plots are made for each state using the smoothed data:  
+```{r, fig.height=9, fig.width=9}
+
+perCapTemp %>%
+    group_by(state, date) %>%
+    summarize(smooth7=specNA(sum)(smooth7), .groups="drop") %>%
+    ggplot(aes(x=date, y=smooth7/1000)) + 
+    geom_line() + 
+    labs(x=NULL, y="Cases (000s)", title="Smoothed rolling-7 mean cases per day by state") + 
+    facet_wrap(~state, scales="free_y")
+
+```
+
+Several artifacts are observed, including:  
+  
+* Alaska late 2020  
+* Arizona late 2020  
+* Florida in recent 2021  
+* Kansas late 2020  
+* Missouri early 2021  
+* New Jersey (multiple)  
+* Utah late 2020  
+* Texas late 2020  
+* West Virginia late 2020  
+  
+These can be further explored as a next step, with particular focus on Florida (recency) and the late 2020 pattern observed across multiple states.
