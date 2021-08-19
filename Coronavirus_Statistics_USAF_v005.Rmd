@@ -2078,3 +2078,48 @@ Reporting appears to be less frequent in many states in 2021.  Due to holidays a
 Nebraska appears to have stopped reporting new_cases data at the county level and Rhode Island appears to have always reported on a once-per-week basis.
 
 Particular attention should be paid to states that show a pattern by epiweek (e.g., always 5 or always 7) that then changes, especially if on a temporary basis.  That appears to flag many of the states that have spiky cases, even after smoothing, in late 2020.
+
+States and epiweeks that meet the following criteria are extracted:  
+  
+* epiweek is 2020-26 or greater (exclude early pandemic when spikes were very common and matched real-world)  
+* epiweek-state has number of reporting days that is at least 33% different from previous/succeeding week, with percentage defined as (max-min)/(max+min) - so 6/7 to 3 will meet as will 5/4 to 2, 3/2 to 1, and 1 to 0  
+  
+Example code includes:  
+```{r, fig.height=9, fig.width=9}
+
+perCapReport <- perCapGroup %>%
+    group_by(state, epi) %>%
+    summarize(nPos=sum(round(new_cases)>0), .groups="drop") %>%
+    arrange(state, epi) %>%
+    group_by(state) %>%
+    mutate(dPrev=ifelse(row_number()==1, 0, abs(lag(nPos)-nPos)/pmax(1, lag(nPos)+nPos)), 
+           dNext=ifelse(row_number()==n(), 0, abs(lead(nPos)-nPos)/pmax(1, lead(nPos)+nPos))
+           ) %>%
+    ungroup()
+perCapReport
+
+perCapAnomaly <- perCapReport %>%
+    mutate(dMax=pmax(dPrev, dNext)) %>%
+    filter(epi >= "2020-26", epi <= "2021-30", dMax >= 0.3) %>%
+    group_by(state) %>%
+    mutate(n=n()) %>%
+    ungroup() 
+perCapAnomaly
+
+perCapAnomaly%>%
+    ggplot(aes(x=fct_reorder(state, -n), y=epi)) + 
+    geom_tile(aes(fill=factor(nPos, levels=0:7))) + 
+    scale_fill_viridis_d("# days") + 
+    labs(x=NULL, y=NULL, title="Potential reporting discontinuities by state and epiweek")
+
+# Examples for KS data
+perCapGroup %>%
+    semi_join(perCapAnomaly, by=c("state", "epi")) %>%
+    ggplot(aes(x=date, y=new_cases)) + 
+    geom_point() + 
+    labs(x=NULL, y="New cases", title="Potentially anomalous data weeks by state") + 
+    facet_wrap(~state, scales="free")
+
+```
+  
+This algorithm broadly picks out the periods where states show artifact-like spikiness on the rolling-7 case charts.  Next steps are to run this process on the smoothed data, as some negative/positive spikes are addressed automatically by that methodology.
