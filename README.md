@@ -2535,4 +2535,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 runs smoothing algorithm by county for cases  
 * Coronavirus_Statistics_USAF_v005 explores reporting rate by epiweek and state  
 * Coronavirus_Statistics_USAF_v005 explores drops and spikes in reporting rate by epiweek and state  
+* Coronavirus_Statistics_USAF_v005 compares CDC and USAF state-level totas  
   
