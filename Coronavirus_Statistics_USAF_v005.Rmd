@@ -2123,3 +2123,79 @@ perCapGroup %>%
 ```
   
 This algorithm broadly picks out the periods where states show artifact-like spikiness on the rolling-7 case charts.  Next steps are to run this process on the smoothed data, as some negative/positive spikes are addressed automatically by that methodology.
+
+A comparison is made between the summed USAF county-level data and the CDC state-level data:  
+```{r, fig.height=9, fig.width=9}
+
+stateSmoothUSAF <- perCapTemp %>%
+    group_by(state, date) %>%
+    summarize(across(where(is.numeric), .fns=specNA(sum)), .groups="drop")
+stateSmoothUSAF
+
+stateCDC <- readFromRDS("cdc_daily_210815")$dfPerCapita %>%
+    select(state, date, cdcCases=new_cases) %>%
+    mutate(cdcCases=ifelse(is.na(cdcCases), 0, cdcCases)) %>%
+    arrange(state, date) %>%
+    group_by(state) %>%
+    mutate(cdcCase7=zoo::rollmean(cdcCases, k=7, fill=NA)) %>%
+    ungroup()
+stateCDC
+
+tempPlotData <- stateSmoothUSAF %>%
+    select(state, date, usafSmooth=smoothCases, usafSmooth7=smooth7) %>%
+    full_join(stateCDC, by=c("state", "date")) %>%
+    arrange(date) %>%
+    group_by(state) %>%
+    mutate(cumUSAF=cumsum(ifelse(is.na(usafSmooth), 0, usafSmooth)), cumCDC=cumsum(cdcCases)) %>%
+    ungroup() %>%
+    pivot_longer(-c(state, date))
+
+tempPlotState <- function(df, keyStates, keyVars) {
+    
+    p1 <- df %>%
+        filter(name %in% all_of(keyVars), state %in% all_of(keyStates), !is.na(value)) %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(group=name, color=name)) + 
+        labs(x=NULL, y="Cases", title="Comparison of cases in CDC and USAF") + 
+        scale_color_discrete("Metric") +
+        facet_wrap(~state, scales="free_y")
+    print(p1)
+    
+}
+
+# Examples for states that appear well-aligned
+tempPlotState(tempPlotData, keyStates=c("IL", "PA"), keyVars=c("usafSmooth", "cdcCases"))
+tempPlotState(tempPlotData, keyStates=c("IL", "PA"), keyVars=c("usafSmooth7", "cdcCase7"))
+tempPlotState(tempPlotData, keyStates=c("IL", "PA"), keyVars=c("cumCDC", "cumUSAF"))
+
+# Examples for states with anomalies
+tempPlotState(tempPlotData, keyStates=c("MO", "FL", "TX", "NJ"), keyVars=c("usafSmooth", "cdcCases"))
+tempPlotState(tempPlotData, keyStates=c("MO", "FL", "TX", "NJ"), keyVars=c("usafSmooth7", "cdcCase7"))
+tempPlotState(tempPlotData, keyStates=c("MO", "FL", "TX", "NJ"), keyVars=c("cumCDC", "cumUSAF"))
+
+# States with largest disconnects as percentage
+tempPlotData %>%
+    filter(name %in% c("cumUSAF", "cumCDC")) %>%
+    pivot_wider(c(state, date)) %>%
+    group_by(state) %>%
+    summarize(absDelta=sum(abs(cumUSAF-cumCDC)), sumValues=sum(cumUSAF+cumCDC)) %>%
+    mutate(pct=absDelta/sumValues) %>%
+    ggplot(aes(x=fct_reorder(state, pct), y=pct)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(label=round(pct, 3)), hjust=0, size=3) +
+    labs(x=NULL, 
+         y="Percent different in cumsum for CDC and USAF", 
+         title="Cumulative totals in CDC vs USAF", 
+         subtitle="Calculated as absolute value of differences divided by mean of values"
+         ) +
+    coord_flip()
+
+# Examples for states with large differences
+tempPlotState(tempPlotData, keyStates=c("GA", "MI", "RI", "VT", "MA", "CA"), keyVars=c("usafSmooth7", "cdcCase7"))
+tempPlotState(tempPlotData, keyStates=c("GA", "MI", "RI", "VT", "MA", "CA"), keyVars=c("cumCDC", "cumUSAF"))
+
+```
+
+In some states, there is a general trend that county-level sums (USAF) are lower than state-level totals (CDC).  In these states, shape of the curve appears to be closely matched between the data sources.
+
+For the more spiky states, it appears that cumulative totals are roughly aligned, but with differences along the way to the cumulative total.
