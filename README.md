@@ -2536,4 +2536,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 explores reporting rate by epiweek and state  
 * Coronavirus_Statistics_USAF_v005 explores drops and spikes in reporting rate by epiweek and state  
 * Coronavirus_Statistics_USAF_v005 compares CDC and USAF state-level totas  
+* Coronavirus_CDC_Daily_v003 explores vaccination by age cohort and state  
   
