@@ -2539,3 +2539,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 explores vaccination by age cohort and state  
 * Coronavirus_CDC_Daily_v003 explores evolution of vaccination by age cohort and state  
   
+### Expansions week of 23-AUG-2021  
+* Coronavirus_CDC_Daily_v003 explores evolution of cumulative cases and deaths and state  
+  
