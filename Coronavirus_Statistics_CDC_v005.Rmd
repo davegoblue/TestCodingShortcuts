@@ -268,3 +268,85 @@ cdcList_20210823 <- readRunCDCAllCause(loc=cdcLoc,
 
 ```
   
+CDC data for deaths by age and location available at [CDC website](https://data.cdc.gov/api/views/4va6-ph5s/rows.csv?accessType=DOWNLOAD) are downloaded, cached to avoid multiple hits to the server:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+deathAgeLoc <- "./RInputFiles/Coronavirus/COvID_deaths_age_place_20210824.csv"
+if (!file.exists(deathAgeLoc)) {
+    fileDownload(fileName="./RInputFiles/Coronavirus/COvID_deaths_age_place_20210824.csv", 
+                 url="https://data.cdc.gov/api/views/4va6-ph5s/rows.csv?accessType=DOWNLOAD"
+                 )
+} else {
+    cat("\nFile already exists, not downloading\n")
+}
+
+```
+  
+The file is then read for a basic exploration:  
+```{r, fig.height=9, fig.width=9}
+
+deathAge_20210824_raw <- fileRead(deathAgeLoc, col_types="cccciiccccddddddc")
+glimpse(deathAge_20210824_raw)
+
+deathAge_20210824_conv <- deathAge_20210824_raw %>%
+    colRenamer(vecRename=c("Data as of"="asofDate", 
+                           "Start Date"="startDate", 
+                           "End Date"="endDate", 
+                           "HHS Region"="HHSRegion", 
+                           "Place of Death"="deathPlace", 
+                           "Age group"="Age", 
+                           "COVID-19 Deaths"="covidDeaths", 
+                           "Total Deaths"="totalDeaths", 
+                           "Pneumonia Deaths"="pneumoDeaths", 
+                           "Pneumonia and COVID-19 Deaths"="pneumoCovidDeaths", 
+                           "Influenza Deaths"="fluDeaths", 
+                           "Pneumonia, Influenza, or COVID-19 Deaths"="pnemoFluCovidDeaths"
+                           )
+               ) %>%
+    colMutater(selfList=list("asofDate"=lubridate::mdy, "startDate"=lubridate::mdy, "endDate"=lubridate::mdy))
+glimpse(deathAge_20210824_conv)
+
+# Combinations of startDate and endDate
+deathAge_20210824_conv %>%
+    count(asofDate, startDate, endDate) %>%
+    ggplot(aes(y=startDate, x=endDate)) + 
+    geom_point(aes(size=n)) + 
+    facet_wrap(~asofDate) + 
+    labs(x="Ending Date", y="Starting Date", title="Combinations of Start and End Date")
+
+deathAge_20210824_conv %>%
+    count(Group, deathPlace, Age) %>%
+    ggplot(aes(x=Group, y=deathPlace)) + 
+    geom_tile(aes(fill=n)) + 
+    facet_wrap(~Age) + 
+    labs(x="Group", y="Place of Death", title="Combinations of Age, Place of Death, and Group")
+
+deathState <- deathAge_20210824_conv %>%
+    filter(Group=="By Total", deathPlace=="Total - All Places of Death", Age=="All Ages") %>%
+    group_by(State) %>%
+    summarize(across(where(is.numeric), sum, na.rm=TRUE)) %>%
+    mutate(abb=state.abb[match(State, state.name)])
+deathState %>% filter(is.na(abb))
+
+deathBase <- deathState %>%
+    select(State, covidDeaths, totalDeaths) %>%
+    mutate(noncovid=covidDeaths/totalDeaths) %>%
+    filter(!(State %in% c("United States", "Puerto Rico"))) %>%
+    pivot_longer(-c(State)) %>%
+    ggplot(aes(x=fct_reorder(State, value, max), y=value/1000)) + 
+    coord_flip() + 
+    theme(legend.position="bottom")
+deathBase + 
+    geom_col(data=~filter(., name=="totalDeaths"), aes(fill="All")) +
+    geom_col(data=~filter(., name=="covidDeaths"), aes(fill="COVID")) + 
+    scale_fill_manual("Type", breaks=c("COVID", "All"), labels=c("COVID", "All"), values=c("red", "black")) + 
+    labs(title="Deaths 2020-present by state", x=NULL, y="Deaths (000s)")
+deathBase + 
+    geom_col(data=~filter(., name=="noncovid"), aes(y=value), position="identity") + 
+    labs(x=NULL, y=NULL, title="Proportion of deaths from COVID")
+
+```
+
+The data appear to contain monthly totals, with the addition of full-year 2020, YTD 2021, and total 2020-YTD 2021. Totals are provided by age sub-group and overall, place of death category and overall, and monthly, annually, and total.
+
+Total deaths and proportions from COVID appear senesible. Next steps are to continue processing and exploring the data.
