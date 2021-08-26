@@ -2543,4 +2543,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 explores evolution of cumulative cases and deaths and state  
 * Coronavirus_Statistics_CDC_v005 updated with latest data  
 * Coronavirus_Statistics_CDC_v005 downloads deaths by age and location data  
+* Coronavirus_Statistics_CDC_v005 starts building checkSubTotals()  
   
