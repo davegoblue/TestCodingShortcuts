@@ -349,4 +349,61 @@ deathBase +
 
 The data appear to contain monthly totals, with the addition of full-year 2020, YTD 2021, and total 2020-YTD 2021. Totals are provided by age sub-group and overall, place of death category and overall, and monthly, annually, and total.
 
-Total deaths and proportions from COVID appear senesible. Next steps are to continue processing and exploring the data.
+Total deaths and proportions from COVID appear sensible. Next steps are to continue processing and exploring the data:  
+```{r, fig.height=9, fig.width=9}
+
+# Add the state abbreviation
+deathAge_20210824_conv <- deathAge_20210824_conv %>%
+    mutate(abb=c(state.abb, "DC")[match(State, c(state.name, "District of Columbia"))])
+
+# Function to check that totals match sum of sub-totals
+checkSubTotals <- function(df, checkByVars, subVar, subVarTotal, sumVars=NULL, sumFunc=specNA(sum), ...) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data.frame or tibble
+    # checkByVars: variables that the frame will be checked by
+    # subVar: variable that is being checked
+    # subVarTotal: label for the value that is the total of subVar
+    # sumVars: variables to be summed (NULL means all numeric)
+    # sumFunc: function to be applied when summing all variables
+    # ...: any other arguments to pass to summarize(across(all_of(checkByVars), .fns=sumFunc, ...))
+    
+    # If sumVars is NULL, find the sum variables
+    if (is.null(sumVars)) sumVars <- df %>% head(1) %>% select_if(is.numeric) %>% names()
+    
+    # Keep only te desired variables in df
+    df <- df %>%
+        select(all_of(c(checkByVars, subVar, sumVars))) %>%
+        arrange(across(all_of(checkByVars)))
+    
+    # Split the data frame by subtotal and total
+    dfTot <- df %>%
+        filter(get(subVar) == subVarTotal)
+    dfSub <- df %>%
+        filter(get(subVar) != subVarTotal) %>%
+        group_by(across(all_of(checkByVars))) %>%
+        summarize(across(all_of(sumVars), .fns=sumFunc, ...), .groups="drop") %>%
+        mutate(fakeCol=subVarTotal) %>%
+        colRenamer(vecRename=c("fakeCol"=subVar)) %>%
+        select(names(dfTot))
+    
+    # Comparison of totals
+    list(dfSub=dfSub, dfTot=dfTot)
+    
+}
+
+allCheckVars <- names(deathAge_20210824_conv) %>% 
+    setdiff(deathAge_20210824_conv %>% head(1) %>% select_if(is.numeric) %>% names()) %>%
+    setdiff(c("Footnote", "abb", "HHSRegion"))
+
+# Test for states
+deathAge_20210824_conv %>%
+    select(-Year, -Month) %>%
+    checkSubTotals(checkByVars=allCheckVars %>% setdiff("State"), 
+                   subVar="State", 
+                   subVarTotal="United States"
+                   )
+
+```
+
+Next steps are to run comparisons of summed sub-totals and reported totals
