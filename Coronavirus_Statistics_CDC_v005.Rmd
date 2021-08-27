@@ -392,18 +392,70 @@ checkSubTotals <- function(df, checkByVars, subVar, subVarTotal, sumVars=NULL, s
     
 }
 
+checkNumbers <- function(lst, byVars, lstNames=NULL, absTol=100, pctTol=0.05, keyVar="key variable") {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a list with two items that will be checked for similarity
+    # byVars: by variables that should be identical across the list items
+    # lstNames: names to use for the list (NULL means use names provided in lst)
+    # absTol: absolute value of differences to flag
+    # pctTol: percent tolerance for differences to flag
+    # keyVar: name for the key variable in plot title
+    
+    # Check that lst is a list of length 2
+    if (!("list" %in% class(lst)) | !(length(lst)==2)) stop("\nMust pass a list with two items\n")
+    
+    # Add names if passed in lstNames, otherwise use names(lst)
+    if (!is.null(lstNames)) names(lst) <- lstNames 
+    else lstNames <- names(lst)
+    
+    # Check for identical files using only byVars
+    if (!isTRUE(identical(lst[[1]][, byVars], lst[[2]][, byVars]))) 
+        stop("\nSub-lists differ by byVars, not comparing\n") 
+    else cat("\nSub-lists are identical by:", paste0(byVars, collapse=", "), "\n")
+    
+    # Check the numeric values
+    dfDelta <- lapply(lst, FUN=function(x) pivot_longer(x, cols=-all_of(byVars)) %>% 
+               mutate(value=ifelse(is.na(value), 0, value)) %>%
+               select(all_of(byVars), name, value)
+           ) %>%
+        purrr::reduce(.f=inner_join, by=c(all_of(byVars), "name")) %>%
+        mutate(delta=value.x-value.y, pct=ifelse(delta==0, 0, delta/(value.x+value.y))) %>%
+        purrr::set_names(c(all_of(byVars), "name", all_of(lstNames), "delta", "pct"))
+    
+    # Plot the differences using name as facet
+    p1 <- dfDelta %>%
+        ggplot(aes(x=delta, y=pct)) + 
+        geom_point() + 
+        facet_wrap(~name, scales="free") + 
+        labs(title=paste0("Differences between totals and subtotals on variable: ", keyVar), 
+             x="Difference between total and subtotal", 
+             y="Percentage difference"
+             )
+    print(p1)
+    
+    # Flag significant outliers
+    dfDelta %>%
+        filter(abs(delta) >= absTol, abs(pct) >= pctTol) %>%
+        arrange(-abs(delta)) %>%
+        print()
+    
+}
+
+# Get a list of the possible variables
 allCheckVars <- names(deathAge_20210824_conv) %>% 
     setdiff(deathAge_20210824_conv %>% head(1) %>% select_if(is.numeric) %>% names()) %>%
     setdiff(c("Footnote", "abb", "HHSRegion"))
 
-# Test for states
-deathAge_20210824_conv %>%
-    select(-Year, -Month) %>%
-    checkSubTotals(checkByVars=allCheckVars %>% setdiff("State"), 
-                   subVar="State", 
-                   subVarTotal="United States"
-                   )
+# Test for each variable in allCheckVars
+subMap <- c("State"="United States", "Age"="All Ages", "deathPlace"="Total - All Places of Death")
+lapply(c("State", "deathPlace", "Age"), 
+       FUN=function(x) deathAge_20210824_conv %>% 
+           select(-Year, -Month) %>%
+           checkSubTotals(checkByVars=allCheckVars %>% setdiff(x), subVar=x, subVarTotal=unname(subMap[x])) %>%
+           checkNumbers(byVars=allCheckVars, keyVar=x)
+       )
 
 ```
 
-Next steps are to run comparisons of summed sub-totals and reported totals
+Variables Age and deathPlace appear to be well-aligned between sub-totals and totals, while variable State shows some more significant differences. Next steps are to further research what is contained in State, including alignment to other data sources.
