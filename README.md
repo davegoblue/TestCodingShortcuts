@@ -2545,4 +2545,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 downloads deaths by age and location data  
 * Coronavirus_Statistics_CDC_v005 starts building checkSubTotals()  
 * Coronavirus_Statistics_CDC_v005 explores alignment of subtotals and totals  
+* Coronavirus_Statistics_CDC_v005 compares deaths by state to summed CDC daily data  
   
