@@ -459,3 +459,46 @@ lapply(c("State", "deathPlace", "Age"),
 ```
 
 Variables Age and deathPlace appear to be well-aligned between sub-totals and totals, while variable State shows some more significant differences. Next steps are to further research what is contained in State, including alignment to other data sources.
+
+Deaths by state are compared between files, using July 31, 2021 as the cutoff:  
+```{r, fig.height=9, fig.width=9}
+
+# Create summary by state and year-month
+death_sum_210824 <- deathAge_20210824_conv %>%
+    filter(!is.na(Year), !is.na(Month), deathPlace=="Total - All Places of Death", Age=="All Ages") %>%
+    mutate(ym=lubridate::ym(paste0(Year, "-", zeroPad2(Month))), 
+           abb=c(state.abb, "DC", "US")[match(State, c(state.name, "District of Columbia", "United States"))]
+           ) %>%
+    select(State, abb, ym, where(is.numeric), -Year, -Month) %>%
+    pivot_longer(-c(State, abb, ym)) %>%
+    arrange(State, abb, name, ym) %>%
+    group_by(State, abb, name) %>%
+    mutate(cumValue=cumsum(ifelse(is.na(value), 0, value))) %>%
+    ungroup() %>%
+    mutate(date=lubridate::ceiling_date(ym, unit="month")-lubridate::days(1))
+
+# Create summary from state-level file
+death_daily_210815 <- readFromRDS("cdc_daily_210815")$dfPerCapita %>%
+    select(date, abb=state, tot_deaths) %>%
+    mutate(Year=lubridate::year(date), Month=lubridate::month(date)) %>%
+    group_by(Year, Month) %>%
+    filter(date==max(date)) %>%
+    ungroup()
+    
+# Create a plot for evolution of United States
+death_sum_210824 %>%
+    filter(abb=="US", name=="covidDeaths", ym <= "2021-07-31") %>%
+    ggplot(aes(x=date)) + 
+    geom_line(aes(y=cumValue/1000, color="blue"), size=2) + 
+    geom_point(data=summarize(group_by(filter(death_daily_210815, date <= "2021-07-31"), date), 
+                              tot_deaths=sum(tot_deaths, na.rm=TRUE)
+                              ), 
+               aes(y=tot_deaths/1000, color="green"), 
+               size=3
+               ) +
+    labs(x="End of month", y="Cumulative Deaths (000)", title="Cumulative COVID Deaths (000) in US by source") + 
+    scale_color_manual("Source", labels=c("Summed\nstates", "Summed\nsubtotals"), values=c("green", "blue"))
+
+```
+  
+Cumulative deaths by month for total US appear consistent across the files. Next steps are to continue exploring for state-level data.
