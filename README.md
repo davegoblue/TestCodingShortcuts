@@ -2550,4 +2550,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 30-AUG-2021  
 * Coronavirus_Statistics_CDC_v005 explores deaths by age and cause  
+* Coronavirus_Statistics_CDC_v005 explores deaths by place and cause  
   
