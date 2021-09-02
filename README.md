@@ -2552,4 +2552,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 explores deaths by age and cause  
 * Coronavirus_Statistics_CDC_v005 explores deaths by place and cause  
 * Coronavirus_Statistics_CDC_v005 explores age and place of death by cause  
+* Coronavirus_Statistics_CDC_v005 explores evolution by month of age and place of death by cause  
   
