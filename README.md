@@ -2555,4 +2555,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 explores evolution by month of age and place of death by cause  
 * Coronavirus_CDC_Daily_v003 updated with most recent data  
 * Coronavirus_CDC_Daily_v003 updates hospitalization and curve alignment analyses  
+* Coronavirus_Statistics_USAF_v005 downloads latest data and assesses existing clusters  
   
