@@ -2378,4 +2378,64 @@ burdenSummary %>%
 
 ```
 
-Further exploration of Nebraska and Florida is merited.
+Further exploration of Nebraska and Florida is merited:  
+```{r, fig.height=9, fig.width=9}
+
+# Attache county name and population data
+burdenPop <- burdenSummary %>%
+    left_join(getCountyData(), by=c("countyFIPS", "state"))
+burdenPop
+
+# Counties of at least 25k with non-positive cases and/or deaths in the past 28 days
+burdenZero <- burdenPop %>%
+    pivot_longer(c(tdpm, tcpm, dpm28, cpm28)) %>%
+    filter(name %in% c("dpm28", "cpm28"), value <= 0) %>%
+    mutate(is25k=ifelse(pop >= 25000, "Y", "N"))
+burdenZero %>%
+    group_by(state, name) %>%
+    summarize(n=n(), pop=sum(pop), value=sum(value), n25k=sum(is25k=="Y"),.groups="drop") %>%
+    arrange(-pop)
+
+# Create the baseline map
+p1 <- burdenZero %>%
+    pivot_wider() %>%
+    mutate(noCPM=(!is.na(cpm28) & is.na(dpm28)), 
+           noDPM=(!is.na(dpm28) & is.na(cpm28)), 
+           noBoth=(!is.na(cpm28) & !is.na(dpm28)), 
+           ctyType=factor(case_when(is25k=="N" ~ "<25k", 
+                                    noBoth ~ "Both", 
+                                    noDPM ~ "Death", 
+                                    noCPM ~ "Cases", 
+                                    TRUE ~ "Logic Error"
+                                    )
+                          )
+           ) %>%
+    select(fips=countyFIPS, ctyType) %>%
+    usmap::plot_usmap(regions="counties", values="ctyType", data=.)
+p1
+
+# Map with state overlays and legend
+p2 <- ggplot() + 
+    geom_polygon(data=p1[[1]], 
+                 aes(x=x, y=y, group=group, fill=p1[[1]]$ctyType), 
+                 color = NA,
+                 size = 0.1
+                 ) +  
+    geom_polygon(data=usmap::plot_usmap("states")[[1]], 
+                 aes(x=x, y=y, group=group), 
+                 color = "black", 
+                 lwd=1.25,
+                 fill = alpha(0.001)
+                 ) + 
+    coord_equal() + 
+    ggthemes::theme_map() + 
+    labs(title="Counties reporting non-positive cases and/or deaths in the past 28 days", 
+         subtitle="County-level data as of Sep 3, 2021",
+         caption="Source: USA Facts"
+         ) + 
+    scale_fill_brewer("Missing\nMetric", na.value="white", palette="Set2")
+p2
+
+```
+
+Missing data are common in Florida (deaths), New Jersey (deaths), and Nebraska (cases and deaths). Smaller counties may not have any cases or (especially) deaths in a month, and all other states some counties reporting burdens in the past 28 days.
