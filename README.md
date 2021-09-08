@@ -2560,4 +2560,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 06-SEP-2021  
 * Coronavirus_Statistics_USAF_v005 updates source for latest data downloads  
 * Coronavirus_Statistics_USAF_v005 adds burden by county plots  
+* Coronavirus_Statistics_USAF_v005 maps counties with 0 reported burden in past 28 days  
   
