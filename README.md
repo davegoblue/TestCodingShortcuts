@@ -2563,4 +2563,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 maps counties with 0 reported burden in past 28 days  
 * Coronavirus_Statistics_USAF_v005 explores select counties in FL, NE, NJ  
 * Coronavirus_Statistics_USAF_v005 explores unallocated vs total in FL, NE, NJ  
+* Coronavirus_Statistics_USAF_v005 explores proportion unallocated by state, metric, and month  
   
