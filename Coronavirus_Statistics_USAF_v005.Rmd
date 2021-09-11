@@ -2519,4 +2519,48 @@ for (keyState in c("FL", "NE", "NJ")) {
 
 ```
 
-The states of FL, NE, NJ appear to assign large amounts of recent data to "unallocated".
+The states of FL, NE, NJ appear to assign large amounts of recent data to "unallocated". The proportion of unallocated by month is also explored:  
+```{r, fig.height=9, fig.width=9}
+
+# Unallocated by state data
+temp_ua <- temp_casedeath %>% 
+    mutate(ua=ifelse(countyFIPS=="00000", "Unallocated", "Allocated")) %>%
+    group_by(state, date, ua) %>%
+    summarize(across(where(is.numeric), sum), .groups="drop") %>%
+    mutate(ym=customYYYYMM(date)) %>% 
+    group_by(state, ua, ym) %>% 
+    summarize(across(c("new_cases", "new_deaths"), sum, na.rm=TRUE), 
+              across(c("cases", "deaths"), last),
+              .groups="drop"
+              ) %>% 
+    pivot_longer(-c(state, ua, ym))
+temp_ua
+
+# States ordered by proportion of unallocated deaths
+tempStateSort <- temp_ua %>% 
+    pivot_wider(c(state, ym, name), names_from="ua") %>% 
+    filter(name=="deaths", ym=="2021-08") %>% 
+    mutate(pct=Unallocated/Allocated) %>% 
+    arrange(-pct) %>%
+    pull(state)
+
+# Exploration by metric
+for (keyMetric in unique(temp_ua$name)) {
+    p1 <- temp_ua %>%
+        filter(name %in% all_of(keyMetric), ym < "2021-09", ym > "2020-02") %>%
+        ggplot(aes(x=lubridate::ym(ym), y=value)) + 
+        geom_col(aes(fill=ua), position="fill") + 
+        theme(axis.text.x=element_text(angle=90)) +
+        labs(x=NULL, 
+             y="Proportion of data", 
+             title=paste0("Proportion unallocated by state on metric: ", keyMetric), 
+             subtitle="States sorted from highest percentage of cumulative unallocated deaths to lowest"
+             ) +
+        facet_wrap(~factor(state, levels=tempStateSort)) + 
+        scale_fill_discrete("Type")
+    print(p1)
+}
+
+```
+
+The unallocated bucket is used differently by state, and negatives suggest a process of moving unallocated data to allocated at a future date. The biggest recent change in proportion unallocated are in FL and NE.
