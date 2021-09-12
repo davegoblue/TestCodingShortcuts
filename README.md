@@ -2564,4 +2564,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 explores select counties in FL, NE, NJ  
 * Coronavirus_Statistics_USAF_v005 explores unallocated vs total in FL, NE, NJ  
 * Coronavirus_Statistics_USAF_v005 explores proportion unallocated by state, metric, and month  
+* Coronavirus_Statistics_CDC_v005 updated with latest data  
   
