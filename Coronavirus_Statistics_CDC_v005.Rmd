@@ -769,3 +769,90 @@ saveToRDS(cdcList_20210911)
 
 ```
   
+Plots are created for the deaths by week and age group, with the capacity to limit to a subset:  
+```{r, fig.height=9, fig.width=9}
+
+# Function to get the regression from a plot
+tempGetReg <- function(df, regYears=2015:2019) {
+    
+    lm(deaths ~ age + weekEnding:age + 0, data=subset(df, year %in% all_of(regYears))) %>% 
+        broom::tidy() %>% 
+        mutate(age=factor(str_remove(str_remove(term, pattern=":.*"), pattern="age")), 
+               type=ifelse(str_detect(term, pattern=":"), "slope", "intercept")
+               ) %>% 
+        select(age, name=type, value=estimate) %>% 
+        pivot_wider(age)
+    
+}
+
+# Function to create plots
+plotAgeWeekDeath <- function(lst, 
+                             keyStates=NULL, 
+                             addLM=TRUE,
+                             lmYears=2015:2019
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a processed list file that includes the CDC deaths data
+    # keyStates: states to be included
+    
+    # Create the plot title (use 50 states plus DC if keyStates passed as NULL)
+    plotTitle <- paste0("Total deaths by age cohort and week (", 
+                        if (is.null(keyStates)) "50 states plus DC" else paste0(keyStates, collapse=", "),
+                        ")"
+                        )
+    
+    # Set the keyStates field to 50 states plus DC if not provided
+    if (is.null(keyStates)) keyStates <- c(state.abb, "DC")
+    
+    # Extract the CDC data
+    df <- lst[["cdc"]]
+    
+    # Create plot data
+    p1Data <- df %>% 
+        filter(state %in% all_of(keyStates)) %>% 
+        group_by(weekEnding, year, age) %>% 
+        summarize(deaths=sum(deaths), .groups="drop")
+    
+    # Create the plot
+    p1 <- p1Data %>% 
+        ggplot(aes(x=weekEnding, y=deaths)) + 
+        geom_line(aes(color=year)) + 
+        facet_wrap(~age, scales="free_y") + 
+        lims(y=c(0, NA)) + 
+        # geom_abline(data=~tempGetReg(.), aes(slope=slope, intercept=intercept), lty=2) + 
+        labs(title=plotTitle, 
+             x="Week", 
+             y="All-cause deaths"
+             ) + 
+        # subtitle="Dashed line is linear model without seasonailty using 2015-2019 data", 
+        scale_color_discrete("Year")
+    
+    # Add the linear model if requested
+    if (isTRUE(addLM)) {
+        p1 <- p1 + 
+            geom_abline(data=~tempGetReg(., regYears=lmYears), 
+                        aes(slope=slope, intercept=intercept), 
+                        lty=2
+                        ) + 
+            labs(subtitle=paste0("Dashed line is linear model without seasonailty using ", 
+                                 paste0(lmYears, collapse="-"), 
+                                 " data"
+                                 )
+                 )
+    }
+    
+    # Display the plot
+    print(p1)
+    
+}
+
+# Example plots
+plotAgeWeekDeath(cdcList_20210911, addLM=FALSE)
+plotAgeWeekDeath(cdcList_20210911)
+plotAgeWeekDeath(cdcList_20210911, keyStates=c("NY", "NJ", "MA", "CT"))
+plotAgeWeekDeath(cdcList_20210911, keyStates=c("TX", "LA", "MS", "AL", "FL"))
+plotAgeWeekDeath(cdcList_20210911, keyStates=c("ND", "SD", "MT", "IA", "MO"))
+
+```
+
