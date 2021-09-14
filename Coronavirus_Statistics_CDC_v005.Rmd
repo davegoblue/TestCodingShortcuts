@@ -785,16 +785,60 @@ tempGetReg <- function(df, regYears=2015:2019) {
     
 }
 
+# Function to plot differences from trend
+getDiffTrend <- function(df, 
+                         regYears, 
+                         plotTitle
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble with filtered data
+    # regYears: years to be used in regression
+    # plotTitle: title for the plot
+    
+    # Run the linear mode and make the predictions
+    tempLM <- lm(deaths ~ age + weekEnding:age + 0, data=subset(df, year %in% all_of(regYears)))
+    tempDF <- df %>%
+        mutate(pred=predict(tempLM, newdata=df))
+    
+    # Summarize to year-age
+    sumDF <- tempDF %>%
+        group_by(year, age) %>%
+        summarize(across(where(is.numeric), sum), .groups="drop")
+    
+    # Plot the excess by year and age group
+    sumDF %>%
+        ggplot(aes(x=year, y=deaths-pred)) + 
+        geom_col(aes(fill=year)) + 
+        geom_text(data=~filter(., !(year %in% all_of(regYears))), 
+                  aes(y=0.5*(deaths-pred), label=round(deaths-pred))
+                  ) +
+        facet_wrap(~age, scales="free_y") + 
+        labs(x="Year", 
+             y="Actual deaths vs. predicted", 
+             title=plotTitle, 
+             subtitle=paste0("Trend line is linear model without seasonailty using ", 
+                             paste0(regYears, collapse="-"), 
+                             " data"
+                             )
+             )
+    
+}
+
 # Function to create plots
 plotAgeWeekDeath <- function(lst, 
                              keyStates=NULL, 
                              addLM=TRUE,
-                             lmYears=2015:2019
+                             lmYears=2015:2019, 
+                             diffTrend=FALSE
                              ) {
     
     # FUNCTION ARGUMENTS:
     # lst: a processed list file that includes the CDC deaths data
     # keyStates: states to be included
+    # addLM: boolean, should a line for the linear model be added?
+    # lmYears: what years should the linear model be fitted against?
+    # diffTrend: boolean, should a difference from trend by year be calculated?
     
     # Create the plot title (use 50 states plus DC if keyStates passed as NULL)
     plotTitle <- paste0("Total deaths by age cohort and week (", 
@@ -845,6 +889,20 @@ plotAgeWeekDeath <- function(lst,
     # Display the plot
     print(p1)
     
+    # Create a dataset for difference from expected deaths by year
+    if (isTRUE(diffTrend)) {
+        p2 <- getDiffTrend(p1Data, 
+                           regYears=lmYears, 
+                           plotTitle=paste0("Deaths vs trend for: ", 
+                                            if (setequal(keyStates, c(state.abb, "DC"))) 
+                                                "50 states plus DC" 
+                                            else 
+                                                paste0(keyStates, collapse=", ")
+                                            )
+                           )
+        print(p2)
+    }
+    
 }
 
 # Example plots
@@ -853,6 +911,12 @@ plotAgeWeekDeath(cdcList_20210911)
 plotAgeWeekDeath(cdcList_20210911, keyStates=c("NY", "NJ", "MA", "CT"))
 plotAgeWeekDeath(cdcList_20210911, keyStates=c("TX", "LA", "MS", "AL", "FL"))
 plotAgeWeekDeath(cdcList_20210911, keyStates=c("ND", "SD", "MT", "IA", "MO"))
+
+# Examples with excess
+plotAgeWeekDeath(cdcList_20210911, diffTrend=TRUE)
+plotAgeWeekDeath(cdcList_20210911, keyStates=c("NY", "NJ", "MA", "CT"), diffTrend=TRUE)
+plotAgeWeekDeath(cdcList_20210911, keyStates=c("TX", "LA", "MS", "AL", "FL"), diffTrend=TRUE)
+plotAgeWeekDeath(cdcList_20210911, keyStates=c("ND", "SD", "MT", "IA", "MO"), diffTrend=TRUE)
 
 ```
 
