@@ -2569,4 +2569,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 13-SEP-2021  
 * Coronavirus_Statistics_CDC_v005 creates plots of deaths by week and age group  
 * Coronavirus_Statistics_CDC_v005 includes excess death calculation  
+* Coronavirus_Statistics_CDC_v005 plotAgeWeekDeath() updated to return data  
   
