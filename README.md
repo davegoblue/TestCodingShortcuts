@@ -2571,4 +2571,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 includes excess death calculation  
 * Coronavirus_Statistics_CDC_v005 plotAgeWeekDeath() updated to return data  
 * Coronavirus_Statistics_CDC_v005 calculates excess all-cause death by state, age, and week  
+* Coronavirus_Statistics_CDC_v005 adds zeroes for missing state-week-age combinations  
   
