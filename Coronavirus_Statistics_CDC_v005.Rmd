@@ -990,3 +990,61 @@ tempState %>%
 
 ```
 
+The process is updated so that data can be calculated for those groups of state-age where there is sufficient data:  
+```{r, fig.height=9, fig.width=9}
+
+# Grid of all valid combinations of weekEnding-state-age
+validGrid <- expand.grid(weekEnding=sort(unique(cdcList_20210911$cdc$weekEnding)), 
+                         state=c(state.abb, "DC"),
+                         age=unique(cdcList_20210911$cdc$age), 
+                         stringsAsFactors=FALSE, 
+                         KEEP.OUT.ATTRS=FALSE
+                         ) %>%
+    tibble::as_tibble() %>%
+    mutate(year=factor(lubridate::epiyear(weekEnding)))
+
+# Check that there are no records missing from validGrid
+cdcList_20210911$cdc %>%
+    anti_join(validGrid, by=c("weekEnding", "state", "age", "year"))
+
+# Modified data to insert 0 deaths for any missing data
+cdcMod <- cdcList_20210911$cdc %>%
+    select(state, age, weekEnding, year, deaths) %>%
+    right_join(validGrid, by=c("weekEnding", "state", "age", "year")) %>%
+    mutate(deaths=ifelse(is.na(deaths), 0, deaths))
+cdcMod
+
+# Create data for each state as before
+modStateList <- sort(c(state.abb, "DC"))
+modState <- lapply(modStateList, 
+                   FUN=function(x) plotAgeWeekDeath(list("cdc"=cdcMod), 
+                                                    keyStates=x,
+                                                    diffTrend=TRUE, 
+                                                    printPlots=FALSE, 
+                                                    returnData=TRUE, 
+                                                    returnPlots=FALSE
+                                                    )[["p2Full"]]
+                   ) %>%
+    bind_rows(.id="stateNum") %>%
+    mutate(state=modStateList[as.integer(stateNum)])
+modState
+
+# Plot the results
+modState %>%
+    filter() %>%
+    group_by(state, weekEnding, year) %>%
+    summarize(across(where(is.numeric), sum), .groups="drop") %>%
+    ggplot(aes(x=weekEnding)) + 
+    geom_line(aes(y=deaths, color=year)) + 
+    geom_line(aes(y=pred), lty=2) + 
+    facet_wrap(~state, scales="free_y") + 
+    labs(x=NULL, 
+         y="Weekly all-cause deaths", 
+         title="All-cause deaths per week by state", 
+         subtitle="Dashed line is linear trend without seasonality using 2015-2019 data"
+         ) + 
+    lims(y=c(0, NA)) +
+    scale_color_discrete("")
+
+```
+
