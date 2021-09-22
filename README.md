@@ -2578,4 +2578,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 20-SEP-2021  
 * Coronavirus_Statistics_CDC_v005 plots coronavirus and all-cause deaths by age group and state for 2020 and YTD 2021  
 * DataCamp_Insights_v003_d captures Introduction to Statistics in R - Chapter 1 (Summary Statistics)  
+* DataCamp_Insights_v003_d captures Introduction to Statistics in R - Chapter 2 (Random Numbers and Probability)  
   
