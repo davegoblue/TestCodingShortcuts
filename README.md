@@ -2580,4 +2580,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_d captures Introduction to Statistics in R - Chapter 1 (Summary Statistics)  
 * DataCamp_Insights_v003_d captures Introduction to Statistics in R - Chapter 2 (Random Numbers and Probability)  
 * DataCamp_Insights_v003_d captures Introduction to Statistics in R - Chapter 3 (More Distributions and Central Limit Theorem)  
+* DataCamp_Insights_v003_d captures Introduction to Statistics in R - Chapter 4 (Correlation and Experimental Design)  
   
