@@ -2582,4 +2582,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_d captures Introduction to Statistics in R - Chapter 3 (More Distributions and Central Limit Theorem)  
 * DataCamp_Insights_v003_d captures Introduction to Statistics in R - Chapter 4 (Correlation and Experimental Design)  
 * DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 1 (Simple Linear Regression) - code  
+* DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 2 (Predictions and Model Objects) - code  
   
