@@ -2587,4 +2587,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 27-SEP-2021  
 * DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 3 (Assessing Model Fit) - code  
 * DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 4 (Simple Logistic Regression) - code  
+* DataCamp_Insights_v003_d captures Handling Missing Data with Imputations in R - Chapter 1 (Problem of Missing Data) - code  
   
