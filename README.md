@@ -2589,4 +2589,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_d captures Introduction to Regression in R - Chapter 4 (Simple Logistic Regression) - code  
 * DataCamp_Insights_v003_d captures Handling Missing Data with Imputations in R - Chapter 1 (Problem of Missing Data) - code  
 * DataCamp_Insights_v003_d captures Handling Missing Data with Imputations in R - Chapter 2 (Donor Based Imputation) - code  
+* DataCamp_Insights_v003_d captures Handling Missing Data with Imputations in R - Chapter 3 (Model Based Imputation) - code  
   
