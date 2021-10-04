@@ -2593,3 +2593,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_d captures Handling Missing Data with Imputations in R - Chapter 4 (Uncertainty from Imputation) - code  
 * DataCamp_Insights_v003_d captures Data Cleaning in R - Chapter 1 (Common Data Problems) - code  
   
+### Expansions week of 04-OCT-2021  
+* DataCamp_Insights_v003_d captures Data Cleaning in R - Chapter 2 (Categorical and Text Data) - code  
+  
