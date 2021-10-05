@@ -2595,4 +2595,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 04-OCT-2021  
 * DataCamp_Insights_v003_d captures Data Cleaning in R - Chapter 2 (Categorical and Text Data) - code  
+* DataCamp_Insights_v003_d captures Data Cleaning in R - Chapter 3 (Advanced Data Problems) - code  
   
