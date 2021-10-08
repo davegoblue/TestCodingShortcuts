@@ -2598,4 +2598,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * DataCamp_Insights_v003_d captures Data Cleaning in R - Chapter 3 (Advanced Data Problems) - code  
 * DataCamp_Insights_v003_d captures Data Cleaning in R - Chapter 4 (Record Linkage) - code  
 * Coronavirus_CDC_Daily_v003 updated with latest data  
+* Coronavirus_CDC_Daily_v003 updates state CFR summaries  
   
