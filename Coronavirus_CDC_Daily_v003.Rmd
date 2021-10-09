@@ -1337,3 +1337,98 @@ onePageCFRPlot(dfPivot_211006, keyState="HI", minDate="2020-08-01")
 
 ```
 
+The process is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+createBurdenPivot <- function(lst, 
+                              dataThru,
+                              minDatePlot="2020-08-01", 
+                              plotByState=c(state.abb, "DC")
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a processed list that includes sub-component $dfRaw$cdcHosp
+    # dataThru: character string to be used for 'data through'; most commonly MMM-YY
+    # minDatePlot: starting date for plots
+    # plotByState: states to be facetted for plot of hospitaliztions by age (FALSE means do not create plot)
+
+    # Convert minDatePlot to Date if passed as character
+    if ("character" %in% class(minDatePlot)) minDatePlot <- as.Date(minDatePlot)
+    
+    # Create the hospitalized by age data
+    hospAge <- lst[["dfRaw"]][["cdcHosp"]] %>%
+        select(state, 
+               date, 
+               grep(x=names(.), pattern="ed_\\d.*[9+]$", value=TRUE), 
+               grep(x=names(.), pattern="pediatric.*ed$", value=TRUE)
+               ) %>% 
+        pivot_longer(-c(state, date)) %>% 
+        mutate(confSusp=ifelse(grepl(x=name, pattern="confirmed"), "confirmed", "suspected"), 
+               adultPed=ifelse(grepl(x=name, pattern="adult"), "adult", "ped"), 
+               age=ifelse(adultPed=="ped", 
+                          "0-17", 
+                          stringr::str_replace_all(string=name, pattern=".*_", replacement="")
+                          ), 
+               age=ifelse(age %in% c("0-17", "18-19"), "0-19", age), 
+               div=as.character(state.division)[match(state, state.abb)]
+               )
+
+    # Create the pivoted burden data
+    dfPivot <- makeCaseHospDeath(dfHosp=hospAge, dfCaseDeath=lst[["dfPerCapita"]])
+
+    # Plot for overall trends by age group
+    p1 <- hospAge %>% 
+        filter(state %in% c(state.abb, "DC"), !is.na(value)) %>% 
+        mutate(ageBucket=age) %>% 
+        group_by(date, ageBucket) %>% 
+        summarize(value=sum(value), .groups="drop") %>% 
+        arrange(date) %>%
+        group_by(ageBucket) %>% 
+        mutate(value7=zoo::rollmean(value, k=7, fill=NA)) %>% 
+        filter(date >= minDatePlot) %>% 
+        ggplot(aes(x=date, y=value7)) + 
+        labs(x=NULL, 
+             y="Confirmed or suspected COVID admissions (rolling-7 mean)", 
+             title=paste0("Hospital admissions for COVID by age bucket (Aug 2020 - ", dataThru, ")"), 
+             subtitle="50 states and DC (includes confirmed and suspected from CDC data)"
+             ) + 
+        lims(y=c(0, NA))
+
+    # Create three main plots of hospitalized by age data
+    print(p1 + geom_line(aes(group=ageBucket, color=ageBucket), size=1) + scale_color_discrete("Age\nbucket"))
+    print(p1 + geom_col(aes(fill=ageBucket), position="stack") + scale_color_discrete("Age\nbucket"))
+    print(p1 + geom_col(aes(fill=ageBucket), position="fill") + scale_color_discrete("Age\nbucket"))
+
+    # Plot for trends by state and age group
+    if (!isFALSE(plotByState)) {
+        p2 <- hospAge %>% 
+            filter(state %in% plotByState, !is.na(value)) %>% 
+            mutate(ageBucket=ifelse(age >= "60", "60+", ifelse(age=="0-19", "0-19", "20-59"))) %>% 
+            group_by(date, state, ageBucket) %>% 
+            summarize(value=sum(value), .groups="drop") %>% 
+            group_by(ageBucket, state) %>% 
+            mutate(value7=zoo::rollmean(value, k=7, fill=NA)) %>% 
+            filter(date >= minDatePlot) %>% 
+            ggplot(aes(x=date, y=value7)) + 
+            geom_line(aes(color=ageBucket, group=ageBucket)) + 
+            scale_color_discrete("Age\nbucket") + 
+            labs(x=NULL, 
+                 y="Confirmed or suspected COVID admissions (rolling-7 mean)", 
+                 title=paste0("Hospital admissions for COVID by age bucket (Aug 2020 - ", dataThru, ")")
+                 ) + 
+            lims(y=c(0, NA)) + 
+            facet_wrap(~state, scales="free_y")
+        print(p2)
+    }
+    
+    # Return key data (do not return plot objects)
+    list(hospAge=hospAge, dfPivot=dfPivot)
+    
+}
+
+burdenPivotList_211006 <- createBurdenPivot(cdc_daily_211006, dataThru="Sep 2021")
+identical(burdenPivotList_211006$dfPivot, dfPivot_211006)
+identical(burdenPivotList_211006$hospAge, hospAge_211006)
+
+```
+
