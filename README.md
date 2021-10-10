@@ -2600,4 +2600,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 updated with latest data  
 * Coronavirus_CDC_Daily_v003 updates state CFR summaries  
 * Coronavirus_CDC_Daily_v003 includes functional form for creating hospitalized and burden datasets  
+* Coronavirus_CDC_Daily_v003 includes cumulative burden plots  
   
