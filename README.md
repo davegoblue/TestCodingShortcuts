@@ -2605,4 +2605,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 11-OCT-2021  
 * Coronavirus_CDC_Daily_v003 includes functional form for cumulative burden plots  
 * Coronavirus_CDC_Daily_v003 includes cumulative vaccination plots  
+* Coronavirus_CDC_Daily_v003 includes functional form for cumulative vaccination plots  
   
