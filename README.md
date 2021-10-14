@@ -2606,4 +2606,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 includes functional form for cumulative burden plots  
 * Coronavirus_CDC_Daily_v003 includes cumulative vaccination plots  
 * Coronavirus_CDC_Daily_v003 includes functional form for cumulative vaccination plots  
+* Coronavirus_CDC_Daily_v003 adds age cohort for cumulative vaccination plots  
   
