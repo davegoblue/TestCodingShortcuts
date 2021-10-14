@@ -1050,7 +1050,9 @@ tempStackPlot <- function(df,
                           colorVector=c("lightblue", "grey", "orange", "black"), 
                           addSuffix="%", 
                           scaleName="Cohort", 
-                          textBuffer=0.5
+                          textBuffer=0.5, 
+                          makeDotPlot=FALSE, 
+                          yLims=NULL
                           ) {
 
     # FUNCTION ARGUMENTS:
@@ -1063,17 +1065,24 @@ tempStackPlot <- function(df,
     # addSuffix: value to be appended to all values in plots (e.g., 96 would show as 96% in the text label)
     # scaleName: the name to use for the legend
     # textBuffer: distance from bar to text
+    # makeDotPlot: boolean, should a dot-plot be made rather than stacked bars?
+    # yLims: the limits for the y-axis passed as a length-2 vector such as c(0, 100) or c(0, NA)
     
     colorVector <- colorVector[1:length(yVars)]
     names(colorVector) <- names(yVars)
+    
+    # Function for the legend
+    fnLegendKey <- if(isTRUE(makeDotPlot)) scale_color_manual else scale_fill_manual
     
     p1 <- df %>% 
         select(all_of(xVar), all_of(names(yVars))) %>%
         pivot_longer(-c(all_of(xVar))) %>%
         ggplot(aes(x=fct_reorder(get(xVar[1]), value, max))) + 
         coord_flip() + 
-        labs(x=NULL, y=yLab, title=plotTitle) + 
-        geom_col(aes(y=value, fill=name), position="identity") + 
+        labs(x=NULL, y=yLab, title=plotTitle) +
+        (if(isTRUE(makeDotPlot)) geom_point(aes(y=value, color=name)) 
+         else geom_col(aes(y=value, fill=name), position="identity")
+         ) +
         geom_text(aes(y=value+textBuffer, 
                       label=paste0(value, 
                                    addSuffix, 
@@ -1083,13 +1092,16 @@ tempStackPlot <- function(df,
                   hjust=0, 
                   size=3
                   ) + 
-        scale_fill_manual(scaleName, 
-                          breaks=rev(names(yVars)), 
-                          labels=rev(unname(yVars)),
-                          values=colorVector
-                          ) +
+        fnLegendKey(scaleName, 
+                    breaks=rev(names(yVars)), 
+                    labels=rev(unname(yVars)),
+                    values=colorVector
+                    ) +
         theme(legend.position="bottom")
-
+    
+    # Add the y-limits if appropriate
+    if (!is.null(yLims)) p1 <- p1 + lims(y=yLims)
+    
     p1
     
 }
@@ -1663,7 +1675,7 @@ cumulativeVaccinePlot <- function(lst,
     # returnData: boolean, should the data be returned?
     # ...: other arguments to pass to tempStackPlot(), most commonly colorVector
 
-        # Get the list of key dates
+    # Get the list of key dates
     if (is.null(keyDates)) {
         keyDates <- as.Date(max(lst[["dfRaw"]][["vax"]]$date)-2-lubridate::dmonths(c(0, 3, 6)), 
                             origin="1970-01-01"
@@ -1673,6 +1685,35 @@ cumulativeVaccinePlot <- function(lst,
     # Convert to date if needed
     if (!("Date" %in% class(keyDates))) keyDates <- as.Date(keyDates)
 
+    # Chart for fully vaccinated by state
+    p5 <- tempStackPlot(lst[["dfRaw"]][["vax"]] %>% filter(date==max(keyDates), state %in% keyStates), 
+                        yVars=c("vxcgte65pct"="65+", 
+                                "vxcgte18pct"="18+", 
+                                "vxcpoppct"="All"
+                                ), 
+                        yLab="% Fully vaccinated", 
+                        plotTitle=paste0("Fully vaccinated by age cohort and state\n(as of ", max(keyDates), ")"), 
+                        makeDotPlot=TRUE, 
+                        yLims = c(0, 105)
+                        )
+
+    # Run for first dose
+    p6 <- tempStackPlot(lst[["dfRaw"]][["vax"]] %>% filter(date==max(keyDates), state %in% keyStates), 
+                        yVars=c("Administered_Dose1_Recip_65PlusPop_Pct"="65+", 
+                                "Administered_Dose1_Recip_18PlusPop_Pct"="18+", 
+                                "Administered_Dose1_Pop_Pct"="All"
+                                ), 
+                        yLab="% Receiving First Dose", 
+                        plotTitle=paste0("First-dose vaccinated by age cohort and state\n(as of ", 
+                                         max(keyDates), 
+                                         ")"
+                                         ),
+                        makeDotPlot=TRUE,
+                        yLims=c(0, 105)
+                        )
+
+    gridExtra::grid.arrange(p5, p6, nrow=1)
+    
     # Create data filtered for keyDates and keyStates
     burdenGrowth <- lst[["dfRaw"]][["vax"]] %>% 
         filter(date %in% all_of(keyDates), 
