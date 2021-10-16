@@ -1839,3 +1839,87 @@ postProcessCDCDaily(cdc_daily_211006,
 
 ```
 
+Data from [the US Census](https://www.census.gov/data/tables/time-series/demo/popest/2010s-state-detail.html#par_textimage_673542126) is downloaded for age estimates by state. Per the documentation, AGE=85 means 85 and over, and AGE=999 means state total, while SEX=0 means total, SEX=1 means male, and SEX=2 means female:  
+```{r}
+
+popStateAge <- fileRead("./RInputFiles/sc-est2019-agesex-civ.csv")
+popStateAge
+
+# Exploration of the states and ages and sexes included
+popStateAge %>% pull(NAME) %>% unique() %>% sort()
+popStateAge %>% pull(AGE) %>% unique() %>% sort()
+popStateAge %>% pull(SEX) %>% unique() %>% sort()
+
+```
+  
+The data can then be explored for the total US population estimates over time, as well as the latest population estimates as of 2019:  
+```{r, fig.height=9, fig.width=9}
+
+# Total US population estimates
+popStateAge %>%
+    filter(AGE==999, NAME=="United States") %>%
+    select(state=NAME, SEX, starts_with("POPEST")) %>%
+    pivot_longer(-c(state, SEX)) %>%
+    mutate(year=as.integer(stringr::str_extract(name, "\\d{4}")), 
+           SEX=factor(SEX, levels=c("0", "1", "2"), labels=c("Total", "Male", "Female"))
+           ) %>%
+    ggplot(aes(x=factor(year))) + 
+    geom_line(aes(y=value/1000000, group=SEX, color=SEX)) + 
+    geom_text(aes(label=round(value/1000000, 1), 
+                  y=value/1000000 + ifelse(SEX=="Male", -5, 5), 
+                  color=SEX
+                  )
+              ) +
+    lims(y=c(0, NA)) + 
+    labs(x=NULL, y="Population (millions)", title="US Population Estimates by Year")
+
+# Confirmation that US is the sum of the states
+popStateAge %>%
+    select(-c(SUMLEV, REGION, DIVISION, STATE)) %>%
+    pivot_longer(-c(NAME, SEX, AGE)) %>%
+    mutate(type=ifelse(NAME=="United States", "United States", "Component")) %>%
+    group_by(type, SEX, AGE, name) %>%
+    summarize(value=sum(value), .groups="drop") %>%
+    pivot_wider(c(SEX, AGE, name), names_from="type", values_from="value") %>%
+    mutate(diff=`United States`-Component) %>%
+    arrange(-abs(diff))
+    
+# Using POPEST2019_CIV as the key metric
+popStateAge_2019 <- popStateAge %>%
+    filter(NAME != "United States") %>%
+    select(stateFull=NAME, sex=SEX, age=AGE, pop2019=POPEST2019_CIV) %>%
+    mutate(state=c(state.abb, "DC")[match(stateFull, c(state.name, "District of Columbia"))], 
+           sex=factor(sex, levels=c("0", "1", "2"), labels=c("Total", "Male", "Female"))
+           )
+popStateAge_2019
+
+# Total Population as of 2019
+popStateAge_2019 %>%
+    filter(age==999) %>%
+    ggplot(aes(x=fct_reorder(state, pop2019, max))) + 
+    geom_text(data=~filter(., sex == "Total"), 
+              aes(label=paste0(round(pop2019/1000000, 1), " (", state, ")"), y=pop2019/1000000 + 0.1), 
+              size=3, 
+              hjust=0
+              ) +
+    geom_col(data=~filter(., sex != "Total"), aes(y=pop2019/1000000, fill=sex), position="stack") + 
+    coord_flip() + 
+    labs(x=NULL, y="Population (millions)", title="2019 Population by State and Sex")
+
+# Population by Age as of 2019
+popStateAge_2019 %>%
+    filter(sex=="Total", age != 999) %>%
+    group_by(age) %>%
+    summarize(pop2019=sum(pop2019)) %>%
+    ggplot(aes(x=factor(age))) + 
+    geom_text(aes(label=round(pop2019/1000000, 1), y=pop2019/1000000 + 0.1), 
+              size=3, 
+              hjust=0
+              ) +
+    geom_col(aes(y=pop2019/1000000)) + 
+    labs(x=NULL, y="Population (millions)", title="2019 Population by Age") + 
+    coord_flip()
+
+```
+
+Population totals as well as splits by state, age, and sex seem reasonable. Next steps are to convert some of the hospital data to "per capita" rather than absolute.
