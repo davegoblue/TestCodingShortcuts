@@ -2609,4 +2609,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 adds age cohort for cumulative vaccination plots  
 * Coronavirus_CDC_Daily_v003 adds age-state-vaccination plots  
 * Coronavirus_CDC_Daily_v003 loads population by state-age estimates  
+* Coronavirus_CDC_Daily_v003 analyzes population by state-age estimates  
   
