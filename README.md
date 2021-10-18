@@ -2611,3 +2611,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 loads population by state-age estimates  
 * Coronavirus_CDC_Daily_v003 analyzes population by state-age estimates  
   
+### Expansions week of 18-OCT-2021  
+* Coronavirus_CDC_Daily_v003 converts hospitalized by age-state to per capita  
+  
