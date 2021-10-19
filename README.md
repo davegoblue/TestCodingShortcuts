@@ -2613,4 +2613,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 18-OCT-2021  
 * Coronavirus_CDC_Daily_v003 converts hospitalized by age-state to per capita  
+* Coronavirus_CDC_Daily_v003 fixed per capita calculations  
   
