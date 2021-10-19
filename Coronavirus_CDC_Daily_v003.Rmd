@@ -1994,3 +1994,58 @@ burdenPivotList_211006$dfPivot %>%
 ```
 
 There is very significant variability by state that is not fully consistent with other metrics per capita such as cases and deaths. Further exploration is merited.
+
+The hospitalized data in dfPivot was previously divided by total state population. The process is updated to use raw hospital data from hospAge:  
+```{r, fig.height=9, fig.width=9}
+
+ageMap <- popStateAgeBucket_2019 %>% 
+    count(bucket10, bucket03) %>%
+    filter(bucket10 != "Total") %>%
+    select(-n)
+ageMap
+
+# Create hospitalized by age bucket by state data
+hospBucketState <- burdenPivotList_211006$hospAge %>%
+    left_join(ageMap, by=c("age"="bucket10")) %>%
+    filter(!is.na(value)) %>%
+    group_by(state, date, bucket03) %>%
+    summarize(value=sum(value), .groups="drop") %>%
+    filter(state %in% c(state.abb, "DC")) %>%
+    left_join(popStateAgeBucket_2019 %>%
+                  filter(sex=="Total") %>%
+                  group_by(state, bucket03) %>% 
+                  summarize(pop2019=sum(pop2019), .groups="drop"), 
+              by=c("state", "bucket03")
+              ) %>%
+    mutate(vpm=1000000*value/pop2019) %>%
+    group_by(state, bucket03) %>%
+    arrange(date) %>%
+    mutate(vpm7=zoo::rollmean(vpm, k=7, fill=NA), vpmcum=cumsum(vpm)) %>%
+    ungroup()
+
+hospBucketState %>%
+    ggplot(aes(x=date, y=vpm7)) + 
+    geom_line(aes(group=bucket03, color=bucket03)) + 
+    labs(x=NULL, 
+         y="Newly hospitalized per million (rolling 7-day mean)", 
+         title="Per million newly hospitalized by age bucket"
+         ) +
+    facet_wrap(~state, scales="free_y") + 
+    scale_color_discrete("Age")
+
+
+hospBucketState %>%
+    filter(state != "ND", date >= "2020-07-15") %>%
+    ggplot(aes(x=date, y=vpmcum/1000)) + 
+    geom_line(aes(group=bucket03, color=bucket03)) + 
+    labs(x=NULL, 
+         y="Cumulative hospitalized per thousand since 2020-07-15", 
+         title="Cumulative newly hospitalized per thousand by age bucket", 
+         subtitle="Since 2020-07-15, excludes ND"
+         ) +
+    facet_wrap(~state, scales="free_y") + 
+    scale_color_discrete("Age")
+
+```
+  
+
