@@ -2048,4 +2048,104 @@ hospBucketState %>%
 
 ```
   
+The process to create population data by state and age is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+createPopStateAge <- function(loc) {
+    
+    # FUNCTION ARGUMENTS:
+    # loc: file location on the local computer
+    
+    # Read the data
+    df <- fileRead(loc)
+
+    # Confirm that states, ages, and sexes are as expected
+    a1 <- all.equal(sort(c(state.name, "District of Columbia", "United States")), 
+                    df %>% pull(NAME) %>% unique() %>% sort()
+                    )
+    print(a1)
+    a2 <- all.equal(c(0:85, 999), df %>% pull(AGE) %>% unique() %>% sort())
+    print(a2)
+    a3 <- all.equal(0:2, df %>% pull(SEX) %>% unique() %>% sort())
+    print(a3)
+    if(!isTRUE(a1) | !isTRUE(a2) | !isTRUE(a3)) stop("\nUnexpected values for state, age, or sex\n")
+
+    # Plot for total US population estimates
+    p1 <- df %>%
+        filter(AGE==999, NAME=="United States") %>%
+        select(state=NAME, SEX, starts_with("POPEST")) %>%
+        pivot_longer(-c(state, SEX)) %>%
+        mutate(year=as.integer(stringr::str_extract(name, "\\d{4}")), 
+               SEX=factor(SEX, levels=c("0", "1", "2"), labels=c("Total", "Male", "Female"))
+               ) %>%
+        ggplot(aes(x=factor(year))) + 
+        geom_line(aes(y=value/1000000, group=SEX, color=SEX)) + 
+        geom_text(aes(label=round(value/1000000, 1), 
+                      y=value/1000000 + ifelse(SEX=="Male", -5, 5), 
+                      color=SEX
+                      )
+                  ) +
+        lims(y=c(0, NA)) + 
+        labs(x=NULL, y="Population (millions)", title="US Population Estimates by Year")
+    print(p1)
+
+    # Confirmation that US is the sum of the states
+    dfCheckState <- df %>%
+        select(-c(SUMLEV, REGION, DIVISION, STATE)) %>%
+        pivot_longer(-c(NAME, SEX, AGE)) %>%
+        mutate(type=ifelse(NAME=="United States", "United States", "Component")) %>%
+        group_by(type, SEX, AGE, name) %>%
+        summarize(value=sum(value), .groups="drop") %>%
+        pivot_wider(c(SEX, AGE, name), names_from="type", values_from="value") %>%
+        mutate(diff=`United States`-Component) %>%
+        arrange(-abs(diff))
+    if(max(abs(dfCheckState$diff)) > 0) {
+        print(dfCheckState)
+        stop("\nUS total is not the sum of the states and DC\n")
+    } else {
+        cat("\nUS total is the sum of the states and DC\n\n")
+    }
+    
+    # Confirmation that age 999 is the sum of all ages
+    dfCheckAge <- df %>%
+        select(-c(SUMLEV, REGION, DIVISION, STATE)) %>%
+        pivot_longer(-c(NAME, SEX, AGE)) %>%
+        mutate(type=ifelse(AGE==999, "Total", "Component")) %>%
+        group_by(type, SEX, NAME, name) %>%
+        summarize(value=sum(value), .groups="drop") %>%
+        pivot_wider(c(SEX, NAME, name), names_from="type", values_from="value") %>%
+        mutate(diff=Total-Component) %>%
+        arrange(-abs(diff))
+    if(max(abs(dfCheckAge$diff)) > 0) {
+        print(dfCheckAge)
+        stop("\nAge 999 total is not the sum of the ages\n")
+    } else {
+        cat("\nAge 999 total is the sum of the ages\n\n")
+    }
+
+    # Confirmation that sex 0 is the sum of all sexes
+    dfCheckSex <- df %>%
+        select(-c(SUMLEV, REGION, DIVISION, STATE)) %>%
+        pivot_longer(-c(NAME, SEX, AGE)) %>%
+        mutate(type=ifelse(SEX==0, "Total", "Component")) %>%
+        group_by(type, AGE, NAME, name) %>%
+        summarize(value=sum(value), .groups="drop") %>%
+        pivot_wider(c(AGE, NAME, name), names_from="type", values_from="value") %>%
+        mutate(diff=Total-Component) %>%
+        arrange(-abs(diff))
+    if(max(abs(dfCheckSex$diff)) > 0) {
+        print(dfCheckSex)
+        stop("\nSex 0 total is not the sum of the sexes\n")
+    } else {
+        cat("\nSex 0 total is the sum of the sexes\n\n")
+    }
+
+    # Return the data
+    df
+    
+}
+
+createPopStateAge("./RInputFiles/sc-est2019-agesex-civ.csv")
+
+```
 
