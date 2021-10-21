@@ -2051,13 +2051,14 @@ hospBucketState %>%
 The process to create population data by state and age is converted to functional form:  
 ```{r, fig.height=9, fig.width=9}
 
-createPopStateAge <- function(loc) {
+readPopStateAge <- function(loc) {
     
     # FUNCTION ARGUMENTS:
     # loc: file location on the local computer
     
     # Read the data
-    df <- fileRead(loc)
+    df <- fileRead(loc) %>%
+        checkUniqueRows(uniqueBy=c("NAME", "SEX", "AGE"))
 
     # Confirm that states, ages, and sexes are as expected
     a1 <- all.equal(sort(c(state.name, "District of Columbia", "United States")), 
@@ -2089,63 +2090,98 @@ createPopStateAge <- function(loc) {
         labs(x=NULL, y="Population (millions)", title="US Population Estimates by Year")
     print(p1)
 
-    # Confirmation that US is the sum of the states
-    dfCheckState <- df %>%
-        select(-c(SUMLEV, REGION, DIVISION, STATE)) %>%
-        pivot_longer(-c(NAME, SEX, AGE)) %>%
-        mutate(type=ifelse(NAME=="United States", "United States", "Component")) %>%
-        group_by(type, SEX, AGE, name) %>%
-        summarize(value=sum(value), .groups="drop") %>%
-        pivot_wider(c(SEX, AGE, name), names_from="type", values_from="value") %>%
-        mutate(diff=`United States`-Component) %>%
-        arrange(-abs(diff))
-    if(max(abs(dfCheckState$diff)) > 0) {
-        print(dfCheckState)
-        stop("\nUS total is not the sum of the states and DC\n")
-    } else {
-        cat("\nUS total is the sum of the states and DC\n\n")
+    componentCheck <- function(vrbl, sumName, descMessage) {
+        otherVars <- setdiff(c("NAME", "SEX", "AGE"), vrbl)
+        dfCheck <- df %>%
+            select(-c(SUMLEV, REGION, DIVISION, STATE)) %>%
+            pivot_longer(-c(NAME, SEX, AGE)) %>%
+            mutate(across(.cols=all_of(vrbl), .fns=~ifelse(.x==sumName, "Total", "Component"), .names="type")) %>%
+            group_by_at(c("type", all_of(otherVars), "name")) %>%
+            summarize(value=sum(value), .groups="drop") %>%
+            pivot_wider(c(all_of(otherVars), "name"), names_from="type", values_from="value") %>%
+            mutate(diff=Total-Component) %>%
+            arrange(-abs(diff))
+        if(max(abs(dfCheck$diff)) > 0) {
+            print(dfCheck)
+            stop(paste0("\nFAILED CHECK: ", descMessage, "\n"))
+        } else {
+            cat("\nPASSED CHECK:", descMessage, "\n\n")
+        }
     }
     
-    # Confirmation that age 999 is the sum of all ages
-    dfCheckAge <- df %>%
-        select(-c(SUMLEV, REGION, DIVISION, STATE)) %>%
-        pivot_longer(-c(NAME, SEX, AGE)) %>%
-        mutate(type=ifelse(AGE==999, "Total", "Component")) %>%
-        group_by(type, SEX, NAME, name) %>%
-        summarize(value=sum(value), .groups="drop") %>%
-        pivot_wider(c(SEX, NAME, name), names_from="type", values_from="value") %>%
-        mutate(diff=Total-Component) %>%
-        arrange(-abs(diff))
-    if(max(abs(dfCheckAge$diff)) > 0) {
-        print(dfCheckAge)
-        stop("\nAge 999 total is not the sum of the ages\n")
-    } else {
-        cat("\nAge 999 total is the sum of the ages\n\n")
-    }
-
-    # Confirmation that sex 0 is the sum of all sexes
-    dfCheckSex <- df %>%
-        select(-c(SUMLEV, REGION, DIVISION, STATE)) %>%
-        pivot_longer(-c(NAME, SEX, AGE)) %>%
-        mutate(type=ifelse(SEX==0, "Total", "Component")) %>%
-        group_by(type, AGE, NAME, name) %>%
-        summarize(value=sum(value), .groups="drop") %>%
-        pivot_wider(c(AGE, NAME, name), names_from="type", values_from="value") %>%
-        mutate(diff=Total-Component) %>%
-        arrange(-abs(diff))
-    if(max(abs(dfCheckSex$diff)) > 0) {
-        print(dfCheckSex)
-        stop("\nSex 0 total is not the sum of the sexes\n")
-    } else {
-        cat("\nSex 0 total is the sum of the sexes\n\n")
-    }
+    componentCheck("NAME", sumName="United States", descMessage="United States total is the sum of states and DC")
+    componentCheck("AGE", sumName=999, descMessage="Age 999 total is the sum of the ages")
+    componentCheck("SEX", sumName=0, descMessage="Sex 0 total is the sum of the sexes")
 
     # Return the data
     df
     
 }
 
-createPopStateAge("./RInputFiles/sc-est2019-agesex-civ.csv")
+
+filterPopStateAge <- function(df, keyCol, keyColName=keyCol, yearLabel=NULL) {
+    
+    # FUNCTION ARGUENTS:
+    # df: loaded data frame with columns
+    # keyCol: the population column to select
+    # keyColName: renaming to be applied for the population column (default will leave as-is)
+    # yearLabel: label for year to use in plots (NULL means infer from keyCol)
+
+    if (is.null(yearLabel)) yearLabel <- stringr::str_extract(keyCol, pattern="\\d{4}")
+    
+    # Create the selection and renaming vector
+    useCols <- c("stateFull", "sex", "age", all_of(keyColName))
+    names(useCols) <- c("NAME", "SEX", "AGE", all_of(keyCol))
+    
+    # Select the key variable and rename, add state abbreviation, convert sex to more interpretable factor
+    dfFilter <- df %>%
+        colSelector(names(useCols)) %>%
+        colRenamer(useCols) %>%
+        mutate(state=c(state.abb, "DC", "US")[match(stateFull, 
+                                                    c(state.name, "District of Columbia", "United States")
+                                                    )
+                                              ], 
+               sex=factor(sex, levels=c(0, 1, 2), labels=c("Total", "Male", "Female"))
+               )
+
+    # Plot for total population in the key year
+    p1 <- dfFilter %>%
+        filter(age==999, state != "US") %>%
+        ggplot(aes(x=fct_reorder(state, get(keyColName), max))) + 
+        geom_text(data=~filter(., sex == "Total"), 
+                  aes(label=paste0(round(get(keyColName)/1000000, 1), " (", state, ")"), 
+                      y=get(keyColName)/1000000 + 0.1
+                      ), 
+                  size=3, 
+                  hjust=0
+                  ) +
+        geom_col(data=~filter(., sex != "Total"), aes(y=get(keyColName)/1000000, fill=sex), position="stack") + 
+        coord_flip() + 
+        labs(x=NULL, y="Population (millions)", title=paste0(yearLabel, " Population by State and Sex"))
+    print(p1)
+    
+    # Population by Age in the key year
+    p2 <- dfFilter %>%
+        filter(sex=="Total", age != 999, state != "US") %>%
+        group_by(age) %>%
+        summarize(across(.cols=all_of(keyColName), sum)) %>%
+        ggplot(aes(x=factor(age))) + 
+        geom_text(aes(label=round(get(keyColName)/1000000, 1), y=get(keyColName)/1000000 + 0.1), 
+                  size=3, 
+                  hjust=0
+                  ) +
+        geom_col(aes(y=get(keyColName)/1000000), fill="lightblue") + 
+        labs(x=NULL, y="Population (millions)", title=paste0(yearLabel, " Population by Age")) + 
+        coord_flip()
+    print(p2)
+
+    # Return the data
+    dfFilter
+    
+}
+
+readPopStateAge("./RInputFiles/sc-est2019-agesex-civ.csv") %>%
+    filterPopStateAge(keyCol="POPEST2019_CIV", keyColName="pop2019")
 
 ```
 
