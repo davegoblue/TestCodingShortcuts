@@ -2616,5 +2616,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 fixed per capita calculations  
 * Coronavirus_CDC_Daily_v003 functional form for loading and checking state-age population data  
 * Coronavirus_CDC_Daily_v003 functional form for extracting key year from state-age population data  
-  
+* Coronavirus_CDC_Daily_v003 functional form for bucketing age  
   
