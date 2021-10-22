@@ -2180,8 +2180,98 @@ filterPopStateAge <- function(df, keyCol, keyColName=keyCol, yearLabel=NULL) {
     
 }
 
+
+bucketPopStateAge <- function(df, popVar, popYearLabel=NULL) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a filtered data frame containing the year of interest
+    # popVar: name of the population variable
+    # popYearLabel: year to use in the plot titles (NULL means infer from popVar)
+
+    # Infer popYearLabel if not provided
+    if(is.null(popYearLabel)) popYearLabel <- stringr::str_extract(popVar, pattern="\\d{4}")
+    
+    # Add age buckets to data
+    dfBucket <- df %>%
+        mutate(bucket10=case_when(age==999 ~ "Total", 
+                                  age <= 19 ~ "0-19", 
+                                  age >= 80 ~ "80+", 
+                                  TRUE ~ paste0(floor(age/10)*10, "-", floor(age/10)*10+9)
+                                  ), 
+               bucket03=case_when(age==999 ~ "Total",age <= 19 ~ "0-19", age >= 60 ~ "60+", TRUE ~ "20-59"),
+               bucketYMO=case_when(age==999 ~ "Total",age < 18 ~ "0-17", age >= 65 ~ "65+", TRUE ~ "18-64")
+               )
+    
+    # Check that buckets worked as intended
+    checkBucket <- function(keyVar) {
+        dfBucket %>% 
+            count(age, y=get(keyVar)) %>% 
+            ggplot(aes(x=factor(age), y=y)) + 
+            geom_tile(aes(fill=n)) + 
+            coord_flip() + 
+            labs(x=NULL, y=NULL, title=paste0("Age map for: ", keyVar))
+    }
+    p1 <- checkBucket(keyVar="bucket10")
+    p2 <- checkBucket(keyVar="bucket03")
+    p3 <- checkBucket(keyVar="bucketYMO")
+    gridExtra::grid.arrange(p1, p2, p3, nrow=1)
+    
+    # Proportion by bucketYMO by state
+    p4 <- dfBucket %>%
+        filter(sex=="Total", age != 999, state != "US") %>%
+        group_by(state, bucketYMO) %>%
+        summarize(pop=sum(get(popVar)), .groups="drop") %>%
+        ggplot(aes(x=fct_reorder2(state, .x=bucketYMO, .y=pop, .fun=function(x, y) -sum(y[x=="0-17"])/sum(y)))) + 
+        geom_col(aes(y=pop, fill=fct_rev(bucketYMO)), position="fill") + 
+        coord_flip() + 
+        labs(x=NULL, 
+             y=paste0("Proportion of ", popYearLabel, " population"), 
+             title="Age distribution by state"
+             ) + 
+        scale_fill_discrete("Age Bucket")
+    print(p4)
+    
+    # Proportion by bucket10 by state
+    p5 <- dfBucket %>%
+        filter(sex=="Total", age != 999, state != "US") %>%
+        group_by(state, bucket10) %>%
+        summarize(pop=sum(get(popVar)), .groups="drop") %>%
+        ggplot(aes(x=fct_reorder2(state, .x=bucket10, .y=pop, .fun=function(x, y) -sum(y[x=="0-19"])/sum(y)))) + 
+        geom_col(aes(y=pop, fill=fct_rev(bucket10)), position="fill") + 
+        coord_flip() + 
+        labs(x=NULL, 
+             y=paste0("Proportion of ", popYearLabel, " population"), 
+             title="Age distribution by state"
+             ) + 
+        scale_fill_discrete("Age Bucket")
+    print(p5)
+
+    # Mean age by state
+    p6 <- dfBucket %>%
+        filter(sex=="Total", age != 999, state != "US") %>%
+        group_by(state) %>%
+        mutate(age=ifelse(age==85, 90, age)) %>%
+        summarize(ageMean=sum(age*get(popVar))/sum(get(popVar)), .groups="drop") %>%
+        ggplot(aes(x=fct_reorder(state, -ageMean))) + 
+        geom_text(aes(y=ageMean+0.2, label=round(ageMean, 1)), hjust=0, size=3) +
+        geom_point(aes(y=ageMean)) + 
+        coord_flip() + 
+        labs(x=NULL, 
+             y="Average age", 
+             title="Mean age by state", 
+             subtitle="(caution that all 85+ counted as 90 for mean calculation)"
+             ) + 
+        lims(y=c(0, NA))
+    print(p6)
+    
+    # Return the bucketed data
+    dfBucket
+    
+}
+
 readPopStateAge("./RInputFiles/sc-est2019-agesex-civ.csv") %>%
-    filterPopStateAge(keyCol="POPEST2019_CIV", keyColName="pop2019")
+    filterPopStateAge(keyCol="POPEST2019_CIV", keyColName="pop2019") %>%
+    bucketPopStateAge(popVar="pop2019")
 
 ```
 
