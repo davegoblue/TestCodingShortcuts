@@ -2269,9 +2269,97 @@ bucketPopStateAge <- function(df, popVar, popYearLabel=NULL) {
     
 }
 
-readPopStateAge("./RInputFiles/sc-est2019-agesex-civ.csv") %>%
+dfStateAgeBucket <- readPopStateAge("./RInputFiles/sc-est2019-agesex-civ.csv") %>%
     filterPopStateAge(keyCol="POPEST2019_CIV", keyColName="pop2019") %>%
     bucketPopStateAge(popVar="pop2019")
+dfStateAgeBucket
+
+```
+
+Age-adjusted plots of hospitaliztion are also created:  
+```{r, fig.height=9, fig.width=9}
+
+hospAgePerCapita <- function(dfBucket, 
+                             lst, 
+                             popVar, 
+                             excludeState=c(), 
+                             cumStartDate=NULL
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfBucket: data frame containing bucketed age data by state
+    # lst: a processed list file containing $hospAge
+    # popVar: name of the population variable in dfBucket
+    # excludeState: list of states to exclude from cumulative plot
+    # cumStateDate: data to start the cumulative plots (NULL means use earliest date in data)
+    
+    # Find cumStartDate if not passed
+    if(is.null(cumStartDate)) cumStartDate <- lst[["hospAge"]]$date %>% min()
+    
+    # Create mapping from bucket10 to bucket03
+    ageMap10to03 <- dfBucket %>% 
+        count(bucket10, bucket03) %>%
+        select(-n)
+    
+    # Create population by state and bucket03
+    popStateBucket03 <- dfBucket %>%
+        filter(sex=="Total", state != "US") %>%
+        group_by(state, bucket03) %>% 
+        summarize(pop=sum(get(popVar)), .groups="drop")
+    
+    # Create hospitalized by age bucket by state data
+    dfUse <- lst[["hospAge"]] %>%
+        left_join(ageMap10to03, by=c("age"="bucket10")) %>%
+        filter(!is.na(value)) %>%
+        group_by(state, date, bucket03) %>%
+        summarize(value=sum(value), .groups="drop") %>%
+        filter(state %in% c(state.abb, "DC")) %>%
+        left_join(popStateBucket03, by=c("state", "bucket03")) %>%
+        mutate(vpm=1000000*value/pop) %>%
+        group_by(state, bucket03) %>%
+        arrange(date) %>%
+        mutate(vpm7=zoo::rollmean(vpm, k=7, fill=NA), vpmcum=cumsum(vpm)) %>%
+        ungroup()
+
+    p1 <- dfUse %>%
+        ggplot(aes(x=date, y=vpm7)) + 
+        geom_line(aes(group=bucket03, color=bucket03)) + 
+        labs(x=NULL, 
+             y="Newly hospitalized per million (rolling 7-day mean)", 
+             title="Per million newly hospitalized by age bucket"
+             ) +
+        facet_wrap(~state, scales="free_y") + 
+        scale_color_discrete("Age")
+    print(p1)
+    
+    p2 <- dfUse %>%
+        filter(!(state %in% all_of(excludeState)), date >= cumStartDate) %>%
+        ggplot(aes(x=date, y=vpmcum/1000)) + 
+        geom_line(aes(group=bucket03, color=bucket03)) + 
+        labs(x=NULL, 
+             y=paste0("Cumulative hospitalized per thousand since ", cumStartDate), 
+             title="Cumulative newly hospitalized per thousand by age bucket", 
+             subtitle=paste0("Since ", 
+                             cumStartDate, 
+                             if(length(excludeState) > 0) paste0(", excludes ", paste0(excludeState, collapse=", ")) 
+                             else ""
+                             )
+         ) +
+        facet_wrap(~state, scales="free_y") + 
+        scale_color_discrete("Age")
+    print(p2)
+    
+    # Return the dataset
+    dfUse
+    
+}
+
+hospAgePerCapita(dfStateAgeBucket, 
+                 lst=burdenPivotList_211006, 
+                 popVar="pop2019", 
+                 excludeState=c("ND"), 
+                 cumStartDate="2020-07-15"
+                 )
 
 ```
 
