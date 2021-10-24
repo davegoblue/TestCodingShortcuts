@@ -2618,4 +2618,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 functional form for extracting key year from state-age population data  
 * Coronavirus_CDC_Daily_v003 functional form for bucketing age  
 * Coronavirus_CDC_Daily_v003 functional form for hospital per capita plots  
+* Coronavirus_CDC_Daily_v003 integrates hospital per-capita calculations and plots as hospAgePerCapita()  
   
