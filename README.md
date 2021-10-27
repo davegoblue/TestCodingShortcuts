@@ -2623,4 +2623,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 25-OCT-2021  
 * Coronavirus_CDC_Daily_v003 runs with latest data  
 * Coronavirus_CDC_Daily_v003 post-processing with latest data  
+* Coronavirus_CDC_Daily_v003 includes function to find peaks and valleys in time series data  
   
