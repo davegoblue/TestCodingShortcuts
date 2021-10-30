@@ -2626,4 +2626,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 includes function to find peaks and valleys in time series data  
 * Coronavirus_CDC_Daily_v003 uses function to identify peaks and valleys in deaths by region  
 * Coronavirus_CDC_Daily_v003 uses function to identify peaks and valleys in deaths by state  
+* Coronavirus_CDC_Daily_v003 uses function to identify peaks and valleys in hospitalizations  
   
