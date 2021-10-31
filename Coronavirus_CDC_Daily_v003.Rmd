@@ -2653,3 +2653,111 @@ cdc_daily_211024$dfPerCapita %>%
 
 ```
   
+A function is written to allow for different variables and facets to be used:  
+```{r, fig.height=9, fig.width=9}
+
+makePeakValley <- function(df, 
+                           numVar, 
+                           windowWidth,
+                           rollMean=NULL, 
+                           uqBy=c("date"), 
+                           facetVar=c(), 
+                           fnNumVar=function(x) x, 
+                           fnPeak=function(x) x+100, 
+                           fnValley=function(x) x-100, 
+                           useTitle="", 
+                           yLab=""
+                           ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: a data frame or tibble
+    # numVar: the numeric variable of interest
+    # windowWidth: width of the window for calculating peaks and valleys
+    # rollMean: the number of days for rolling mean (NULL means no rolling mean)
+    # uqBy: variable that the resutling data should be unique by
+    # facetVar: variable for faceting (c() means no facets)
+    # fnNumVar: what function should be applied to numVar (e.g., function(x) x/1000)
+    # fnPeak: function for plotting the peak labels
+    # fnValley: function for plotting the valley labels
+    # useTitle: title for plots
+    # yLab: y-axis label for plots
+    
+    # Create named vectors for useTitle and yLab if not passed
+    if(is.null(names(useTitle))) useTitle <- rep(useTitle, times=length(numVar)) %>% purrr::set_names(all_of(numVar))
+    if(is.null(names(yLab))) yLab <- rep(yLab, times=length(numVar)) %>% purrr::set_names(all_of(numVar))
+    
+    # Create the relevant data frame
+    newDF <- df %>% 
+        group_by_at(all_of(c(uqBy, facetVar))) %>%
+        summarize(across(all_of(numVar), .fns=sum, na.rm=TRUE), .groups="drop") %>%
+        group_by_at(all_of(facetVar)) %>%
+        mutate(if(!is.null(rollMean)) across(all_of(numVar), .fns=zoo::rollmean, k=rollMean, fill=NA),
+               across(all_of(numVar), .fns=findPeaks, width=windowWidth, gt=1, .names="{.col}_isPeak"),
+               across(all_of(numVar), 
+                      .fns=findPeaks, 
+                      width=windowWidth, 
+                      FUN=min, 
+                      gt=1, 
+                      lt=NULL, 
+                      fillVal=NA 
+                      ,.names="{.col}_isValley"
+                      )
+               ) %>% 
+        ungroup()
+    
+    # Create the relevant plots
+    for(keyVar in numVar) {
+    
+        p1 <- newDF %>%
+            ggplot(aes(x=get(uqBy), y=fnNumVar(get(keyVar)))) + 
+            geom_line() + 
+            geom_point(data=~filter(., get(paste0(keyVar, "_isPeak"))), color="red", size=3) +
+            geom_point(data=~filter(., get(paste0(keyVar, "_isValley"))), color="green", size=3) + 
+            geom_text(data=~filter(., get(paste0(keyVar, "_isPeak"))), 
+                      aes(y=fnPeak(fnNumVar(get(keyVar))), 
+                          label=paste0(get(uqBy), "\n", round(fnNumVar(get(keyVar))))
+                          ), 
+                      color="red", 
+                      size=3
+                      ) + 
+            geom_text(data=~filter(., get(paste0(keyVar, "_isValley"))), 
+                      aes(y=fnValley(fnNumVar(get(keyVar))), 
+                          label=paste0(get(uqBy), "\n", round(fnNumVar(get(keyVar))))
+                          ), 
+                      color="black", 
+                      size=3
+                      ) + 
+            labs(x=NULL, 
+                 y=yLab[[keyVar]], 
+                 title=useTitle[[keyVar]], 
+                 subtitle="Red (peaks) and green (valleys)"
+                 )
+        if(length(facetVar) > 0) p1 <- p1 + facet_wrap(~get(facetVar), scales="free_y")
+
+        print(p1)
+    
+    }
+    
+    return(newDF)
+    
+}
+
+cdc_daily_211024$dfPerCapita %>%
+    mutate(regn=c(as.character(state.region), "South")[match(state, c(state.abb, "DC"))]) %>%
+    makePeakValley(numVar=c("new_deaths", "new_cases", "inp"), 
+                   windowWidth = 71, 
+                   rollMean=7, 
+                   facetVar=c("regn"), 
+                   fnNumVar=function(x) x/1000, 
+                   useTitle=c("new_deaths"="US coronavirus deaths", 
+                              "new_cases"="US coronavirus cases", 
+                              "inp"="US coronavirus total hospitalized"
+                              ), 
+                   yLab=c("new_deaths"="Rolling 7-day mean deaths (000)", 
+                          "new_cases"="Rolling 7-day mean cases (000)", 
+                          "inp"="Rolling 7-day mean in hospital (000)"
+                          )
+                   )
+
+```
+
