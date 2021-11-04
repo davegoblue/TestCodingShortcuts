@@ -2872,4 +2872,182 @@ cdc_daily_211024$dfPerCapita %>%
 
 ```
 
-Next steps are to allow for a custom function by facet, to allow for labels in different positions when facets have different ranges.
+Next steps are to allow for a custom function by facet, to allow for labels in different positions when facets have different ranges:  
+```{r, fig.height=9, fig.width=9}
+
+makePeakValley <- function(df, 
+                           numVar, 
+                           windowWidth,
+                           rollMean=NULL, 
+                           uqBy=c("date"), 
+                           facetVar=c(), 
+                           fnNumVar=function(x) x, 
+                           fnPeak=function(x) x+100, 
+                           fnValley=function(x) x-100, 
+                           fnGroupFacet=FALSE,
+                           useTitle="", 
+                           yLab=""
+                           ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: a data frame or tibble
+    # numVar: the numeric variable of interest
+    # windowWidth: width of the window for calculating peaks and valleys
+    # rollMean: the number of days for rolling mean (NULL means no rolling mean)
+    # uqBy: variable that the resutling data should be unique by
+    # facetVar: variable for faceting (c() means no facets)
+    # fnNumVar: what function should be applied to numVar (e.g., function(x) x/1000)
+    # fnPeak: function for plotting the peak labels
+    # fnValley: function for plotting the valley labels
+    # fnGroupFacet: boolean, should the functions be run separatelt for each facet as a grouping variable?
+    #               useful for labeling if the goal is to use 0.1*max(yVar) rather than a global peak and valley
+    # useTitle: title for plots
+    # yLab: y-axis label for plots
+    
+    # Create named vectors for useTitle and yLab if not passed
+    if(is.null(names(useTitle))) 
+        useTitle <- rep(useTitle, times=length(numVar)) %>% purrr::set_names(all_of(numVar))
+    if(is.null(names(yLab))) 
+        yLab <- rep(yLab, times=length(numVar)) %>% purrr::set_names(all_of(numVar))
+    
+    # Create named lists for fnNumVar, fnPeak, and fnValley
+    tempMakeList <- function(f, n, nms) {
+        tempList <- vector("list", length=n)
+        for(a in 1:n) tempList[[a]] <- f
+        names(tempList) <- nms
+        tempList
+    }
+    if(is.null(names(fnNumVar))) fnNumVar <- tempMakeList(fnNumVar, n=length(numVar), nms=numVar)
+    if(is.null(names(fnPeak))) fnPeak <- tempMakeList(fnPeak, n=length(numVar), nms=numVar)
+    if(is.null(names(fnValley))) fnValley <- tempMakeList(fnValley, n=length(numVar), nms=numVar)
+    
+    # Create the relevant data frame
+    newDF <- df %>% 
+        group_by_at(all_of(c(uqBy, facetVar))) %>%
+        summarize(across(all_of(numVar), .fns=sum, na.rm=TRUE), .groups="drop") %>%
+        group_by_at(all_of(facetVar)) %>%
+        mutate(if(!is.null(rollMean)) across(all_of(numVar), .fns=zoo::rollmean, k=rollMean, fill=NA),
+               across(all_of(numVar), .fns=findPeaks, width=windowWidth, gt=1, .names="{.col}_isPeak"),
+               across(all_of(numVar), 
+                      .fns=findPeaks, 
+                      width=windowWidth, 
+                      FUN=min, 
+                      gt=1, 
+                      lt=NULL, 
+                      fillVal=NA 
+                      ,.names="{.col}_isValley"
+                      )
+               ) %>% 
+        ungroup()
+
+    # Group by the facet variable(s) if not NULL and separate function by facet requested
+    if(!is.null(facetVar) & isTRUE(fnGroupFacet)) newDF <- newDF %>% group_by_at(all_of(facetVar))
+    
+    # Create the relevant plots
+    for(keyVar in numVar) {
+    
+        p1 <- newDF %>%
+            mutate(posPeak=fnPeak[[keyVar]](fnNumVar[[keyVar]](get(keyVar))), 
+                   posValley=fnValley[[keyVar]](fnNumVar[[keyVar]](get(keyVar)))
+                   ) %>%
+            ggplot(aes(x=get(uqBy), y=fnNumVar[[keyVar]](get(keyVar)))) + 
+            geom_line() + 
+            geom_point(data=~filter(., get(paste0(keyVar, "_isPeak"))), color="red", size=3) +
+            geom_point(data=~filter(., get(paste0(keyVar, "_isValley"))), color="green", size=3) + 
+            geom_text(data=~filter(., get(paste0(keyVar, "_isPeak"))), 
+                      aes(y=posPeak, 
+                          label=paste0(get(uqBy), "\n", round(fnNumVar[[keyVar]](get(keyVar))))
+                          ), 
+                      color="red", 
+                      size=3
+                      ) + 
+            geom_text(data=~filter(., get(paste0(keyVar, "_isValley"))), 
+                      aes(y=posValley, 
+                          label=paste0(get(uqBy), "\n", round(fnNumVar[[keyVar]](get(keyVar))))
+                          ), 
+                      color="black", 
+                      size=3
+                      ) + 
+            labs(x=NULL, 
+                 y=yLab[[keyVar]], 
+                 title=useTitle[[keyVar]], 
+                 subtitle="Red (peaks) and green (valleys)"
+                 )
+        if(length(facetVar) > 0) p1 <- p1 + facet_wrap(~get(facetVar), scales="free_y")
+
+        print(p1)
+    
+    }
+    
+    # Return the data, removing any grouping
+    newDF %>% ungroup()
+    
+}
+
+
+# Original format for burden
+cdc_daily_211024$dfPerCapita %>%
+    mutate(regn=c(as.character(state.region), "South")[match(state, c(state.abb, "DC"))]) %>%
+    makePeakValley(numVar=c("new_deaths", "new_cases", "inp"), 
+                   windowWidth = 71, 
+                   rollMean=7, 
+                   facetVar=c("regn"), 
+                   fnNumVar=list("new_deaths"=function(x) x, 
+                                 "new_cases"=function(x) x/1000,
+                                 "inp"=function(x) x/1000
+                                 ), 
+                   fnPeak=list("new_deaths"=function(x) x+100, 
+                               "new_cases"=function(x) x+10, 
+                               "inp"=function(x) x+10
+                               ),
+                   fnValley=list("new_deaths"=function(x) x-100, 
+                                 "new_cases"=function(x) x-5, 
+                                 "inp"=function(x) x-5
+                                 ),
+                   useTitle=c("new_deaths"="US coronavirus deaths", 
+                              "new_cases"="US coronavirus cases", 
+                              "inp"="US coronavirus total hospitalized"
+                              ), 
+                   yLab=c("new_deaths"="Rolling 7-day mean deaths", 
+                          "new_cases"="Rolling 7-day mean cases (000)", 
+                          "inp"="Rolling 7-day mean in hospital (000)"
+                          )
+                   )
+
+
+# Modified format - vaccinations by state
+cdc_daily_211024$dfPerCapita %>%
+    inner_join(getStateData(), by=c("state")) %>%
+    filter(pop >= 8000000) %>%
+    select(date, state, vxa, vxc) %>%
+    arrange(date, state) %>%
+    group_by(state) %>%
+    mutate(across(c(vxa, vxc), .fns=function(x) x-lag(x))) %>%
+    ungroup() %>%
+    mutate(regn=c(as.character(state.region), "South")[match(state, c(state.abb, "DC"))]) %>%
+    filter(date >= "2020-12-01") %>%
+    makePeakValley(numVar=c("vxc", "vxa"), 
+                   windowWidth = 29, 
+                   rollMean=21, 
+                   facetVar=c("state"), 
+                   fnNumVar=list("vxa"=function(x) x/1000, 
+                                 "vxc"=function(x) x/1000
+                                 ), 
+                   fnPeak=list("vxa"=function(x) x+25*max(x, na.rm=TRUE)/400, 
+                               "vxc"=function(x) x+25*max(x, na.rm=TRUE)/400
+                               ),
+                   fnValley=list("vxa"=function(x) x-25*max(x, na.rm=TRUE)/400, 
+                                 "vxc"=function(x) x-25*max(x, na.rm=TRUE)/400
+                                 ),
+                   fnGroupFacet=TRUE,
+                   useTitle=c("vxa"="Vaccines adminsitered (US)", 
+                              "vxc"="Became fully vaccinated (US)"
+                              ), 
+                   yLab=c("vxa"="Rolling 21-day mean administered (000)",
+                          "vxc"="Rolling 21-day mean completed (000)"
+                          )
+                   )
+
+
+```
+
