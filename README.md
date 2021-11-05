@@ -2634,4 +2634,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 uses function to identify peaks and valleys in vaccinations  
 * Coronavirus_CDC_Daily_v003 uses function to identify peaks and valleys in hospitalizations by large population state  
 * Coronavirus_CDC_Daily_v003 function makePeakValley() allows differential label heights by facet  
+* Coronavirus_CDC_Daily_v003 refreshed with latest data  
   
