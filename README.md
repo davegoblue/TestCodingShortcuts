@@ -2636,4 +2636,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 function makePeakValley() allows differential label heights by facet  
 * Coronavirus_CDC_Daily_v003 refreshed with latest data  
 * Coronavirus_Statistics_CDC_v005 downloads and processes latest data  
+* Coronavirus_Statistics_CDC_v005 plots all-cause deaths by year and state  
   
