@@ -2638,3 +2638,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 downloads and processes latest data  
 * Coronavirus_Statistics_CDC_v005 plots all-cause deaths by year and state  
   
+### Expansions week of 08-NOV-2021  
+* Coronavirus_Statistics_CDC_v005 plots all-cause deaths by week and age  
+  
