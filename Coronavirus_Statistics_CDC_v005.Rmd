@@ -1320,3 +1320,129 @@ lapply(c("State", "deathPlace", "Age"),
 
 ```
   
+The above are converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+processAllCauseLocation <- function(loc, 
+                                    url="https://data.cdc.gov/api/views/4va6-ph5s/rows.csv?accessType=DOWNLOAD",
+                                    col_types="cccciiccccddddddc",
+                                    vecRename=c("Data as of"="asofDate", 
+                                                "Start Date"="startDate", 
+                                                "End Date"="endDate", 
+                                                "HHS Region"="HHSRegion", 
+                                                "Place of Death"="deathPlace", 
+                                                "Age group"="Age", 
+                                                "COVID-19 Deaths"="covidDeaths", 
+                                                "Total Deaths"="totalDeaths", 
+                                                "Pneumonia Deaths"="pneumoDeaths", 
+                                                "Pneumonia and COVID-19 Deaths"="pneumoCovidDeaths", 
+                                                "Influenza Deaths"="fluDeaths", 
+                                                "Pneumonia, Influenza, or COVID-19 Deaths"="pnemoFluCovidDeaths"
+                                                ),
+                                    selfList=list("asofDate"=lubridate::mdy, 
+                                                  "startDate"=lubridate::mdy, 
+                                                  "endDate"=lubridate::mdy
+                                                  ),
+                                    dir="./RInputFiles/Coronavirus/",
+                                    dlData=isFALSE(file.exists(paste0(dir, loc))), 
+                                    allCheckVars=NULL, 
+                                    subMap=c("State"="United States", 
+                                             "Age"="All Ages", 
+                                             "deathPlace"="Total - All Places of Death"
+                                             )
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # loc: the location of the CDC all-cause death by location file
+    # url: the location of the all-cause death by location data
+    # col_types: the column types for the data in loc
+    # vecRename: vector for renaming columns in raw data
+    # selfList: list for colMutater() for the data from loc
+    # dir: the directory for the downloaded data in loc
+    # dlData: boolean, should data be downloaded?
+    # allCheckVars: variable list to be checked
+    # subMap: subsets to be checked for summation to the whole
+
+    # Step 0: Download the data if requested
+    if (dlData) fileDownload(fileName=paste0(dir, loc), url=url)
+    
+    # Step 1: Read the CSV data
+    deathLoc_raw <- fileRead(paste0(dir, loc), col_types=col_types)
+    
+    # Step 2: Rename variables for easier interpretation, convert the dates, add the state abbreviation
+    deathLoc_conv <- deathLoc_raw %>%
+        colRenamer(vecRename=vecRename) %>%
+        colMutater(selfList=selfList) %>%
+        mutate(abb=c(state.abb, "DC")[match(State, c(state.name, "District of Columbia"))])
+
+    # Step 3: Plots for combinations included
+    p1 <- deathLoc_conv %>%
+        count(asofDate, startDate, endDate) %>%
+        ggplot(aes(y=startDate, x=endDate)) + 
+        geom_point(aes(size=n)) + 
+        facet_wrap(~asofDate) + 
+        labs(x="Ending Date", y="Starting Date", title="Combinations of Start and End Date")
+    p2 <- deathLoc_conv %>%
+        count(Group, deathPlace, Age) %>%
+        ggplot(aes(x=Group, y=deathPlace)) + 
+        geom_tile(aes(fill=n)) + 
+        facet_wrap(~Age) + 
+        labs(x="Group", y="Place of Death", title="Combinations of Age, Place of Death, and Group")
+    gridExtra::grid.arrange(p1, p2, ncol=1)
+    
+    # Step 4: Deaths by state
+    dfTemp <- deathLoc_conv %>%
+        filter(Group=="By Total", deathPlace=="Total - All Places of Death", Age=="All Ages") %>%
+        group_by(State) %>%
+        summarize(across(where(is.numeric), sum, na.rm=TRUE)) %>%
+        mutate(abb=state.abb[match(State, state.name)])
+    cat("\nStates without abbreviations\n")
+    print(dfTemp %>% filter(is.na(abb)))
+
+    # Step 4a: Plots
+    deathBase <- dfTemp %>%
+        select(State, covidDeaths, totalDeaths) %>%
+        mutate(noncovid=covidDeaths/totalDeaths) %>%
+        filter(!(State %in% c("United States", "Puerto Rico"))) %>%
+        pivot_longer(-c(State)) %>%
+        ggplot(aes(x=fct_reorder(State, value, max), y=value/1000)) + 
+        coord_flip() + 
+        theme(legend.position="bottom")
+    p3 <- deathBase + 
+        geom_col(data=~filter(., name=="totalDeaths"), aes(fill="All")) +
+        geom_col(data=~filter(., name=="covidDeaths"), aes(fill="COVID")) + 
+        scale_fill_manual("Type", breaks=c("COVID", "All"), labels=c("COVID", "All"), values=c("red", "black")) + 
+        labs(title="Deaths 2020-present by state", x=NULL, y="Deaths (000s)")
+    p4 <- deathBase + 
+        geom_col(data=~filter(., name=="noncovid"), aes(y=value), position="identity") + 
+        labs(x=NULL, y=NULL, title="Proportion of deaths from COVID")
+    gridExtra::grid.arrange(p3, p4, nrow=1)
+
+    # Step 5: Check for alignment by variable combinations
+    # Create allCheckVars if not passed
+    if (is.null(allCheckVars)) {
+        allCheckVars <- deathLoc_conv %>% 
+            select(-where(is.numeric)) %>% 
+            names %>% 
+            setdiff(c("Footnote", "abb", "HHSRegion"))
+    }
+    # Run for the key subsets
+    lapply(names(subMap), 
+           FUN=function(x) deathLoc_conv %>% 
+               select(-Year, -Month) %>%
+               checkSubTotals(checkByVars=allCheckVars %>% setdiff(x), subVar=x, subVarTotal=unname(subMap[x])) %>%
+               checkNumbers(byVars=allCheckVars, keyVar=x)
+           )
+    
+    # Return a list of the key datasets
+    list(deathLoc_raw=deathLoc_raw, deathLoc_conv=deathLoc_conv)
+
+}
+
+# Test the function
+testList_20211108 <- processAllCauseLocation("COvID_deaths_age_place_20211108.csv")
+identical(deathAge_20211108_raw, testList_20211108$deathLoc_raw)
+identical(deathAge_20211108_conv, testList_20211108$deathLoc_conv)
+
+```
+
