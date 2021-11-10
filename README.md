@@ -2641,4 +2641,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 08-NOV-2021  
 * Coronavirus_Statistics_CDC_v005 plots all-cause deaths by week and age  
 * Coronavirus_Statistics_CDC_v005 downloads deaths by location and cause  
+* Coronavirus_Statistics_CDC_v005 converts to functional form with processAllCauseLocation()  
   
