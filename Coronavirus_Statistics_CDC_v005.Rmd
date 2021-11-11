@@ -1302,7 +1302,7 @@ deathBase +
 
 # Add the state abbreviation
 deathAge_20211108_conv <- deathAge_20211108_conv %>%
-    mutate(abb=c(state.abb, "DC")[match(State, c(state.name, "District of Columbia"))])
+    mutate(abb=c(state.abb, "DC", "US")[match(State, c(state.name, "District of Columbia", "United States"))])
 
 # Get a list of the possible variables
 allCheckVars <- names(deathAge_20211108_conv) %>% 
@@ -1349,7 +1349,8 @@ processAllCauseLocation <- function(loc,
                                     subMap=c("State"="United States", 
                                              "Age"="All Ages", 
                                              "deathPlace"="Total - All Places of Death"
-                                             )
+                                             ), 
+                                    createPlot5=TRUE
                                     ) {
     
     # FUNCTION ARGUMENTS:
@@ -1362,6 +1363,7 @@ processAllCauseLocation <- function(loc,
     # dlData: boolean, should data be downloaded?
     # allCheckVars: variable list to be checked
     # subMap: subsets to be checked for summation to the whole
+    # createPlot5: boolean, should comparisons of totals and sum of subtotals be created
 
     # Step 0: Download the data if requested
     if (dlData) fileDownload(fileName=paste0(dir, loc), url=url)
@@ -1373,7 +1375,7 @@ processAllCauseLocation <- function(loc,
     deathLoc_conv <- deathLoc_raw %>%
         colRenamer(vecRename=vecRename) %>%
         colMutater(selfList=selfList) %>%
-        mutate(abb=c(state.abb, "DC")[match(State, c(state.name, "District of Columbia"))])
+        mutate(abb=c(state.abb, "DC", "US")[match(State, c(state.name, "District of Columbia", "United States"))])
 
     # Step 3: Plots for combinations included
     p1 <- deathLoc_conv %>%
@@ -1393,9 +1395,8 @@ processAllCauseLocation <- function(loc,
     # Step 4: Deaths by state
     dfTemp <- deathLoc_conv %>%
         filter(Group=="By Total", deathPlace=="Total - All Places of Death", Age=="All Ages") %>%
-        group_by(State) %>%
-        summarize(across(where(is.numeric), sum, na.rm=TRUE)) %>%
-        mutate(abb=state.abb[match(State, state.name)])
+        group_by(State, abb) %>%
+        summarize(across(where(is.numeric), sum, na.rm=TRUE))
     cat("\nStates without abbreviations\n")
     print(dfTemp %>% filter(is.na(abb)))
 
@@ -1418,21 +1419,26 @@ processAllCauseLocation <- function(loc,
         labs(x=NULL, y=NULL, title="Proportion of deaths from COVID")
     gridExtra::grid.arrange(p3, p4, nrow=1)
 
-    # Step 5: Check for alignment by variable combinations
-    # Create allCheckVars if not passed
-    if (is.null(allCheckVars)) {
-        allCheckVars <- deathLoc_conv %>% 
-            select(-where(is.numeric)) %>% 
-            names %>% 
-            setdiff(c("Footnote", "abb", "HHSRegion"))
+    # Step 5: Check for alignment by variable combinations (run only if createPlot5 is TRUE)
+    if(isTRUE(createPlot5)) {
+        # Create allCheckVars if not passed
+        if (is.null(allCheckVars)) {
+            allCheckVars <- deathLoc_conv %>% 
+                select(-where(is.numeric)) %>% 
+                names %>% 
+                setdiff(c("Footnote", "abb", "HHSRegion"))
+        }
+        # Run for the key subsets
+        lapply(names(subMap), 
+               FUN=function(x) deathLoc_conv %>% 
+                   select(-Year, -Month) %>%
+                   checkSubTotals(checkByVars=allCheckVars %>% setdiff(x), 
+                                  subVar=x, 
+                                  subVarTotal=unname(subMap[x])
+                                  ) %>%
+                   checkNumbers(byVars=allCheckVars, keyVar=x)
+               )
     }
-    # Run for the key subsets
-    lapply(names(subMap), 
-           FUN=function(x) deathLoc_conv %>% 
-               select(-Year, -Month) %>%
-               checkSubTotals(checkByVars=allCheckVars %>% setdiff(x), subVar=x, subVarTotal=unname(subMap[x])) %>%
-               checkNumbers(byVars=allCheckVars, keyVar=x)
-           )
     
     # Return a list of the key datasets
     list(deathLoc_raw=deathLoc_raw, deathLoc_conv=deathLoc_conv)
@@ -1446,3 +1452,63 @@ identical(deathAge_20211108_conv, testList_20211108$deathLoc_conv)
 
 ```
 
+Deaths by state are compared between CDC files, using October 31, 2021 as the cutoff:  
+```{r, fig.height=9, fig.width=9}
+
+# Create summary by state and year-month
+death_sum_20211108 <- testList_20211108$deathLoc_conv %>%
+    filter(!is.na(Year), !is.na(Month), deathPlace=="Total - All Places of Death", Age=="All Ages") %>%
+    mutate(ym=lubridate::ym(paste0(Year, "-", zeroPad2(Month)))) %>%
+    select(State, abb, ym, where(is.numeric), -Year, -Month) %>%
+    pivot_longer(-c(State, abb, ym)) %>%
+    arrange(State, abb, name, ym) %>%
+    group_by(State, abb, name) %>%
+    mutate(cumValue=cumsum(ifelse(is.na(value), 0, value))) %>%
+    ungroup() %>%
+    mutate(date=lubridate::ceiling_date(ym, unit="month")-lubridate::days(1))
+
+# Create summary from state-level file
+death_daily_211104 <- readFromRDS("cdc_daily_211104")$dfPerCapita %>%
+    select(date, abb=state, tot_deaths) %>%
+    mutate(Year=lubridate::year(date), Month=lubridate::month(date)) %>%
+    group_by(Year, Month) %>%
+    filter(date==max(date)) %>%
+    ungroup()
+    
+# Create a plot for evolution of United States
+death_sum_20211108 %>%
+    filter(abb=="US", name=="covidDeaths", ym <= "2021-10-31") %>%
+    ggplot(aes(x=date)) + 
+    geom_line(aes(y=cumValue/1000, color="blue"), size=2) + 
+    geom_point(data=summarize(group_by(filter(death_daily_211104, date <= "2021-10-31"), date), 
+                              tot_deaths=sum(tot_deaths, na.rm=TRUE)
+                              ), 
+               aes(y=tot_deaths/1000, color="green"), 
+               size=3
+               ) +
+    labs(x="End of month", y="Cumulative Deaths (000)", title="Cumulative COVID Deaths (000) in US by source") + 
+    scale_color_manual("Source", labels=c("Summed\nstates", "Summed\nsubtotals"), values=c("green", "blue"))
+
+# Comparison of totals by state
+plot_cum1021 <- death_sum_20211108 %>%
+    filter(abb %in% c(state.abb, "DC"), name=="covidDeaths", date == "2021-10-31") %>%
+    select(abb, cumValue) %>%
+    inner_join(select(filter(death_daily_211104, date == "2021-10-31"), abb, tot_deaths), by=c("abb")) %>%
+    mutate(pctdiff=abs(tot_deaths-cumValue)/(tot_deaths+cumValue))
+plot_cum1021 %>%
+    arrange(-pctdiff)
+plot_cum1021 %>%
+    summarize(across(where(is.numeric), sum))
+plot_cum1021 %>%
+    ggplot(aes(x=fct_reorder(abb, cumValue))) + 
+    geom_col(aes(y=cumValue/1000), fill="lightblue") + 
+    geom_point(aes(y=tot_deaths/1000), size=3) +
+    coord_flip() +
+    labs(x=NULL, 
+         y="Cumulative Deaths (000)", 
+         title="Cumulative COVID Deaths (000) in US as of 2021-10-31", 
+         subtitle="Filled bars are summed subtotals, points are from CDC daily"
+         )
+
+```
+  
