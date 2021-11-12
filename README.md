@@ -2643,4 +2643,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 downloads deaths by location and cause  
 * Coronavirus_Statistics_CDC_v005 converts to functional form with processAllCauseLocation()  
 * Coronavirus_Statistics_CDC_v005 compares cumulative COVID deaths by state by source  
+* Coronavirus_Statistics_CDC_v005 explores deaths by age, cause, and place  
   
