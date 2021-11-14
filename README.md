@@ -2645,4 +2645,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 compares cumulative COVID deaths by state by source  
 * Coronavirus_Statistics_CDC_v005 explores deaths by age, cause, and place  
 * Coronavirus_Statistics_CDC_v005 explores place of death by COVID vs non-COVID  
+* Coronavirus_Statistics_CDC_v005 explores evolution by month of COVID vs non-COVID death by age and place  
   
