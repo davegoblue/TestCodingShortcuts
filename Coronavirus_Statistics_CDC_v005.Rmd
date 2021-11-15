@@ -1709,3 +1709,99 @@ p2 +
 ```
 
 There are clear patterns in COVID deaths by each of age, month, and place, with proportions evolving over time.
+
+The functional form is used for comparing deaths by state between CDC files:  
+```{r, fig.height=9, fig.width=9}
+
+compareCDCDeaths <- function(lstLoc,
+                             lstState,
+                             thruDate,
+                             keyDeathPlaces=c("Total - All Places of Death"),
+                             keyAges=c("All Ages")
+                             ) {
+
+    # FUNCTION ARGUMENTS
+    # lstLoc: list containing the processed death-location data, with sub-list "deathLoc_conv"
+    # lstState: list containing processed CDC COVID death data by state, with sub-list "dfPerCapita"
+    # thruDate: character, formatted as YYYY-MM-DD
+    # keyDeathPlaces: places of death to include from lstLoc
+    # keyAges: ages to include from lstLoc
+    
+    # Create summary by state and year-month
+    death_sum <- lstLoc[["deathLoc_conv"]] %>%
+        filter(!is.na(Year), 
+               !is.na(Month), 
+               deathPlace %in% all_of(keyDeathPlaces), 
+               Age %in% all_of(keyAges)
+               ) %>%
+        mutate(ym=lubridate::ym(paste0(Year, "-", zeroPad2(Month)))) %>%
+        select(State, abb, ym, where(is.numeric), -Year, -Month) %>%
+        pivot_longer(-c(State, abb, ym)) %>%
+        arrange(State, abb, name, ym) %>%
+        group_by(State, abb, name) %>%
+        mutate(cumValue=cumsum(ifelse(is.na(value), 0, value))) %>%
+        ungroup() %>%
+        mutate(date=lubridate::ceiling_date(ym, unit="month")-lubridate::days(1))
+
+    # Create summary from state-level file
+    death_daily <- lstState[["dfPerCapita"]] %>%
+        select(date, abb=state, tot_deaths) %>%
+        mutate(Year=lubridate::year(date), Month=lubridate::month(date)) %>%
+        group_by(Year, Month) %>%
+        filter(date==max(date)) %>%
+        ungroup()
+    
+    # Create a plot for evolution of United States
+    p1 <- death_sum %>%
+        filter(abb=="US", name=="covidDeaths", ym <= thruDate) %>%
+        ggplot(aes(x=date)) + 
+        geom_line(aes(y=cumValue/1000, color="blue"), size=2) + 
+        geom_point(data=summarize(group_by(filter(death_daily, date <= thruDate), date), 
+                                  tot_deaths=sum(tot_deaths, na.rm=TRUE)
+                                  ), 
+                   aes(y=tot_deaths/1000, color="green"), 
+                   size=3
+                   ) +
+        labs(x="End of month", 
+             y="Cumulative COVID Deaths (000)", 
+             title="Cumulative COVID Deaths (000) in US by source"
+             ) + 
+        scale_color_manual("Source", 
+                           labels=c("Summed\nCDC Location", "Summed\nCDC Daily"), 
+                           values=c("green", "blue")
+                           )
+    print(p1)
+
+    # Comparison of totals by state
+    plot_cum <- death_sum %>%
+        filter(abb %in% c(state.abb, "DC"), 
+               name=="covidDeaths", 
+               date == thruDate
+               ) %>%
+        select(abb, cumValue) %>%
+        inner_join(select(filter(death_daily, date == thruDate), abb, tot_deaths), by=c("abb")) %>%
+        mutate(pctdiff=abs(tot_deaths-cumValue)/(tot_deaths+cumValue))
+    plot_cum %>%
+        arrange(-pctdiff) %>%
+        print()
+    plot_cum %>%
+        summarize(across(where(is.numeric), sum)) %>%
+        print()
+    p2 <- plot_cum %>%
+        ggplot(aes(x=fct_reorder(abb, cumValue))) + 
+        geom_col(aes(y=cumValue/1000), fill="lightblue") + 
+        geom_point(aes(y=tot_deaths/1000), size=3) +
+        coord_flip() +
+        labs(x=NULL, 
+             y="Cumulative Deaths (000)", 
+             title=paste0("Cumulative COVID Deaths (000) in US as of ", thruDate), 
+             subtitle="Filled bars are summed CDC location, points are from CDC daily"
+             )
+    print(p2)
+
+}
+
+compareCDCDeaths(lstLoc=testList_20211108, lstState=readFromRDS("cdc_daily_211104"), thruDate="2021-10-31")
+
+```
+  
