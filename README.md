@@ -2647,3 +2647,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 explores place of death by COVID vs non-COVID  
 * Coronavirus_Statistics_CDC_v005 explores evolution by month of COVID vs non-COVID death by age and place  
   
+### Expansions week of 15-NOV-2021  
+* Coronavirus_Statistics_CDC_v005 function compareCDCDeaths() created  
+  
