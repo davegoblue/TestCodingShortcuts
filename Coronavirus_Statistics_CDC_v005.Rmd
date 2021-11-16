@@ -1717,7 +1717,8 @@ compareCDCDeaths <- function(lstLoc,
                              lstState,
                              thruDate,
                              keyDeathPlaces=c("Total - All Places of Death"),
-                             keyAges=c("All Ages")
+                             keyAges=c("All Ages"), 
+                             returnData=FALSE
                              ) {
 
     # FUNCTION ARGUMENTS
@@ -1726,6 +1727,7 @@ compareCDCDeaths <- function(lstLoc,
     # thruDate: character, formatted as YYYY-MM-DD
     # keyDeathPlaces: places of death to include from lstLoc
     # keyAges: ages to include from lstLoc
+    # returnData: boolean, should data be returned?
     
     # Create summary by state and year-month
     death_sum <- lstLoc[["deathLoc_conv"]] %>%
@@ -1799,9 +1801,127 @@ compareCDCDeaths <- function(lstLoc,
              )
     print(p2)
 
+    if(isTRUE(returnData)) return(plot_cum)
+    
 }
 
 compareCDCDeaths(lstLoc=testList_20211108, lstState=readFromRDS("cdc_daily_211104"), thruDate="2021-10-31")
+
+```
+  
+A function for breakdowns of deaths by age and place are also explored:  
+```{r, fig.height=9, fig.width=9}
+
+plotDeathDetails <- function(lst, 
+                             keyVar,
+                             timeLabel,
+                             dfFilter=list(), 
+                             p1Include=list("State"="United States", "Group"="By Total"),
+                             p1Exclude=list("Age"="All Ages"),
+                             p2Include=list("State"="United States", "Group"="By Month"),
+                             p2Exclude=p1Exclude,
+                             p3Include=p2Include,
+                             p3Exclude=p2Exclude,
+                             p2PlotVars=c("totalDeaths", "covidDeaths", "fluDeaths"),
+                             p3PlotVars=p2PlotVars,
+                             legendLabel=keyVar,
+                             legendPosition=NULL,
+                             returnData=FALSE
+                             ) {
+
+    # FUNCTION ARGUMENTS:
+    # lst: a processed list file with sub-list "deathLoc_conv"
+    # keyVar: the key variable being explored (e.g., "Age" or "deathPlace")
+    # timeLabel: the label for the plot timing (e.g., "2020-October 2021")
+    # dfFilter: a list of format list("variable"=c("allowed values")) for filtering data to produce df
+    # p1Include: a list of format list("variable"=c("allowed values")) for filtering data to produce plot 1
+    # p1Exclude: a list of format list("variable"=c("disallowed values")) for filtering data to produce plot 1
+    # p2Include: a list of format list("variable"=c("allowed values")) for filtering data to produce plot 2
+    # p2Exclude: a list of format list("variable"=c("disallowed values")) for filtering data to produce plot 2
+    # p3Include: a list of format list("variable"=c("allowed values")) for filtering data to produce plot 3
+    # p3Exclude: a list of format list("variable"=c("disallowed values")) for filtering data to produce plot 3
+    # p2PlotVars: variables to include in the second plot
+    # p3PlotVars: variables to include in the third plot
+    # legendLabel: label to be used for the legend
+    # legendPosition: the position for the legend (NULL means leave defaults)
+    # returnData: boolean, should the data be returned?
+
+    # Create the data for processing
+    df <- lst[["deathLoc_conv"]] %>%
+        rowFilter(lstFilter=dfFilter)
+    
+    # Create the first plot
+    p1 <- df %>%
+        rowFilter(lstFilter=p1Include, lstExclude=p1Exclude) %>%
+        select(all_of(keyVar), where(is.numeric), -Year, -Month) %>%
+        pivot_longer(!all_of(keyVar)) %>%
+        ggplot() + 
+        geom_col(aes(x=name, y=value, fill=fct_rev(get(keyVar))), position="fill") + 
+        labs(x=NULL, 
+             y="Proportion of Deaths", 
+             title=paste0("Proportion of deaths (", timeLabel, ")")
+             ) + 
+        scale_fill_discrete(legendLabel)
+    if(!is.null(legendPosition)) p1 <- p1 + theme(legend.position=legendPosition)
+    print(p1)
+
+    # Create the second plot
+    p2 <- df %>%
+        rowFilter(lstFilter=p2Include, lstExclude=p2Exclude) %>%
+        mutate(ym=lubridate::ym(paste0(Year, "-", zeroPad2(Month)))) %>%
+        select(all_of(keyVar), ym, all_of(p2PlotVars)) %>%
+        pivot_longer(!c(all_of(keyVar), ym)) %>%
+        ggplot() + 
+        geom_col(aes(x=ym, y=value, fill=fct_rev(get(keyVar))), position="fill") + 
+        facet_wrap(~name) +
+        labs(x=NULL, 
+             y="Proportion of Deaths", 
+             title=paste0("Proportion of deaths (", timeLabel, ")")
+             ) + 
+        scale_fill_discrete(legendLabel)
+    if(!is.null(legendPosition)) p2 <- p2 + theme(legend.position=legendPosition)
+    print(p2)
+    
+    # Create the third plot
+    p3 <- df %>%
+        rowFilter(lstFilter=p2Include, lstExclude=p2Exclude) %>%
+        mutate(ym=lubridate::ym(paste0(Year, "-", zeroPad2(Month)))) %>%
+        select(all_of(keyVar), ym, all_of(p3PlotVars)) %>%
+        pivot_longer(!c(all_of(keyVar), ym)) %>%
+        ggplot() + 
+        geom_line(aes(x=ym, y=value, color=fct_rev(get(keyVar)), group=get(keyVar))) + 
+        facet_wrap(~name, scales="free_y") +
+        labs(x=NULL, 
+             y="Deaths", 
+             title=paste0("Deaths (", timeLabel, ")")
+             ) + 
+        scale_color_discrete(legendLabel)
+    if(!is.null(legendPosition)) p3 <- p3 + theme(legend.position=legendPosition)
+    print(p3)
+
+    # Return the data file if requested
+    if(isTRUE(returnData)) return(df)
+    
+}
+
+# Plots by age cohort
+plotDeathDetails(testList_20211108, 
+                 keyVar="Age",
+                 timeLabel="2020-October 2021",
+                 dfFilter=list("deathPlace"="Total - All Places of Death"), 
+                 returnData=TRUE
+                 )
+
+# Plots by place of death cohort
+plotDeathDetails(testList_20211108, 
+                 keyVar="deathPlace",
+                 timeLabel="2020-October 2021",
+                 dfFilter=list("Age"="All Ages"), 
+                 p1Exclude=list("deathPlace"="Total - All Places of Death"),
+                 legendLabel="Death\nPlace",
+                 legendPosition="bottom",
+                 returnData=TRUE
+                 )
 
 ```
   
