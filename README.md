@@ -2654,4 +2654,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 function exploreDeathPlace() updated  
 * Coronavirus_Statistics_CDC_v005 function exploreDeathPlace() proportion facets updated  
 * Coronavirus_Statistics_CDC_v005 function exploreDeathPlace() volume facets updated  
+* Coronavirus_Statistics_CDC_v005 function exploreDeathPlace() new functions run simultaneously  
   
