@@ -2659,4 +2659,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 22-NOV-2021  
 * Coronavirus_Statistics_CDC_v005 new functions integrated in analyzeAllCause()  
 * Coronavirus_Statistics_CDC_v005 compares CDC all-cause deaths and summed CDC age-place deaths  
+* Coronavirus_Statistics_CDC_v005 compares monthly deaths by source  
   
