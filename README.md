@@ -2660,4 +2660,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 new functions integrated in analyzeAllCause()  
 * Coronavirus_Statistics_CDC_v005 compares CDC all-cause deaths and summed CDC age-place deaths  
 * Coronavirus_Statistics_CDC_v005 compares monthly deaths by source  
+* Coronavirus_Statistics_CDC_v005 compares summed all-cause deaths vs 2015-2019 trend  
   
