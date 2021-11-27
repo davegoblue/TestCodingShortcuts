@@ -2341,3 +2341,112 @@ dfTest %>%
 
 ```
   
+The process is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+deathTrends <- function(lstCDC, 
+                        lstCDCSub,
+                        dateThru, 
+                        trendThru, 
+                        mapColor=c("Actual\nall-cause"="red", 
+                                   "Actual\nnon-COVID"="black", 
+                                   "Trend from\n2015-2019"="red"
+                                   ),
+                        mapLineType=c("Actual\nall-cause"="solid", 
+                                      "Actual\nnon-COVID"="solid", 
+                                      "Trend from\n2015-2019"="dotted"
+                                      ),
+                        mapSize=c("Actual\nall-cause"=1.5, 
+                                  "Actual\nnon-COVID"=0.5, 
+                                  "Trend from\n2015-2019"=1
+                                  )
+
+                        ) {
+
+    # FUNCTION ARGUMENTS:
+    # lstCDC: processed list of CDC all-cause deaths
+    # lstCDCSub: processed list of CDC age-place-cause deaths
+    # dateThru: latest date for the analysis
+    # trendThru: latest date for the trend regression
+    # mapColor: mapping vector for plot color elements
+    # mapLineType: mapping vector for plot linetype elements
+    # mapSize: mapping vector for plot size elements
+    
+    # Extrapolate all-cause deaths by month
+    dfAllCause <- lstCDC[["cdc"]] %>%
+        group_by(weekEnding) %>%
+        summarize(deathsPerDay=sum(deaths)/7)
+    dfAllCause <- map_dfr(.x=0:6, .f=function(x) mutate(dfAllCause, day=weekEnding-lubridate::days(x))) %>%
+        mutate(ym=customYYYYMM(day)) %>%
+        group_by(ym) %>%
+        summarize(deaths=sum(deathsPerDay)) %>%
+        mutate(date=as.Date(paste0(ym, "-01"))) %>%
+        filter(date <= dateThru) %>% 
+        mutate(year=lubridate::year(date), 
+               month=factor(month.abb[lubridate::month(date)], levels=month.abb)
+               )
+    
+    # Create the linear trend of all-cause deaths
+    lmAllCause <- lm(deaths ~ year + month, data=filter(dfAllCause, date <= trendThru))
+    
+    # Create the integrated all-cause deaths with projections
+    dfAllCause <- dfAllCause %>%
+        mutate(pred=predict(lmAllCause, newdata=.))
+
+    # Extract the subset data
+    dfSubset <- lstCDCSub[["allCauseList"]][["deathLoc_conv"]] %>% 
+        filter(Group=="By Month", 
+               State=="United States", 
+               Age=="All Ages", 
+               deathPlace=="Total - All Places of Death"
+               ) %>%
+        select(Year, Month, totalDeaths, covidDeaths) %>%
+        mutate(date=as.Date(paste0(Year, "-", Month, "-1")), 
+               nonCovidDeaths=totalDeaths-covidDeaths
+               )
+
+    # Create and print the plot
+    p1 <- dfAllCause %>% 
+        ggplot(aes(x=date)) + 
+        geom_line(aes(y=deaths/1000, 
+                      color="Actual\nall-cause", 
+                      linetype="Actual\nall-cause", 
+                      size="Actual\nall-cause"
+                      )
+                  ) + 
+        geom_line(data=filter(dfSubset, date <= dateThru), 
+                  aes(y=nonCovidDeaths/1000, 
+                      color="Actual\nnon-COVID", 
+                      linetype="Actual\nnon-COVID", 
+                      size="Actual\nnon-COVID"
+                      )
+                  ) + 
+        geom_line(aes(y=pred/1000, 
+                      color="Trend from\n2015-2019", 
+                      linetype="Trend from\n2015-2019", 
+                      size="Trend from\n2015-2019"
+                      )
+                  ) + 
+        lims(y=c(0, NA)) + 
+        labs(x=NULL, 
+             y="Monthly deaths (000)", 
+             title="US monthly deaths (000) by type and vs. 2015-2019 trend"
+             ) +
+        scale_color_manual(name="Source:", values=mapColor) + 
+        scale_linetype_manual(name="Source:", values=mapLineType) + 
+        scale_size_manual(name="Source:", values=mapSize)
+    print(p1)
+
+    # Return key data components
+    list(dfAllCause=dfAllCause, dfSubset=dfSubset, lmAllCause=lmAllCause)
+    
+}
+
+deathTrends(cdcList_20211105, 
+            lstCDCSub = allCauseTest,
+            dateThru = "2021-09-30", 
+            trendThru = "2019-12-31"
+            )
+
+```
+
