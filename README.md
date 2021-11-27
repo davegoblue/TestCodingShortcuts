@@ -2662,4 +2662,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 compares monthly deaths by source  
 * Coronavirus_Statistics_CDC_v005 compares summed all-cause deaths vs 2015-2019 trend  
 * Coronavirus_Statistics_CDC_v005 creates integrated plot of all-cause, trend, and non-COVID  
+* Coronavirus_Statistics_CDC_v005 function deathTrends() includes integrated data and plots  
   
