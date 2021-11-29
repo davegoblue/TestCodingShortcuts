@@ -2350,6 +2350,7 @@ deathTrends <- function(lstCDC,
                         trendThru, 
                         lstCDCFilter=list(),
                         lstCDCSubFilter=list("State"="United States", "Age"="All Ages"),
+                        createPlot=TRUE,
                         mapColor=c("Actual\nall-cause"="red", 
                                    "Actual\nnon-COVID"="black", 
                                    "Trend from\n2015-2019"="red"
@@ -2372,6 +2373,7 @@ deathTrends <- function(lstCDC,
     # trendThru: latest date for the trend regression
     # lstCDCFilter: named list with filtering criteria for lstCDC, passed to rowFilter()
     # lstCDCSubFilter: named list with filtering criteria for lstCDCSub, passed to rowFilter()
+    # createPlot: boolean, should the plot be created (if FALSE, only the data is created ad returned)
     # mapColor: mapping vector for plot color elements
     # mapLineType: mapping vector for plot linetype elements
     # mapSize: mapping vector for plot size elements
@@ -2408,37 +2410,41 @@ deathTrends <- function(lstCDC,
                nonCovidDeaths=totalDeaths-covidDeaths
                )
 
-    # Create and print the plot
-    p1 <- dfAllCause %>% 
-        ggplot(aes(x=date)) + 
-        geom_line(aes(y=deaths/1000, 
-                      color="Actual\nall-cause", 
-                      linetype="Actual\nall-cause", 
-                      size="Actual\nall-cause"
-                      )
-                  ) + 
-        geom_line(data=filter(dfSubset, date <= dateThru), 
-                  aes(y=nonCovidDeaths/1000, 
-                      color="Actual\nnon-COVID", 
-                      linetype="Actual\nnon-COVID", 
-                      size="Actual\nnon-COVID"
-                      )
-                  ) + 
-        geom_line(aes(y=pred/1000, 
-                      color="Trend from\n2015-2019", 
-                      linetype="Trend from\n2015-2019", 
-                      size="Trend from\n2015-2019"
-                      )
-                  ) + 
-        lims(y=c(0, NA)) + 
-        labs(x=NULL, 
-             y="Monthly deaths (000)", 
-             title="US monthly deaths (000) by type and vs. 2015-2019 trend"
-             ) +
-        scale_color_manual(name="Source:", values=mapColor) + 
-        scale_linetype_manual(name="Source:", values=mapLineType) + 
-        scale_size_manual(name="Source:", values=mapSize)
-    print(p1)
+    if(isTRUE(createPlot)) {
+    
+        # Create and print the plot
+        p1 <- dfAllCause %>% 
+            ggplot(aes(x=date)) + 
+            geom_line(aes(y=deaths/1000, 
+                          color="Actual\nall-cause", 
+                          linetype="Actual\nall-cause", 
+                          size="Actual\nall-cause"
+                          )
+                      ) + 
+            geom_line(data=filter(dfSubset, date <= dateThru), 
+                      aes(y=nonCovidDeaths/1000, 
+                          color="Actual\nnon-COVID", 
+                          linetype="Actual\nnon-COVID", 
+                          size="Actual\nnon-COVID"
+                          )
+                      ) + 
+            geom_line(aes(y=pred/1000, 
+                          color="Trend from\n2015-2019", 
+                          linetype="Trend from\n2015-2019", 
+                          size="Trend from\n2015-2019"
+                          )
+                      ) + 
+            lims(y=c(0, NA)) + 
+            labs(x=NULL, 
+                 y="Monthly deaths (000)", 
+                 title="US monthly deaths (000) by type and vs. 2015-2019 trend"
+                 ) +
+            scale_color_manual(name="Source:", values=mapColor) + 
+            scale_linetype_manual(name="Source:", values=mapLineType) + 
+            scale_size_manual(name="Source:", values=mapSize)
+        print(p1)
+        
+    }
 
     # Return key data components
     list(dfAllCause=dfAllCause, dfSubset=dfSubset, lmAllCause=lmAllCause)
@@ -2466,6 +2472,48 @@ deathTrends(cdcList_20211105,
             dateThru = "2021-09-30", 
             trendThru = "2019-12-31"
             )
+
+```
+
+The data outputs are used to calculate excess deaths as both 1) non-COVID vs baseline, and 2) COVID:  
+```{r, fig.height=9, fig.width=9}
+
+# Get the data
+deathAllList <- deathTrends(cdcList_20211105, 
+                            lstCDCSub = allCauseTest,
+                            dateThru = "2021-09-30", 
+                            trendThru = "2019-12-31", 
+                            createPlot=FALSE
+                            )
+
+# Create the integrated file
+deathAllList$dfAllCause %>%
+    select(date, allCause=deaths, pred) %>%
+    inner_join(select(deathAllList$dfSubset, date, nonCovidDeaths, covidDeaths), by="date") %>%
+    mutate(deltaAllCause=allCause-covidDeaths-nonCovidDeaths, 
+           deltaPred=nonCovidDeaths-pred
+           ) %>%
+    pivot_longer(-c(date)) %>%
+    arrange(date) %>%
+    group_by(name) %>%
+    mutate(cumValue=cumsum(value)) %>%
+    ggplot(aes(x=date, y=cumValue/1000)) + 
+    geom_line(data=~filter(., name=="deltaPred"), aes(color="nonCovid")) +
+    geom_text(data=~filter(., name=="deltaPred", date==max(date)), 
+              aes(color="nonCovid", label=round(cumValue/1000)), 
+              hjust=0
+              ) + 
+    geom_line(data=~filter(., name=="covidDeaths"), aes(color="covid")) + 
+    geom_text(data=~filter(., name=="covidDeaths", date==max(date)), 
+              aes(color="covid", label=round(cumValue/1000)), 
+              hjust=0
+              ) + 
+    labs(x=NULL, y="Cumulative Deaths (000)", title="Cumulative excess deaths (000) since January 2020") + 
+    scale_color_manual("Type:", 
+                       values=c("nonCovid"="black", "covid"="red"), 
+                       labels=c("nonCovid"="non-COVID\nvs. trend of\n2015-2019", "covid"="COVID")
+                       ) + 
+    geom_hline(yintercept=0, lty=2)
 
 ```
 
