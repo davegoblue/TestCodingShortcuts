@@ -2665,3 +2665,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 function deathTrends() includes integrated data and plots  
 * Coronavirus_Statistics_CDC_v005 function deathTrends() includes filtering criteria  
   
+### Expansions week of 29-NOV-2021  
+* Coronavirus_Statistics_CDC_v005 plots cumulative death vs. trend  
+  
