@@ -2667,4 +2667,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 29-NOV-2021  
 * Coronavirus_Statistics_CDC_v005 plots cumulative death vs. trend  
+* Coronavirus_Statistics_CDC_v005 functional form for makeCumulativeDeath()  
   
