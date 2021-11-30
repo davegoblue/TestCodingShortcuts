@@ -2517,3 +2517,86 @@ deathAllList$dfAllCause %>%
 
 ```
 
+This is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+makeCumulativeDeath <- function(lst, 
+                                divBy=1000, 
+                                yLab=NULL, 
+                                plotTitle=NULL,
+                                plotSubtitle=NULL,
+                                plotLabels=c("nonCovid"="non-COVID\nvs. trend of\n2015-2019", "covid"="COVID"),
+                                returnData=FALSE
+                                ) {
+    
+    # FUNCTION ARGUMENTS
+    # lst: a processed list file from deathTrends()
+    # divBy: divide death values by (1000 means plots will be in thousands)
+    # yLab: y-axis label (NULL means use divBy to create)
+    # plotTitle: title (NULL means use divBy and earliest date in inner_join to create)
+    # plotSubtitle: subtitle (NULL means none)
+    # plotLabels: mapping file of elements to labels for the plot legend
+    # returnData: boolean, should the data frame be returned?
+    
+    # Create the data frame
+    df <- lst[["dfAllCause"]] %>%
+        select(date, allCause=deaths, pred) %>%
+        inner_join(select(lst[["dfSubset"]], date, nonCovidDeaths, covidDeaths), by="date") %>%
+        mutate(deltaAllCause=allCause-covidDeaths-nonCovidDeaths, 
+               deltaPred=nonCovidDeaths-pred
+               ) %>%
+        pivot_longer(-c(date)) %>%
+        arrange(date) %>%
+        group_by(name) %>%
+        mutate(cumValue=cumsum(value))
+    
+    # Create the labels if needed
+    # Unit conversion text
+    if(divBy==1) xtraText <- ""
+    else if(isTRUE(all.equal(log10(divBy), round(log10(divBy))))) 
+        xtraText <- paste0(" (", stringr::str_sub(as.character(divBy), start=2), ")")
+    else xtraText <- paste0(" (", as.character(round(divBy)), "s)")
+    # Earliest date
+    earlyDate <- format(min(df$date), "%B %Y")
+    # Replacement of NULL values
+    if (is.null(yLab)) yLab <- paste0("Cumulative Deaths", xtraText)
+    if (is.null(plotTitle)) plotTitle <- paste0("Cumulative change in deaths", xtraText, " since ", earlyDate)
+    
+    # Create the plot
+    p1 <- df %>%
+        ggplot(aes(x=date, y=cumValue/divBy)) + 
+        geom_line(data=~filter(., name=="deltaPred"), aes(color="nonCovid")) +
+        geom_text(data=~filter(., name=="deltaPred", date==max(date)), 
+                  aes(color="nonCovid", label=round(cumValue/divBy)), 
+                  hjust=0
+                  ) + 
+        geom_line(data=~filter(., name=="covidDeaths"), aes(color="covid")) + 
+        geom_text(data=~filter(., name=="covidDeaths", date==max(date)), 
+                  aes(color="covid", label=round(cumValue/divBy)), 
+                  hjust=0
+                  ) + 
+        labs(x=NULL, y=yLab, title=plotTitle, subtitle=plotSubtitle) + 
+        scale_color_manual("Type:", values=c("nonCovid"="black", "covid"="red"), labels=plotLabels) + 
+        geom_hline(yintercept=0, lty=2)
+    print(p1)
+    
+    if(isTRUE(returnData)) return(df)
+    
+}
+
+
+makeCumulativeDeath(deathAllList)
+makeCumulativeDeath(deathAllList, returnData=TRUE)
+
+deathTrends(cdcList_20211105, 
+            lstCDCSub = allCauseTest,
+            lstCDCFilter=list("age"=c("75-84 years", "85 years and older")), 
+            lstCDCSubFilter=list("Age"=c("75-84 years", "85 years and over"), "State"="United States"),
+            dateThru = "2021-09-30", 
+            trendThru = "2019-12-31", 
+            createPlot=FALSE
+            ) %>%
+    makeCumulativeDeath(plotSubtitle="Age 75+")
+
+```
+
