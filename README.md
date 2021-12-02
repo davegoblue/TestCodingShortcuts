@@ -2669,4 +2669,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 plots cumulative death vs. trend  
 * Coronavirus_Statistics_CDC_v005 functional form for makeCumulativeDeath()  
 * Coronavirus_Statistics_CDC_v005 includes death summary by subgroups  
+* Coronavirus_Statistics_CDC_v005 makeCumulativeDeath() includes arguments for y-axis limits and legend positions  
   
