@@ -2672,4 +2672,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 makeCumulativeDeath() includes arguments for y-axis limits and legend positions  
 * Coronavirus_CDC_Daily_v003 refreshed with latest data  
 * Coronavirus_Statistics_CDC_v005 refreshed with latest all-cause deaths data  
+* Coronavirus_Statistics_CDC_v005 refreshed with latest deaths by age and location data  
   
