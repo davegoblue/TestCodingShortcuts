@@ -2674,3 +2674,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 refreshed with latest all-cause deaths data  
 * Coronavirus_Statistics_CDC_v005 refreshed with latest deaths by age and location data  
   
+### Expansions week of 06-DEC-2021  
+* Coronavirus_Statistics_CDC_v005 refreshed with latest cumulative deaths  
+  
