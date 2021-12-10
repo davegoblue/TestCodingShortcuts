@@ -2603,3 +2603,64 @@ saveToRDS(cty_newdata_20211208, ovrWriteError=FALSE)
 
 ```
   
+Plots are updated for total deaths per capita by county:  
+```{r, fig.height=9, fig.width=9}
+
+# Create data for total burden and change in burden over past 28 days
+burdenSummary <- cty_newdata_20211208$dfPerCapita %>% 
+    group_by(countyFIPS, state) %>%
+    summarize(asofDate=max(date), 
+              tdpm=sum(ifelse(date==max(date), tdpm, 0)), 
+              tcpm=sum(ifelse(date==max(date), tcpm, 0)), 
+              dpm28=sum(ifelse(date>max(date)-28, dpm, 0)),
+              cpm28=sum(ifelse(date>max(date)-28, cpm, 0)), 
+              .groups="drop"
+              )
+burdenSummary
+
+# Negative values in the data (likely due to restatement)
+burdenSummary %>%
+    pivot_longer(-c(countyFIPS, state, asofDate)) %>%
+    filter(value < 0)
+
+# Create histograms for burden metrics, with all values made no less than 0
+metricLabels <- c("cpm28"="Cases per million (most recent 28 days)", 
+                  "dpm28"="Deaths per million (most recent 28 days)", 
+                  "tcpm"="Cases per million (aggregate)", 
+                  "tdpm"="Deaths per million (aggregate)"
+                  )
+burdenSummary %>%
+    pivot_longer(-c(countyFIPS, state, asofDate)) %>%
+    ggplot(aes(x=pmax(0, value))) + 
+    geom_histogram(fill="lightblue", bins=50) +
+    facet_wrap(~metricLabels[name], scales="free") + 
+    labs(title="Coronavirus burden by county as of Dec 8, 2021", 
+         subtitle="Values less than 0 treated as 0",
+         caption="Data from USA Facts",
+         x="Burden", 
+         y="# Counties"
+         )
+
+# Create plot of cases (past 28 days)
+burdenSummary %>%
+    select(fips=countyFIPS, cpm28) %>%
+    mutate(cpm28=pmin(pmax(cpm28, 0), 25000)/1000) %>%
+    usmap::plot_usmap(regions="counties", exclude="", data=., values="cpm28") + 
+    scale_fill_continuous("CPM 000s\n(28 days)", low="grey", high="red") + 
+    labs(title="Cases per million (past 28 days) by county as of Dec 8, 2021", 
+         subtitle="Capped at 25k",
+         caption="Source: USA Facts"
+         )
+
+# Create plot of deaths (past 28 days)
+burdenSummary %>%
+    select(fips=countyFIPS, dpm28) %>%
+    mutate(dpm28=pmin(pmax(dpm28, 0), 250)) %>%
+    usmap::plot_usmap(regions="counties", exclude=c("NE", "FL", "NJ", "OK"), data=., values="dpm28") + 
+    scale_fill_continuous("DPM 000s\n(28 days)", low="grey", high="red") + 
+    labs(title="Deaths per million (past 28 days) by county as of Dec 8, 2021", 
+         subtitle="Capped at 250",
+         caption="Source: USA Facts\nFL, NE, NJ, OK excluded due to unreliable data"
+         )
+
+```
