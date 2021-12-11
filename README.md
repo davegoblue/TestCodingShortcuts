@@ -2680,4 +2680,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 functional form for death summary by subgroups  
 * Coronavirus_Statistics_USAF_v005 updated with latest data  
 * Coronavirus_Statistics_USAF_v005 updated with additional burden summaries  
+* Coronavirus_Statistics_USAF_v005 includes functional form for additional burden summaries  
   
