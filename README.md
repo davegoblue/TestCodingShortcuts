@@ -2683,3 +2683,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 includes functional form for additional burden summaries  
 * Coronavirus_Statistics_USAF_v005 includes functional form for additional burden summary plots  
   
+### Expansions week of 13-DEC-2021  
+* Coronavirus_Statistics_USAF_v005 includes helperPlotCountyBurden() to simplify plot creation  
+  
