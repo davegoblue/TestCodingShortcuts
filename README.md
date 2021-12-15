@@ -2686,4 +2686,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 13-DEC-2021  
 * Coronavirus_Statistics_USAF_v005 includes helperPlotCountyBurden() to simplify plot creation  
 * Coronavirus_Statistics_USAF_v005 includes faceted burden plots  
+* Coronavirus_Statistics_USAF_v005 includes additional faceted burden plots  
   
