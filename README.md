@@ -2688,4 +2688,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 includes faceted burden plots  
 * Coronavirus_Statistics_USAF_v005 includes additional faceted burden plots  
 * Coronavirus_Statistics_USAF_v005 explores FL metrics  
+* Coronavirus_Statistics_USAF_v005 function checkStateCountySums() for state exploration  
   
