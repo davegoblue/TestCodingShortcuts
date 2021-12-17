@@ -2914,4 +2914,59 @@ flCounties %>%
 
 ```
   
-The USAF data source no longer captures Florida deaths.
+The USAF data source no longer captures Florida deaths. The process is updated to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+checkStateCountySums <- function(lst, 
+                                 keyStates, 
+                                 printPlot=TRUE, 
+                                 returnData=!isTRUE(printPlot)
+                                 ) {
+    
+    # FUNCTION ARGUMENTS
+    # lst: a processed list of county data
+    # keyStates: character vector of state abbreviations to use
+    # printPlot: boolean, should the plot be printed?
+    # returnData: boolean, should the aggregated data frame be returned?
+    
+    # Create the data frame of counties in keyStates
+    df <- lst[["dfPerCapita"]] %>%
+        filter(state %in% all_of(keyStates)) %>%
+        select(state, countyFIPS, date, cases, new_cases, deaths, new_deaths) %>%
+        pivot_longer(-c(state, countyFIPS, date)) %>%
+        arrange(state, countyFIPS, date) %>%
+        group_by(state, countyFIPS, name) %>%
+        mutate(value7=zoo::rollmean(value, k=7, fill=NA, align="center")) %>%
+        ungroup()
+
+    # Create the aggregated data
+    dfAgg <- df %>%
+        group_by(date, name) %>%
+        summarize(across(c(value, value7), .fns=sum), .groups="drop")
+    
+    # Plot either the aggregate dat
+    p1 <- dfAgg %>%
+        filter(!is.na(value7)) %>%
+        ggplot(aes(x=date, y=value7)) + 
+        geom_line() + 
+        facet_wrap(~name, scales="free_y") + 
+        labs(x=NULL, 
+             y="Rolling 7-day mean", 
+             title="Summed county burden by metric (7-day mean)", 
+             subtitle=paste0("Sum of counties in: ", paste0(all_of(keyStates), collapse=", "))
+             )
+    
+    # Print the plot if requested
+    if(printPlot) print(p1)
+    
+    # Return the data if requested
+    if(returnData) return(dfAgg)
+    
+}
+
+checkStateCountySums(cty_newdata_20211208, keyStates="FL")
+checkStateCountySums(cty_newdata_20211208, keyStates=c("FL", "GA", "SC", "AL"))
+checkStateCountySums(cty_newdata_20211208, keyStates=c("FL", "GA", "SC", "AL"), printPlot=FALSE)
+
+```
+
