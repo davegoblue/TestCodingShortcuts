@@ -2690,4 +2690,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 explores FL metrics  
 * Coronavirus_Statistics_USAF_v005 function checkStateCountySums() for state exploration  
 * Coronavirus_Statistics_USAF_v005 explores metrics for states with death anomalies  
+* Coronavirus_Statistics_USAF_v005 compares FL metrics at state-level and summed county-level  
   
