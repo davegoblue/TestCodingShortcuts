@@ -3021,3 +3021,88 @@ flCounties %>%
 ```
   
 Deaths data in Florida appear generally aligned through mid-2021, when state data continues reporting and county data stops. Cases data in Florida appear generally aligned throughout.
+
+The process is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+compareStateSummedCounty <- function(dfState, 
+                                     dfCounty, 
+                                     inclStates, 
+                                     dateThru=NULL, 
+                                     makePlot=TRUE, 
+                                     returnData=FALSE
+                                     ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfState: processed state-level metrics
+    # dfCounty: processed county-level metrics
+    # inclStates: character vector of states to include
+    # dateThru: latest date for analyzsis (NULL means use all data)
+    # makePlot: boolean, should plots be created for each state?
+    # returnData: boolean, should a list of processed dfState and processed dfCounty be returned?
+    
+    dfState <- dfState %>%
+        select(date, state, cases=tot_cases, new_cases, deaths=tot_deaths, new_deaths) %>%
+        filter(state %in% all_of(inclStates), 
+               date <= if(is.null(dateThru)) max(date) else as.Date(dateThru)
+               ) %>%
+        pivot_longer(-c(date, state)) %>%
+        mutate(value=ifelse(is.na(value), 0, value)) %>%
+        arrange(date, state, name) %>%
+        group_by(state, name) %>%
+        mutate(value7=zoo::rollmean(value, k=7, fill=NA, align="center"), src="state") %>%
+        ungroup()
+    
+    dfCounty <- dfCounty %>%
+        filter(state %in% all_of(inclStates), 
+               date <= if(is.null(dateThru)) max(date) else as.Date(dateThru)
+               ) %>%
+        select(state, countyFIPS, date, cases, new_cases, deaths, new_deaths) %>%
+        pivot_longer(-c(state, countyFIPS, date)) %>%
+        arrange(state, countyFIPS, date) %>%
+        group_by(state, countyFIPS, name) %>%
+        mutate(value7=zoo::rollmean(value, k=7, fill=NA, align="center")) %>%
+        ungroup()
+
+    if(isTRUE(makePlot)) {
+        
+        for(thisState in all_of(inclStates)) {
+
+            p1 <- dfCounty %>%
+                filter(state %in% all_of(thisState)) %>%
+                group_by(state, date, name) %>%
+                summarize(across(c(value, value7), .fns=sum), .groups="drop") %>%
+                filter(!is.na(value7)) %>%
+                mutate(src="county") %>%
+                bind_rows(filter(dfState, state %in% all_of(thisState))) %>%
+                ggplot(aes(x=date, y=value7)) + 
+                geom_line(aes(group=src, color=src)) + 
+                facet_wrap(~name, scales="free_y") + 
+                labs(x=NULL, 
+                     y="Rolling 7-day mean", 
+                     title="Summed county burden by metric (7-day mean)", 
+                     subtitle=paste0(thisState, " counties")
+                     )
+            print(p1)
+            
+        }
+    }
+    
+    if(returnData) list(dfState=dfState, dfCounty=dfCounty)
+    
+}
+
+
+statePerCapita <- readFromRDS("cdc_daily_211202")$dfPerCapita
+countyData <- cty_newdata_20211208$dfPerCapita
+
+tempStateCompareList <- compareStateSummedCounty(dfState=statePerCapita, 
+                                                 dfCounty=countyData, 
+                                                 inclStates=c("FL", "MO", "OK", "TX"), 
+                                                 dateThru="2021-11-30", 
+                                                 returnData=TRUE
+                                                 )
+tempStateCompareList
+
+```
+
