@@ -3062,7 +3062,12 @@ compareStateSummedCounty <- function(dfState,
         arrange(state, countyFIPS, date) %>%
         group_by(state, countyFIPS, name) %>%
         mutate(value7=zoo::rollmean(value, k=7, fill=NA, align="center")) %>%
-        ungroup()
+        ungroup() %>%
+        filter(state %in% all_of(inclStates)) %>%
+        group_by(state, date, name) %>%
+        summarize(across(c(value, value7), .fns=sum), .groups="drop") %>%
+        filter(!is.na(value7)) %>%
+        mutate(src="county")
 
     if(isTRUE(makePlot)) {
         
@@ -3070,10 +3075,6 @@ compareStateSummedCounty <- function(dfState,
 
             p1 <- dfCounty %>%
                 filter(state %in% all_of(thisState)) %>%
-                group_by(state, date, name) %>%
-                summarize(across(c(value, value7), .fns=sum), .groups="drop") %>%
-                filter(!is.na(value7)) %>%
-                mutate(src="county") %>%
                 bind_rows(filter(dfState, state %in% all_of(thisState))) %>%
                 ggplot(aes(x=date, y=value7)) + 
                 geom_line(aes(group=src, color=src)) + 
@@ -3106,3 +3107,33 @@ tempStateCompareList
 
 ```
 
+A scoring metric is added for similarity of the data:  
+```{r, fig.height=9, fig.width=9}
+
+tempStateCompareList$dfState %>%
+    filter(!is.na(value7), date >= "2020-02-15", date <= "2021-11-30") %>%
+    select(date, state, name, state7=value7) %>%
+    inner_join(tempStateCompareList$dfCounty %>%
+                   filter(!is.na(value7), date >= "2020-02-15", date <= "2021-11-30") %>%
+                   select(date, state, name, county7=value7), 
+               by=c("state", "name", "date")
+               ) %>%
+    group_by(state, name) %>%
+    summarize(vars7=var(state7),
+              varc7=var(county7), 
+              vardelta=var(state7-county7), 
+              corc7s7=cor(state7, county7),
+              n=n(), 
+              .groups="drop"
+              ) %>%
+    mutate(varExp=1-2*vardelta/pmax(vars7, varc7)) %>%
+    ggplot(aes(x=state, y=varExp)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=varExp/2, label=round(varExp, 2))) +
+    facet_wrap(~name) + 
+    lims(y=c(NA, 1)) + 
+    labs(x=NULL, y="Rough estimate of variance explained", title="Similarity of state and summed county metrics")
+
+```
+
+Cases are generally well aligned. There are differences in timing of deaths, and spikiness that leads to much different curves in (especially) FL and OK.
