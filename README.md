@@ -2694,4 +2694,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 20-DEC-2021  
 * Coronavirus_Statistics_USAF_v005 uses functional form with compareStateSummedCounty()  
+* Coronavirus_Statistics_USAF_v005 includes a scoring metric for data similarity  
   
