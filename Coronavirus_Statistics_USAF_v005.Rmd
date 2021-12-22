@@ -3137,3 +3137,59 @@ tempStateCompareList$dfState %>%
 ```
 
 Cases are generally well aligned. There are differences in timing of deaths, and spikiness that leads to much different curves in (especially) FL and OK.
+
+The scoring metric is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+scoreSimilarity <- function(lst, 
+                            minDate=NULL, 
+                            maxDate=NULL
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: list containing state-level and summed county-level data
+    # minDate: starting date for scoring comparisons (NULL means lowest common date in data)
+    # maxDate: ending date for scoring comparisons (NULL means highest common date in data)
+    
+    # Create minDate and maxDate if not provided
+    if(is.null(minDate)) minDate <- max(min(lst[["dfState"]]$date), min(lst[["dfCounty"]]$date))
+    if(is.null(maxDate)) maxDate <- min(max(lst[["dfState"]]$date), max(lst[["dfCounty"]]$date))
+    
+    p1 <- lst[["dfState"]] %>%
+        filter(!is.na(value7), date >= minDate, date <= maxDate) %>%
+        select(date, state, name, state7=value7) %>%
+        inner_join(lst[["dfCounty"]] %>%
+                       filter(!is.na(value7), date >= minDate, date <= maxDate) %>%
+                       select(date, state, name, county7=value7), 
+                   by=c("state", "name", "date")
+                   ) %>%
+        group_by(state, name) %>%
+        summarize(vars7=var(state7),
+                  varc7=var(county7), 
+                  vardelta=var(state7-county7), 
+                  corc7s7=cor(state7, county7),
+                  n=n(), 
+                  .groups="drop"
+                  ) %>%
+        mutate(varExp=1-2*vardelta/pmax(vars7, varc7)) %>%
+        ggplot(aes(x=state, y=varExp)) + 
+        geom_col(fill="lightblue") + 
+        geom_text(aes(y=varExp/2, label=round(varExp, 2))) +
+        facet_wrap(~name) + 
+        lims(y=c(NA, 1)) + 
+        labs(x=NULL, 
+             y="Rough estimate of variance explained", 
+             title="Similarity of state and summed county metrics", 
+             subtitle=paste0("Time period: ", minDate, " to ", maxDate)
+             )
+    print(p1)
+    
+}
+
+scoreSimilarity(tempStateCompareList)
+scoreSimilarity(tempStateCompareList, minDate="2020-02-15")
+scoreSimilarity(tempStateCompareList, maxDate="2021-11-27")
+scoreSimilarity(tempStateCompareList, minDate="2020-02-15", maxDate="2021-11-27")
+
+```
+
