@@ -3143,19 +3143,22 @@ The scoring metric is converted to functional form:
 
 scoreSimilarity <- function(lst, 
                             minDate=NULL, 
-                            maxDate=NULL
+                            maxDate=NULL, 
+                            makeFacet=TRUE
                             ) {
     
     # FUNCTION ARGUMENTS:
     # lst: list containing state-level and summed county-level data
     # minDate: starting date for scoring comparisons (NULL means lowest common date in data)
     # maxDate: ending date for scoring comparisons (NULL means highest common date in data)
+    # makeFacet: boolean, should plots be facetted, or by variable?
+    #            if not TRUE, plots will be made sideways and sorted by variable
     
     # Create minDate and maxDate if not provided
     if(is.null(minDate)) minDate <- max(min(lst[["dfState"]]$date), min(lst[["dfCounty"]]$date))
     if(is.null(maxDate)) maxDate <- min(max(lst[["dfState"]]$date), max(lst[["dfCounty"]]$date))
     
-    p1 <- lst[["dfState"]] %>%
+    plotData <- lst[["dfState"]] %>%
         filter(!is.na(value7), date >= minDate, date <= maxDate) %>%
         select(date, state, name, state7=value7) %>%
         inner_join(lst[["dfCounty"]] %>%
@@ -3171,18 +3174,31 @@ scoreSimilarity <- function(lst,
                   n=n(), 
                   .groups="drop"
                   ) %>%
-        mutate(varExp=1-2*vardelta/pmax(vars7, varc7)) %>%
-        ggplot(aes(x=state, y=varExp)) + 
-        geom_col(fill="lightblue") + 
-        geom_text(aes(y=varExp/2, label=round(varExp, 2))) +
-        facet_wrap(~name) + 
-        lims(y=c(NA, 1)) + 
-        labs(x=NULL, 
-             y="Rough estimate of variance explained", 
-             title="Similarity of state and summed county metrics", 
-             subtitle=paste0("Time period: ", minDate, " to ", maxDate)
-             )
-    print(p1)
+        mutate(varExp=1-2*vardelta/pmax(vars7, varc7))
+    
+    innerMakePlot <- function(keepName, coordFlip=FALSE) {
+        p1 <- plotData %>%
+            filter(name %in% all_of(keepName)) %>%
+            ggplot(aes(x=fct_reorder(state, varExp), y=varExp)) + 
+            geom_col(fill="lightblue") + 
+            geom_text(aes(y=varExp/2, label=round(varExp, 2))) +
+            lims(y=c(NA, 1)) + 
+            labs(x=NULL, 
+                 y="Rough estimate of variance explained", 
+                 title="Similarity of state and summed county metrics", 
+                 subtitle=paste0("Time period: ", minDate, " to ", maxDate)
+                 ) + 
+            facet_wrap(~name)
+        if(isTRUE(coordFlip)) p1 <- p1 + coord_flip()
+        p1
+    }
+    
+    keyVars <- plotData %>% pull(name) %>% unique() %>% sort()
+    if(!isTRUE(makeFacet)) {
+        for(varName in keyVars) innerMakePlot(keepName=varName, coordFlip=TRUE) %>% print()
+    } else {
+        innerMakePlot(keepName=keyVars) %>% print()
+    }
     
 }
 
@@ -3192,4 +3208,19 @@ scoreSimilarity(tempStateCompareList, maxDate="2021-11-27")
 scoreSimilarity(tempStateCompareList, minDate="2020-02-15", maxDate="2021-11-27")
 
 ```
+  
+The process is run for all states:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
 
+tempStateCompareList_v2 <- compareStateSummedCounty(dfState=statePerCapita, 
+                                                    dfCounty=countyData, 
+                                                    inclStates=c(state.abb, "DC"), 
+                                                    dateThru="2021-11-30", 
+                                                    makePlot=FALSE,
+                                                    returnData=TRUE
+                                                    )
+scoreSimilarity(tempStateCompareList_v2, minDate="2020-02-15", maxDate="2021-11-27", makeFacet=FALSE)
+
+```
+
+Data are generally well aligned between sources, with some exceptions that merit further investigation.
