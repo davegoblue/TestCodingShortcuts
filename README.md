@@ -2696,4 +2696,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 uses functional form with compareStateSummedCounty()  
 * Coronavirus_Statistics_USAF_v005 includes a scoring metric for data similarity  
 * Coronavirus_Statistics_USAF_v005 uses functional form with scoreSimilarity()  
+* Coronavirus_Statistics_USAF_v005 runs scoreSimilarity() on all states  
   
