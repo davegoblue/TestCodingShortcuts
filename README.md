@@ -2701,3 +2701,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 refreshed with latest data  
 * Coronavirus_CDC_Daily_v003 downloads hospital-level data  
   
+### Expansions week of 27-DEC-2021  
+* Coronavirus_CDC_Daily_v003 plots key metrics for a sample hospital  
+  
