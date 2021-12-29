@@ -3260,3 +3260,71 @@ indivHosp_20211225 %>%
 
 ```
 
+The process is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+plotHospitalUtilization <- function(df, 
+                                    keyHosp=NULL, 
+                                    plotTitle=NULL,
+                                    seed=2112261542, 
+                                    varMap=hhsMapper
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: file containing hospital utilization data
+    # keyHosp: character vector of hospital_pk to use (NULL means select one at random using seed)
+    # plotTitle: title to use for plots (NULL means use a default based on keyHosp)
+    # seed: random seed to use for selecting a hospital
+    # varMap: character mapping file of format c("variable name"="plotting facet name")
+    
+    # Sample a keyHosp if not provided
+    if(is.null(keyHosp)) {
+        set.seed(seed)
+        keyHosp <- df %>% 
+            pull(hospital_pk) %>% 
+            sample(1)        
+    }
+    
+    # Get plotTitle if not provided
+    if(is.null(plotTitle)) {
+        if(length(keyHosp) > 1) plotTitle <- "Multiple hospitals combined"
+        else {
+            plotTitle <- df %>% 
+                filter(hospital_pk %in% all_of(keyHosp), collection_week==max(collection_week)) %>%
+                mutate(useName=paste0(hospital_name, " (code: ", keyHosp, ") ",city, ", ", state, " ", zip)) %>%
+                pull(useName)
+        }
+    }
+
+    # Create key plot data
+    p1Data <- df %>%
+        filter(hospital_pk %in% all_of(keyHosp)) %>%
+        select(date=collection_week, names(varMap)) %>%
+        pivot_longer(-c(date)) %>%
+        filter(!is.na(value), value != -999999) %>%
+        group_by(date, name) %>%
+        summarize(value=sum(value, na.rm=TRUE), n=n(), .groups="drop")
+    
+    # Create the key plot
+    p1 <- p1Data %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line() + 
+        facet_wrap(~hhsMapper[name], scales="free_y") + 
+        lims(y=c(0, NA)) + 
+        labs(x=NULL, y="Average weekly value", title=plotTitle)
+    print(p1)
+    
+}
+
+# Random hospital selection
+plotHospitalUtilization(indivHosp_20211225)
+plotHospitalUtilization(indivHosp_20211225, seed=2112281733)
+
+# Combination of hospitals
+indivHosp_20211225 %>% 
+    filter(state=="FL", collection_week==max(collection_week)) %>% 
+    pull(hospital_pk) %>%
+    plotHospitalUtilization(df=indivHosp_20211225, keyHosp=., plotTitle="Florida Hospitals Summed")
+
+```
+
