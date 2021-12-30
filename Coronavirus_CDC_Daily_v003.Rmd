@@ -3267,7 +3267,17 @@ plotHospitalUtilization <- function(df,
                                     keyHosp=NULL, 
                                     plotTitle=NULL,
                                     seed=2112261542, 
-                                    varMap=hhsMapper
+                                    varMap=hhsMapper, 
+                                    createFacets=TRUE,
+                                    p2List=list("Adult Beds"=list("colsPlot"=c("adult_beds_occupied"="lightblue", 
+                                                                               "adult_beds_covid"="red"
+                                                                               ), 
+                                                                  "linesPlot"=c("adult_beds"="black", 
+                                                                                "total_beds"="green"
+                                                                                )
+                                                                  )
+                                                ),
+                                    returnData=FALSE
                                     ) {
     
     # FUNCTION ARGUMENTS:
@@ -3276,6 +3286,8 @@ plotHospitalUtilization <- function(df,
     # plotTitle: title to use for plots (NULL means use a default based on keyHosp)
     # seed: random seed to use for selecting a hospital
     # varMap: character mapping file of format c("variable name"="plotting facet name")
+    # createFacets: boolean, should the facetted plots be create?
+    # returnData: boolean, should plot data be returned?
     
     # Sample a keyHosp if not provided
     if(is.null(keyHosp)) {
@@ -3300,27 +3312,68 @@ plotHospitalUtilization <- function(df,
     p1Data <- df %>%
         filter(hospital_pk %in% all_of(keyHosp)) %>%
         select(date=collection_week, names(varMap)) %>%
+        colRenamer(vecRename=varMap) %>%
         pivot_longer(-c(date)) %>%
         filter(!is.na(value), value != -999999) %>%
         group_by(date, name) %>%
         summarize(value=sum(value, na.rm=TRUE), n=n(), .groups="drop")
     
-    # Create the key plot
-    p1 <- p1Data %>%
-        ggplot(aes(x=date, y=value)) + 
-        geom_line() + 
-        facet_wrap(~hhsMapper[name], scales="free_y") + 
-        lims(y=c(0, NA)) + 
-        labs(x=NULL, y="Average weekly value", title=plotTitle)
-    print(p1)
+    # Create the facetted plots if requested
+    if(isTRUE(createFacets)) {
+        # Create the key plot
+        p1 <- p1Data %>%
+            ggplot(aes(x=date, y=value)) + 
+            geom_line() + 
+            facet_wrap(~name, scales="free_y") + 
+            lims(y=c(0, NA)) + 
+            labs(x=NULL, y="Average weekly value", title=plotTitle)
+        print(p1)
+    }
+    
+    # Create the stacked bar plots
+    for(plotType in names(p2List)) {
+    
+        # Create the base plot
+        p2 <- ggplot(data=p1Data, aes(x=date, y=value))
+        
+        # Add the columns
+        for(vCol in names(p2List[[plotType]][["colsPlot"]])) {
+            p2 <- p2 + geom_col(data=mutate(filter(p1Data, name %in% vCol), fill=vCol), aes(fill=fill))
+        }
+        
+        # Add the lines
+        p2 <- p2 + geom_line(data=filter(p1Data, name %in% c("total_beds", "adult_beds")), 
+                             aes(group=name, color=name), 
+                             size=1.5
+                             )
+        
+        # Add the limits, labels, and scales
+        p2 <- p2 + 
+            lims(y=c(0, NA)) + 
+            labs(x=NULL, y="Average weekly value", title=plotTitle, subtitle=plotType) +
+            scale_color_manual("Capacity", values=p2List[[plotType]][["linesPlot"]]) + 
+            scale_fill_manual("Occupied", values=p2List[[plotType]][["colsPlot"]])
+        
+        # Print the plot
+        print(p2)
+        
+    }
+    
+    # Return the data if requested
+    if(isTRUE(returnData)) return(p1Data)
     
 }
 
-# Random hospital selection
+# Random hospital selection, full plots
 plotHospitalUtilization(indivHosp_20211225)
 plotHospitalUtilization(indivHosp_20211225, seed=2112281733)
 
-# Combination of hospitals
+# Random hospital selection, one plot or data
+plotHospitalUtilization(indivHosp_20211225, createFacets=FALSE)
+plotHospitalUtilization(indivHosp_20211225, p2List=list())
+plotHospitalUtilization(indivHosp_20211225, createFacets=FALSE, p2List=list(), returnData=TRUE)
+
+# Combination of hospitals, full plots
 indivHosp_20211225 %>% 
     filter(state=="FL", collection_week==max(collection_week)) %>% 
     pull(hospital_pk) %>%
