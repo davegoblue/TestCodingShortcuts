@@ -2707,4 +2707,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 function plotHospitalUtilization() creates factted plots  
 * Coronavirus_CDC_Daily_v003 plotHospitalUtilization() adds bar plot for total adult beds  
 * Coronavirus_CDC_Daily_v003 plotHospitalUtilization() adds bar plot for ICU beds  
+* Coronavirus_CDC_Daily_v003 function downloadReadHospitalData() downloads and reads data  
   
