@@ -3386,3 +3386,110 @@ indivHosp_20211225 %>%
 
 ```
 
+The process to download and read data is converted to functional form:  
+```{r}
+
+# Hospital beds average
+hhsMapper <- c("total_beds_7_day_avg"="total_beds", 
+               "all_adult_hospital_beds_7_day_avg"="adult_beds", 
+               "all_adult_hospital_inpatient_bed_occupied_7_day_avg"="adult_beds_occupied", 
+               "total_adult_patients_hospitalized_confirmed_and_suspected_covid_7_day_avg"="adult_beds_covid", 
+               "inpatient_beds_7_day_avg"="inpatient_beds", 
+               "total_icu_beds_7_day_avg"="icu_beds", 
+               "icu_beds_used_7_day_avg"="icu_beds_occupied", 
+               "staffed_icu_adult_patients_confirmed_and_suspected_covid_7_day_avg"="adult_icu_covid"
+               )
+
+downloadReadHospitalData <- function(loc, 
+                                     url="https://healthdata.gov/api/views/anag-cw7u/rows.csv?accessType=DOWNLOAD",
+                                     ovrWrite=FALSE, 
+                                     mapper=hhsMapper
+                                     ) {
+    
+    # FUNCTION ARGUMENTS:
+    # loc: location for the downloaded data
+    # url location for downloading data
+    # ovrWrite boolean, if loc exists, should it be overwritten?
+    # mapper: character vector of form c("variable"="formatted name") of variables to run histograms for
+    
+    # Check if the file exists, download if appropriate
+    tempDownload <- function(x=loc, y=url, z=ovrWrite) {
+    
+        if(file.exists(x)) {
+            cat("\nFile", x, "already exists\n")
+            if(!isTRUE(z)) {
+                cat("File will not be downloaded since ovrWrite is not TRUE\n")
+                return()
+            }
+        }
+        
+        # Download the file
+        fileDownload(x, url=y, ovrWrite=z)
+        
+    }
+    
+    tempDownload()
+
+    # Read the file and glimpse
+    df <- fileRead(loc)
+    glimpse(df)
+
+    # Basic count checks
+    cat("\nHospital Subtype Counts:\n")
+    df %>% count(hospital_subtype) %>% print()
+    cat("\nRecords other than 50 states and DC\n")
+    df %>% count(state) %>% filter(!(state %in% c(state.abb, "DC"))) %>% print()
+
+    # Counts of less than 0, NA, and -999999
+    cat("\nRecord types for key metrics\n")
+    df %>%
+        select(names(mapper)) %>%
+        pivot_longer(-c()) %>%
+        mutate(type=case_when(is.na(value) ~ "NA", 
+                              value==-999999 ~ "Value -999999", 
+                              value < 0 ~ "Negative", 
+                              TRUE ~ "Positive"
+                              )
+               ) %>%
+        count(name, type) %>%
+        pivot_wider(name, names_from="type", values_from="n", values_fill=0) %>%
+        group_by(name) %>%
+        mutate(Total=sum(across(where(is.numeric)))) %>%
+        ungroup() %>%
+        print()
+    
+    # Basic Histograms (NA and -999999 are missing data)
+    p1 <- df %>%
+        select(names(mapper)) %>%
+        pivot_longer(-c()) %>%
+        filter(!is.na(value), value != -999999, value >= 0) %>%
+        ggplot(aes(x=value/1000)) + 
+        geom_histogram(fill="lightblue") + 
+        scale_x_sqrt() +
+        labs(x="Value (000s)", 
+             y="# non-missing records", 
+             title="Histogram for key metrics by record", 
+             subtitle="Excludes values less than 0, as well as NA or -999999"
+             ) +
+        facet_wrap(~hhsMapper[name], scales="free")
+    print(p1)
+    
+    # Return the file
+    df
+    
+}
+
+```
+  
+The process is run and cached for reduced processing time:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Example using existing data
+downloadReadHospitalData(loc="./RInputFiles/Coronavirus/HHS_Hospital_20211225.csv")
+
+# Run for latest data, save as RDS
+indivHosp_20211231 <- downloadReadHospitalData(loc="./RInputFiles/Coronavirus/HHS_Hospital_20211231.csv")
+saveToRDS(indivHosp_20211231)
+
+```
+
