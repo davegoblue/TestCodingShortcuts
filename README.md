@@ -2710,3 +2710,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 function downloadReadHospitalData() downloads and reads data  
 * Coronavirus_CDC_Daily_v003 runs plotHospitalUtilization() for a state-level segment  
   
+### Expansions week of 03-JAN-2022  
+* Coronavirus_CDC_Daily_v003 runs plotHospitalUtilization() for all state-level segments  
+  
