@@ -2719,3 +2719,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 refreshes cumulative death plots  
 * Coronavirus_Statistics_CDC_v005 refreshes cumulative death facets  
   
+### Expansions week of 10-JAN-2022  
+* Coronavirus_Statistics_CDC_v005 refreshed with latest hospital census data  
+  
