@@ -2722,4 +2722,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 10-JAN-2022  
 * Coronavirus_CDC_Daily_v003 refreshed with latest hospital census data  
 * Coronavirus_CDC_Daily_v003 updates hospital summaries by state-level segment  
+* Coronavirus_CDC_Daily_v003 updates hospital summaries by US total  
   
