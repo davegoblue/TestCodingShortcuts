@@ -3624,3 +3624,102 @@ stateHosp_20220109 %>%
 
 ```
 
+The process is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+createGeoMap <- function(df, 
+                         yVars,
+                         xVar="collection_week",
+                         facetVar="state",
+                         lstFilter=list(), 
+                         lstExclude=list(), 
+                         vecSelect=NULL, 
+                         vecRename=c(), 
+                         selfList=list(), 
+                         fullList=list(), 
+                         plotTitle=NULL, 
+                         plotSubtitle=NULL,
+                         plotYLab=NULL, 
+                         plotScaleLabel=NULL, 
+                         createPlot=TRUE,
+                         returnData=FALSE
+                         ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the relevant data
+    # yVars: list of the y-variables, of form list("yVar1"=c("label"="y1Label", "color"="y1Color"), "yVar2"=...)
+    # xVar: the x-variable to use for the plots
+    # facetVar: the variable for faceting the data
+    # lstFilter: a list for filtering records, of form list("field"=c("allowed values"))
+    # lstExclude: a list for filtering records, of form list("field"=c("disallowed values"))
+    # vecSelect: vector for variables to keep c('keep1', "keep2", ...), NULL means keep all
+    # vecRename: vector for renaming c('existing name'='new name'), can be any length from 0 to ncol(df)
+    # selfList: list for functions to apply to self, list('variable'=fn) will apply variable=fn(variable)
+    #           processed in order, so more than one function can be applied to self
+    # fullList: list for general functions to be applied, list('new variable'=expression(code))
+    #           will create 'new variable' as eval(expression(code))
+    #           for now, requires passing an expression
+    # plotTitle: title for plot
+    # plotSubtitle: subtitle for plot
+    # plotYLab: y-label for plot
+    # plotScaleLabel: scale label for plot
+    # createPlot: boolean, should the plot be created and printed?
+    # returnData: boolean, should the data frame dfMod be returned?
+    
+    # Create the modified data
+    dfMod <- df %>%
+        rowFilter(lstFilter=lstFilter, lstExclude=lstExclude) %>%
+        colSelector(vecSelect=vecSelect) %>%
+        colRenamer(vecRename=vecRename) %>%
+        colMutater(selfList=selfList, fullList=fullList)
+    
+    if(isTRUE(createPlot)) {
+        
+        # Create the plot data frame
+        dfPlot <- dfMod %>%
+            colSelector(c(facetVar, xVar, names(yVars))) %>%
+            pivot_longer(names(yVars))
+        
+        # Create the color mapper
+        vecColor <- sapply(yVars, FUN=function(x) x[["color"]]) %>%
+            purrr::set_names(names(yVars))
+    
+        # Create the plot
+        p1 <- dfPlot %>%
+            colRenamer(c("facetVar") %>% purrr::set_names(facetVar)) %>%
+            ggplot(aes_string(x=xVar, y="value", group="name", color="name")) + 
+            geom_line() +
+            scale_color_manual(plotScaleLabel, 
+                               values=vecColor, 
+                               labels=sapply(yVars, FUN=function(x) x[["label"]])
+                               ) + 
+            labs(x=NULL, y=plotYLab, title=plotTitle, subtitle=plotSubtitle) + 
+            theme(axis.text.x = element_blank()) +
+            geom_hline(yintercept=1, lty=2) +
+            facet_geo(~facetVar)
+    
+        # Print the plot
+        print(p1)
+        
+    }
+
+    # Return the data if requested(?)
+    if(isTRUE(returnData)) return(dfMod)
+    
+}
+
+createGeoMap(stateHosp_20220109, 
+             yVars=list("pctCovidICU"=c("label"="Covid", "color"="red"), 
+                        "pctICU"=c("label"="Total", "color"="black")
+                        ), 
+             fullList=list("pctICU"=expression(icu_beds_occupied/icu_beds), 
+                           "pctCovidICU"=expression(adult_icu_covid/icu_beds)
+                           ), 
+             plotTitle="Average % ICU Capacity Filled by Week", 
+             plotSubtitle="August 2020 to December 2021", 
+             plotScaleLabel="% ICU\nUsed", 
+             returnData=TRUE
+             )
+
+```
+
