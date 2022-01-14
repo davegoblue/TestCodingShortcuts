@@ -2724,4 +2724,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 updates hospital summaries by state-level segment  
 * Coronavirus_CDC_Daily_v003 updates hospital summaries by US total  
 * Coronavirus_CDC_Daily_v003 creates ICU utilization by state map  
+* Coronavirus_CDC_Daily_v003 functional form for state maps  
   
