@@ -2728,3 +2728,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 creates adult hospital bed utilization by state map  
 * Coronavirus_CDC_Daily_v003 function createGeoMap() allows parameters for scales=  
   
+### Expansions week of 17-JAN-2022  
+* Coronavirus_CDC_Daily_v003 creates cases by state map  
+  
