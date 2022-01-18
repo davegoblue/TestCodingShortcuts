@@ -2730,4 +2730,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 17-JAN-2022  
 * Coronavirus_CDC_Daily_v003 creates cases by state map  
+* Coronavirus_CDC_Daily_v003 creates deaths by state map  
   
