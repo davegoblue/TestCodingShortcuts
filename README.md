@@ -2732,4 +2732,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 creates cases by state map  
 * Coronavirus_CDC_Daily_v003 creates deaths by state map  
 * Coronavirus_CDC_Daily_v003 creates hospitalized by state map  
+* Coronavirus_CDC_Daily_v003 plots correlations among cases, deaths, and vaccines  
   
