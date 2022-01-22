@@ -2734,4 +2734,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 creates hospitalized by state map  
 * Coronavirus_CDC_Daily_v003 plots correlations among cases, deaths, and vaccines  
 * Coronavirus_CDC_Daily_v003 functional form for correlations plots  
+* Coronavirus_CDC_Daily_v003 correlation plots for multiple time periods  
   
