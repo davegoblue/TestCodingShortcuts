@@ -3948,3 +3948,63 @@ gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2)
 
 ```
 
+Plots can then be created for various time periods:  
+```{r, fig.height=9, fig.width=9}
+
+exploreStateAssociations <- function(lst, 
+                                     plotLabel="",
+                                     minDate=NULL, 
+                                     maxDate=NULL
+                                     ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: data frame containing processed state-level data, or list with sub-element "dfPerCapita"
+    # plotLabel: text that should be included to describe the time period
+    # minDate: minimum date to be used for summing cases and deaths (NULL means find earliest in data)
+    # maxDate: maximum date to be used for summing cases and deaths (also used as date for % vaccinated)
+    #          NULL means find latest date in data
+    
+    # Extract dfPerCapita is a list has been passed
+    if("list" %in% class(lst)) lst <- lst[["dfPerCapita"]]
+    
+    # Find minDate and maxDate if passed as NULL
+    if(is.null(minDate)) minDate <- lst %>% pull(date) %>% min()
+    if(is.null(maxDate)) maxDate <- lst %>% pull(date) %>% max()
+    
+    # Function to find the last non-NA value
+    lastNonNA <- function(x) last(x[!is.na(x)])
+    
+    # Create a relevant analysis data frame
+    df <- lst %>%
+        select(state, date, cpm, dpm, vxcpoppct, vxcgte18pct, vxcgte65pct) %>%
+        filter(date <= maxDate, date >= minDate) %>%
+        arrange(state, date) %>%
+        group_by(state) %>%
+        summarize(across(ends_with("pm"), .fn=sum, na.rm=TRUE), 
+                  across(starts_with("vxc"), .fn=lastNonNA), 
+                  .groups="drop"
+                  )    
+    
+    # Create the plot series
+    p1 <- stateAssociationPlots(df, xVar="cpm", yVar="dpm", plotTime=plotLabel, printPlot=FALSE)
+    p2 <- stateAssociationPlots(df, xVar="vxcpoppct", yVar="cpm", plotTime=plotLabel, printPlot=FALSE)
+    p3 <- stateAssociationPlots(df, xVar="vxcpoppct", yVar="dpm", plotTime=plotLabel, printPlot=FALSE)
+    p4 <- df %>% 
+        mutate(cfr=dpm/cpm) %>% 
+        stateAssociationPlots(xVar="vxcpoppct", yVar="cfr", plotTime=plotLabel, printPlot=FALSE)
+
+    # Plots on one page
+    gridExtra::grid.arrange(p1, p2, p3, p4, nrow=2)
+    
+    # Return the processed frame
+    df
+    
+}
+
+exploreStateAssociations(cdc_daily_220103, plotLabel="December 2021", minDate="2021-12-01", maxDate="2021-12-30")
+exploreStateAssociations(cdc_daily_220103, plotLabel="September 2021", minDate="2021-09-01", maxDate="2021-09-30")
+exploreStateAssociations(cdc_daily_220103, plotLabel="March 2021", minDate="2021-03-01", maxDate="2021-03-31")
+exploreStateAssociations(cdc_daily_220103, plotLabel="T2 2021", minDate="2021-05-01", maxDate="2021-08-31")
+
+```
+
