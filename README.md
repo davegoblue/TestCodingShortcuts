@@ -2737,3 +2737,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 correlation plots for multiple time periods  
 * Coronavirus_CDC_Daily_v003 correlation plots with customized x/y variables  
   
+### Expansions week of 24-JAN-2022  
+* Coronavirus_CDC_Daily_v003 correlation plots include equation and R-squared  
+  
