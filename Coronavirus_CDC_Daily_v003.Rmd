@@ -3876,6 +3876,10 @@ stateAssociationMapper <- list("cpm"=list("name"="New cases per million", "short
                                "cfr"=list("name"="Crude case fatlatity rate (deaths/cases)", 
                                           "shortName"="CFR", 
                                           "lim"=c(0, NA)
+                                          ), 
+                               "hpm"=list("name"="Hospitalized per million (avg.)", 
+                                          "shortName"="hospitalized", 
+                                          "lim"=c(0, NA)
                                           )
                                )
 
@@ -3969,6 +3973,11 @@ Plots can then be created for various time periods:
 ```{r, fig.height=9, fig.width=9}
 
 exploreStateAssociations <- function(lst, 
+                                     uqVar="state",
+                                     sumVars=c("cpm", "dpm"),
+                                     meanVars=c(),
+                                     firstVars=c(), 
+                                     lastVars=c("vxcpoppct", "vxcgte18pct", "vxcgte65pct"),
                                      plotLabel="",
                                      minDate=NULL, 
                                      maxDate=NULL, 
@@ -3979,6 +3988,11 @@ exploreStateAssociations <- function(lst,
     
     # FUNCTION ARGUMENTS:
     # lst: data frame containing processed state-level data, or list with sub-element "dfPerCapita"
+    # uqVar: variable that will be the final level after grouping and summarizing
+    # sumVars: variables to be summed over the relevant time range
+    # meanVars: variables to be averaged over the relevant time range
+    # firstVars: variables to keep the first non-NA value
+    # lastVars: variables to keep the last non-NA value
     # plotLabel: text that should be included to describe the time period
     # minDate: minimum date to be used for summing cases and deaths (NULL means find earliest in data)
     # maxDate: maximum date to be used for summing cases and deaths (also used as date for % vaccinated)
@@ -3996,15 +4010,18 @@ exploreStateAssociations <- function(lst,
     
     # Function to find the last non-NA value
     lastNonNA <- function(x) last(x[!is.na(x)])
+    firstNonNA <- function(x) first(x[!is.na(x)])
     
     # Create a relevant analysis data frame
     df <- lst %>%
-        select(state, date, cpm, dpm, vxcpoppct, vxcgte18pct, vxcgte65pct) %>%
+        select(c(all_of(uqVar), "date", all_of(sumVars), all_of(meanVars), all_of(firstVars), all_of(lastVars))) %>%
         filter(date <= maxDate, date >= minDate) %>%
-        arrange(state, date) %>%
-        group_by(state) %>%
-        summarize(across(ends_with("pm"), .fn=sum, na.rm=TRUE), 
-                  across(starts_with("vxc"), .fn=lastNonNA), 
+        arrange(across(c(all_of(uqVar), "date"))) %>%
+        group_by(across(all_of(uqVar))) %>%
+        summarize(across(all_of(sumVars), .fn=sum, na.rm=TRUE),
+                  across(all_of(meanVars), .fn=mean, na.rm=TRUE), 
+                  across(all_of(firstVars), .fn=firstNonNA),
+                  across(all_of(lastVars), .fn=lastNonNA), 
                   .groups="drop"
                   )    
     
@@ -4044,6 +4061,16 @@ exploreStateAssociations(cdc_daily_220103,
                          maxDate="2021-09-30", 
                          xVars=rep(c("vxcgte65pct"), 4), 
                          yVars=c("vxcpoppct", "cpm", "dpm", "cfr")
+                         )
+
+# Plots including hospitalized
+exploreStateAssociations(cdc_daily_220103, 
+                         meanVars="hpm",
+                         plotLabel="December 2021", 
+                         minDate="2021-12-01", 
+                         maxDate="2021-12-30", 
+                         xVars=rep(c("vxcpoppct"), 4), 
+                         yVars=c("cpm", "hpm", "dpm", "cfr")
                          )
 
 ```
