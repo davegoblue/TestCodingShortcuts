@@ -2741,4 +2741,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 correlation plots include equation and R-squared  
 * Coronavirus_CDC_Daily_v003 correlation plots input data can be summarized with mean  
 * Coronavirus_CDC_Daily_v003 correlation plots include vaccination data from first()  
+* Coronavirus_Statistics_USAF_v005 downloads vaccines by county data  
   
