@@ -3359,3 +3359,65 @@ for (keyVar in c("vxcpoppct", "vxcgte18pct", "vxcgte65pct")) {
 
 ```
 
+There are some discontinuities in the data, and some states (e.g., Hawaii) do not report at the county-level. State-level totals are compared against county-level totals:  
+```{r fig.height=9, fig.width=9}
+
+keyDate <- "2021-12-30"
+
+# Get state-level totals
+stateTemp <- readFromRDS("cdc_daily_220103")$dfPerCapita %>%
+    select(state, date, vxc, vxcpm, vxcpoppct, vxcgte18, vxcgte18pct, vxcgte65, vxcgte65pct) %>%
+    filter(state %in% c(state.abb, "DC"), date==keyDate) %>%
+    mutate(impPop=100*vxc/vxcpoppct, impPopgte18=100*vxcgte18/vxcgte18pct, impPopgte65=100*vxcgte65/vxcgte65pct)
+
+# Get county-level state totals
+countyTemp <- vaxPartialRaw_20220126 %>%
+    filter(state %in% c(state.abb, "DC"), FIPS != "UNK", date==keyDate) %>%
+    group_by(state) %>%
+    summarize(ctypoppct=sum(vxcpoppct*pop)/sum(pop), 
+              ctygte18pct=sum(vxcgte18pct*popgte18)/sum(popgte18),
+              ctygte65pct=sum(vxcgte65pct*popgte65)/sum(popgte65),
+              across(starts_with("pop"), sum), 
+              .groups="drop"
+              )
+
+# Plot of state-level populations
+p1 <- stateTemp %>%
+    ggplot(aes(x=fct_reorder(state, impPop))) + 
+    geom_col(aes(y=impPop/1000000, fill="Under 18")) + 
+    geom_col(aes(y=impPopgte18/1000000, fill="18-64")) +
+    geom_col(aes(y=impPopgte65/1000000, fill="65+")) +
+    coord_flip() + 
+    labs(x=NULL, 
+         y="Estimated population (millions)", 
+         title="Implied population by state", 
+         subtitle="Filled bars are from CDC state-level data"
+         ) + 
+    scale_fill_manual("CDC Age", 
+                      values=c("Under 18"="green", "18-64"="navy", "65+"="red"), 
+                      breaks=c("65+", "18-64", "Under 18")
+                      ) + 
+    theme(legend.position="bottom")
+
+# Plot of summed county-level populations
+p2 <- countyTemp %>%
+    ggplot(aes(x=fct_reorder(state, pop))) + 
+    geom_col(aes(y=pop/1000000, fill="Under 18")) + 
+    geom_col(aes(y=popgte18/1000000, fill="18-64")) +
+    geom_col(aes(y=popgte65/1000000, fill="65+")) +
+    coord_flip() + 
+    labs(x=NULL, 
+         y="Estimated population (millions)", 
+         title="Implied population by state", 
+         subtitle="Filled bars are from summed county-level data"
+         ) + 
+    scale_fill_manual("Summed County Age", 
+                      values=c("Under 18"="green", "18-64"="navy", "65+"="red"), 
+                      breaks=c("65+", "18-64", "Under 18")
+                      ) + 
+    theme(legend.position="bottom")
+
+gridExtra::grid.arrange(p1, p2, nrow=1)
+
+```
+
