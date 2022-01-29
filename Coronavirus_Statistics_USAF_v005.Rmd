@@ -3421,3 +3421,84 @@ gridExtra::grid.arrange(p1, p2, nrow=1)
 
 ```
 
+Percentage differences in population by source are also assessed:  
+```{r fig.height=9, fig.width=9}
+
+# Integrated data
+stateCountyLatest <- stateTemp %>%
+    full_join(countyTemp, by="state")
+
+# Percentage differences in population
+stateCountyLatest %>%
+    select(state, starts_with("imp"), starts_with("pop")) %>%
+    pivot_longer(-state) %>%
+    mutate(src=ifelse(str_detect(name, pattern="^imp"), "vaxcounty", "cdcstate"), 
+           age=case_when(str_detect(name, pattern="gte18$") ~ "gte18", 
+                         str_detect(name, pattern="gte65") ~ "gte65", 
+                         TRUE ~ "all"
+                         )
+           ) %>%
+    select(state, age, src, value) %>%
+    pivot_wider(c("state", "age"), names_from="src", values_from="value") %>%
+    mutate(rat=vaxcounty/cdcstate) %>%
+    ggplot(aes(x=fct_reorder(state, rat, .fun=function(x) max(abs(x-1))))) + 
+    geom_point(aes(y=rat)) + 
+    geom_text(aes(y=rat-0.025, label=paste0(round(100*rat, 1), "%")), hjust=1, size=3) +
+    coord_flip() + 
+    labs(x=NULL, y="Ratio (vax/CDC)", title="Comparison of population by source") + 
+    facet_wrap(~age) + 
+    lims(y=c(0, NA))
+
+```
+
+Vaccination rates by state as of 30-DEC-2021 are also compared:  
+```{r fig.height=9, fig.width=9}
+
+# Vaccinated by age group by data source
+vaxAgeTemp <- stateCountyLatest %>%
+    select(state, contains("pct")) %>%
+    pivot_longer(-state) %>%
+    mutate(src=ifelse(str_detect(name, pattern="^vxc"), "cdcstate", "vaxcounty"), 
+           age=case_when(str_detect(name, pattern="gte18pct$") ~ "gte18", 
+                         str_detect(name, pattern="gte65pct") ~ "gte65", 
+                         TRUE ~ "all"
+                         )
+           ) %>%
+    select(state, age, src, value) %>%
+    pivot_wider(c("state", "age"), names_from="src", values_from="value") %>%
+    mutate(delta=vaxcounty-cdcstate) 
+
+# Vaccinated by state
+vaxAgeTemp %>%
+    ggplot(aes(x=fct_reorder(state, vaxcounty, .fun=min))) + 
+    geom_point(aes(y=cdcstate, color="State CDC")) + 
+    geom_point(aes(y=vaxcounty, color="Vax Data")) + 
+    coord_flip() + 
+    facet_wrap(~age) + 
+    labs(x=NULL, 
+         y="% fully vaccinated as of 30-DEC-2021", 
+         title="Comparison of fully vaccinated by state and data source"
+         ) + 
+    scale_color_discrete("Source") + 
+    lims(y=c(0, 100))
+
+# Difference in rate
+vaxAgeTemp %>%
+    ggplot(aes(x=fct_reorder(state, delta))) + 
+    geom_point(aes(y=delta)) + 
+    geom_text(aes(y=delta-5, label=round(delta)), hjust=1, size=3) +
+    coord_flip() + 
+    facet_wrap(~age) + 
+    labs(x=NULL, 
+         y="Difference % fully vaccinated as of 30-DEC-2021\n(Summed County - CDC State)", 
+         title="Comparison of fully vaccinated by state and data source"
+         ) + 
+    geom_hline(yintercept=0, lty=2) +
+    lims(y=c(-100, NA))
+
+```
+
+Population data is very similar between the sources, with the exception of slightly more 65+ in northern New England reported in the summed county-level vaccinated data than in the baseline CDC data.
+
+The summed county-level vaccinated data is consistently less than the reference CDC state data, though typically only slightly. Major differences (10%+ for at least one age cohort) are observed in HI (does not report at the county level), GA, VT, VA, MA, and NE.
+
