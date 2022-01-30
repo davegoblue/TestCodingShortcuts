@@ -3502,3 +3502,65 @@ Population data is very similar between the sources, with the exception of sligh
 
 The summed county-level vaccinated data is consistently less than the reference CDC state data, though typically only slightly. Major differences (10%+ for at least one age cohort) are observed in HI (does not report at the county level), GA, VT, VA, MA, and NE.
 
+Vaccinations over time are plotted for an example state:  
+```{r fig.height=9, fig.width=9}
+
+# Repair the popgte65 column (mostly NA)
+vaxPartialRaw_20220126 %>%
+    filter(state %in% c(state.abb, "DC"), FIPS != "UNK") %>%
+    is.na() %>%
+    colMeans()
+
+cty65 <- vaxPartialRaw_20220126 %>%
+    filter(state %in% c(state.abb, "DC"), FIPS != "UNK") %>%
+    select(state, FIPS, popgte65) %>%
+    group_by(state, FIPS) %>%
+    summarize(minpop=min(popgte65, na.rm=TRUE), 
+              maxpop=max(popgte65, na.rm=TRUE), 
+              nnA=sum(is.na(popgte65)), 
+              n=n()
+              )
+cty65
+cty65 %>% is.na() %>% colSums()
+cty65 %>% filter(maxpop != minpop)
+
+vaxFix65_20220126 <- vaxPartialRaw_20220126 %>%
+    filter(state %in% c(state.abb, "DC"), FIPS != "UNK") %>%
+    select(-popgte65) %>%
+    left_join(select(cty65, state, FIPS, popgte65=maxpop), by=c("state", "FIPS"))
+vaxFix65_20220126
+
+vaxState_20220126 <- vaxFix65_20220126 %>%
+    filter(state %in% c(state.abb, "DC"), FIPS != "UNK") %>%
+    group_by(date, state) %>%
+    summarize(ctypoppct=sum(vxcpoppct*pop)/sum(pop), 
+              ctygte18pct=sum(vxcgte18pct*popgte18)/sum(popgte18),
+              ctygte65pct=sum(vxcgte65pct*popgte65)/sum(popgte65),
+              across(starts_with("pop"), sum, na.rm=TRUE), 
+              .groups="drop"
+              )
+
+allState_20220126 <- readFromRDS("cdc_daily_220103")$dfPerCapita %>%
+    select(state, date, vxcpoppct, vxcgte18pct, vxcgte65pct) %>%
+    filter(state %in% c(state.abb, "DC")) %>%
+    right_join(vaxState_20220126, by=c("state", "date"))
+allState_20220126
+
+allState_20220126 %>%
+    filter(state=="FL", date >= "2020-12-15") %>%
+    select(-starts_with("pop")) %>%
+    pivot_longer(-c(state, date)) %>%
+    mutate(src=ifelse(str_detect(name, "^cty"), "Summed County", "State"), 
+           age=case_when(str_detect(name, "65pct") ~ "65+", 
+                         str_detect(name, "18pct") ~ "18+", 
+                         TRUE ~ "All")
+           ) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=src, color=src)) + 
+    facet_wrap(~age) + 
+    labs(x=NULL, y="% Fully Vaccinated", title="Evolution of FL vaccinated data") + 
+    lims(y=c(0, 100)) + 
+    scale_color_discrete("Source")
+
+```
+
