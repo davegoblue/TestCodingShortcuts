@@ -2746,3 +2746,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 compares % vaccinated and population in state and summed county data  
 * Coronavirus_Statistics_USAF_v005 compares evolution of % vaccinated by age by data source for a specific state  
   
+### Expansions week of 31-JAN-2022  
+* Coronavirus_Statistics_USAF_v005 functional form with stateAgeVaxEvolution()  
+  
