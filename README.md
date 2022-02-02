@@ -2749,4 +2749,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 31-JAN-2022  
 * Coronavirus_Statistics_USAF_v005 functional form with stateAgeVaxEvolution()  
 * Coronavirus_Statistics_USAF_v005 includes score for alignment of data  
+* Coronavirus_Statistics_USAF_v005 calculates scores for all states  
   
