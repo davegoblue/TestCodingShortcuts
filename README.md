@@ -2750,4 +2750,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 functional form with stateAgeVaxEvolution()  
 * Coronavirus_Statistics_USAF_v005 includes score for alignment of data  
 * Coronavirus_Statistics_USAF_v005 calculates scores for all states  
+* Coronavirus_Statistics_USAF_v005 downloads latest cases and deaths data  
   
