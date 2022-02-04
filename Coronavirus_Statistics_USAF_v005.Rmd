@@ -3750,3 +3750,50 @@ saveToRDS(cty_newdata_20220202, ovrWriteError=FALSE)
 
 ```
   
+Associations are explored between case/death rates and vaccinations:  
+```{r, fig.height=9, fig.width=9}
+
+caseDeath_3mo <- cty_newdata_20220202$dfPerCapita %>%
+    filter(date >= "2021-11-01", 
+           date <= "2022-01-31", 
+           !(state %in% c("HI", "TX", "VA", "GA", "CO", "WV", "VT", "FL", "NE"))
+           ) %>%
+    group_by(fips=countyFIPS) %>%
+    summarize(across(c(cpm, dpm), sum, na.rm=TRUE), .groups="drop")
+caseDeath_3mo
+
+tempPlotData <- vaxPartialRaw_20220126 %>%
+    filter(date=="2021-11-01", 
+           FIPS != "UNK", 
+           state %in% c(state.abb, "DC"), 
+           !(state %in% c("HI", "TX", "VA", "GA", "CO", "WV", "VT", "FL", "NE"))
+           ) %>%
+    select(fips=FIPS, countyName, pop, state, vxcpoppct) %>%
+    full_join(caseDeath_3mo, by="fips") %>%
+    filter(!is.na(vxcpoppct)) %>%
+    mutate(type=case_when(pop>=500000 ~ ">500k", 
+                          pop>=100000 ~ "100k-500k", 
+                          pop>=25000 ~ "25k-100k", 
+                          TRUE ~ "<25k"
+                          )
+           )
+p1 <- tempPlotData %>%
+    ggplot(aes(x=vxcpoppct, y=cpm)) + 
+    geom_point(aes(size=pop)) + 
+    geom_smooth(aes(weight=pop), method="lm") +
+    labs(x="% population fully vaccinated 01-NOV-21", 
+         y="New cases per million (Nov '21 - Jan '22)", 
+         title="County-level associations between vaccines (01-NOV-21) and new cases (Nov '21 - Jan '22)", 
+         subtitle="Smooth is simple linear model weighted by population"
+         ) + 
+    lims(x=c(0, 100)) +
+    scale_size_continuous("County\nPop")
+
+p1
+p1 + facet_wrap(~type)
+
+lm(cpm ~ vxcpoppct, data=tempPlotData) %>% summary()
+lm(cpm ~ vxcpoppct:type, data=tempPlotData) %>% summary()
+
+```
+
