@@ -2753,5 +2753,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 downloads latest cases and deaths data  
 * Coronavirus_Statistics_USAF_v005 explores count-level associations between vaccines and cases  
 * Coronavirus_Statistics_USAF_v005 functional from with countyCorr()  
-* Coronavirus_Statistics_USAF_v005 adds functionmality to countyCorr()  
+* Coronavirus_Statistics_USAF_v005 adds functionality to countyCorr()  
   
