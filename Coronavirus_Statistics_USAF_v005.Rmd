@@ -3800,100 +3800,121 @@ lm(cpm ~ vxcpoppct:type, data=tempPlotData) %>% summary()
 The process is converted to functional form:  
 ```{r, fig.height=9, fig.width=9}
 
-countyCorr <- function(dfCaseDeath, 
-                       dfVax,
+countyCorr <- function(dfCaseDeath=NULL, 
+                       dfVax=NULL,
+                       dfFull=NULL,
                        useStates=c(state.abb, "DC"),
                        minDateCD=NULL, 
                        maxDateCD=NULL,
                        vaxDate=NULL, 
                        vaxVar="vxcpoppct",
                        burdenVar="cpm", 
-                       returnData=TRUE
+                       showPlots=TRUE,
+                       showReg=isTRUE(showPlots),
+                       returnData=!isTRUE(showPlots)
                        ) {
     
     # FUNCTION ARGUMENTS:
-    # dfCaseDeath: data frame for county-level cases and deaths
-    # dfVax: data frame for county-level vaccines
+    # dfCaseDeath: data frame for county-level cases and deaths (NULL means dfFull passed)
+    # dfVax: data frame for county-level vaccines (NULL means dfFull passed)
+    # dfFull: processed data frame that can be used directly
     # useStates: states to be included
     # minDateCD: earliest date for summing cases and deaths (NULL means use all)
     # maxDateCD: latest date for summing cases and deaths (NULL means use all)
     # vaxDate: date to use for vaccinated status (NULL means use minDateCD)
     # vaxVar: variable to use for vaccinated status by county
+    # showPlots: boolean, should the plots be created and displayed?
+    # showReg: boolean, should the regressions be calculated with summaries shown?
     # returnData: boolean, should the data be returned?
     
-    # Get minDateCD and maxDateCD and vaxDate if passed as NULL
-    if(is.null(minDateCD)) minDateCD <- min(dfCaseDeath$date)
-    if(is.null(maxDateCD)) maxDateCD <- max(dfCaseDeath$date)
-    if(is.null(vaxDate)) vaxDate <- minDateCD
+    # Check that either dfFull OR both of dfCaseDeath and dfVax have been passed
+    if(is.null(dfFull) & (is.null(dfCaseDeath) | is.null(dfVax))) 
+        stop("\nMust pass either dfFull OR both of dfCaseDeath and dfVax\n")
+    if(!is.null(dfFull) & (!is.null(dfCaseDeath) | !is.null(dfVax)))
+        cat("\ndfFull will be used; data passed for dfCaseDeath or dfVax is ignored\n")
     
-    # Create the cases and deaths data for analysis
-    dfCaseDeath <- dfCaseDeath %>%
-        filter(date >= minDateCD, 
-               date <= maxDateCD, 
-               state %in% all_of(useStates)
-               ) %>%
-        group_by(fips=countyFIPS) %>%
-        summarize(across(c(cpm, dpm), sum, na.rm=TRUE), .groups="drop")
+    if(is.null(dfFull)) {
     
-    # Create the vaccines data for analysis
-    dfFull <- dfVax %>%
-        filter(date==vaxDate, 
-               FIPS != "UNK", 
-               state %in% all_of(useStates)
-               ) %>%
-        colRenamer("vaxMetric" %>% purrr::set_names(all_of(vaxVar))) %>%
-        select(fips=FIPS, countyName, pop, state, vaxMetric) %>%
-        full_join(dfCaseDeath, by="fips") %>%
-        filter(!is.na(vaxMetric)) %>%
-        mutate(type=case_when(pop>=500000 ~ ">500k",
-                              pop>=100000 ~ "100k-500k",
-                              pop>=25000 ~ "25k-100k",
-                              TRUE ~ "<25k"
-                              )
-               )
+        # Get minDateCD and maxDateCD and vaxDate if passed as NULL
+        if(is.null(minDateCD)) minDateCD <- min(dfCaseDeath$date)
+        if(is.null(maxDateCD)) maxDateCD <- max(dfCaseDeath$date)
+        if(is.null(vaxDate)) vaxDate <- minDateCD
     
-    # Create the basic plot
-    p1 <- dfFull %>%
-        ggplot(aes(x=vaxMetric, y=get(burdenVar))) + 
-        geom_point(aes(size=pop)) + 
-        geom_smooth(aes(weight=pop), method="lm") +
-        labs(x=paste0("% fully vaccinated on: ", vaxDate, "\n(using variable ", vaxVar, ")"), 
-             y=paste0("Burden per million ", minDateCD, " to ", maxDateCD, "\n(using variable ", burdenVar, ")"), 
-             title="County-level associations between vaccines and burden", 
-             subtitle="Smooth is simple linear model weighted by population"
-             ) + 
-        lims(x=c(0, 100)) +
-        scale_size_continuous("County\nPop")
+        # Create the cases and deaths data for analysis
+        dfCaseDeath <- dfCaseDeath %>%
+            filter(date >= minDateCD, 
+                   date <= maxDateCD, 
+                   state %in% all_of(useStates)
+                   ) %>%
+            group_by(fips=countyFIPS) %>%
+            summarize(across(c(cpm, dpm), sum, na.rm=TRUE), .groups="drop")
+    
+        # Create the vaccines data for analysis
+        dfFull <- dfVax %>%
+            filter(date==vaxDate, 
+                   FIPS != "UNK", 
+                   state %in% all_of(useStates)
+                   ) %>%
+            select(fips=FIPS, countyName, pop, state, vxcpoppct, vxcgte18pct, vxcgte65pct) %>%
+            full_join(dfCaseDeath, by="fips") %>%
+            mutate(type=case_when(pop>=500000 ~ ">500k",
+                                  pop>=100000 ~ "100k-500k",
+                                  pop>=25000 ~ "25k-100k",
+                                  TRUE ~ "<25k"
+                                  )
+                   )
+    
+    }
+    
+    if(isTRUE(showPlots)) {
+    
+        # Create the basic plot (should update so dates can be gathered from dfFull)
+        p1 <- dfFull %>%
+            ggplot(aes(x=get(vaxVar), y=get(burdenVar))) + 
+            geom_point(aes(size=pop)) + 
+            geom_smooth(aes(weight=pop), method="lm") +
+            labs(x=paste0("% fully vaccinated on: ", vaxDate, "\n(using variable ", vaxVar, ")"), 
+                 y=paste0("Burden per million ", minDateCD, " to ", maxDateCD, "\n(using variable ", burdenVar, ")"), 
+                 title="County-level associations between vaccines and burden", 
+                 subtitle="Smooth is simple linear model weighted by population"
+                 ) + 
+            lims(x=c(0, 100)) +
+            scale_size_continuous("County\nPop")
 
-    # Print the plot and the facetted version
-    print(p1)
-    print(p1 + facet_wrap(~type))
-
-    # Display the regressions
-    lm(get(burdenVar) ~ vaxMetric, data=dfFull) %>% summary() %>% print()
-    lm(get(burdenVar) ~ vaxMetric*type + 0 - vaxMetric, data=dfFull) %>% summary() %>% print()
-
+        # Print the plot and the facetted version
+        print(p1)
+        print(p1 + facet_wrap(~type))
+        
+    }
+    
+    # Display the regressions (if requested)
+    if(isTRUE(showReg)) {
+        dfReg <- dfFull %>% colRenamer("vaxMetric" %>% purrr::set_names(all_of(vaxVar)))
+        lm(get(burdenVar) ~ vaxMetric, data=dfReg, weights=pop) %>% summary() %>% print()
+        lm(get(burdenVar) ~ vaxMetric*type + 0 - vaxMetric, data=dfReg, weights=pop) %>% summary() %>% print()
+    }
+    
     # Return the data frame if requested
     if(isTRUE(returnData)) return(dfFull)
     
 }
 
 # Repeat previous example
-countyCorr(dfCaseDeath=cty_newdata_20220202$dfPerCapita, 
-           dfVax=vaxPartialRaw_20220126, 
-           burdenVar="cpm",
-           vaxVar="vxcpoppct",
-           useStates=setdiff(c(state.abb, "DC"), c("HI", "TX", "VA", "GA", "CO", "WV", "VT", "FL", "NE")),
-           minDateCD="2021-11-01", 
-           maxDateCD="2022-01-31"
-           )
+dfTemp <- countyCorr(dfCaseDeath=cty_newdata_20220202$dfPerCapita, 
+                     dfVax=vaxPartialRaw_20220126, 
+                     burdenVar="cpm",
+                     vaxVar="vxcpoppct",
+                     useStates=setdiff(c(state.abb, "DC"), c("HI", "TX", "VA", "GA", "CO", "WV", "VT", "FL", "NE")),
+                     minDateCD="2021-11-01", 
+                     maxDateCD="2022-01-31", 
+                     returnData=TRUE
+                     )
+dfTemp
 
 # Update for deaths
-countyCorr(dfCaseDeath=cty_newdata_20220202$dfPerCapita, 
-           dfVax=vaxPartialRaw_20220126, 
+countyCorr(dfFull=dfTemp,
            burdenVar="dpm",
            vaxVar="vxcpoppct",
-           useStates=setdiff(c(state.abb, "DC"), c("HI", "TX", "VA", "GA", "CO", "WV", "VT", "FL", "NE")),
            minDateCD="2021-11-01", 
            maxDateCD="2022-01-31"
            )
