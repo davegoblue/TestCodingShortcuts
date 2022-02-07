@@ -2755,3 +2755,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 functional from with countyCorr()  
 * Coronavirus_Statistics_USAF_v005 adds functionality to countyCorr()  
   
+### Expansions week of 07-FEB-2022  
+* Coronavirus_CDC_Daily_v003 refreshed with latest case and death data  
+  
