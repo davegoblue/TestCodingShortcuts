@@ -2758,4 +2758,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 07-FEB-2022  
 * Coronavirus_CDC_Daily_v003 refreshed with latest case and death data  
 * Coronavirus_CDC_Daily_v003 refreshed with latest hospital data  
+* Coronavirus_CDC_Daily_v003 updates burden by state maps  
   
