@@ -2759,4 +2759,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 refreshed with latest case and death data  
 * Coronavirus_CDC_Daily_v003 refreshed with latest hospital data  
 * Coronavirus_CDC_Daily_v003 updates burden by state maps  
+* Coronavirus_CDC_Daily_v003 updates correlation plots  
   
