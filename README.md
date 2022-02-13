@@ -2762,4 +2762,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 updates correlation plots  
 * Coronavirus_CDC_Daily_v003 updates hospitalization summaries  
 * Coronavirus_CDC_Daily_v003 explores decline in reported bed capacity  
+* Coronavirus_CDC_Daily_v003 explores NA by metric over time  
   
