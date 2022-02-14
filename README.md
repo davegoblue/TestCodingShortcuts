@@ -2764,3 +2764,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 explores decline in reported bed capacity  
 * Coronavirus_CDC_Daily_v003 explores NA by metric over time  
   
+### Expansions week of 14-FEB-2022  
+* Coronavirus_CDC_Daily_v003 imputes recent NA  
+  
