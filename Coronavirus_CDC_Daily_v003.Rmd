@@ -4325,4 +4325,79 @@ naMod %>%
 
 ```
 
-While there is still a reported decline in beds (greater percentage for adult and total than for inpatient), there is a much smaller trend break.
+While there is still a reported decline in beds (greater percentage for adult and total than for inpatient), there is a much smaller trend break. A function is written for imputation, including a third column for ratios:  
+```{r, fig.height=9, fig.width=9}
+
+testImputeNA <- function(x, y=NULL, naValues=c()) {
+
+    # FUNCTION ARGUMENTS
+    # x: a numeric vector that may contain NA, or values in naValues that should be treated as NA
+    # y: a numeric vector where percent changes in y should drive percent changes in x if x is NA
+    #    NULL means just use zoo::na.locf(x, na.rm=TRUE)
+    # naValues: any special values in x or y that should be treated as NA
+    
+    # Convert x to modified vector using naValues
+    xMod <- ifelse(is.na(x), NA, ifelse(x %in% all_of(naValues), NA, x))
+    
+    # Create y as a vector of ones if NULL, otherwise convert to modified vector using naValues
+    if(is.null(y)) y <- rep(1, length(x))
+    yMod <- ifelse(is.na(y), NA, ifelse(y %in% all_of(naValues), NA, y))
+    
+    # Convert vector xMod using na.locf (need to keep NA values)
+    xConv <- zoo::na.locf(xMod, na.rm=FALSE)
+    
+    # For any values where X was NA, scale up or down based on change in y
+    # Works OK for a single NA, but not perfectly for repeating NA
+    yMult <- yMod/lag(yMod)
+    xMult <- yMult * lag(xConv)
+    xConv[is.na(xMod)] <- xMult[is.na(xMod)]
+    
+    # Return the vector
+    xConv
+    
+}
+
+# Basic function
+testImputeNA(x=c(1, 2, 3, 4, NA, NA, 7, -999999, NA, 10), naValues=c(-999999))
+
+# Including y vector
+testImputeNA(x=c(1, 2, 3, 4, NA, NA, 7, -999999, NA, 10), y=1:10, naValues=c(-999999))
+
+# Applied to hospital data
+naTestImpute <- indivHosp_20220207 %>%
+    select(!where(is.numeric), names(hhsMapper)) %>%
+    colRenamer(vecRename = hhsMapper) %>%
+    select(hospital_pk, collection_week, adult_beds, total_beds, inpatient_beds) %>%
+    arrange(hospital_pk, collection_week) %>%
+    group_by(hospital_pk) %>%
+    mutate(across(c(total_beds, adult_beds), 
+                  .fns=function(x) testImputeNA(x=x, y=inpatient_beds, naValues=-999999)
+                  )
+           )
+
+naTestImpute %>%
+    pivot_longer(where(is.numeric)) %>%
+    group_by(collection_week, name) %>%
+    summarize(n=n(), n999999=sum(value==-999999, na.rm=TRUE), nNA=sum(is.na(value)), .groups="drop") %>%
+    ggplot(aes(x=collection_week)) + 
+    geom_line(aes(y=n, color="Total records")) + 
+    geom_line(aes(y=n999999, color="Records: -999999")) + 
+    geom_line(aes(y=nNA, color="Records: NA")) +
+    facet_wrap(~name) + 
+    lims(y=c(0, NA)) + 
+    labs(title="Data reporting by metric in February 7, 2022 hospital file", x=NULL, y="Number of records") + 
+    scale_color_manual("Record Type", 
+                       values=c("Total records"="black", "Records: NA"="red", "Records: -999999"="blue")
+                       )
+
+naTestImpute %>% 
+    pivot_longer(where(is.numeric)) %>% 
+    group_by(collection_week, name) %>% 
+    filter(!is.na(value), value != -999999) %>%
+    summarize(value=sum(value, na.rm=TRUE), .groups="drop") %>%
+    pivot_wider(collection_week) %>%
+    arrange(desc(collection_week))
+
+```
+  
+Further exploration of the decline in reported beds is merited.
