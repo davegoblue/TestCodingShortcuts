@@ -2767,4 +2767,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 14-FEB-2022  
 * Coronavirus_CDC_Daily_v003 imputes recent NA  
 * Coronavirus_CDC_Daily_v003 inlcudes function testImputeNA()  
+* Coronavirus_CDC_Daily_v003 explores hospitals with reported declines  
   
