@@ -1,0 +1,96 @@
+---
+title: "CDC Daily by State"
+author: "davegoblue"
+date: "2/20/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+This file is designed to use CDC data to assess coronavirus disease burden by state, including creating and analyzing state-level clusters.
+
+Through March 7, 2021, [The COVID Tracking Project](https://covidtracking.com/) collected and integrated data on tests, cases, hospitalizations, deaths, and the like by state and date.  The latest code for using this data is available in Coronavirus_Statistics_CTP_v004.Rmd.
+
+The COVID Tracking Project suggest that [US federal data sources](https://covidtracking.com/analysis-updates/federal-covid-data-101-how-to-find-data) are now sufficiently robust to be used for analyses that previously relied on COVID Tracking Project.  This code is an attempt to update modules in Coronavirus_Statistics_CTP_v004.Rmd to leverage US federal data.
+
+The code in this module builds on code available in _v003, with function and mapping files updated:  
+  
+* Generic_Added_Utility_Functions_202105_v001.R - generic functions that can be used in other areas  
+* Coronavirus_CDC_Daily_Functions_v001.R - functions specific to coronavirus daily data  
+  
+Broadly, the CDC data analyzed by this module includes:  
+  
+* CDC case and death data by state and date are available for download on the [CDC website](https://data.cdc.gov/api/views/9mfq-cb36/rows.csv?accessType=DOWNLOAD)  
+* CDC hospital data are available for download on the [healthdata.gov website](https://beta.healthdata.gov/api/views/g62h-syeh/rows.csv?accessType=DOWNLOAD)  
+* CDC vaccines data are also available for download on the [CDC website](https://data.cdc.gov/api/views/unsk-b7fc/rows.csv?accessType=DOWNLOAD):  
+  
+## Functions and Mapping Files
+The tidyverse package is loaded and functions are sourced:  
+```{r}
+
+# The tidyverse functions are routinely used without package::function format
+library(tidyverse)
+
+# Functions are available in source file
+source("./Generic_Added_Utility_Functions_202105_v001.R")
+source("./Coronavirus_CDC_Daily_Functions_v001.R")
+
+```
+
+A series of mapping files are also available to allow for parameterized processing.  Mappings include:  
+  
+* urlMapper - mapping file for urlType and url location to download data  
+* renMapper - mapping file for renaming of variables in the raw data file  
+* selfListMapper - mapping file for transformations by variable type  
+* fullListMapper - mapping file for transformations across variable types  
+* lstComboMapper - mapping file for elements to be combined by data type (most common is to combine NYC and NYS data to NY if the file provides them separately)  
+* uqMapper - mapping file for fields that should combine to be unique keys for processed files  
+* lstFilterMapper - mapping file for filtering to subset (most common is to keep 50 states and DC)  
+* vecSelectMapper - mapping file for variables to keep  
+* checkControlGroupMapper - mapping file for group_by() of control total checks  
+* checkControlAggMapper - mapping file for numeric variables for control total checks  
+* checkSimilarityMapper - mapping file for similarity checks to perform  
+* plotSimilarityMaooer - mapping file for fields where differences in universe should be plotted
+* keyAggMapper - mapping file for the aggregate-level control total checks to perform  
+* perCapMapper - named vector that drives conversion from original field name to per capita field name  
+  
+These default parameters are maintained in a separate .R file and can be sourced:  
+```{r}
+
+source("./Coronavirus_CDC_Daily_Default_Mappings_v002.R")
+
+```
+
+## Example Code Processing
+The function is run to download and process the latest CDC case, hospitalization, and death data:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+readList <- list("cdcDaily"="./RInputFiles/Coronavirus/CDC_dc_downloaded_220220.csv", 
+                 "cdcHosp"="./RInputFiles/Coronavirus/CDC_h_downloaded_220220.csv", 
+                 "vax"="./RInputFiles/Coronavirus/vaxData_downloaded_220220.csv"
+                 )
+compareList <- list("cdcDaily"=readFromRDS("cdc_daily_220206")$dfRaw$cdcDaily, 
+                    "cdcHosp"=readFromRDS("cdc_daily_220206")$dfRaw$cdcHosp, 
+                    "vax"=readFromRDS("cdc_daily_220206")$dfRaw$vax
+                    )
+
+cdc_daily_220220 <- readRunCDCDaily(thruLabel="Feb 18, 2022", 
+                                    downloadTo=lapply(readList, FUN=function(x) if(file.exists(x)) NA else x), 
+                                    readFrom=readList,
+                                    compareFile=compareList, 
+                                    writeLog=NULL, 
+                                    useClusters=readFromRDS("cdc_daily_210528")$useClusters, 
+                                    weightedMeanAggs=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7", 
+                                                       "vxcpm7", "vxcgte65pct"
+                                                       ),
+                                    skipAssessmentPlots=FALSE, 
+                                    brewPalette="Paired"
+                                    )
+
+saveToRDS(cdc_daily_220220, ovrWriteError=FALSE)
+
+```
+  
