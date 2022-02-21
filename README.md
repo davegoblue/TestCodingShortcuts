@@ -2773,3 +2773,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v003 refreshed with latest hospital data  
 * Coronavirus_CDC_Daily_v003 refreshed US hospital capacity summary  
   
+### Expansions week of 21-FEB-2022  
+* Coronavirus_CDC_Daily_v004 created  
+  
