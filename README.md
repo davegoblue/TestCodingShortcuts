@@ -2775,4 +2775,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 21-FEB-2022  
 * Coronavirus_CDC_Daily_v004 created  
+* Coronavirus_CDC_Daily_v004 includes hospital data download function  
   
