@@ -2780,4 +2780,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 includes hospAgePerCapita()  
 * Coronavirus_CDC_Daily_v004 includes onePageCFRPlot()  
 * Coronavirus_CDC_Daily_v004 includes makePeakValley()  
+* Coronavirus_CDC_Daily_v004 includes plotHospitalUtlization()  
   
