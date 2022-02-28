@@ -237,3 +237,40 @@ indivHosp_20220221 %>%
 
 ```
 
+Imputed hospital utilization data are also created, using functional form:  
+```{r, fig.height=9, fig.width=9}
+
+# Impute values for hospital capacity
+imputeNACapacity <- function(df, 
+                             keyStates=c(state.abb, "DC"), 
+                             varMapper=hhsMapper, 
+                             varsToImpute=c("total_beds", "adult_beds"), 
+                             varUsedToImpute=c("inpatient_beds")
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the initial data frame
+    # keyState: states to include for filtering
+    # varMapper: variables to include and output names (named vector of form c("original name"="modified name"))
+    # varsToImpute: variables to be imputed
+    # varUsedToImpute: percent changes in this variable assumed to drive percent changes in varsToImpute if NA
+    
+    df %>%
+        filter(state %in% all_of(keyStates)) %>%
+        colSelector(c("state", "collection_week", "hospital_pk", names(varMapper))) %>%
+        colRenamer(varMapper) %>%
+        mutate(across(where(is.numeric), .fns=function(x) ifelse(is.na(x), NA, ifelse(x==-999999, NA, x)))) %>%
+        arrange(hospital_pk, collection_week) %>%
+        group_by(hospital_pk) %>%
+        mutate(across(all_of(varsToImpute), 
+                      .fns=function(x) testImputeNA(x=x, y=get(varUsedToImpute), naValues=-999999)
+                      )
+               ) %>%
+        group_by(state, collection_week) %>%
+        summarize(across(where(is.numeric), .fns=sum, na.rm=TRUE), n=n(),.groups="drop")
+}
+
+modStateHosp_20220221 <- imputeNACapacity(indivHosp_20220221)
+
+```
+
