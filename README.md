@@ -2782,3 +2782,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 includes makePeakValley()  
 * Coronavirus_CDC_Daily_v004 includes plotHospitalUtlization()  
   
+### Expansions week of 28-FEB-2022  
+* Coronavirus_CDC_Daily_v004 includes NA imputing function  
+  
