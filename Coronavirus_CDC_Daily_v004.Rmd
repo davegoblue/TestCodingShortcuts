@@ -274,3 +274,86 @@ modStateHosp_20220221 <- imputeNACapacity(indivHosp_20220221)
 
 ```
 
+The function is split so that it is more generic:  
+```{r, fig.height=9, fig.width=9}
+
+# Select and filter as needed
+skinnyHHS <- function(df, 
+                      keyStates=c(state.abb, "DC"), 
+                      idCols=c("state", "collection_week", "hospital_pk"),
+                      varMapper=hhsMapper
+                      ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: the initial data frame
+    # keyState: states to include for filtering
+    # varMapper: variables to include and output names (named vector of form c("original name"="modified name"))
+    
+    df %>%
+        filter(state %in% all_of(keyStates)) %>%
+        colSelector(c(all_of(idCols), names(varMapper))) %>%
+        colRenamer(varMapper)
+        
+}
+
+# Impute values for hospital capacity
+imputeNACapacity <- function(df, 
+                             extraNA=c(-999999),
+                             convertAllNA=TRUE,
+                             idVars=c("hospital_pk"), 
+                             sortVars=c("collection_week"),
+                             varsToImpute=c("total_beds", "adult_beds"), 
+                             varUsedToImpute=c("inpatient_beds")
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the initial data frame
+    # extraNA: values that should be treated as NA
+    # convertAllNA: boolean, should all extraNA values be converted in all numeric columns?
+    #               if FALSE, extraNA values will not be converted, though imputing will treat as NA
+    # varsToImpute: variables to be imputed
+    # varUsedToImpute: percent changes in this variable assumed to drive percent changes in varsToImpute if NA
+    
+    # Convert NA if requested
+    if(isTRUE(convertAllNA)) {
+        df <- df %>%
+            mutate(across(where(is.numeric), 
+                          .fns=function(x) ifelse(is.na(x), NA, ifelse(x %in% all_of(extraNA), NA, x))
+                          )
+                   )
+    }
+    
+    # Impute values and return data
+    df %>%
+        arrange(across(all_of(c(idVars, sortVars)))) %>%
+        group_by(across(all_of(idVars))) %>%
+        mutate(across(all_of(varsToImpute), 
+                      .fns=function(x) testImputeNA(x=x, y=get(varUsedToImpute), naValues=extraNA)
+                      )
+               ) %>%
+        ungroup()
+    
+}
+
+sumImputedHHS <- function(df, 
+                          groupVars=c("state", "collection_week")) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the initial data frame
+    # groupVars: variables for summing the data to
+
+    df %>%
+        group_by(across(all_of(groupVars))) %>%
+        summarize(across(where(is.numeric), .fns=sum, na.rm=TRUE), n=n(),.groups="drop")
+    
+    
+}
+
+identical(skinnyHHS(indivHosp_20220221) %>%
+              imputeNACapacity() %>%
+              sumImputedHHS(), 
+          modStateHosp_20220221
+          )
+
+```
+
