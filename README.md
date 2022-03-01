@@ -2784,4 +2784,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 28-FEB-2022  
 * Coronavirus_CDC_Daily_v004 includes NA imputing function  
+* Coronavirus_CDC_Daily_v004 includes more generic NA imputing function  
   
