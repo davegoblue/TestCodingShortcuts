@@ -38,6 +38,10 @@
 # 35. zeroPad() - generic function for zero-padding a number/character (output as character)
 # 36. zeroPad2() - zeroPad() with argument width=2 preset
 # 37. zeroPad5() - zeroPad() with argument width=5 preset
+# 38. tempStackPlot() - create stacked bar plots with a time dimension
+# 39. lagCorrCheck() - find best correlation and lag/lead for two series of data
+# 40. findPeaks() - function to find local extrema in a time series
+# 41. testImputeNA() - impute NA values for a vector based on another vector
 
 # Function for saving an R object to RDS, including a check for whether the object already exists
 saveToRDS <- function(obj, 
@@ -1171,3 +1175,149 @@ zeroPad2 <- function(x, ...) zeroPad(x, width=2, ...)
 zeroPad5 <- function(x, ...) zeroPad(x, width=5, ...)
 
 
+# Create a stacked bar plot with a time dimension
+tempStackPlot <- function(df, 
+                          yVars, 
+                          xVar="state", 
+                          yLab=NULL, 
+                          plotTitle=NULL, 
+                          colorVector=c("lightblue", "grey", "orange", "black"), 
+                          addSuffix="%", 
+                          scaleName="Cohort", 
+                          textBuffer=0.5, 
+                          makeDotPlot=FALSE, 
+                          yLims=NULL
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble
+    # yVars: named vector with c("variable"="name"), in the desired order from right-most to left-most
+    # xVar: the x variable
+    # yLab: the y-axis label for the plot
+    # plotTitle: the title for the plot
+    # colorVector: colors to use for filled bars (sequentially, can have more, but not less, than length(yVars))
+    # addSuffix: value to be appended to all values in plots (e.g., 96 would show as 96% in the text label)
+    # scaleName: the name to use for the legend
+    # textBuffer: distance from bar to text
+    # makeDotPlot: boolean, should a dot-plot be made rather than stacked bars?
+    # yLims: the limits for the y-axis passed as a length-2 vector such as c(0, 100) or c(0, NA)
+    
+    colorVector <- colorVector[1:length(yVars)]
+    names(colorVector) <- names(yVars)
+    
+    # Function for the legend
+    fnLegendKey <- if(isTRUE(makeDotPlot)) scale_color_manual else scale_fill_manual
+    
+    p1 <- df %>% 
+        select(all_of(xVar), all_of(names(yVars))) %>%
+        pivot_longer(-c(all_of(xVar))) %>%
+        ggplot(aes(x=fct_reorder(get(xVar[1]), value, max))) + 
+        coord_flip() + 
+        labs(x=NULL, y=yLab, title=plotTitle) +
+        (if(isTRUE(makeDotPlot)) geom_point(aes(y=value, color=name)) 
+         else geom_col(aes(y=value, fill=name), position="identity")
+        ) +
+        geom_text(aes(y=value+textBuffer, 
+                      label=paste0(value, 
+                                   addSuffix, 
+                                   ifelse(name==names(yVars)[1], paste0(" (", get(xVar[1]), ")"), "")
+                      )
+        ), 
+        hjust=0, 
+        size=3
+        ) + 
+        fnLegendKey(scaleName, 
+                    breaks=rev(names(yVars)), 
+                    labels=rev(unname(yVars)),
+                    values=colorVector
+        ) +
+        theme(legend.position="bottom")
+    
+    # Add the y-limits if appropriate
+    if (!is.null(yLims)) p1 <- p1 + lims(y=yLims)
+    
+    p1
+    
+}
+
+
+# Create correlation for assigned lag/lead and variables in a data frame
+lagCorrCheck <- function(df, lagLead=0, varFix="dpm7", varMove="cpm7") {
+    df %>%
+        mutate(lagVar=if(lagLead >= 0) lag(get(varMove), lagLead) else lead(get(varMove), abs(lagLead))) %>%
+        filter(!is.na(lagVar)) %>%
+        summarize(correl=cor(lagVar, get(varFix))) %>%
+        pull(correl)
+}
+
+
+# Function to find local extrema in a vector
+findPeaks <- function(x, 
+                      width=1, 
+                      align="center", 
+                      FUN=max, 
+                      gt=if(identical(FUN, max)) 0 else NULL, 
+                      lt=if(identical(FUN, min)) 0 else NULL, 
+                      fillVal=if(identical(FUN, max)) gt else if(identical(FUN, min)) lt else NA, 
+                      epsTol=1e-12,
+                      returnBool=TRUE, 
+                      ...
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # x: a numeric vector
+    # width: the width of the window to use
+    # align: whether the window should be "center", "left", or "right"
+    # FUN: the function to be used (max to find peaks, min to find valleys)
+    # gt: to be defined, the value must be greater than gt (NULL means use any value)
+    # lt: to be defined, the value must be less than lt (NULL means use any value)
+    # fillVal: value to use as output if a window does not exist (too close to boundary)
+    # epsTol: the epsilon value for considering two values to be the same
+    # returnBool: should the boolean be returned? TRUE means return TRUE/FALSE for peaks, FALSE means return vector
+    # ...: any other arguments to be passed to zoo::rollapply()
+    
+    # Create the rolling data
+    rolls <- zoo::rollapply(x, width=width, align=align, FUN=FUN, fill=fillVal, ...)
+    
+    # No post-processing applied unless returnBool is TRUE
+    if(!isTRUE(returnBool)) return(rolls)
+    
+    # Post-processing managed for gt and lt
+    if(!is.null(gt)) rolls <- ifelse(rolls<=gt, NA, rolls)
+    if(!is.null(lt)) rolls <- ifelse(rolls>=lt, NA, rolls)
+    
+    # Return the boolean vector
+    !is.na(rolls) & (abs(rolls-x) <= epsTol)
+    
+}
+
+
+# Impute NA values for a vector based on another vector
+testImputeNA <- function(x, y=NULL, naValues=c()) {
+    
+    # FUNCTION ARGUMENTS
+    # x: a numeric vector that may contain NA, or values in naValues that should be treated as NA
+    # y: a numeric vector where percent changes in y should drive percent changes in x if x is NA
+    #    NULL means just use zoo::na.locf(x, na.rm=TRUE)
+    # naValues: any special values in x or y that should be treated as NA
+    
+    # Convert x to modified vector using naValues
+    xMod <- ifelse(is.na(x), NA, ifelse(x %in% all_of(naValues), NA, x))
+    
+    # Create y as a vector of ones if NULL, otherwise convert to modified vector using naValues
+    if(is.null(y)) y <- rep(1, length(x))
+    yMod <- ifelse(is.na(y), NA, ifelse(y %in% all_of(naValues), NA, y))
+    
+    # Convert vector xMod using na.locf (need to keep NA values)
+    xConv <- zoo::na.locf(xMod, na.rm=FALSE)
+    
+    # For any values where X was NA, scale up or down based on change in y
+    # Works OK for a single NA, but not perfectly for repeating NA
+    yMult <- yMod/lag(yMod)
+    xMult <- yMult * lag(xConv)
+    xConv[is.na(xMod)] <- xMult[is.na(xMod)]
+    
+    # Return the vector
+    xConv
+    
+}
