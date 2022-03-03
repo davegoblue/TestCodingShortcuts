@@ -2786,4 +2786,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 includes NA imputing function  
 * Coronavirus_CDC_Daily_v004 includes more generic NA imputing function  
 * Coronavirus_CDC_Daily_v004 includes imputed state-level capacity maps  
+* Generic_Added_Utility_Functions_202105_v001.R functions updated  
   
