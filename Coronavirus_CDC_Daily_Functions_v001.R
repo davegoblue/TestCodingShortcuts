@@ -15,6 +15,25 @@
 # 12. helperAggTrend() - function for creating plot of trends by cluster
 # 13. createDetailedSummaries() - function for creating detailed summaries by cluster
 # 14. clustersToFrame() - function to convert useClusters to an appropriate tibble for further analysis
+# 15. downloadReadHospitalData() - function to download hospital capacity data
+# 16. postProcessCDCDaily() - post-processing for CDC daily data
+# 17. createBurdenPivot() - create pivoted burden data
+# 18. makeCaseHospDeath() - create case, hospital, and death file
+# 19. cumulativeBurdenPlot() - plot of cumulative burden by time
+# 20. cumulativeVaccinePlot() - plot of cumulative vaccines by time
+# 21. hospAgePerCapita() - create per capita hospitalized by age
+# 22. readPopStateAge() - read a previously downloaded file for population by state and age
+# 23. filterPopStateAge() - filter a file of population by state and age for the relevant values
+# 24. bucketPopStateAge() - bucket the population by state and age data
+# 25. onePageCFRPlot() - plot all states on the same page
+# 26. findCorrAlign() - find correlations and alignments of metrics
+# 27. plotCFRLag() - plot the implied CFR and best lag/lead for dpm-cpm
+# 28. makePeakValley() - mark the peaks and valleys in CDC daily data
+# 29. plotHospitalUtilization() - create plots of hospital utilization
+# 30. createGeoMap() - make state-level data map
+# 31. skinnyHHS() - select and filter HHS data as needed
+# 32. imputeNACapacity() - impute values for HHS capacity
+# 33. sumImputedHHS() - sum the imputed HHS data to the state-week level
 
 # Function to download/load, process, segment, and analyze data for CDC daily (last updated 02-AUG-2021)
 readRunCDCDaily <- function(thruLabel, 
@@ -1132,5 +1151,1327 @@ clustersToFrame <- function(lst,
     
     # Return the tibble
     df
+    
+}
+
+
+# Function to download hospital capacity data
+downloadReadHospitalData <- function(loc, 
+                                     url="https://healthdata.gov/api/views/anag-cw7u/rows.csv?accessType=DOWNLOAD",
+                                     ovrWrite=FALSE, 
+                                     mapper=hhsMapper
+                                     ) {
+    
+    # FUNCTION ARGUMENTS:
+    # loc: location for the downloaded data
+    # url location for downloading data
+    # ovrWrite: boolean, if loc exists, should it be overwritten?
+    # mapper: character vector of form c("variable"="formatted name") of variables to run histograms for
+    
+    # Check if the file exists, download if appropriate
+    tempDownload <- function(x=loc, y=url, z=ovrWrite) {
+        
+        if(file.exists(x)) {
+            cat("\nFile", x, "already exists\n")
+            if(!isTRUE(z)) {
+                cat("File will not be downloaded since ovrWrite is not TRUE\n")
+                return()
+            }
+        }
+        
+        # Download the file
+        fileDownload(x, url=y, ovrWrite=z)
+        
+    }
+    
+    tempDownload()
+    
+    # Read the file and glimpse
+    df <- fileRead(loc)
+    glimpse(df)
+    
+    # Basic count checks
+    cat("\nHospital Subtype Counts:\n")
+    df %>% count(hospital_subtype) %>% print()
+    cat("\nRecords other than 50 states and DC\n")
+    df %>% count(state) %>% filter(!(state %in% c(state.abb, "DC"))) %>% print()
+    
+    # Counts of less than 0, NA, and -999999
+    cat("\nRecord types for key metrics\n")
+    df %>%
+        select(names(mapper)) %>%
+        pivot_longer(-c()) %>%
+        mutate(type=case_when(is.na(value) ~ "NA", 
+                              value==-999999 ~ "Value -999999", 
+                              value < 0 ~ "Negative", 
+                              TRUE ~ "Positive"
+        )
+        ) %>%
+        count(name, type) %>%
+        pivot_wider(name, names_from="type", values_from="n", values_fill=0) %>%
+        group_by(name) %>%
+        mutate(Total=sum(across(where(is.numeric)))) %>%
+        ungroup() %>%
+        print()
+    
+    # Basic Histograms (NA and -999999 are missing data)
+    p1 <- df %>%
+        select(names(mapper)) %>%
+        pivot_longer(-c()) %>%
+        filter(!is.na(value), value != -999999, value >= 0) %>%
+        ggplot(aes(x=value/1000)) + 
+        geom_histogram(fill="lightblue") + 
+        scale_x_sqrt() +
+        labs(x="Value (000s)", 
+             y="# non-missing records", 
+             title="Histogram for key metrics by record", 
+             subtitle="Excludes values less than 0, as well as NA or -999999"
+        ) +
+        facet_wrap(~hhsMapper[name], scales="free")
+    print(p1)
+    
+    # Return the file
+    df
+    
+}
+
+
+# Function for postr-processing CDC daily data
+postProcessCDCDaily <- function(lst, 
+                                dataThruLabel,
+                                keyStates=c(state.abb, "DC"), 
+                                keyDatesBurden=NULL, 
+                                keyDatesVaccine=NULL,
+                                returnData=FALSE,
+                                ...
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a processed list file from readRunCDCDaily
+    # dataThruLabel: label for when the hospital data are through
+    # keyStates: the list of states to be plotted (burden data will be created for all states)
+    # keyDatesBurden: key dates to use for the burden plots (NULL means generate automatically)
+    # keyDatesVaccine: key dates to use for the vaccine plots (NULL means generate automatically)
+    # returnData: should the pivoted data be returned?
+    # ...: other arguments passed through to cumulativeBurdenPlot()
+    
+    # Create the burden data
+    burdenPivotList <- createBurdenPivot(lst, dataThru=dataThruLabel)
+    
+    # Create the cumulative burden plots
+    cumulativeBurdenPlot(lst, 
+                         keyStates=keyStates, 
+                         keyDates=keyDatesBurden, 
+                         ...
+    )
+    
+    # Create the cumulative vaccines data
+    cumulativeVaccinePlot(lst, 
+                          keyStates=keyStates, 
+                          keyDates=keyDatesVaccine, 
+                          ...
+    )
+    
+    if (isTRUE(returnData)) return(burdenPivotList)
+    
+}
+
+
+# Create pivoted burden data
+createBurdenPivot <- function(lst, 
+                              dataThru,
+                              minDatePlot="2020-08-01", 
+                              plotByState=c(state.abb, "DC")
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a processed list that includes sub-component $dfRaw$cdcHosp
+    # dataThru: character string to be used for 'data through'; most commonly MMM-YY
+    # minDatePlot: starting date for plots
+    # plotByState: states to be facetted for plot of hospitaliztions by age (FALSE means do not create plot)
+    
+    # Convert minDatePlot to Date if passed as character
+    if ("character" %in% class(minDatePlot)) minDatePlot <- as.Date(minDatePlot)
+    
+    # Create the hospitalized by age data
+    hospAge <- lst[["dfRaw"]][["cdcHosp"]] %>%
+        select(state, 
+               date, 
+               grep(x=names(.), pattern="ed_\\d.*[9+]$", value=TRUE), 
+               grep(x=names(.), pattern="pediatric.*ed$", value=TRUE)
+        ) %>% 
+        pivot_longer(-c(state, date)) %>% 
+        mutate(confSusp=ifelse(grepl(x=name, pattern="confirmed"), "confirmed", "suspected"), 
+               adultPed=ifelse(grepl(x=name, pattern="adult"), "adult", "ped"), 
+               age=ifelse(adultPed=="ped", 
+                          "0-17", 
+                          stringr::str_replace_all(string=name, pattern=".*_", replacement="")
+               ), 
+               age=ifelse(age %in% c("0-17", "18-19"), "0-19", age), 
+               div=as.character(state.division)[match(state, state.abb)]
+        )
+    
+    # Create the pivoted burden data
+    dfPivot <- makeCaseHospDeath(dfHosp=hospAge, dfCaseDeath=lst[["dfPerCapita"]])
+    
+    # Plot for overall trends by age group
+    p1 <- hospAge %>% 
+        filter(state %in% c(state.abb, "DC"), !is.na(value)) %>% 
+        mutate(ageBucket=age) %>% 
+        group_by(date, ageBucket) %>% 
+        summarize(value=sum(value), .groups="drop") %>% 
+        arrange(date) %>%
+        group_by(ageBucket) %>% 
+        mutate(value7=zoo::rollmean(value, k=7, fill=NA)) %>% 
+        filter(date >= minDatePlot) %>% 
+        ggplot(aes(x=date, y=value7)) + 
+        labs(x=NULL, 
+             y="Confirmed or suspected COVID admissions (rolling-7 mean)", 
+             title=paste0("Hospital admissions for COVID by age bucket (Aug 2020 - ", dataThru, ")"), 
+             subtitle="50 states and DC (includes confirmed and suspected from CDC data)"
+        ) + 
+        lims(y=c(0, NA))
+    
+    # Create three main plots of hospitalized by age data
+    print(p1 + geom_line(aes(group=ageBucket, color=ageBucket), size=1) + scale_color_discrete("Age\nbucket"))
+    print(p1 + geom_col(aes(fill=ageBucket), position="stack") + scale_color_discrete("Age\nbucket"))
+    print(p1 + geom_col(aes(fill=ageBucket), position="fill") + scale_color_discrete("Age\nbucket"))
+    
+    # Plot for trends by state and age group
+    if (!isFALSE(plotByState)) {
+        p2 <- hospAge %>% 
+            filter(state %in% plotByState, !is.na(value)) %>% 
+            mutate(ageBucket=ifelse(age >= "60", "60+", ifelse(age=="0-19", "0-19", "20-59"))) %>% 
+            group_by(date, state, ageBucket) %>% 
+            summarize(value=sum(value), .groups="drop") %>% 
+            group_by(ageBucket, state) %>% 
+            mutate(value7=zoo::rollmean(value, k=7, fill=NA)) %>% 
+            filter(date >= minDatePlot) %>% 
+            ggplot(aes(x=date, y=value7)) + 
+            geom_line(aes(color=ageBucket, group=ageBucket)) + 
+            scale_color_discrete("Age\nbucket") + 
+            labs(x=NULL, 
+                 y="Confirmed or suspected COVID admissions (rolling-7 mean)", 
+                 title=paste0("Hospital admissions for COVID by age bucket (Aug 2020 - ", dataThru, ")")
+            ) + 
+            lims(y=c(0, NA)) + 
+            facet_wrap(~state, scales="free_y")
+        print(p2)
+    }
+    
+    # Return key data (do not return plot objects)
+    list(hospAge=hospAge, dfPivot=dfPivot)
+    
+}
+
+
+# Function to create case-hospital-death file
+makeCaseHospDeath <- function(dfHosp, dfCaseDeath) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfHosp: the tibble or data.frame containing the hospital data by date-state
+    # dfCaseDeath: the tibble or data.frame containing the case and death data by date-state
+    
+    allHosp <- dfHosp %>%
+        mutate(ageBucket=ifelse(age >= "60", "60+", ifelse(age=="0-19", "0-19", "20-59"))) %>% 
+        group_by(date, state, ageBucket) %>% 
+        summarize(value=sum(value), .groups="drop") %>% 
+        group_by(ageBucket, state) %>% 
+        mutate(value7=zoo::rollmean(value, k=7, fill=NA)) %>%
+        ungroup() %>%
+        left_join(getStateData(keepVars=c("state", "pop"))) %>%
+        mutate(vpm7=1000000*value7/pop)
+    
+    allCaseDeath <- dfCaseDeath %>%
+        select(state, date, new_cases, new_deaths, vxa, vxc, cpm7, dpm7, vxapm7, vxcpm7) %>%
+        pivot_longer(-c(state, date))
+    
+    allPivot <- allHosp %>%
+        select(state, date, name=ageBucket, value=vpm7) %>%
+        bind_rows(allCaseDeath) %>%
+        checkUniqueRows(uniqueBy=c("state", "date", "name"))
+    
+    allPivot
+    
+}
+
+
+# Plot of cumulative burden by time
+cumulativeBurdenPlot <- function(lst, 
+                                 keyStates=c(state.abb, "DC"), 
+                                 keyDates=NULL, 
+                                 ...
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a processed list file containing dfPerCapita
+    # keyStates: states to include in the plot
+    # keyDates: dates to include in the burden plot
+    #           NULL means default to max(date)-2 from current, 6 months ago, 12 months ago)
+    # ...: other arguments to pass to tempStackPlot(), most commonly colorVector
+    
+    # Get the list of key dates
+    if (is.null(keyDates)) {
+        keyDates <- as.Date(max(lst[["dfPerCapita"]]$date)-2-lubridate::dmonths(c(0, 6, 12)), origin="1970-01-01")
+    }
+    
+    # Convert to date if needed
+    if (!("Date" %in% class(keyDates))) keyDates <- as.Date(keyDates)
+    
+    # Create data filtered for keyDates and keyStates
+    burdenGrowth <- lst[["dfPerCapita"]] %>% 
+        filter(date %in% all_of(keyDates), 
+               state %in% all_of(keyStates)
+        )
+    
+    # Create the naming vector for tempStackPlot
+    vecName <- as.character(keyDates) %>% purrr::set_names(as.character(keyDates))
+    
+    # Create plot for cases
+    p1 <- burdenGrowth %>%
+        select(state, date, tcpm) %>% 
+        mutate(tcpm=round(tcpm/1000)) %>%
+        pivot_wider(state, names_from="date", values_from="tcpm") %>%
+        tempStackPlot(yVars=vecName, 
+                      yLab="Cumulative cases per thousand", 
+                      plotTitle="Evolution of cumulative cases per thousand by state", 
+                      addSuffix="",
+                      scaleName="Date", 
+                      ...
+        )
+    
+    # Create plot for deaths
+    p2 <- burdenGrowth %>%
+        select(state, date, tdpm) %>% 
+        mutate(tdpm=round(tdpm)) %>%
+        pivot_wider(state, names_from="date", values_from="tdpm") %>%
+        tempStackPlot(yVars=vecName, 
+                      yLab="Cumulative deaths per million", 
+                      plotTitle="Evolution of cumulative deaths per million by state", 
+                      addSuffix="",
+                      scaleName="Date", 
+                      ...
+        )
+    
+    # Print the plots
+    gridExtra::grid.arrange(p1, p2, nrow=1)
+    
+    # Return the burden data
+    burdenGrowth
+    
+}
+
+
+# Cumulative plot for vaccines
+cumulativeVaccinePlot <- function(lst, 
+                                  keyStates=c(state.abb, "DC"), 
+                                  keyDates=NULL, 
+                                  returnData=FALSE,
+                                  ...
+                                  ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: a processed list file containing dfPerCapita
+    # keyStates: states to include in the plot
+    # keyDates: dates to include in the burden plot
+    #           NULL means default to max(date)-2 from current, 6 months ago, 12 months ago)
+    # returnData: boolean, should the data be returned?
+    # ...: other arguments to pass to tempStackPlot(), most commonly colorVector
+    
+    # Get the list of key dates
+    if (is.null(keyDates)) {
+        keyDates <- as.Date(max(lst[["dfRaw"]][["vax"]]$date)-2-lubridate::dmonths(c(0, 3, 6)), 
+                            origin="1970-01-01"
+        )
+    }
+    
+    # Convert to date if needed
+    if (!("Date" %in% class(keyDates))) keyDates <- as.Date(keyDates)
+    
+    # Chart for fully vaccinated by state
+    p5 <- tempStackPlot(lst[["dfRaw"]][["vax"]] %>% filter(date==max(keyDates), state %in% keyStates), 
+                        yVars=c("vxcgte65pct"="65+", 
+                                "vxcgte18pct"="18+", 
+                                "vxcpoppct"="All"
+                        ), 
+                        yLab="% Fully vaccinated", 
+                        plotTitle=paste0("Fully vaccinated by age cohort and state\n(as of ", max(keyDates), ")"), 
+                        makeDotPlot=TRUE, 
+                        yLims = c(0, 105)
+    )
+    
+    # Run for first dose
+    p6 <- tempStackPlot(lst[["dfRaw"]][["vax"]] %>% filter(date==max(keyDates), state %in% keyStates), 
+                        yVars=c("Administered_Dose1_Recip_65PlusPop_Pct"="65+", 
+                                "Administered_Dose1_Recip_18PlusPop_Pct"="18+", 
+                                "Administered_Dose1_Pop_Pct"="All"
+                        ), 
+                        yLab="% Receiving First Dose", 
+                        plotTitle=paste0("First-dose vaccinated by age cohort and state\n(as of ", 
+                                         max(keyDates), 
+                                         ")"
+                        ),
+                        makeDotPlot=TRUE,
+                        yLims=c(0, 105)
+    )
+    
+    gridExtra::grid.arrange(p5, p6, nrow=1)
+    
+    # Create data filtered for keyDates and keyStates
+    burdenGrowth <- lst[["dfRaw"]][["vax"]] %>% 
+        filter(date %in% all_of(keyDates), 
+               state %in% all_of(keyStates)
+        )
+    
+    # Create the naming vector for tempStackPlot
+    vecName <- as.character(keyDates) %>% purrr::set_names(as.character(keyDates))
+    
+    # Run for fully vaccinated
+    p1 <- burdenGrowth %>%
+        select(state, date, vxcpoppct) %>%
+        pivot_wider(state, names_from="date", values_from="vxcpoppct") %>%
+        tempStackPlot(yVars=vecName, 
+                      yLab="% Fully Vaccinated (all population)", 
+                      plotTitle="Evolution of fully vaccinated rate by state", 
+                      ...
+        )
+    
+    p2 <- burdenGrowth %>%
+        select(state, date, vxcgte65pct) %>%
+        pivot_wider(state, names_from="date", values_from="vxcgte65pct") %>%
+        tempStackPlot(yVars=vecName, 
+                      yLab="% Fully Vaccinated (65+)", 
+                      plotTitle="Evolution of fully vaccinated rate by state", 
+                      ...
+        )
+    
+    gridExtra::grid.arrange(p1, p2, nrow=1)
+    
+    # Run for first dose
+    p3 <- burdenGrowth %>%
+        select(state, date, Administered_Dose1_Pop_Pct) %>%
+        pivot_wider(state, names_from="date", values_from="Administered_Dose1_Pop_Pct") %>%
+        tempStackPlot(yVars=vecName, 
+                      yLab="% First-dose (all population)", 
+                      plotTitle="Evolution of first dose rate by state", 
+                      ...
+        )
+    
+    p4 <- burdenGrowth %>%
+        select(state, date, Administered_Dose1_Recip_65PlusPop_Pct) %>%
+        pivot_wider(state, names_from="date", values_from="Administered_Dose1_Recip_65PlusPop_Pct") %>%
+        tempStackPlot(yVars=vecName, 
+                      yLab="% First-dose (65+)", 
+                      plotTitle="Evolution of first dose rate by state", 
+                      ...
+        )
+    
+    gridExtra::grid.arrange(p3, p4, nrow=1)
+    
+    # Return the burden data
+    if(isTRUE(returnData)) burdenGrowth
+    
+}
+
+
+# Function to create per capita hospitalized by age
+hospAgePerCapita <- function(dfBucket, 
+                             lst, 
+                             popVar, 
+                             excludeState=c(), 
+                             cumStartDate=NULL
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfBucket: data frame containing bucketed age data by state
+    # lst: a processed list file containing $hospAge
+    # popVar: name of the population variable in dfBucket
+    # excludeState: list of states to exclude from cumulative plot
+    # cumStateDate: data to start the cumulative plots (NULL means use earliest date in data)
+    
+    # Find cumStartDate if not passed
+    if(is.null(cumStartDate)) cumStartDate <- lst[["hospAge"]]$date %>% min()
+    
+    # Create mapping from bucket10 to bucket03
+    ageMap10to03 <- dfBucket %>% 
+        count(bucket10, bucket03) %>%
+        select(-n)
+    
+    # Create population by state and bucket03
+    popStateBucket03 <- dfBucket %>%
+        filter(sex=="Total", state != "US") %>%
+        group_by(state, bucket03) %>% 
+        summarize(pop=sum(get(popVar)), .groups="drop")
+    
+    # Create hospitalized by age bucket by state data
+    dfUse <- lst[["hospAge"]] %>%
+        left_join(ageMap10to03, by=c("age"="bucket10")) %>%
+        filter(!is.na(value)) %>%
+        group_by(state, date, bucket03) %>%
+        summarize(value=sum(value), .groups="drop") %>%
+        filter(state %in% c(state.abb, "DC")) %>%
+        left_join(popStateBucket03, by=c("state", "bucket03")) %>%
+        mutate(vpm=1000000*value/pop) %>%
+        group_by(state, bucket03) %>%
+        arrange(date) %>%
+        mutate(vpm7=zoo::rollmean(vpm, k=7, fill=NA), vpmcum=cumsum(vpm)) %>%
+        ungroup()
+    
+    p1 <- dfUse %>%
+        ggplot(aes(x=date, y=vpm7)) + 
+        geom_line(aes(group=bucket03, color=bucket03)) + 
+        labs(x=NULL, 
+             y="Newly hospitalized per million (rolling 7-day mean)", 
+             title="Per million newly hospitalized by age bucket"
+        ) +
+        facet_wrap(~state, scales="free_y") + 
+        scale_color_discrete("Age")
+    print(p1)
+    
+    p2 <- dfUse %>%
+        filter(!(state %in% all_of(excludeState)), date >= cumStartDate) %>%
+        ggplot(aes(x=date, y=vpmcum/1000)) + 
+        geom_line(aes(group=bucket03, color=bucket03)) + 
+        labs(x=NULL, 
+             y=paste0("Cumulative hospitalized per thousand since ", cumStartDate), 
+             title="Cumulative newly hospitalized per thousand by age bucket", 
+             subtitle=paste0("Since ", 
+                             cumStartDate, 
+                             if(length(excludeState) > 0) paste0(", excludes ", paste0(excludeState, collapse=", ")) 
+                             else ""
+             )
+        ) +
+        facet_wrap(~state, scales="free_y") + 
+        scale_color_discrete("Age")
+    print(p2)
+    
+    # Return the dataset
+    dfUse
+    
+}
+
+
+# Function to read a previously downloaded file for population by state and age
+readPopStateAge <- function(loc) {
+    
+    # FUNCTION ARGUMENTS:
+    # loc: file location on the local computer
+    
+    # Read the data
+    df <- fileRead(loc) %>%
+        checkUniqueRows(uniqueBy=c("NAME", "SEX", "AGE"))
+    
+    # Confirm that states, ages, and sexes are as expected
+    a1 <- all.equal(sort(c(state.name, "District of Columbia", "United States")), 
+                    df %>% pull(NAME) %>% unique() %>% sort()
+    )
+    print(a1)
+    a2 <- all.equal(c(0:85, 999), df %>% pull(AGE) %>% unique() %>% sort())
+    print(a2)
+    a3 <- all.equal(0:2, df %>% pull(SEX) %>% unique() %>% sort())
+    print(a3)
+    if(!isTRUE(a1) | !isTRUE(a2) | !isTRUE(a3)) stop("\nUnexpected values for state, age, or sex\n")
+    
+    # Plot for total US population estimates
+    p1 <- df %>%
+        filter(AGE==999, NAME=="United States") %>%
+        select(state=NAME, SEX, starts_with("POPEST")) %>%
+        pivot_longer(-c(state, SEX)) %>%
+        mutate(year=as.integer(stringr::str_extract(name, "\\d{4}")), 
+               SEX=factor(SEX, levels=c("0", "1", "2"), labels=c("Total", "Male", "Female"))
+        ) %>%
+        ggplot(aes(x=factor(year))) + 
+        geom_line(aes(y=value/1000000, group=SEX, color=SEX)) + 
+        geom_text(aes(label=round(value/1000000, 1), 
+                      y=value/1000000 + ifelse(SEX=="Male", -5, 5), 
+                      color=SEX
+        )
+        ) +
+        lims(y=c(0, NA)) + 
+        labs(x=NULL, y="Population (millions)", title="US Population Estimates by Year")
+    print(p1)
+    
+    componentCheck <- function(vrbl, sumName, descMessage) {
+        otherVars <- setdiff(c("NAME", "SEX", "AGE"), vrbl)
+        dfCheck <- df %>%
+            select(-c(SUMLEV, REGION, DIVISION, STATE)) %>%
+            pivot_longer(-c(NAME, SEX, AGE)) %>%
+            mutate(across(.cols=all_of(vrbl), .fns=~ifelse(.x==sumName, "Total", "Component"), .names="type")) %>%
+            group_by_at(c("type", all_of(otherVars), "name")) %>%
+            summarize(value=sum(value), .groups="drop") %>%
+            pivot_wider(c(all_of(otherVars), "name"), names_from="type", values_from="value") %>%
+            mutate(diff=Total-Component) %>%
+            arrange(-abs(diff))
+        if(max(abs(dfCheck$diff)) > 0) {
+            print(dfCheck)
+            stop(paste0("\nFAILED CHECK: ", descMessage, "\n"))
+        } else {
+            cat("\nPASSED CHECK:", descMessage, "\n\n")
+        }
+    }
+    
+    componentCheck("NAME", sumName="United States", descMessage="United States total is the sum of states and DC")
+    componentCheck("AGE", sumName=999, descMessage="Age 999 total is the sum of the ages")
+    componentCheck("SEX", sumName=0, descMessage="Sex 0 total is the sum of the sexes")
+    
+    # Return the data
+    df
+    
+}
+
+
+# Function to filter a file of population by state and age for the relevant values
+filterPopStateAge <- function(df, keyCol, keyColName=keyCol, yearLabel=NULL) {
+    
+    # FUNCTION ARGUENTS:
+    # df: loaded data frame with columns
+    # keyCol: the population column to select
+    # keyColName: renaming to be applied for the population column (default will leave as-is)
+    # yearLabel: label for year to use in plots (NULL means infer from keyCol)
+    
+    if (is.null(yearLabel)) yearLabel <- stringr::str_extract(keyCol, pattern="\\d{4}")
+    
+    # Create the selection and renaming vector
+    useCols <- c("stateFull", "sex", "age", all_of(keyColName))
+    names(useCols) <- c("NAME", "SEX", "AGE", all_of(keyCol))
+    
+    # Select the key variable and rename, add state abbreviation, convert sex to more interpretable factor
+    dfFilter <- df %>%
+        colSelector(names(useCols)) %>%
+        colRenamer(useCols) %>%
+        mutate(state=c(state.abb, "DC", "US")[match(stateFull, 
+                                                    c(state.name, "District of Columbia", "United States")
+        )
+        ], 
+        sex=factor(sex, levels=c(0, 1, 2), labels=c("Total", "Male", "Female"))
+        )
+    
+    # Plot for total population in the key year
+    p1 <- dfFilter %>%
+        filter(age==999, state != "US") %>%
+        ggplot(aes(x=fct_reorder(state, get(keyColName), max))) + 
+        geom_text(data=~filter(., sex == "Total"), 
+                  aes(label=paste0(round(get(keyColName)/1000000, 1), " (", state, ")"), 
+                      y=get(keyColName)/1000000 + 0.1
+                  ), 
+                  size=3, 
+                  hjust=0
+        ) +
+        geom_col(data=~filter(., sex != "Total"), aes(y=get(keyColName)/1000000, fill=sex), position="stack") + 
+        coord_flip() + 
+        labs(x=NULL, y="Population (millions)", title=paste0(yearLabel, " Population by State and Sex"))
+    print(p1)
+    
+    # Population by Age in the key year
+    p2 <- dfFilter %>%
+        filter(sex=="Total", age != 999, state != "US") %>%
+        group_by(age) %>%
+        summarize(across(.cols=all_of(keyColName), sum)) %>%
+        ggplot(aes(x=factor(age))) + 
+        geom_text(aes(label=round(get(keyColName)/1000000, 1), y=get(keyColName)/1000000 + 0.1), 
+                  size=3, 
+                  hjust=0
+        ) +
+        geom_col(aes(y=get(keyColName)/1000000), fill="lightblue") + 
+        labs(x=NULL, y="Population (millions)", title=paste0(yearLabel, " Population by Age")) + 
+        coord_flip()
+    print(p2)
+    
+    # Return the data
+    dfFilter
+    
+}
+
+
+# Function to bucket the population by state and age data
+bucketPopStateAge <- function(df, popVar, popYearLabel=NULL) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a filtered data frame containing the year of interest
+    # popVar: name of the population variable
+    # popYearLabel: year to use in the plot titles (NULL means infer from popVar)
+    
+    # Infer popYearLabel if not provided
+    if(is.null(popYearLabel)) popYearLabel <- stringr::str_extract(popVar, pattern="\\d{4}")
+    
+    # Add age buckets to data
+    dfBucket <- df %>%
+        mutate(bucket10=case_when(age==999 ~ "Total", 
+                                  age <= 19 ~ "0-19", 
+                                  age >= 80 ~ "80+", 
+                                  TRUE ~ paste0(floor(age/10)*10, "-", floor(age/10)*10+9)
+        ), 
+        bucket03=case_when(age==999 ~ "Total",age <= 19 ~ "0-19", age >= 60 ~ "60+", TRUE ~ "20-59"),
+        bucketYMO=case_when(age==999 ~ "Total",age < 18 ~ "0-17", age >= 65 ~ "65+", TRUE ~ "18-64")
+        )
+    
+    # Check that buckets worked as intended
+    checkBucket <- function(keyVar) {
+        dfBucket %>% 
+            count(age, y=get(keyVar)) %>% 
+            ggplot(aes(x=factor(age), y=y)) + 
+            geom_tile(aes(fill=n)) + 
+            coord_flip() + 
+            labs(x=NULL, y=NULL, title=paste0("Age map for: ", keyVar))
+    }
+    p1 <- checkBucket(keyVar="bucket10")
+    p2 <- checkBucket(keyVar="bucket03")
+    p3 <- checkBucket(keyVar="bucketYMO")
+    gridExtra::grid.arrange(p1, p2, p3, nrow=1)
+    
+    # Proportion by bucketYMO by state
+    p4 <- dfBucket %>%
+        filter(sex=="Total", age != 999, state != "US") %>%
+        group_by(state, bucketYMO) %>%
+        summarize(pop=sum(get(popVar)), .groups="drop") %>%
+        ggplot(aes(x=fct_reorder2(state, .x=bucketYMO, .y=pop, .fun=function(x, y) -sum(y[x=="0-17"])/sum(y)))) + 
+        geom_col(aes(y=pop, fill=fct_rev(bucketYMO)), position="fill") + 
+        coord_flip() + 
+        labs(x=NULL, 
+             y=paste0("Proportion of ", popYearLabel, " population"), 
+             title="Age distribution by state"
+        ) + 
+        scale_fill_discrete("Age Bucket")
+    print(p4)
+    
+    # Proportion by bucket10 by state
+    p5 <- dfBucket %>%
+        filter(sex=="Total", age != 999, state != "US") %>%
+        group_by(state, bucket10) %>%
+        summarize(pop=sum(get(popVar)), .groups="drop") %>%
+        ggplot(aes(x=fct_reorder2(state, .x=bucket10, .y=pop, .fun=function(x, y) -sum(y[x=="0-19"])/sum(y)))) + 
+        geom_col(aes(y=pop, fill=fct_rev(bucket10)), position="fill") + 
+        coord_flip() + 
+        labs(x=NULL, 
+             y=paste0("Proportion of ", popYearLabel, " population"), 
+             title="Age distribution by state"
+        ) + 
+        scale_fill_discrete("Age Bucket")
+    print(p5)
+    
+    # Mean age by state
+    p6 <- dfBucket %>%
+        filter(sex=="Total", age != 999, state != "US") %>%
+        group_by(state) %>%
+        mutate(age=ifelse(age==85, 90, age)) %>%
+        summarize(ageMean=sum(age*get(popVar))/sum(get(popVar)), .groups="drop") %>%
+        ggplot(aes(x=fct_reorder(state, -ageMean))) + 
+        geom_text(aes(y=ageMean+0.2, label=round(ageMean, 1)), hjust=0, size=3) +
+        geom_point(aes(y=ageMean)) + 
+        coord_flip() + 
+        labs(x=NULL, 
+             y="Average age", 
+             title="Mean age by state", 
+             subtitle="(caution that all 85+ counted as 90 for mean calculation)"
+        ) + 
+        lims(y=c(0, NA))
+    print(p6)
+    
+    # Return the bucketed data
+    dfBucket
+    
+}
+
+
+# Function to plot all states on the same page
+onePageCFRPlot <- function(df, keyState, multDeath=100, cfrCap=0.06, ...) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing state-date-name-value
+    # keyState: the key state to be analyzed
+    # multDeath: multiplier for death in the death/lagged cases chart of plotCFRLag()
+    # ...: other arguments to be passed to findCorrAlign()
+    
+    # Find the correlations data
+    corrData <- findCorrAlign(df, 
+                              keyState=keyState, 
+                              yLab="Value per million\n(rolling 7-day mean)", 
+                              printPlots=FALSE, 
+                              returnPlots=TRUE, 
+                              returnData=TRUE, 
+                              ...
+    )
+    
+    # Find CFR
+    cfrData <- plotCFRLag(corrData, 
+                          cfrCap=cfrCap, 
+                          multDeath=multDeath, 
+                          mainTitle=paste0(formals(plotCFRLag)$mainTitle, keyState), 
+                          printPlots=FALSE, 
+                          returnPlots=TRUE
+    )
+    
+    # Create single-page summary
+    gridExtra::grid.arrange(corrData$p1, corrData$p2, cfrData$p1, cfrData$p2, nrow=2)
+    
+}
+
+
+# Find correlations and alignments of metrics
+findCorrAlign <- function(df, 
+                          keyState, 
+                          varFix="dpm7", 
+                          varMove="cpm7", 
+                          lagLeads=-10:40,
+                          minDate=NULL, 
+                          maxDate=NULL,
+                          varMapper=c("cpm7"="Cases per million", "dpm7"="Deaths per million"), 
+                          yLab="Value per million (rolling 7-day mean)", 
+                          printPlots=TRUE, 
+                          returnPlots=FALSE,
+                          returnData=FALSE
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: pivoted data frame with state-date-name-value
+    # keyState: state to include
+    # varFix: metric to be held constant
+    # varMove: metric to be lagged/led
+    # lagLeads: lags and leads for the variable that moves
+    # minDate: minimum date for lag/lead (NULL means data-driven)
+    # maxDate: maximum date for lag/lead (NULL means data-driven)
+    # varMapper: mapping file for varFix and varMove to descriptive labels
+    # yLab: label for the y-axis in the first plot
+    # printPlots: boolean, should the plots be printed?
+    # returnPlots: boolean, should the plots be returned?
+    # returnData: boolean, should the data frames be returned as a list?
+    
+    # Set minDate and maxDate to the actual minmax if passed as NULL 
+    if (is.null(minDate)) minDate <- df %>% summarize(date=min(date)) %>% pull(date)
+    if (is.null(maxDate)) maxDate <- df %>% summarize(date=max(date)) %>% pull(date)
+    
+    # Filter to relevant data
+    df <- df %>%
+        filter(state %in% all_of(keyState), name %in% all_of(c(varFix, varMove)), !is.na(value))
+    
+    # Plot core metrics for requested states
+    p1 <- df %>%
+        ggplot(aes(x=date, y=value)) + 
+        geom_line(aes(group=name, color=name)) + 
+        facet_wrap(~varMapper[name], scales="free_y") + 
+        labs(x=NULL, y=yLab, title=paste0("Metrics by state for: ", paste0(keyState, collapse=", "))) + 
+        theme(legend.position="none")
+    if(isTRUE(printPlots)) print(p1)
+    
+    # Create dataset for correlations
+    dfCorr <- df %>%
+        select(date, name, value) %>%
+        pivot_wider(date)
+    
+    # Find correlation by lag/lead for dataset
+    dfRho <- tibble::tibble(lagLead=lagLeads, 
+                            rho=sapply(lagLeads, 
+                                       FUN=function(x) {
+                                           lagCorrCheck(dfCorr %>% filter(date >= minDate, date <= maxDate), 
+                                                        lagLead=x
+                                           )
+                                       }
+                            )
+    )
+    
+    # Find best correlation and lag/lead
+    bestRho <- dfRho %>% 
+        filter(rho==max(rho))
+    
+    # Plot correlations by lag/lead
+    p2 <- dfRho %>% 
+        ggplot(aes(x=lagLead, y=rho)) + 
+        geom_point() + 
+        geom_hline(data=bestRho, aes(yintercept=rho), lty=2) +
+        geom_vline(data=bestRho, aes(xintercept=lagLead), lty=2) +
+        labs(x=paste0("Lag or lead of ", varMapper[varMove]), 
+             y=paste0("Correlation to ", varMapper[varFix]), 
+             title=paste0("Correlations by lag/lead for state: ", keyState), 
+             subtitle=paste0("Best correlation ", 
+                             round(bestRho$rho, 3), 
+                             " obtained at lag/lead of: ", 
+                             bestRho$lagLead
+             )
+        )
+    if(isTRUE(printPlots)) print(p2)
+    
+    if (isTRUE(returnData) | isTRUE(returnPlots)) {
+        list(dfRho=if(isTRUE(returnData)) dfRho else NULL, 
+             bestRho=if(isTRUE(returnData)) bestRho else NULL, 
+             dfCorr=if(isTRUE(returnData)) dfCorr else NULL, 
+             p1=if(isTRUE(returnPlots)) p1 else NULL, 
+             p2=if(isTRUE(returnPlots)) p2 else NULL
+        )
+    }
+    
+}
+
+
+# Plot the implied CFR and best lag/lead for dpm-cpm
+plotCFRLag <- function(lst, 
+                       lagUse=NULL, 
+                       scaleUse=NULL, 
+                       cfrCap=0.06, 
+                       multDeath=50,
+                       mainTitle="Coronavirus data for selected geography: ", 
+                       printPlots=TRUE, 
+                       returnPlots=FALSE
+                       ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: data frame with date-cpm7-dpm7 OR list with both dfCorr and bestRho
+    # lagUse: the lag to use (if NULL, use the value in bestRho$lagLead)
+    # scaleUse: scalar for secondary y-axis (NULL means calculate from data)
+    # cfrCap: the cap for all values of CFR
+    # multDeath: multiplier for death data in plot 2
+    # mainTitle: main title for plots
+    # printPlots: boolean, should the plots be printed?
+    # returnPlots: boolean, should the plots be returned?
+    
+    # Create dfCorr and lagUse
+    if ("list" %in% class(lst)) {
+        dfCorr <- lst[["dfCorr"]]
+        if (is.null(lagUse)) lagUse <- lst[["bestRho"]]$lagLead
+    } else {
+        dfCorr <- lst
+    }
+    
+    # Check that dfCorr is a data frame with date-cpm7-dpm7 and lagUse is not NULL
+    if (!("data.frame" %in% class(dfCorr))) stop("\nMust have a data frame for lst/dfCorr\n")
+    if (!(all(c("date", "cpm7", "dpm7") %in% names(dfCorr)))) stop("\ndfCorr must have date-cpm7-dpm7\n")
+    if (is.null(lagUse)) stop("\nMust have a value for lagUse\n")
+    
+    # Create scaleUse if not passed
+    if (is.null(scaleUse)) scaleUse <- 500*ceiling(max(dfCorr$cpm7)/cfrCap/500)
+    
+    # Create plot of CFR by date, showing lagged cases
+    basePlot <- dfCorr %>%
+        mutate(lagData=if(lagUse >= 0) lag(cpm7, lagUse) else lead(cpm7, -lagUse)) %>%
+        filter(!is.na(lagData), lagData > 0) %>%
+        ggplot(aes(x=date)) + 
+        geom_line(aes(y=cpm7), color="navy") + 
+        geom_line(aes(y=lagData), color="navy", lty=2)
+    p1 <- basePlot + 
+        geom_line(aes(y=scaleUse*pmin(cfrCap, dpm7/lagData)), color="red") + 
+        scale_y_continuous(paste0("Cases per million\n(rolling 7-day mean)"), 
+                           sec.axis = sec_axis(~ . / scaleUse, 
+                                               name = paste0("Implied CFR (capped at ", 
+                                                             round(100*cfrCap, 1), 
+                                                             "%)"
+                                               )
+                           )
+        ) +
+        labs(x=NULL, 
+             title=mainTitle, 
+             subtitle=paste0("Red line (right axis) is implied fatality rate\n", 
+                             "Blue line is cases with and without ", 
+                             abs(lagUse), 
+                             "-day ", 
+                             if(lagUse > 0) "lag" else "lead"
+             )
+        )
+    if (isTRUE(printPlots)) print(p1)
+    
+    # Apply a CFR to the data and show alignment
+    p2 <- basePlot +
+        geom_line(aes(y=multDeath*dpm7), color="red") + 
+        labs(x=NULL, 
+             y="Per million (7-day rolling mean)", 
+             title=mainTitle, 
+             subtitle=paste0("Red line is ", 
+                             multDeath, 
+                             "*deaths\n", 
+                             "Blue line is cases with and without ", 
+                             abs(lagUse), 
+                             "-day ", 
+                             if(lagUse > 0) "lag" else "lead"
+             )
+        )
+    if (isTRUE(printPlots))print(p2)
+    
+    if (isTRUE(returnPlots)) list(p1=p1, p2=p2)
+    
+}
+
+
+# Annotate peaks and valleys in CDC daily data
+makePeakValley <- function(df, 
+                           numVar, 
+                           windowWidth,
+                           rollMean=NULL, 
+                           uqBy=c("date"), 
+                           facetVar=c(), 
+                           fnNumVar=function(x) x, 
+                           fnPeak=function(x) x+100, 
+                           fnValley=function(x) x-100, 
+                           fnGroupFacet=FALSE,
+                           useTitle="", 
+                           yLab=""
+                           ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: a data frame or tibble
+    # numVar: the numeric variable of interest
+    # windowWidth: width of the window for calculating peaks and valleys
+    # rollMean: the number of days for rolling mean (NULL means no rolling mean)
+    # uqBy: variable that the resutling data should be unique by
+    # facetVar: variable for faceting (c() means no facets)
+    # fnNumVar: what function should be applied to numVar (e.g., function(x) x/1000)
+    # fnPeak: function for plotting the peak labels
+    # fnValley: function for plotting the valley labels
+    # fnGroupFacet: boolean, should the functions be run separatelt for each facet as a grouping variable?
+    #               useful for labeling if the goal is to use 0.1*max(yVar) rather than a global peak and valley
+    # useTitle: title for plots
+    # yLab: y-axis label for plots
+    
+    # Create named vectors for useTitle and yLab if not passed
+    if(is.null(names(useTitle))) 
+        useTitle <- rep(useTitle, times=length(numVar)) %>% purrr::set_names(all_of(numVar))
+    if(is.null(names(yLab))) 
+        yLab <- rep(yLab, times=length(numVar)) %>% purrr::set_names(all_of(numVar))
+    
+    # Create named lists for fnNumVar, fnPeak, and fnValley
+    tempMakeList <- function(f, n, nms) {
+        tempList <- vector("list", length=n)
+        for(a in 1:n) tempList[[a]] <- f
+        names(tempList) <- nms
+        tempList
+    }
+    if(is.null(names(fnNumVar))) fnNumVar <- tempMakeList(fnNumVar, n=length(numVar), nms=numVar)
+    if(is.null(names(fnPeak))) fnPeak <- tempMakeList(fnPeak, n=length(numVar), nms=numVar)
+    if(is.null(names(fnValley))) fnValley <- tempMakeList(fnValley, n=length(numVar), nms=numVar)
+    
+    # Create the relevant data frame
+    newDF <- df %>% 
+        group_by_at(all_of(c(uqBy, facetVar))) %>%
+        summarize(across(all_of(numVar), .fns=sum, na.rm=TRUE), .groups="drop") %>%
+        group_by_at(all_of(facetVar)) %>%
+        mutate(if(!is.null(rollMean)) across(all_of(numVar), .fns=zoo::rollmean, k=rollMean, fill=NA),
+               across(all_of(numVar), .fns=findPeaks, width=windowWidth, gt=1, .names="{.col}_isPeak"),
+               across(all_of(numVar), 
+                      .fns=findPeaks, 
+                      width=windowWidth, 
+                      FUN=min, 
+                      gt=1, 
+                      lt=NULL, 
+                      fillVal=NA 
+                      ,.names="{.col}_isValley"
+               )
+        ) %>% 
+        ungroup()
+    
+    # Group by the facet variable(s) if not NULL and separate function by facet requested
+    if(!is.null(facetVar) & isTRUE(fnGroupFacet)) newDF <- newDF %>% group_by_at(all_of(facetVar))
+    
+    # Create the relevant plots
+    for(keyVar in numVar) {
+        
+        p1 <- newDF %>%
+            mutate(posPeak=fnPeak[[keyVar]](fnNumVar[[keyVar]](get(keyVar))), 
+                   posValley=fnValley[[keyVar]](fnNumVar[[keyVar]](get(keyVar)))
+            ) %>%
+            ggplot(aes(x=get(uqBy), y=fnNumVar[[keyVar]](get(keyVar)))) + 
+            geom_line() + 
+            geom_point(data=~filter(., get(paste0(keyVar, "_isPeak"))), color="red", size=3) +
+            geom_point(data=~filter(., get(paste0(keyVar, "_isValley"))), color="green", size=3) + 
+            geom_text(data=~filter(., get(paste0(keyVar, "_isPeak"))), 
+                      aes(y=posPeak, 
+                          label=paste0(get(uqBy), "\n", round(fnNumVar[[keyVar]](get(keyVar))))
+                      ), 
+                      color="red", 
+                      size=3
+            ) + 
+            geom_text(data=~filter(., get(paste0(keyVar, "_isValley"))), 
+                      aes(y=posValley, 
+                          label=paste0(get(uqBy), "\n", round(fnNumVar[[keyVar]](get(keyVar))))
+                      ), 
+                      color="black", 
+                      size=3
+            ) + 
+            labs(x=NULL, 
+                 y=yLab[[keyVar]], 
+                 title=useTitle[[keyVar]], 
+                 subtitle="Red (peaks) and green (valleys)"
+            )
+        if(length(facetVar) > 0) p1 <- p1 + facet_wrap(~get(facetVar), scales="free_y")
+        
+        print(p1)
+        
+    }
+    
+    # Return the data, removing any grouping
+    newDF %>% ungroup()
+    
+}
+
+
+# Create plots of hospital utilization
+plotHospitalUtilization <- function(df, 
+                                    keyHosp=NULL, 
+                                    plotTitle=NULL,
+                                    seed=2112261542, 
+                                    varMap=hhsMapper, 
+                                    createFacets=TRUE,
+                                    p2List=list("Adult Beds"=list("colsPlot"=c("adult_beds_occupied"="lightblue", 
+                                                                               "adult_beds_covid"="red"
+                                                                               ), 
+                                                                  "linesPlot"=c("adult_beds"="black", 
+                                                                                "total_beds"="green"
+                                                                                )
+                                                                  ), 
+                                                "ICU Beds"=list("colsPlot"=c("icu_beds_occupied"="lightblue", 
+                                                                             "adult_icu_covid"="red"
+                                                                             ), 
+                                                                "linesPlot"=c("icu_beds"="black")
+                                                                )
+                                                ),
+                                    returnData=FALSE
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: file containing hospital utilization data
+    # keyHosp: character vector of hospital_pk to use (NULL means select one at random using seed)
+    # plotTitle: title to use for plots (NULL means use a default based on keyHosp)
+    # seed: random seed to use for selecting a hospital
+    # varMap: character mapping file of format c("variable name"="plotting facet name")
+    # createFacets: boolean, should the facetted plots be create?
+    # returnData: boolean, should plot data be returned?
+    
+    # Sample a keyHosp if not provided
+    if(is.null(keyHosp)) {
+        set.seed(seed)
+        keyHosp <- df %>% 
+            pull(hospital_pk) %>% 
+            sample(1)        
+    }
+    
+    # Get plotTitle if not provided
+    if(is.null(plotTitle)) {
+        if(length(keyHosp) > 1) plotTitle <- "Multiple hospitals combined"
+        else {
+            plotTitle <- df %>% 
+                filter(hospital_pk %in% all_of(keyHosp), collection_week==max(collection_week)) %>%
+                mutate(useName=paste0(hospital_name, " (code: ", keyHosp, ") ",city, ", ", state, " ", zip)) %>%
+                pull(useName)
+        }
+    }
+    
+    # Create key plot data
+    p1Data <- df %>%
+        filter(hospital_pk %in% all_of(keyHosp)) %>%
+        select(date=collection_week, names(varMap)) %>%
+        colRenamer(vecRename=varMap) %>%
+        pivot_longer(-c(date)) %>%
+        filter(!is.na(value), value != -999999) %>%
+        group_by(date, name) %>%
+        summarize(value=sum(value, na.rm=TRUE), n=n(), .groups="drop")
+    
+    # Create the facetted plots if requested
+    if(isTRUE(createFacets)) {
+        # Create the key plot
+        p1 <- p1Data %>%
+            ggplot(aes(x=date, y=value)) + 
+            geom_line() + 
+            facet_wrap(~name, scales="free_y") + 
+            lims(y=c(0, NA)) + 
+            labs(x=NULL, y="Average weekly value", title=plotTitle)
+        print(p1)
+    }
+    
+    # Create the stacked bar plots
+    for(plotType in names(p2List)) {
+        
+        # Create the base plot
+        p2 <- ggplot(data=p1Data, aes(x=date, y=value))
+        
+        # Add the columns
+        for(vCol in names(p2List[[plotType]][["colsPlot"]])) {
+            p2 <- p2 + geom_col(data=mutate(filter(p1Data, name %in% vCol), fill=vCol), aes(fill=fill))
+        }
+        
+        # Add the lines
+        p2 <- p2 + geom_line(data=filter(p1Data, name %in% names(p2List[[plotType]][["linesPlot"]])), 
+                             aes(group=name, color=name), 
+                             size=1.5
+        )
+        
+        # Add the limits, labels, and scales
+        p2 <- p2 + 
+            lims(y=c(0, NA)) + 
+            labs(x=NULL, y="Average weekly value", title=plotTitle, subtitle=plotType) +
+            scale_color_manual("Capacity", values=p2List[[plotType]][["linesPlot"]]) + 
+            scale_fill_manual("Occupied", values=p2List[[plotType]][["colsPlot"]])
+        
+        # Print the plot
+        print(p2)
+        
+    }
+    
+    # Return the data if requested
+    if(isTRUE(returnData)) return(p1Data)
+    
+}
+
+
+# Create state-level data map
+createGeoMap <- function(df, 
+                         yVars,
+                         xVar="collection_week",
+                         facetVar="state",
+                         lstFilter=list(), 
+                         lstExclude=list(), 
+                         vecSelect=NULL, 
+                         vecRename=c(), 
+                         selfList=list(), 
+                         fullList=list(), 
+                         plotTitle=NULL, 
+                         plotSubtitle=NULL,
+                         plotYLab=NULL, 
+                         plotScaleLabel=NULL, 
+                         createPlot=TRUE,
+                         facetScaleType="fixed",
+                         hLine=1,
+                         noX=TRUE, 
+                         noY=FALSE,
+                         returnData=FALSE
+) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame containing the relevant data
+    # yVars: list of the y-variables, of form list("yVar1"=c("label"="y1Label", "color"="y1Color"), "yVar2"=...)
+    # xVar: the x-variable to use for the plots
+    # facetVar: the variable for faceting the data
+    # lstFilter: a list for filtering records, of form list("field"=c("allowed values"))
+    # lstExclude: a list for filtering records, of form list("field"=c("disallowed values"))
+    # vecSelect: vector for variables to keep c('keep1', "keep2", ...), NULL means keep all
+    # vecRename: vector for renaming c('existing name'='new name'), can be any length from 0 to ncol(df)
+    # selfList: list for functions to apply to self, list('variable'=fn) will apply variable=fn(variable)
+    #           processed in order, so more than one function can be applied to self
+    # fullList: list for general functions to be applied, list('new variable'=expression(code))
+    #           will create 'new variable' as eval(expression(code))
+    #           for now, requires passing an expression
+    # plotTitle: title for plot
+    # plotSubtitle: subtitle for plot
+    # plotYLab: y-label for plot
+    # plotScaleLabel: scale label for plot
+    # createPlot: boolean, should the plot be created and printed?
+    # facetScaleType: argument passed to facet_wrap - "fixed", "free", "free_y", "free_x"
+    # hLine: height for a dashed horizontal line (NULL means none)
+    # noX: boolean, should the x-axis be removed?
+    # noY: boolean, should the y-axis be removed?
+    # returnData: boolean, should the data frame dfMod be returned?
+    
+    # Create the modified data
+    dfMod <- df %>%
+        rowFilter(lstFilter=lstFilter, lstExclude=lstExclude) %>%
+        colSelector(vecSelect=vecSelect) %>%
+        colRenamer(vecRename=vecRename) %>%
+        colMutater(selfList=selfList, fullList=fullList)
+    
+    if(isTRUE(createPlot)) {
+        
+        # Create the plot data frame
+        dfPlot <- dfMod %>%
+            colSelector(c(facetVar, xVar, names(yVars))) %>%
+            pivot_longer(names(yVars))
+        
+        # Create the color mapper
+        vecColor <- sapply(yVars, FUN=function(x) x[["color"]]) %>%
+            purrr::set_names(names(yVars))
+        
+        # Create the plot
+        p1 <- dfPlot %>%
+            colRenamer(c("facetVar") %>% purrr::set_names(facetVar)) %>%
+            ggplot(aes_string(x=xVar, y="value", group="name", color="name")) + 
+            geom_line() +
+            scale_color_manual(plotScaleLabel, 
+                               values=vecColor, 
+                               labels=sapply(yVars, FUN=function(x) x[["label"]])
+            ) + 
+            labs(x=NULL, y=plotYLab, title=plotTitle, subtitle=plotSubtitle) + 
+            lims(y=c(0, NA)) +
+            facet_geo(~facetVar, scales=facetScaleType)
+        if(!is.null(hLine)) p1 <- p1 + geom_hline(yintercept=hLine, lty=2)
+        if(isTRUE(noX)) p1 <- p1 + theme(axis.text.x = element_blank())
+        if(isTRUE(noY)) p1 <- p1 + theme(axis.text.y = element_blank())
+        
+        # Print the plot
+        print(p1)
+        
+    }
+    
+    # Return the data if requested(?)
+    if(isTRUE(returnData)) return(dfMod)
+    
+}
+
+
+# Select and filter HHS data as needed
+skinnyHHS <- function(df, 
+                      keyStates=c(state.abb, "DC"), 
+                      idCols=c("state", "collection_week", "hospital_pk"),
+                      varMapper=hhsMapper
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the initial data frame
+    # keyState: states to include for filtering
+    # varMapper: variables to include and output names (named vector of form c("original name"="modified name"))
+    
+    df %>%
+        filter(state %in% all_of(keyStates)) %>%
+        colSelector(c(all_of(idCols), names(varMapper))) %>%
+        colRenamer(varMapper)
+    
+}
+
+
+# Impute values for hospital capacity
+imputeNACapacity <- function(df, 
+                             extraNA=c(-999999),
+                             convertAllNA=TRUE,
+                             idVars=c("hospital_pk"), 
+                             sortVars=c("collection_week"),
+                             varsToImpute=c("total_beds", "adult_beds"), 
+                             varUsedToImpute=c("inpatient_beds")
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the initial data frame
+    # extraNA: values that should be treated as NA
+    # convertAllNA: boolean, should all extraNA values be converted in all numeric columns?
+    #               if FALSE, extraNA values will not be converted, though imputing will treat as NA
+    # varsToImpute: variables to be imputed
+    # varUsedToImpute: percent changes in this variable assumed to drive percent changes in varsToImpute if NA
+    
+    # Convert NA if requested
+    if(isTRUE(convertAllNA)) {
+        df <- df %>%
+            mutate(across(where(is.numeric), 
+                          .fns=function(x) ifelse(is.na(x), NA, ifelse(x %in% all_of(extraNA), NA, x))
+            )
+            )
+    }
+    
+    # Impute values and return data
+    df %>%
+        arrange(across(all_of(c(idVars, sortVars)))) %>%
+        group_by(across(all_of(idVars))) %>%
+        mutate(across(all_of(varsToImpute), 
+                      .fns=function(x) testImputeNA(x=x, y=get(varUsedToImpute), naValues=extraNA)
+        )
+        ) %>%
+        ungroup()
+    
+}
+
+
+# sum the imputed HHS data to the state-week level
+sumImputedHHS <- function(df, 
+                          groupVars=c("state", "collection_week")
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the initial data frame
+    # groupVars: variables for summing the data to
+    
+    df %>%
+        group_by(across(all_of(groupVars))) %>%
+        summarize(across(where(is.numeric), .fns=sum, na.rm=TRUE), n=n(),.groups="drop")
     
 }
