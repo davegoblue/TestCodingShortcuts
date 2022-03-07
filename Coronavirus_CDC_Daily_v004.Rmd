@@ -452,3 +452,102 @@ hospPerCap_220304 <- hospAgePerCapita(readFromRDS("dfStateAgeBucket2019"),
 
 ```
 
+Peaks and valleys are converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+peakValleyCDCDaily <- function(df, 
+                               burdenVars=c("new_deaths", "new_cases", "inp"), 
+                               burdenWidth=71, 
+                               burdenRollMean=7,
+                               minPopVax=8000000, 
+                               vaxVars=c("vxa", "vxc"), 
+                               minDateVax="2020-12-01", 
+                               vaxWidth=71, 
+                               vaxRollMean=21
+                               ) {
+    
+    # FUNCTION ARGUMENTS
+    # df: data frame (can also pass a list that contains data frame "dfPerCapita")
+    # burdenVars: variables to be used for burden peaks and valleys
+    # burdenWidth: window size to be used for burden data
+    # burdenRollMean: rolling mean to use for smoothing burden data
+    # minPopVax: minimum population for state vaccines to be plotted
+    # vaxVars: variables to be used for vaccines peaks and valleys
+    # minDateVax: earliest day to use for vaccines plotting
+    # vaxWidth: window size to be used for vaccines data
+    # vaxRollMean: rolling mean to use for smoothing vaccines data
+
+    # Only works for specified burdenVars and vaxVars (fix)
+    if(!all.equal(sort(burdenVars), sort(c("new_deaths", "new_cases", "inp")))) stop("\nNot yet enabled - burden\n")
+    if(!all.equal(sort(vaxVars), sort(c("vxa", "vxc")))) stop("\nNot yet enabled - vaccines\n")
+    
+    # Extract data frame from df if needed
+    if("list" %in% class(df)) df <- df[["dfPerCapita"]]
+
+    # Burden data
+    df %>%
+        mutate(regn=c(as.character(state.region), "South")[match(state, c(state.abb, "DC"))]) %>%
+        makePeakValley(numVar=burdenVars, 
+                       windowWidth = burdenWidth, 
+                       rollMean=burdenRollMean, 
+                       facetVar=c("regn"), 
+                       fnNumVar=list("new_deaths"=function(x) x, 
+                                     "new_cases"=function(x) x/1000,
+                                     "inp"=function(x) x/1000
+                                     ), 
+                       fnPeak=list("new_deaths"=function(x) x+100, 
+                                   "new_cases"=function(x) x+10, 
+                                   "inp"=function(x) x+10
+                                   ),
+                       fnValley=list("new_deaths"=function(x) x-100, 
+                                     "new_cases"=function(x) x-5, 
+                                     "inp"=function(x) x-5
+                                     ),
+                       useTitle=c("new_deaths"="US coronavirus deaths", 
+                                  "new_cases"="US coronavirus cases", 
+                                  "inp"="US coronavirus total hospitalized"
+                                  ), 
+                       yLab=c("new_deaths"=paste0("Rolling ", burdenRollMean, "-day mean deaths"), 
+                              "new_cases"=paste0("Rolling ", burdenRollMean, "-day mean cases (000)"), 
+                              "inp"=paste0("Rolling ", burdenRollMean, "-day mean in hospital (000)")
+                              )
+                       )
+
+    # Vaccinations data for states with at least threshold population
+    df %>%
+        inner_join(getStateData(), by=c("state")) %>%
+        filter(pop >= minPopVax) %>%
+        select(c("state", "date", all_of(vaxVars))) %>%
+        arrange(date, state) %>%
+        group_by(state) %>%
+        mutate(across(c(vxa, vxc), .fns=function(x) x-lag(x))) %>%
+        ungroup() %>%
+        mutate(regn=c(as.character(state.region), "South")[match(state, c(state.abb, "DC"))]) %>%
+        filter(date >= minDateVax) %>%
+        makePeakValley(numVar=vaxVars, 
+                       windowWidth = vaxWidth, 
+                       rollMean=vaxRollMean, 
+                       facetVar=c("state"), 
+                       fnNumVar=list("vxa"=function(x) x/1000, 
+                                     "vxc"=function(x) x/1000
+                                     ), 
+                       fnPeak=list("vxa"=function(x) x+25*max(x, na.rm=TRUE)/400, 
+                                   "vxc"=function(x) x+25*max(x, na.rm=TRUE)/400
+                                   ),
+                       fnValley=list("vxa"=function(x) x-25*max(x, na.rm=TRUE)/400, 
+                                     "vxc"=function(x) x-25*max(x, na.rm=TRUE)/400
+                                     ),
+                       fnGroupFacet=TRUE,
+                       useTitle=c("vxa"=paste0("Vaccines adminsitered (states with population >= ", minPopVax, ")"), 
+                                  "vxc"=paste0("Became fully vaccinated (states with population >= ", minPopVax, ")")
+                                  ), 
+                       yLab=c("vxa"=paste0("Rolling ", vaxRollMean, "-day mean administered (000)"),
+                              "vxc"=paste0("Rolling ", vaxRollMean,"-day mean completed (000)")
+                              )
+                       )
+    
+}
+
+peakValleyCDCDaily(cdc_daily_220304)
+
+```
