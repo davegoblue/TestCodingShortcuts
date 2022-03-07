@@ -2791,3 +2791,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 downloads and processes latest data  
 * Coronavirus_CDC_Daily_v004 post-processes latest data  
   
+### Expansions week of 07-MAR-2022  
+* Coronavirus_CDC_Daily_v004 includes peakValleyCDCDaily()  
+  
