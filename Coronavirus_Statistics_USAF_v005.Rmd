@@ -3959,3 +3959,76 @@ saveToRDS(cty_newdata_20220308, ovrWriteError=FALSE)
 
 ```
   
+Download of the vaccines data is converted to functional form:  
+```{r fig.height=9, fig.width=9}
+
+downloadCountyVaccines <- function(loc, 
+                                   url="https://data.cdc.gov/api/views/8xkx-amqh/rows.csv?accessType=DOWNLOAD"
+                                   ) {
+
+    # Download the file if it has not yet been downloaded
+    if(!file.exists(loc)) fileDownload(loc, url=url)
+
+    # Read file and keep only select variables
+    df <- fileRead(loc) %>%
+        select(date=Date, 
+               FIPS, 
+               countyName=Recip_County, 
+               state=Recip_State, 
+               vxcpoppct=Series_Complete_Pop_Pct, 
+               vxcgte18pct=Series_Complete_18PlusPop_Pct, 
+               vxcgte65pct=Series_Complete_65PlusPop_Pct, 
+               pop=Census2019, 
+               popgte18=Census2019_18PlusPop,
+               popgte65=Census2019_65PlusPop
+               ) %>%
+        mutate(date=lubridate::mdy(date))
+
+    # Find state records other than 50 states plus DC
+    cat("\nRecords from other than 50 states and DC:\n")
+    df %>%
+        count(state) %>%
+        filter(!(state %in% c(state.abb, "DC"))) %>%
+        print()
+
+    # Range of dates include by state
+    p0 <- df %>%
+        filter(state %in% c(state.abb, "DC")) %>%
+        count(date, state) %>%
+        ggplot(aes(x=state, y=date)) + 
+        geom_point(aes(color=n)) + 
+        coord_flip() + 
+        labs(x=NULL, y=NULL, title="Counties reporting by state and date")
+    print(p0)
+
+    # Box plot for vaccine data by state
+    for (keyVar in c("vxcpoppct", "vxcgte18pct", "vxcgte65pct")) {
+        p1 <- df %>%
+            filter(date==max(date), state %in% c(state.abb, "DC"), FIPS != "UNK") %>%
+            select(date, state, all_of(keyVar)) %>%
+            purrr::set_names(c("date", "state", "vax")) %>%
+            ggplot(aes(x=fct_reorder(state, vax, median, na.rm=TRUE), y=vax)) + 
+            geom_boxplot(fill="lightblue") + 
+            coord_flip() + 
+            labs(x=NULL, 
+                 y="% fully vaccinated", 
+                 title=paste0("Fully vaccinated by county as of latest date: ", keyVar)
+                 )
+        print(p1)
+    }
+    
+    # Return the data file
+    df
+    
+}
+
+```
+  
+The function is then applied, with results cached:  
+```{r fig.height=9, fig.width=9, cache=TRUE}
+
+vaxPartialRaw_20220309 <- downloadCountyVaccines(loc="./RInputFiles/Coronavirus/county_vaccine_20220309.csv")
+vaxPartialRaw_20220309
+
+```
+  
