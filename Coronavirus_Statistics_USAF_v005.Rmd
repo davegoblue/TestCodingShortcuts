@@ -4032,3 +4032,95 @@ vaxPartialRaw_20220309
 
 ```
   
+Functions are created to repair population data in the vaccines data and create a state-level dataset and summary:  
+```{r fig.height=9, fig.width=9}
+
+repairVaxPopulation <- function(dfRaw, 
+                                colsRepair=c("popgte65")
+                                ) {
+
+    # FUNCTION ARGUMENTS:
+    # dfRaw: raw vaccines data file
+    # colsRepair: vector of column names to be repaired
+    
+    # Create a population data frame for the specified variables
+    popTemp <- dfRaw %>%
+        filter(state %in% c(state.abb, "DC"), FIPS != "UNK") %>%
+        select(state, FIPS, all_of(colsRepair)) %>%
+        group_by(state, FIPS) %>%
+        summarize(across(all_of(colsRepair), .fns=list(minpop=~min(.x, na.rm=TRUE), 
+                                                       maxpop=~max(.x, na.rm=TRUE), 
+                                                       nnA=~sum(is.na(.x))
+                                                       )
+                         ), 
+                  n=n(), 
+                  .groups="drop"
+                  )
+    
+    # Check the number of NA records
+    cat("\nCount of NA records by column\n")
+    popTemp %>% is.na() %>% colSums() %>% print()
+    
+    # Check that minimum and maximum are equal
+    cat("\nRecords where minimum and maximum population differ")
+    popTemp %>%
+        select(state, FIPS, contains("minpop"), contains("maxpop")) %>%
+        pivot_longer(-c(state, FIPS)) %>%
+        tidyr::separate(name, into=c("age", "type")) %>%
+        pivot_wider(c(state, FIPS, age), names_from="type") %>%
+        filter(minpop != maxpop) %>%
+        print()
+    cat("\n\n")
+
+    # Keep the relevant variables
+    popMerge <- popTemp %>%
+        select(state, FIPS, contains("maxpop")) %>%
+        colRenamer(colsRepair %>% 
+                       purrr::set_names(paste(colsRepair, rep("maxpop", length(colsRepair)), sep="_"))
+                   )
+    
+    # Repair the population data in the raw file (excluding "UNK")
+    dfRaw %>%
+        filter(state %in% c(state.abb, "DC"), FIPS != "UNK") %>%
+        select(-all_of(colsRepair)) %>%
+        left_join(popMerge, by=c("state", "FIPS"))
+    
+}
+
+# Repair the data for 65+
+vaxFix65_20220309 <- repairVaxPopulation(vaxPartialRaw_20220309, colsRepair=c("popgte65"))
+
+# vaxState_20220126 <- vaxFix65_20220126 %>%
+#     filter(state %in% c(state.abb, "DC"), FIPS != "UNK") %>%
+#     group_by(date, state) %>%
+#     summarize(ctypoppct=sum(vxcpoppct*pop)/sum(pop), 
+#               ctygte18pct=sum(vxcgte18pct*popgte18)/sum(popgte18),
+#               ctygte65pct=sum(vxcgte65pct*popgte65)/sum(popgte65),
+#               across(starts_with("pop"), sum, na.rm=TRUE), 
+#               .groups="drop"
+#               )
+# 
+# allState_20220126 <- readFromRDS("cdc_daily_220103")$dfPerCapita %>%
+#     select(state, date, vxcpoppct, vxcgte18pct, vxcgte65pct) %>%
+#     filter(state %in% c(state.abb, "DC")) %>%
+#     right_join(vaxState_20220126, by=c("state", "date"))
+# allState_20220126
+# 
+# allState_20220126 %>%
+#     filter(state=="FL", date >= "2020-12-15") %>%
+#     select(-starts_with("pop")) %>%
+#     pivot_longer(-c(state, date)) %>%
+#     mutate(src=ifelse(str_detect(name, "^cty"), "Summed County", "State"), 
+#            age=case_when(str_detect(name, "65pct") ~ "65+", 
+#                          str_detect(name, "18pct") ~ "18+", 
+#                          TRUE ~ "All")
+#            ) %>%
+#     ggplot(aes(x=date, y=value)) + 
+#     geom_line(aes(group=src, color=src)) + 
+#     facet_wrap(~age) + 
+#     labs(x=NULL, y="% Fully Vaccinated", title="Evolution of FL vaccinated data") + 
+#     lims(y=c(0, 100)) + 
+#     scale_color_discrete("Source")
+
+```
+  
