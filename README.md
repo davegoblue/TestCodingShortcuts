@@ -2796,4 +2796,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 updates hospital capacity maps  
 * Coronavirus_Statistics_USAF_v005 downloads latest cases and deaths data  
 * Coronavirus_Statistics_USAF_v005 includes function downloadCountyVaccines()  
+* Coronavirus_Statistics_USAF_v005 includes function repairVaxPopulation()  
   
