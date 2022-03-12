@@ -2797,4 +2797,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 downloads latest cases and deaths data  
 * Coronavirus_Statistics_USAF_v005 includes function downloadCountyVaccines()  
 * Coronavirus_Statistics_USAF_v005 includes function repairVaxPopulation()  
+* Coronavirus_Statistics_USAF_v005 includes function compareVaxState()  
   
