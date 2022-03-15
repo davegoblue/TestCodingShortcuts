@@ -4159,18 +4159,28 @@ Vaccine evolution plots can be converted to functional form:
 
 compareVaxEvolution <- function(df, 
                                 keyStates, 
-                                minDate="2020-12-15", 
-                                textLatest=FALSE
+                                minDate=NULL, 
+                                maxDate=NULL, 
+                                createPlot=TRUE, 
+                                textLatest=FALSE,
+                                returnData=!isTRUE(createPlot)
                                 ) {
     
     # FUNCTION ARGUMENTS:
     # df: a processed state-level vaccines data frame
     # keyStates: states to be plotted
-    # minDate: starting date for plots
+    # minDate: starting date for plots (NULL means earliest in data)
+    # maxDate: ending date for plots (NULL means latest in data)
+    # createPlot: boolean, should a plot be printed?
     # textLatest: boolean, should the latest value be plotted?
-    
-    # Create the base plot
-    p1 <- df %>%
+    # returnData: boolean, should the data frame be returned?
+
+    # Find minDate and maxDate is passed as NULL
+    if(is.null(minDate)) minDate <- min(df$date)
+    if(is.null(maxDate)) maxDate <- max(df$date)    
+
+    # Create the base plotting data
+    dfPlot <- df %>%
         filter(state %in% all_of(keyStates), date >= minDate) %>%
         select(-starts_with("pop")) %>%
         pivot_longer(-c(state, date)) %>%
@@ -4178,39 +4188,50 @@ compareVaxEvolution <- function(df,
                age=case_when(str_detect(name, "65pct") ~ "65+",
                              str_detect(name, "18pct") ~ "18+",
                              TRUE ~ "All")
-               ) %>%
-        filter(!is.na(value)) %>%
-        ggplot(aes(x=date, y=value)) +
-        geom_line(aes(group=src, color=src)) +
-        labs(x=NULL, 
-             y="% Fully Vaccinated", 
-             title=paste0("Evolution of vaccinated in: ", paste(keyStates, collapse=", "))
-             ) +
-        lims(y=c(0, 100)) +
-        geom_hline(yintercept=100, lty=2) +
-        scale_color_discrete("Source")
+               )
     
-    # Add the latest value if requested
-    if(isTRUE(textLatest)) {
-        p1 <- p1 + geom_text(data=~ungroup(filter(group_by(., src), date==max(date))), 
-                             aes(y=value + ifelse(src=="Summed County", -5, 5), 
-                                 color=src, 
-                                 label=round(value)
+    # Create the base plot and add-ons, if requested
+    if(isTRUE(createPlot)) {
+    
+        p1 <- dfPlot %>%
+            filter(!is.na(value)) %>%
+            ggplot(aes(x=date, y=value)) +
+            geom_line(aes(group=src, color=src)) +
+            labs(x=NULL, 
+                 y="% Fully Vaccinated", 
+                 title=paste0("Evolution of vaccinated in: ", paste(keyStates, collapse=", "))
+                 ) +
+            lims(y=c(0, 100)) +
+            geom_hline(yintercept=100, lty=2) +
+            scale_color_discrete("Source")
+    
+        # Add the latest value if requested
+        if(isTRUE(textLatest)) {
+            p1 <- p1 + geom_text(data=~ungroup(filter(group_by(., src), date==max(date))), 
+                                 aes(y=value + ifelse(src=="Summed County", -5, 5), 
+                                     color=src, 
+                                     label=round(value)
+                                     )
                                  )
-                             )
+        }
+    
+        # For a single state, facet by age; otherwise facet by age and state
+        if(length(keyStates)==1) p1 <- p1 + facet_wrap(~age)
+        else p1 <- p1 + facet_grid(state ~ age)
+    
+        # Print the plot
+        print(p1)
+        
     }
     
-    # For a single state, facet by age; otherwise facet by age and state
-    if(length(keyStates)==1) p1 <- p1 + facet_wrap(~age)
-    else p1 <- p1 + facet_grid(state ~ age)
-    
-    # Return the plot
-    p1
+    # Return the data if requested
+    if(isTRUE(returnData)) dfPlot
     
 }
 
 compareVaxEvolution(allState_20220309, keyStates="FL")
 compareVaxEvolution(allState_20220309, keyStates=c("CA", "TX", "FL", "NY", "PA", "IL"), textLatest=TRUE)
+compareVaxEvolution(allState_20220309, keyStates=c("CA", "TX", "FL", "NY", "PA", "IL"), createPlot=FALSE)
 
 ```
   
