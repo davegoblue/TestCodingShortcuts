@@ -4181,7 +4181,7 @@ compareVaxEvolution <- function(df,
 
     # Create the base plotting data
     dfPlot <- df %>%
-        filter(state %in% all_of(keyStates), date >= minDate) %>%
+        filter(state %in% all_of(keyStates), date >= minDate, date <= maxDate) %>%
         select(-starts_with("pop")) %>%
         pivot_longer(-c(state, date)) %>%
         mutate(src=ifelse(str_detect(name, "^cty"), "Summed County", "State"),
@@ -4232,6 +4232,89 @@ compareVaxEvolution <- function(df,
 compareVaxEvolution(allState_20220309, keyStates="FL")
 compareVaxEvolution(allState_20220309, keyStates=c("CA", "TX", "FL", "NY", "PA", "IL"), textLatest=TRUE)
 compareVaxEvolution(allState_20220309, keyStates=c("CA", "TX", "FL", "NY", "PA", "IL"), createPlot=FALSE)
+
+```
+  
+A function is created for scoring differences in reported vaccine status by state:    
+```{r fig.height=9, fig.width=9}
+
+scoreStateVaxSimilarity <- function(df, 
+                                    keyStates=c(state.abb, "DC"), 
+                                    minDate=NULL, 
+                                    maxDate=NULL
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a state-level vaccines data frame
+    # keyStates: states to be included in the scoring file
+    # minDate: earliest date for scoring (NULL means determine from data)
+    # maxDate: latest date for scoring (NULL means determine from data)
+    
+    # Get the vaccine evolution data
+    dfScore <- compareVaxEvolution(df, keyStates=keyStates, minDate=minDate, maxDate=maxDate, createPlot=FALSE)
+    
+    # Wrangle and return the scoring data
+    dfScore %>%
+        mutate(value=ifelse(is.na(value), 0, value), src=ifelse(src=="State", "cdcState", "ctySum")) %>%
+        pivot_wider(c(state, date, age), names_from="src", values_from="value") %>%
+        mutate(ym=customYYYYMM(date)) %>%
+        group_by(state, ym, age) %>%
+        summarize(n=n(), 
+                  rmse=sqrt(mean((cdcState-ctySum)**2)), 
+                  cdcState=mean(cdcState), 
+                  ctySum=mean(ctySum), 
+                  .groups="drop"
+                  )
+
+}
+
+similarityScore_20220309 <- scoreStateVaxSimilarity(allState_20220309, minDate="2021-01-01", maxDate="2022-02-28")
+similarityScore_20220309
+
+#     ggplot(aes(x=lubridate::ym(ym), y=rmse)) + 
+#     geom_line(aes(color=state)) + 
+#     geom_text(data=~summarize(group_by(., state, age), rmse=mean(rmse), .groups="drop"), 
+#               aes(x=lubridate::ym("2021-01"), y=Inf, label=paste0("Mean RMSE: ", round(rmse, 1))), 
+#               hjust=0, 
+#               vjust=1, 
+#               size=3
+#               ) +
+#     geom_hline(data=~summarize(group_by(., state, age), rmse=mean(rmse), .groups="drop"), 
+#                aes(yintercept=rmse, color=state), 
+#                lty=2
+#                ) +
+#     labs(x="Month", 
+#          y="RMSE", 
+#          title="Average monntly difference in vaccination rate by age group and source", 
+#          subtitle="CDC State Data vs Summed County Data"
+#          ) + 
+#     facet_grid(state~age, scales="free_y")
+# 
+# stateAgeVaxEvolution(allState_20220126, 
+#                      keyState=c(state.abb, "DC"), 
+#                      createPlot = FALSE
+#                      ) %>%
+#     mutate(value=ifelse(is.na(value), 0, value), src=ifelse(src=="State", "cdcState", "ctySum")) %>%
+#     pivot_wider(c(state, date, age), names_from="src", values_from="value") %>%
+#     filter(date <= "2021-12-24") %>%
+#     mutate(ym=customYYYYMM(date)) %>%
+#     group_by(state, ym, age) %>%
+#     summarize(n=n(), 
+#               rmse=sqrt(mean((cdcState-ctySum)**2)), 
+#               cdcState=mean(cdcState), 
+#               ctySum=mean(ctySum), 
+#               .groups="drop"
+#               ) %>% 
+#     group_by(state, age) %>% 
+#     summarize(rmse=mean(rmse), .groups="drop") %>% 
+#     ggplot(aes(x=fct_reorder(state, rmse), y=rmse)) + 
+#     geom_col(fill="lightblue") + 
+#     coord_flip() + 
+#     facet_wrap(~age) + 
+#     labs(x=NULL, 
+#          y="RMSE (Vaccinated by State/Age difference by source)", 
+#          title="Difference in vaccinated by state data by source"
+#         )
 
 ```
   
