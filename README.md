@@ -2803,4 +2803,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 14-MAR-2022  
 * Coronavirus_Statistics_USAF_v005 includes compareVaxEvolution()  
 * Coronavirus_Statistics_USAF_v005 updates compareVaxEvolution()  
+* Coronavirus_Statistics_USAF_v005 includes scoreStateVaxSimilarity()  
   
