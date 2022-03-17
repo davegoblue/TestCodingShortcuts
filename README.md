@@ -2804,4 +2804,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 includes compareVaxEvolution()  
 * Coronavirus_Statistics_USAF_v005 updates compareVaxEvolution()  
 * Coronavirus_Statistics_USAF_v005 includes scoreStateVaxSimilarity()  
+* Coronavirus_Statistics_USAF_v005 includes stateSimilarityScorePlot()  
   
