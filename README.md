@@ -2807,4 +2807,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 includes stateSimilarityScorePlot()  
 * Coronavirus_Statistics_USAF_v005 updates stateSimilarityScorePlot()  
 * Coronavirus_Statistics_USAF_v005 runs countyCorr()  
+* Coronavirus_Statistics_USAF_v005 includes facetted burden maps  
   
