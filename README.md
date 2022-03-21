@@ -2809,3 +2809,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 runs countyCorr()  
 * Coronavirus_Statistics_USAF_v005 includes facetted burden maps  
   
+### Expansions week of 21-MAR-2022  
+* Coronavirus_Statistics_USAF_v005 includes createBurdenCountyDate()  
+  
