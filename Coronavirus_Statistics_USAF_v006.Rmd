@@ -1,0 +1,89 @@
+---
+title: "Coronavirus US - USA Facts"
+author: "davegoblue"
+date: "6/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+This module builds on code contained in Coronavirus_Statistics_USAF_v004.Rmd.  This file includes the latest code for analyzing data from [USA Facts](https://usafacts.org/visualizations/coronavirus-covid-19-spread-map/).  USA Facts maintains data on cases and deaths by county for coronavirus in the US.  Downloaded data are unique by county with date as a column and a separate file for each of cases, deaths, and population.
+
+The intent of this code is to source updated functions that allow for readRunUSAFacts() to be run to obtain, read, process, and analyze data from USA Facts.
+
+## Sourcing Functions  
+The tidyverse library is loaded, and the functions used for CDC daily processing are sourced.  Additionally, specific functions for USA Facts are also sourced:  
+```{r}
+
+library(tidyverse)
+
+# Functions are available in source file
+source("./Generic_Added_Utility_Functions_202105_v001.R")
+source("./Coronavirus_CDC_Daily_Functions_v001.R")
+source("./Coronavirus_USAF_Functions_v001.R")
+
+```
+  
+Further, the mapping file specific to USA Facts is sourced:  
+```{r}
+
+source("./Coronavirus_USAF_Default_Mappings_v001.R")
+
+```
+  
+Updated functions for diagnoseClusters(), createDetailedSummaries(), createSummary(), and helperSummaryMap() are added to Coronavirus_USAF_Functions_v001.R. These functions should be checked for consistency with state-level data with just a single copy kept later.
+
+## Example Process  
+The functions are tested on previously downloaded data, with results cached:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+urlMapper[["usafCase"]] <- "https://static.usafacts.org/public/data/covid-19/covid_confirmed_usafacts.csv"
+urlMapper[["usafDeath"]] <- "https://static.usafacts.org/public/data/covid-19/covid_deaths_usafacts.csv"
+urlMapper[["usafPop"]] <- "https://static.usafacts.org/public/data/covid-19/covid_county_population_usafacts.csv"
+
+readList <- list("usafCase"="./RInputFiles/Coronavirus/covid_confirmed_usafacts_downloaded_20220308.csv", 
+                 "usafDeath"="./RInputFiles/Coronavirus/covid_deaths_usafacts_downloaded_20220308.csv"
+                 )
+compareList <- list("usafCase"=readFromRDS("cty_newdata_20220202")$dfRaw$usafCase, 
+                    "usafDeath"=readFromRDS("cty_newdata_20220202")$dfRaw$usafDeath
+                    )
+
+# Use existing clusters
+cty_chkdata_20220308 <- readRunUSAFacts(maxDate="2022-03-06", 
+                                        downloadTo=lapply(readList, 
+                                                          FUN=function(x) if(file.exists(x)) NA else x
+                                                          ),
+                                        readFrom=readList, 
+                                        compareFile=compareList, 
+                                        writeLog="./RInputFiles/Coronavirus/USAF_NewData_20220308_chk_v005.log", 
+                                        ovrwriteLog=TRUE,
+                                        useClusters=readFromRDS("cty_newdata_20210813")$useClusters,
+                                        skipAssessmentPlots=FALSE,
+                                        brewPalette="Paired"
+                                        )
+
+# Plot all counties based on closest cluster
+sparseCountyClusterMap(cty_chkdata_20220308$useClusters, 
+                       caption="Includes only counties with 25k+ population",
+                       brewPalette="viridis"
+                       )
+
+# Save the check file
+saveToRDS(cty_chkdata_20220308, ovrWriteError=FALSE)
+
+# Confirm that it is identical to the previous process
+cty_newdata_20220308 <- readFromRDS("cty_newdata_20220308")
+# Same names in the list
+all.equal(names(cty_chkdata_20220308), names(cty_newdata_20220308))
+# Identical items in the list
+sapply(names(cty_chkdata_20220308), 
+       FUN=function(x) identical(cty_chkdata_20220308[[x]], cty_newdata_20220308[[x]])
+       )
+# ggplot2 objects are never identical due to environment; confirm they are all.equal
+all.equal(cty_chkdata_20220308$plotDataList, cty_newdata_20220308$plotDataList)
+
+```
+
