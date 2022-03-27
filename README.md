@@ -2816,4 +2816,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 updates makeBurdenDatePlot()  
 * Coronavirus_Statistics_USAF_v006 created  
 * Coronavirus_Statistics_USAF_v006 includes vaccines data  
+* Coronavirus_Statistics_USAF_v006 includes county-level correlations  
   
