@@ -2818,3 +2818,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 includes vaccines data  
 * Coronavirus_Statistics_USAF_v006 includes county-level correlations  
   
+### Expansions week of 28-MAR-2022  
+* Coronavirus_Statistics_USAF_v005 includes corrVaxBurden()  
+  
