@@ -2820,4 +2820,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 28-MAR-2022  
 * Coronavirus_Statistics_USAF_v005 includes corrVaxBurden()  
+* Coronavirus_Statistics_USAF_v005 includes compareStateSummedCounty()  
   
