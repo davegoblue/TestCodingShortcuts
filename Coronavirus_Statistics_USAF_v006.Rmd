@@ -117,7 +117,8 @@ Comparisons can be run between summed county and state data:
 
 compareStateSummedCounty <- function(dfState, 
                                      dfCounty, 
-                                     inclStates, 
+                                     aggData=FALSE,
+                                     inclStates=if(isTRUE(aggData)) c(state.abb, "DC") else NULL, 
                                      dateThru=NULL, 
                                      makePlot=TRUE, 
                                      returnData=FALSE
@@ -126,11 +127,19 @@ compareStateSummedCounty <- function(dfState,
     # FUNCTION ARGUMENTS:
     # dfState: processed state-level metrics
     # dfCounty: processed county-level metrics
+    # aggData: boolean, should data be aggregated (FALSE means one plot series per state)
     # inclStates: character vector of states to include
     # dateThru: latest date for analyzsis (NULL means use all data)
     # makePlot: boolean, should plots be created for each state?
     # returnData: boolean, should a list of processed dfState and processed dfCounty be returned?
     
+    # Check that at least one state has been passed
+    if(is.null(inclStates) | length(inclStates)==0) {
+        cat("\nNo states passed to compareStateSummedCounty, returning without running function\n")
+        return()
+    }
+    
+    # Create state-level data
     dfState <- dfState %>%
         select(date, state, cases=tot_cases, new_cases, deaths=tot_deaths, new_deaths) %>%
         filter(state %in% all_of(inclStates), 
@@ -143,6 +152,7 @@ compareStateSummedCounty <- function(dfState,
         mutate(value7=zoo::rollmean(value, k=7, fill=NA, align="center"), src="state") %>%
         ungroup()
     
+    # Create summed county-level data
     dfCounty <- dfCounty %>%
         filter(state %in% all_of(inclStates), 
                date <= if(is.null(dateThru)) max(date) else as.Date(dateThru)
@@ -159,6 +169,22 @@ compareStateSummedCounty <- function(dfState,
         filter(!is.na(value7)) %>%
         mutate(src="county")
 
+    # If data are to be aggregated, perform the aggregation
+    if(isTRUE(aggData)) {
+        tempAgg <- function(df) {
+            df %>% 
+                group_by(date, name, src) %>% 
+                summarize(value=specNA(sum)(value, na.rm=TRUE), 
+                          value7=specNA(sum)(value7, na.rm=TRUE), 
+                          .groups="drop"
+                          ) %>% 
+                mutate(state="Aggregated")
+        }
+        dfState <- tempAgg(dfState)
+        dfCounty <- tempAgg(dfCounty)
+        inclStates <- "Aggregated"
+    }
+    
     if(isTRUE(makePlot)) {
         
         for(thisState in all_of(inclStates)) {
@@ -173,7 +199,8 @@ compareStateSummedCounty <- function(dfState,
                      y="Rolling 7-day mean", 
                      title="Summed county burden by metric (7-day mean)", 
                      subtitle=paste0(thisState, " counties")
-                     )
+                     ) + 
+                scale_color_discrete("Source")
             print(p1)
             
         }
@@ -189,6 +216,14 @@ statePerCapita <- readFromRDS("cdc_daily_220304")$dfPerCapita
 tempStateCompareList <- compareStateSummedCounty(dfState=statePerCapita, 
                                                  dfCounty=cty_newdata_20220308$dfPerCapita, 
                                                  inclStates=c("FL", "MO", "OK", "TX"), 
+                                                 dateThru="2022-02-28", 
+                                                 returnData=TRUE
+                                                 )
+tempStateCompareList
+
+tempStateCompareList <- compareStateSummedCounty(dfState=statePerCapita, 
+                                                 dfCounty=cty_newdata_20220308$dfPerCapita, 
+                                                 aggData=TRUE,
                                                  dateThru="2022-02-28", 
                                                  returnData=TRUE
                                                  )
