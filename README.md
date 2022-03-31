@@ -2822,4 +2822,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 includes corrVaxBurden()  
 * Coronavirus_Statistics_USAF_v005 includes compareStateSummedCounty()  
 * Coronavirus_Statistics_USAF_v005 updates compareStateSummedCounty() for aggregation  
+* Coronavirus_Statistics_USAF_v005 compareStateSummedCounty() moved to .R file  
   
