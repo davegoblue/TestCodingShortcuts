@@ -135,3 +135,79 @@ tempStateCompareList
 
 ```
 
+The scoring metric is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+scoreSimilarity <- function(lst, 
+                            minDate=NULL, 
+                            maxDate=NULL, 
+                            makeFacet=TRUE
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: list containing state-level and summed county-level data
+    # minDate: starting date for scoring comparisons (NULL means lowest common date in data)
+    # maxDate: ending date for scoring comparisons (NULL means highest common date in data)
+    # makeFacet: boolean, should plots be facetted, or by variable?
+    #            if not TRUE, plots will be made sideways and sorted by variable
+    
+    # Create minDate and maxDate if not provided
+    if(is.null(minDate)) minDate <- max(min(lst[["dfState"]]$date), min(lst[["dfCounty"]]$date))
+    if(is.null(maxDate)) maxDate <- min(max(lst[["dfState"]]$date), max(lst[["dfCounty"]]$date))
+    
+    plotData <- lst[["dfState"]] %>%
+        filter(!is.na(value7), date >= minDate, date <= maxDate) %>%
+        select(date, state, name, state7=value7) %>%
+        inner_join(lst[["dfCounty"]] %>%
+                       filter(!is.na(value7), date >= minDate, date <= maxDate) %>%
+                       select(date, state, name, county7=value7), 
+                   by=c("state", "name", "date")
+                   ) %>%
+        group_by(state, name) %>%
+        summarize(vars7=var(state7),
+                  varc7=var(county7), 
+                  vardelta=var(state7-county7), 
+                  corc7s7=cor(state7, county7),
+                  n=n(), 
+                  .groups="drop"
+                  ) %>%
+        mutate(varExp=1-2*vardelta/pmax(vars7, varc7))
+    
+    innerMakePlot <- function(keepName, coordFlip=FALSE) {
+        p1 <- plotData %>%
+            filter(name %in% all_of(keepName)) %>%
+            ggplot(aes(x=fct_reorder(state, varExp), y=varExp)) + 
+            geom_col(fill="lightblue") + 
+            geom_text(aes(y=varExp/2, label=round(varExp, 2))) +
+            lims(y=c(NA, 1)) + 
+            labs(x=NULL, 
+                 y="Rough estimate of variance explained", 
+                 title="Similarity of state and summed county metrics", 
+                 subtitle=paste0("Time period: ", minDate, " to ", maxDate)
+                 ) + 
+            facet_wrap(~name)
+        if(isTRUE(coordFlip)) p1 <- p1 + coord_flip()
+        p1
+    }
+    
+    keyVars <- plotData %>% pull(name) %>% unique() %>% sort()
+    if(!isTRUE(makeFacet)) {
+        for(varName in keyVars) innerMakePlot(keepName=varName, coordFlip=TRUE) %>% print()
+    } else {
+        innerMakePlot(keepName=keyVars) %>% print()
+    }
+    
+}
+
+tempStateCompareList_v2 <- compareStateSummedCounty(dfState=statePerCapita, 
+                                                    dfCounty=cty_newdata_20220308$dfPerCapita, 
+                                                    inclStates=c(state.abb, "DC"), 
+                                                    dateThru="2022-02-28", 
+                                                    makePlot=FALSE,
+                                                    returnData=TRUE
+                                                    )
+scoreSimilarity(tempStateCompareList_v2, minDate="2020-02-15", maxDate="2022-02-15", makeFacet=FALSE)
+
+```
+  
+While cumulative deaths and cumulative cases are generally well aligned between sources, rolling 7-day deaths and cases are frequently divergent by source.
