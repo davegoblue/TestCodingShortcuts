@@ -2824,4 +2824,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 updates compareStateSummedCounty() for aggregation  
 * Coronavirus_Statistics_USAF_v005 compareStateSummedCounty() moved to .R file  
 * Coronavirus_Statistics_USAF_v005 includes scoreSimilarity()  
+* Coronavirus_Statistics_USAF_v005 scoreSimilarity() moved to .R file  
   
