@@ -2832,4 +2832,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 integrateStateVaccine() moved to .R file  
 * Coronavirus_Statistics_USAF_v005 function stateAgeVaxEvolution() included  
 * Coronavirus_Statistics_USAF_v005 stateAgeVaxEvolution() moved to .R file  
+* Coronavirus_Statistics_USAF_v005 scores similarity of vaccine data by state and source  
   
