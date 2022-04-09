@@ -178,31 +178,55 @@ stateAgeVaxEvolution(allState_20220309, keyState=c("CT", "AR", "AZ"), minDate="2
 Scores can be created for every state, reflecting differences in the vaccination data:  
 ```{r fig.height=9, fig.width=9}
 
-stateAgeVaxEvolution(allState_20220309, 
-                     keyState=c(state.abb, "DC"), 
-                     createPlot = FALSE
-                     ) %>%
-    mutate(value=ifelse(is.na(value), 0, value), src=ifelse(src=="State", "cdcState", "ctySum")) %>%
-    pivot_wider(c(state, date, age), names_from="src", values_from="value") %>%
-    filter(date <= "2021-12-24") %>%
-    mutate(ym=customYYYYMM(date)) %>%
-    group_by(state, ym, age) %>%
-    summarize(n=n(), 
-              rmse=sqrt(mean((cdcState-ctySum)**2)), 
-              cdcState=mean(cdcState), 
-              ctySum=mean(ctySum), 
-              .groups="drop"
-              ) %>% 
-    group_by(state, age) %>% 
-    summarize(rmse=mean(rmse), .groups="drop") %>% 
-    ggplot(aes(x=fct_reorder(state, rmse), y=rmse)) + 
-    geom_col(fill="lightblue") + 
-    coord_flip() + 
-    facet_wrap(~age) + 
-    labs(x=NULL, 
-         y="RMSE (Vaccinated by State/Age difference by source)", 
-         title="Difference in vaccinated by state data by source"
-         )
+scoreVaxSimilarity <- function(df, 
+                               keyStates=c(state.abb, "DC"), 
+                               minDate=NULL, 
+                               maxDate=NULL, 
+                               returnBaseData=FALSE
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a processed file from integrateStateVaccine()
+    # keyStates: states to include
+    # minDate: earliest date to use for scoring (NULL means use all)
+    # maxDate: latest date to use for scoring (NULL means use all)
+    # returnBaseData: boolean, should dfBase be returned?
+    
+    # Set minDate and maxDate if NULL
+    if(is.null(minDate)) minDate <- min(df$date, na.rm=TRUE)
+    if(is.null(maxDate)) maxDate <- max(df$date, na.rm=TRUE)
+    
+    dfBase <- stateAgeVaxEvolution(df, keyState=keyStates, createPlot = FALSE) %>%
+        mutate(value=ifelse(is.na(value), 0, value), src=ifelse(src=="State", "cdcState", "ctySum")) %>%
+        pivotData(c("state", "date", "age"), nameVar="src", toLonger=FALSE) %>%
+        filter(date >= minDate, date <= maxDate) %>%
+        mutate(ym=customYYYYMM(date)) %>%
+        group_by(state, ym, age) %>%
+        summarize(n=n(), 
+                  rmse=sqrt(mean((cdcState-ctySum)**2)), 
+                  cdcState=mean(cdcState), 
+                  ctySum=mean(ctySum), 
+                  .groups="drop"
+                  )
+    p1 <- dfBase %>%
+        group_by(state, age) %>% 
+        summarize(rmse=mean(rmse), .groups="drop") %>% 
+        ggplot(aes(x=fct_reorder(state, rmse), y=rmse)) + 
+        geom_col(fill="lightblue") + 
+        coord_flip() + 
+        facet_wrap(~age) + 
+        labs(x=NULL, 
+             y="RMSE (Vaccinated by State/Age difference by source)", 
+             title="Difference in vaccinated by state data by source"
+             )
+    print(p1)
+    
+    if(isTRUE(returnBaseData)) return(dfBase)
+    
+}
+
+scoreVaxSimilarity(allState_20220309)
+scoreVaxSimilarity(allState_20220309, minDate="2021-12-01", maxDate="2022-02-28", returnBaseData=TRUE)
 
 stateAgeVaxEvolution(allState_20220309, 
                      keyState=c("HI", "TX", "VA", "GA", "CO", "WV", "VT"), 
