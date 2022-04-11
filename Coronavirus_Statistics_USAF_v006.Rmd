@@ -187,4 +187,128 @@ stateAgeVaxEvolution(allState_20220309,
                      )
 
 ```
+  
+County-level burden process mapping is included:  
+```{r fig.height=9, fig.width=9}
+
+makeBurdenSummary <- function(lst, 
+                              groupVar=c("countyFIPS", "state"), 
+                              numVarFinal=c("tdpm", "tcpm"), 
+                              numVarSum=c("dpm", "cpm"), 
+                              keyDate=NULL,
+                              dateRange=28
+                              ) {
+    
+    # FUNCTION ARGUMENTS
+    # lst: list of processed county burden data
+    # groupVar: grouping variables for the final dataset
+    # numVarFinal: numeric variables to pull data from the key date
+    # numVarSum: numeric variables to sum from the key date interval
+    # keyDate: the key date for the summaries (NULL means use maximum in data)
+    # dateRange: number of days to include in the numeric interval summaries
+    
+    # Find keyDate if not provided, convert to date if not already
+    if(is.null(keyDate)) keyDate <- lst[["dfPerCapita"]] %>% pull(date) %>% max()
+    if(!("Date" %in% class(keyDate))) keyDate <- as.Date(keyDate)
+    
+    # Create summary
+    df <- lst[["dfPerCapita"]] %>% 
+        group_by_at(all_of(groupVar)) %>%
+        summarize(asofDate=keyDate, 
+                  across(all_of(numVarFinal), .fns=~sum(ifelse(date==keyDate, .x, 0))),
+                  across(all_of(numVarSum), 
+                         .fns=~sum(ifelse(date>keyDate-dateRange & date<=keyDate, .x, 0)), 
+                         .names=paste0("{.col}", as.character(dateRange))
+                         ),
+                  .groups="drop"
+                  )
+    
+    # Return the data frame
+    df
+    
+}
+
+createBurdenCountyDate <- function(lst, 
+                                   maxDate, 
+                                   rollBy=months(c(0, -2, -4, -6)), 
+                                   dateSpan=35
+                                   ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: processed county-level list data
+    # maxDate: the latest data to use in the data
+    # rollBy: time to roll from maxDate
+    # dateSpan: number of days in the reporting interval
+    
+    as.Date(maxDate) %>% 
+        lubridate::add_with_rollback(rollBy) %>%
+        purrr::map_dfr(.f=~makeBurdenSummary(lst, keyDate=.x, dateRange=dateSpan))
+
+}
+
+makeBurdenDatePlot <- function(df, 
+                               keyVar,
+                               timeLabel,
+                               plotTitle=NULL,
+                               varLabel=NULL,
+                               varFloor=0,
+                               varCeiling=+Inf,
+                               varDivBy=1,
+                               vecRename=c("countyFIPS"="fips")
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a processed data frame with fips, asofDate, burden
+    # keyVar: character string for variable to be plotted
+    # timeLabel: character string for amount of time (e.g., "1-month" or "5-week")
+    # plotTitle: title for the plot (NULL means infer from other arguments)
+    # varLabel: label for the variable in plot scale (NULL means infer from other arguments)
+    # varFloor: minimum value to be allowed for variable (-Inf means no floor applied)
+    # varCeiling: maximum value to be allowed for variable (Inf means no ceiling applied)
+    # varDivBy: variable should be divivded by this for plotting
+    # vecRename: renaming vector to get desired variables in frame
+    
+    # Create varLabel if passed as NULL
+    if(is.null(varLabel)) {
+        varLabel <- stringr::str_to_upper(stringr::str_extract(keyVar, "^[A-Za-z]*"))
+        if((varDivBy > 1) & isTRUE(all.equal(log10(varDivBy) %% 1, 0))) 
+            varLabel <- paste0(varLabel, "(", stringr::str_replace(varDivBy, pattern="1", replacement=""), "s)")
+        else if (varDivBy != 1) varLabel <- paste0(varLabel, "(units of ", varDivBy, ")")
+    }
+    
+    # Create plotTitle if passed as NULL
+    if(is.null(plotTitle)) 
+        plotTitle <- paste0(timeLabel, 
+                            " coronavirus ", 
+                            if(str_detect(stringr::str_to_upper(keyVar), pattern="CPM")) "cases" else "deaths",
+                            " by county"
+                            )
+    
+    # Create and return plot
+    df %>%
+        colRenamer(vecRename=vecRename) %>%
+        mutate(burden=pmax(pmin(get(all_of(keyVar)), varCeiling), varFloor)/varDivBy) %>%
+        select(fips, burden, asofDate) %>%
+        usmap::plot_usmap(regions="counties", data=., values="burden") + 
+        labs(title=plotTitle, 
+             subtitle=if(varFloor > -Inf | varCeiling < +Inf) "Floors and/or ceilings applied" else NULL, 
+             caption="Source: USA Facts"
+             ) +
+        scale_fill_continuous(paste0(varLabel, "\n", timeLabel), low="grey", high="red") +
+        facet_wrap(~asofDate) + 
+        theme(legend.position="bottom")
+    
+}
+
+dfRoll20220308 <- createBurdenCountyDate(cty_newdata_20220308, 
+                                         maxDate="2022-02-28", 
+                                         rollBy=months(c(0, -3, -6, -9)), 
+                                         dateSpan=91
+                                         )
+dfRoll20220308
+
+makeBurdenDatePlot(dfRoll20220308, keyVar="cpm91", timeLabel="3-month", varCeiling=100000, varDivBy=1000)
+makeBurdenDatePlot(dfRoll20220308, keyVar="dpm91", timeLabel="3-month", varCeiling=1500)
+
+```
 
