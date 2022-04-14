@@ -2840,4 +2840,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 functions makeBurdenSummary(), createBurdenCountyDate(), and makeBurdenDatePlot() included  
 * Coronavirus_Statistics_USAF_v005 makeBurdenSummary() moved to .R file  
 * Coronavirus_Statistics_USAF_v005 createBurdenCountyDate() moved to .R file  
+* Coronavirus_Statistics_USAF_v005 makeBurdenDatePlot() moved to .R file  
   
