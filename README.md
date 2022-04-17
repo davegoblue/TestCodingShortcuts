@@ -2843,4 +2843,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v005 makeBurdenDatePlot() moved to .R file  
 * Coronavirus_Statistics_USAF_v005 updated with latest burden data  
 * Coronavirus_Statistics_USAF_v005 processCountyVaccines() written  
+* Coronavirus_CDC_Daily_v004 downloads and processes latest data  
   
