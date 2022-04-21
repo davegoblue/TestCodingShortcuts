@@ -2819,34 +2819,35 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 includes county-level correlations  
   
 ### Expansions week of 28-MAR-2022  
-* Coronavirus_Statistics_USAF_v005 includes corrVaxBurden()  
-* Coronavirus_Statistics_USAF_v005 includes compareStateSummedCounty()  
-* Coronavirus_Statistics_USAF_v005 updates compareStateSummedCounty() for aggregation  
-* Coronavirus_Statistics_USAF_v005 compareStateSummedCounty() moved to .R file  
-* Coronavirus_Statistics_USAF_v005 includes scoreSimilarity()  
-* Coronavirus_Statistics_USAF_v005 scoreSimilarity() moved to .R file  
-* Coronavirus_Statistics_USAF_v005 creates integratred vaccines per capita by state frame  
+* Coronavirus_Statistics_USAF_v006 includes corrVaxBurden()  
+* Coronavirus_Statistics_USAF_v006 includes compareStateSummedCounty()  
+* Coronavirus_Statistics_USAF_v006 updates compareStateSummedCounty() for aggregation  
+* Coronavirus_Statistics_USAF_v006 compareStateSummedCounty() moved to .R file  
+* Coronavirus_Statistics_USAF_v006 includes scoreSimilarity()  
+* Coronavirus_Statistics_USAF_v006 scoreSimilarity() moved to .R file  
+* Coronavirus_Statistics_USAF_v006 creates integratred vaccines per capita by state frame  
   
 ### Expansions week of 04-APR-2022  
-* Coronavirus_Statistics_USAF_v005 function integrateStateVaccine() created  
-* Coronavirus_Statistics_USAF_v005 integrateStateVaccine() moved to .R file  
-* Coronavirus_Statistics_USAF_v005 function stateAgeVaxEvolution() included  
-* Coronavirus_Statistics_USAF_v005 stateAgeVaxEvolution() moved to .R file  
-* Coronavirus_Statistics_USAF_v005 scores similarity of vaccine data by state and source  
-* Coronavirus_Statistics_USAF_v005 function scoreVaxSimilarity() written  
-* Coronavirus_Statistics_USAF_v005 scoreVaxSimilarity() moved to .R file  
+* Coronavirus_Statistics_USAF_v006 function integrateStateVaccine() created  
+* Coronavirus_Statistics_USAF_v006 integrateStateVaccine() moved to .R file  
+* Coronavirus_Statistics_USAF_v006 function stateAgeVaxEvolution() included  
+* Coronavirus_Statistics_USAF_v006 stateAgeVaxEvolution() moved to .R file  
+* Coronavirus_Statistics_USAF_v006 scores similarity of vaccine data by state and source  
+* Coronavirus_Statistics_USAF_v006 function scoreVaxSimilarity() written  
+* Coronavirus_Statistics_USAF_v006 scoreVaxSimilarity() moved to .R file  
   
 ### Expansions week of 11-APR-2022  
-* Coronavirus_Statistics_USAF_v005 functions makeBurdenSummary(), createBurdenCountyDate(), and makeBurdenDatePlot() included  
-* Coronavirus_Statistics_USAF_v005 makeBurdenSummary() moved to .R file  
-* Coronavirus_Statistics_USAF_v005 createBurdenCountyDate() moved to .R file  
-* Coronavirus_Statistics_USAF_v005 makeBurdenDatePlot() moved to .R file  
-* Coronavirus_Statistics_USAF_v005 updated with latest burden data  
-* Coronavirus_Statistics_USAF_v005 processCountyVaccines() written  
+* Coronavirus_Statistics_USAF_v006 functions makeBurdenSummary(), createBurdenCountyDate(), and makeBurdenDatePlot() included  
+* Coronavirus_Statistics_USAF_v006 makeBurdenSummary() moved to .R file  
+* Coronavirus_Statistics_USAF_v006 createBurdenCountyDate() moved to .R file  
+* Coronavirus_Statistics_USAF_v006 makeBurdenDatePlot() moved to .R file  
+* Coronavirus_Statistics_USAF_v006 updated with latest burden data  
+* Coronavirus_Statistics_USAF_v006 processCountyVaccines() written  
 * Coronavirus_CDC_Daily_v004 downloads and processes latest data  
   
 ### Expansions week of 18-APR-2022  
 * Coronavirus_CDC_Daily_v004 post-processes latest data  
 * Coronavirus_CDC_Daily_v004 runs peakValleyCDCDaily()  
 * Coronavirus_CDC_Daily_v004 plots hospital capacity  
+* Coronavirus_Statistics_USAF_v006 compareStateSummedCounty() run  
   
