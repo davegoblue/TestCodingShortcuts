@@ -2850,4 +2850,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 runs peakValleyCDCDaily()  
 * Coronavirus_CDC_Daily_v004 plots hospital capacity  
 * Coronavirus_Statistics_USAF_v006 compareStateSummedCounty() run  
+* Coronavirus_Statistics_USAF_v006 scoreVaxSimilarity() run  
   
