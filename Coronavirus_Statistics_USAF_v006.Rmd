@@ -339,3 +339,72 @@ stateAgeVaxEvolution(allState_20220415, keyState=c(state.abb, "DC"), createPlot 
 * CA stopped reporting county-level data as of 2022-03
 * TX and VA have around a week of missing county-level data in 2022-03
   
+Function integrateStateVaccine() is updated to better manage sporadic NA values such as in TX and VA:  
+```{r, fig.height=9, fig.width=9}
+
+integrateStateVaccine <- function(vaxCounty, 
+                                  statePerCap,
+                                  keyStates=c(state.abb, "DC"),
+                                  joinType=dplyr::right_join,
+                                  treatNAZero=TRUE
+                                  ) {
+    
+    # FUNCTION ARGUMENTS:
+    # vaxCounty: processed county-level vaccines data
+    # statePerCap: per-capita state level data frame
+    # keyStates: states to be included
+    # joinType: join to be made (statePerCap is 'left' and summed vaxCounty is 'right')
+    # treatNAZero: boolean, should NA values in vaccines be treated as 0 rather than throwing an aggregate NA?
+    
+    # Create the aggregation function
+    if(isTRUE(treatNAZero)) aggFunc <- specNA(sum) else aggFunc <- sum
+    
+    # Roll county-level data to state
+    dfTemp <- vaxCounty %>%
+        filter(state %in% all_of(keyStates), FIPS != "UNK") %>%
+        group_by(date, state) %>%
+        summarize(ctypoppct=aggFunc(vxcpoppct*pop)/sum(pop), 
+                  ctygte18pct=aggFunc(vxcgte18pct*popgte18)/sum(popgte18),
+                  ctygte65pct=aggFunc(vxcgte65pct*popgte65)/sum(popgte65),
+                  across(starts_with("pop"), sum, na.rm=TRUE), 
+                  .groups="drop"
+        )
+    
+    # Integrate and return the data
+    statePerCap %>%
+        select(state, date, vxcpoppct, vxcgte18pct, vxcgte65pct) %>%
+        filter(state %in% all_of(keyStates)) %>%
+        joinType(dfTemp, by=c("state", "date"))
+    
+}
+
+# Check that data are the same
+all.equal(allState_20220415, 
+          integrateStateVaccine(cty_vaxdata_20220415$vaxFix, 
+                                statePerCap=readFromRDS("cdc_daily_220416")$dfPerCapita, 
+                                treatNAZero=FALSE
+                                )
+          )
+
+# Check differences in updated data
+allState_20220415_v2 <- integrateStateVaccine(cty_vaxdata_20220415$vaxFix, 
+                                              statePerCap=readFromRDS("cdc_daily_220416")$dfPerCapita, 
+                                              treatNAZero=TRUE
+                                              )
+
+# Confirm equality where not NA in original data
+all.equal(allState_20220415[complete.cases(allState_20220415), ], 
+          allState_20220415_v2[complete.cases(allState_20220415), ]
+          )
+
+# Display updated records
+allState_20220415_v2[complete.cases(allState_20220415_v2) & !complete.cases(allState_20220415), ] %>%
+    mutate(ym=customYYYYMM(date)) %>%
+    filter(ym >= "2021-01-01") %>%
+    group_by(state, ym) %>%
+    summarize(across(where(is.numeric), mean), n=n(), .groups="drop")
+
+scoreVaxSimilarity(allState_20220415_v2, minDate="2022-01-01", maxDate="2022-03-31")
+
+```
+
