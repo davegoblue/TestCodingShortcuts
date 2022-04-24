@@ -2852,4 +2852,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 compareStateSummedCounty() run  
 * Coronavirus_Statistics_USAF_v006 scoreVaxSimilarity() run  
 * Coronavirus_Statistics_USAF_v006 stateAgeVaxEvolution() run  
+* Coronavirus_Statistics_USAF_v006 updates integrateStateVaccine() for better NA handling  
   
