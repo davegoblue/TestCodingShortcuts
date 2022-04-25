@@ -2854,3 +2854,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 stateAgeVaxEvolution() run  
 * Coronavirus_Statistics_USAF_v006 updates integrateStateVaccine() for better NA handling  
   
+### Expansions week of 25-APR-2022  
+* Coronavirus_Statistics_USAF_v006 makeBurdenDatePlot() run  
+  
