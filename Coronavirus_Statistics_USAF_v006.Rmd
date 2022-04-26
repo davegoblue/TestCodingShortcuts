@@ -423,3 +423,204 @@ makeBurdenDatePlot(dfRoll20220414, keyVar="dpm91", timeLabel="3-month", varCeili
 
 ```
   
+Post-processing steps are consolidated to a function, so that the process includes:  
+  
+1. readRunUSAFacts() and spareCountyClusterMap()  
+2. processCountyVaccines()  
+3. postProcessCountyData()  
+4. Individual functions as needed  
+  
+The postProcessCountyData() includes:  
+```{r fig.height=9, fig.width=9}
+
+# Updated to include date range
+scoreVaxSimilarity <- function(df, 
+                               keyStates=c(state.abb, "DC"), 
+                               minDate=NULL, 
+                               maxDate=NULL, 
+                               returnBaseData=FALSE
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a processed file from integrateStateVaccine()
+    # keyStates: states to include
+    # minDate: earliest date to use for scoring (NULL means use all)
+    # maxDate: latest date to use for scoring (NULL means use all)
+    # returnBaseData: boolean, should dfBase be returned?
+    
+    # Set minDate and maxDate if NULL
+    if(is.null(minDate)) minDate <- min(df$date, na.rm=TRUE)
+    if(is.null(maxDate)) maxDate <- max(df$date, na.rm=TRUE)
+    
+    dfBase <- stateAgeVaxEvolution(df, keyState=keyStates, createPlot = FALSE) %>%
+        mutate(value=ifelse(is.na(value), 0, value), src=ifelse(src=="State", "cdcState", "ctySum")) %>%
+        pivotData(c("state", "date", "age"), nameVar="src", toLonger=FALSE) %>%
+        filter(date >= minDate, date <= maxDate) %>%
+        mutate(ym=customYYYYMM(date)) %>%
+        group_by(state, ym, age) %>%
+        summarize(n=n(), 
+                  rmse=sqrt(mean((cdcState-ctySum)**2)), 
+                  cdcState=mean(cdcState), 
+                  ctySum=mean(ctySum), 
+                  .groups="drop"
+        )
+    p1 <- dfBase %>%
+        group_by(state, age) %>% 
+        summarize(rmse=mean(rmse), .groups="drop") %>% 
+        ggplot(aes(x=fct_reorder(state, rmse), y=rmse)) + 
+        geom_col(fill="lightblue") + 
+        coord_flip() + 
+        facet_wrap(~age) + 
+        labs(x=NULL, 
+             y="RMSE (Vaccinated by State/Age difference by source)", 
+             title="Difference in vaccinated by state data by source", 
+             subtitle=paste0("Date range: ", minDate, " to ", maxDate)
+        )
+    print(p1)
+    
+    if(isTRUE(returnBaseData)) return(dfBase)
+    
+}
+
+# Updated to handle lst passed as a perCapita file
+makeBurdenSummary <- function(lst, 
+                              groupVar=c("countyFIPS", "state"), 
+                              numVarFinal=c("tdpm", "tcpm"), 
+                              numVarSum=c("dpm", "cpm"), 
+                              keyDate=NULL,
+                              dateRange=28
+                              ) {
+    
+    # FUNCTION ARGUMENTS
+    # lst: list of processed county burden data (or extracted dfPerCapita file)
+    # groupVar: grouping variables for the final dataset
+    # numVarFinal: numeric variables to pull data from the key date
+    # numVarSum: numeric variables to sum from the key date interval
+    # keyDate: the key date for the summaries (NULL means use maximum in data)
+    # dateRange: number of days to include in the numeric interval summaries
+    
+    # Extract perCapita data if passed as a list
+    if("list" %in% class(lst)) lst <- lst[["dfPerCapita"]]
+    
+    # Find keyDate if not provided, convert to date if not already
+    if(is.null(keyDate)) keyDate <- lst %>% pull(date) %>% max()
+    if(!("Date" %in% class(keyDate))) keyDate <- as.Date(keyDate)
+    
+    # Create summary
+    df <- lst %>% 
+        group_by_at(all_of(groupVar)) %>%
+        summarize(asofDate=keyDate, 
+                  across(all_of(numVarFinal), .fns=~sum(ifelse(date==keyDate, .x, 0))),
+                  across(all_of(numVarSum), 
+                         .fns=~sum(ifelse(date>keyDate-dateRange & date<=keyDate, .x, 0)), 
+                         .names=paste0("{.col}", as.character(dateRange))
+                  ),
+                  .groups="drop"
+        )
+    
+    # Return the data frame
+    df
+    
+}
+
+postProcessCountyData <- function(lstCtyBurden,
+                                  lstCtyVax,
+                                  lstState, 
+                                  maxDate=NULL, 
+                                  minDateBurden="2020-02-15", 
+                                  minDateVax="2021-04-01"
+                                  ) {
+
+    # FUNCTION ARGUMENTS:
+    # lstCtyBurden: list of processed county-level burden data (or a dfPerCapita file from this list)
+    # lstCtyVax: list of processed county-level vaccines data (or a vaxFix file from this list)
+    # lstState: list of processed state-level burden data (or a dfPerCapita file from this list)
+    # maxDate: maximum date to use for plotting (NULL means latest date in both lstCty and lstState)
+    # minDateBurden: earliest date for scoring burden similarity across files
+    # minDateVax: earliest date for scoring vaccine similarity across files
+    
+    # Extract the relevant perCapita and vaxFix data if needed
+    if("list" %in% class(lstCtyBurden)) lstCtyBurden <- lstCtyBurden[["dfPerCapita"]]
+    if("list" %in% class(lstState)) lstState <- lstState[["dfPerCapita"]]
+    if("list" %in% class(lstCtyVax)) lstCtyVax <- lstCtyVax[["vaxFix"]]
+    
+    # Get maxDate if not provided
+    if(is.null(maxDate)) maxDate <- min(max(lstCtyBurden$date, na.rm=TRUE), max(lstState$date, na.rm=TRUE))
+    cat("\nParameter maxDate is:", as.character(maxDate), "\n\n")
+    
+    # Data for score similarity process
+    dfCompare <- compareStateSummedCounty(dfState=lstState, 
+                                          dfCounty=lstCtyBurden, 
+                                          inclStates=c(state.abb, "DC"), 
+                                          dateThru=maxDate, 
+                                          makePlot=FALSE,
+                                          returnData=TRUE
+                                          )
+    scoreSimilarity(dfCompare, minDate=minDateBurden, maxDate=maxDate, makeFacet=FALSE)
+
+    # Check differences in data sources
+    dfAllState <- integrateStateVaccine(lstCtyVax, statePerCap=lstState, treatNAZero=TRUE)
+    vaxDiff <- scoreVaxSimilarity(dfAllState, minDate=minDateVax, maxDate=maxDate, returnBaseData=TRUE)
+
+    # Create county-level burden data by quarters
+    dfRoll91 <- createBurdenCountyDate(lstCtyBurden, 
+                                       maxDate=maxDate, 
+                                       rollBy=months(c(0, -3, -6, -9)), 
+                                       dateSpan=91
+                                       )
+    makeBurdenDatePlot(dfRoll91, keyVar="cpm91", timeLabel="3-month", varCeiling=100000, varDivBy=1000) %>% print()
+    makeBurdenDatePlot(dfRoll91, keyVar="dpm91", timeLabel="3-month", varCeiling=1500) %>% print()
+
+    # Return the key elements
+    list(dfCompare=dfCompare, dfAllState=dfAllState, vaxDiff=vaxDiff, dfRoll91=dfRoll91)
+    
+}
+
+cty_postdata_20220414 <- postProcessCountyData(lstCtyBurden=cty_newdata_20220414$dfPerCapita, 
+                                               lstCtyVax=cty_vaxdata_20220415$vaxFix, 
+                                               lstState=readFromRDS("cdc_daily_220416")$dfPerCapita
+                                               )
+
+```
+
+And stand-alone functions include:  
+```{r fig.height=9, fig.width=9}
+
+# Example states with meaningful disconnects on 1+ metrics
+# compareStateSummedCounty(dfState=readFromRDS("cdc_daily_220416")$dfPerCapita, 
+#                          dfCounty=cty_newdata_20220414$dfPerCapita, 
+#                          inclStates=c("GA", "FL", "NE", "OK", "KY", "ME", "VT", "WY", "TN", "RI", "MO", "MA", "KS"), 
+#                          dateThru="2022-04-10", 
+#                          makePlot=TRUE,
+#                          returnData=FALSE
+#                          )
+
+# Explore differences in vaccines data if needed
+# stateAgeVaxEvolution(allState_20220415, 
+#                      keyState=c("MA", "HI", "TX", "VA", "VT", "GA", "CO", "WV"), 
+#                      createPlot = TRUE
+#                      )
+# 
+# scoreVaxSimilarity(allState_20220415, minDate="2022-01-01", maxDate="2022-03-31")
+# 
+# stateAgeVaxEvolution(allState_20220415, keyState=c(state.abb, "DC"), createPlot = FALSE) %>% 
+#     filter(!complete.cases(.), date >= "2021-01-01") %>% 
+#     group_by(state, ym=customYYYYMM(date)) %>% 
+#     summarize(n=n()) %>% 
+#     pivot_wider(ym, names_from="state", values_from="n") %>% 
+#     arrange(desc(ym))
+
+# Additional rolling data as needed
+# dfRoll20220414 <- createBurdenCountyDate(cty_newdata_20220414, 
+#                                          maxDate="2022-03-31", 
+#                                          rollBy=months(c(0, -3, -6, -9)), 
+#                                          dateSpan=91
+#                                          )
+# dfRoll20220414
+# 
+# makeBurdenDatePlot(dfRoll20220414, keyVar="cpm91", timeLabel="3-month", varCeiling=100000, varDivBy=1000)
+# makeBurdenDatePlot(dfRoll20220414, keyVar="dpm91", timeLabel="3-month", varCeiling=1500)
+
+
+```
+
