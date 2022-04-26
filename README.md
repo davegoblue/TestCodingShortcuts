@@ -2856,4 +2856,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 25-APR-2022  
 * Coronavirus_Statistics_USAF_v006 makeBurdenDatePlot() run  
+* Coronavirus_Statistics_USAF_v006 postProcessCountyData() created  
   
