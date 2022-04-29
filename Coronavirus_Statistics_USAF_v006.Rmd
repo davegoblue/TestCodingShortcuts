@@ -623,3 +623,192 @@ makeBurdenDatePlot(dfRoll_28, keyVar="dpm28", timeLabel="1-month", varCeiling=50
 
 ```
   
+Function compareStateSummedCounty() is updated to accept a processed frame:  
+```{r fig.height=9, fig.width=9}
+
+pivotStateBurdenData <- function(df, 
+                                 inclStates, 
+                                 varKeep=c("date", "state", "tot_cases", "new_cases", "tot_deaths", "new_deaths"),
+                                 varRename=c("tot_cases"="cases", "tot_deaths"="deaths"),
+                                 dateThru=NULL
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a state-level burden data frame
+    # inclStates: states to be included
+    # varKeep: variables to be kept from state burden frame
+    # varRename: variables to be renamed
+    # dateThru: maximum date for the analysis (NULL means use max(date) from df)
+    
+    # Create and return pivoted state-level data
+    df %>%
+        colSelector(vecSelect=varKeep) %>%
+        colRenamer(vecRename=varRename) %>%
+        filter(state %in% all_of(inclStates), 
+               date <= if(is.null(dateThru)) max(date) else as.Date(dateThru)
+               ) %>%
+        pivot_longer(-c(date, state)) %>%
+        mutate(value=ifelse(is.na(value), 0, value)) %>%
+        arrange(date, state, name) %>%
+        group_by(state, name) %>%
+        mutate(value7=zoo::rollmean(value, k=7, fill=NA, align="center"), src="state") %>%
+        ungroup()
+    
+}
+
+createSummedCountyBurdenData <- function(df, 
+                                         inclStates, 
+                                         varKeep=c("state", "countyFIPS", "date", 
+                                                   "cases", "new_cases", "deaths", "new_deaths"
+                                                   ),
+                                         varRename=c(),
+                                         dateThru=NULL
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a state-level burden data frame
+    # inclStates: states to be included
+    # varKeep: variables to be kept from state burden frame
+    # varRename: variables to be renamed
+    # dateThru: maximum date for the analysis (NULL means use max(date) from df)
+    
+    # Create and return summed and pivoted county-level data
+    df %>%
+        filter(state %in% all_of(inclStates), 
+               date <= if(is.null(dateThru)) max(date) else as.Date(dateThru)
+               ) %>%
+        colSelector(vecSelect=varKeep) %>%
+        colRenamer(vecRename=varRename) %>%
+        pivot_longer(-c(state, countyFIPS, date)) %>%
+        arrange(state, countyFIPS, date) %>%
+        group_by(state, countyFIPS, name) %>%
+        mutate(value7=zoo::rollmean(value, k=7, fill=NA, align="center")) %>%
+        ungroup() %>%
+        filter(state %in% all_of(inclStates)) %>%
+        group_by(state, date, name) %>%
+        summarize(across(c(value, value7), .fns=sum), .groups="drop") %>%
+        filter(!is.na(value7)) %>%
+        mutate(src="county")
+    
+}
+
+compareStateSummedCounty <- function(dfState=NULL, 
+                                     dfCounty=NULL,
+                                     lstAll=NULL,
+                                     aggData=FALSE,
+                                     inclStates=if(isTRUE(aggData)) c(state.abb, "DC") else NULL, 
+                                     dateThru=NULL, 
+                                     makePlot=TRUE, 
+                                     createData=TRUE,
+                                     returnData=FALSE
+                                     ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfState: processed state-level metrics
+    # dfCounty: processed county-level metrics
+    # lstAll: list containing processed dfState and dfCounty
+    # aggData: boolean, should data be aggregated (FALSE means one plot series per state)
+    # inclStates: character vector of states to include
+    # dateThru: latest date for analyzsis (NULL means use all data)
+    # makePlot: boolean, should plots be created for each state?
+    # createData: boolean, does dfAll need to be built from dfState and dfCounty? FALSE means use dfAll
+    # returnData: boolean, should a list of processed dfState and processed dfCounty be returned?
+    
+    # Check that data passed matches parameters
+    if(isTRUE(createData)) {
+        if(is.null(dfState) | is.null(dfCounty)) stop("\nNeed to pass dfState and dfCounty when createData=TRUE\n")
+        if(!is.null(lstAll)) cat("\nlstAll is ignored, to be built from dfState and dfCounty when createData=TRUE\n")
+    }
+    if(!isTRUE(createData)) {
+        if(is.null(lstAll)) stop("\nNeed to pass lstAll when createData=FALSE\n")
+        if(!is.null(dfState)) cat("\ndfState ignored; using lstAll due to createData=FALSE\n")
+        if(!is.null(dfCounty)) cat("\ndfCounty ignored; using lstAll due to createData=FALSE\n")
+    }
+    
+    # Check that at least one state has been passed
+    if(is.null(inclStates) | length(inclStates)==0) {
+        cat("\nNo states passed to compareStateSummedCounty, returning without running function\n")
+        return()
+    }
+    
+    # Create or extract data as directed by parameter createData
+    if(isTRUE(createData)) {
+        dfState <- pivotStateBurdenData(dfState, inclStates=inclStates, dateThru=dateThru)
+        dfCounty <- createSummedCountyBurdenData(dfCounty, inclState=inclStates, dateThru=dateThru)
+    } else {
+        dfState <- lstAll[["dfState"]]
+        dfCounty <- lstAll[["dfCounty"]]
+    }
+    
+    # If data are to be aggregated, perform the aggregation
+    if(isTRUE(aggData)) {
+        tempAgg <- function(df) {
+            df %>% 
+                group_by(date, name, src) %>% 
+                summarize(value=specNA(sum)(value, na.rm=TRUE), 
+                          value7=specNA(sum)(value7, na.rm=TRUE), 
+                          .groups="drop"
+                          ) %>% 
+                mutate(state="Aggregated")
+        }
+        dfState <- tempAgg(dfState)
+        dfCounty <- tempAgg(dfCounty)
+        inclStates <- "Aggregated"
+    }
+    
+    if(isTRUE(makePlot)) {
+        
+        for(thisState in all_of(inclStates)) {
+            
+            p1 <- dfCounty %>%
+                filter(state %in% all_of(thisState)) %>%
+                bind_rows(filter(dfState, state %in% all_of(thisState))) %>%
+                ggplot(aes(x=date, y=value7)) + 
+                geom_line(aes(group=src, color=src)) + 
+                facet_wrap(~name, scales="free_y") + 
+                labs(x=NULL, 
+                     y="Rolling 7-day mean", 
+                     title="Summed county burden by metric (7-day mean)", 
+                     subtitle=paste0(thisState, " counties")
+                ) + 
+                scale_color_discrete("Source")
+            print(p1)
+            
+        }
+    }
+    
+    if(returnData) list(dfState=dfState, dfCounty=dfCounty)
+    
+}
+
+# Check that results are the same when creating the full frame (default)
+chk1 <- compareStateSummedCounty(dfState=readFromRDS("cdc_daily_220416")$dfPerCapita, 
+                                 dfCounty=cty_newdata_20220414$dfPerCapita, 
+                                 inclStates=c(state.abb, "DC"), 
+                                 dateThru="2022-04-11", 
+                                 makePlot=FALSE,
+                                 returnData=TRUE
+                                 )
+identical(chk1, cty_postdata_20220414$dfCompare)
+
+# Check that results are the same when using the existing frame
+chk2 <- compareStateSummedCounty(lstAll=cty_postdata_20220414$dfCompare,
+                                 inclStates=c(state.abb, "DC"), 
+                                 dateThru="2022-04-11", 
+                                 createData=FALSE,
+                                 makePlot=FALSE,
+                                 returnData=TRUE
+                                 )
+identical(chk1, chk2)
+
+# Example plotting for select states
+compareStateSummedCounty(lstAll=cty_postdata_20220414$dfCompare,
+                         inclStates=c("GA", "FL", "NE"),
+                         dateThru="2022-04-11",
+                         createData=FALSE,
+                         makePlot=TRUE,
+                         returnData=FALSE
+                         )
+
+```
+
