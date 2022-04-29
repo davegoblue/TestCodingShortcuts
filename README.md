@@ -2859,4 +2859,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 postProcessCountyData() created  
 * Coronavirus_Statistics_USAF_v006 runs compareStateSummedCounty() for select counties and stateAgeVaxEvolution for custom time period  
 * Coronavirus_Statistics_USAF_v006 runs createBurdenCountyDate() and makeBurdenDatePlot() for custom time period  
+* Coronavirus_Statistics_USAF_v006 updates compareStateSummedCounty() to optionally use previously processed data  
   
