@@ -2861,4 +2861,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 runs createBurdenCountyDate() and makeBurdenDatePlot() for custom time period  
 * Coronavirus_Statistics_USAF_v006 updates compareStateSummedCounty() to optionally use previously processed data  
 * Coronavirus_Statistics_USAF_v006 additionalCountyPostProcess() written  
+* Coronavirus_Statistics_USAF_v006 additionalCountyPostProcess() includes county-level burden plots  
   
