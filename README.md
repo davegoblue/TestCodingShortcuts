@@ -2863,3 +2863,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 additionalCountyPostProcess() written  
 * Coronavirus_Statistics_USAF_v006 additionalCountyPostProcess() includes county-level burden plots  
   
+### Expansions week of 02-MAY-2022  
+* Coronavirus_CDC_Daily_v004 downloads and processes latest data  
+  
