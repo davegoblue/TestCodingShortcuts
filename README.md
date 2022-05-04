@@ -2866,4 +2866,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 02-MAY-2022  
 * Coronavirus_CDC_Daily_v004 downloads and processes latest data  
 * Coronavirus_CDC_Daily_v004 runs postProcessCDCDaily()  
+* Coronavirus_CDC_Daily_v004 updates grep regex for createBurdenPivot()  
   
