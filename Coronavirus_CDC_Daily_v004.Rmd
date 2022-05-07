@@ -913,3 +913,67 @@ createGeoMap(modStateHosp_20220501 %>% filter(!(state %in% c("CT", "DE", "SD", "
 
 ```
   
+A function is created for hospital post-processing:  
+```{r, fig.height=9, fig.width=9}
+
+hospitalCapacityCDCDaily <- function(df, 
+                                     createData=TRUE, 
+                                     returnData=createData,
+                                     maxCapacity=1.2,
+                                     plotSub="start to finish"
+                                     ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the key data frame
+    # createData: boolean, if TRUE then convert df for use in processing
+    #                      if FALSE, use df as-is
+    # returnData: boolean, should df be returned (defaults to TRUE is modified, FALSE otherwise)
+    # maxCapacity: states that exceed this capacity level will not be plotted (explore separately)
+    # plotSub: subtitle to use for plots
+    
+    # Convert data if requested
+    if(isTRUE(createData)) df <- skinnyHHS(df) %>% imputeNACapacity() %>% sumImputedHHS()
+
+    # Create ICU summary
+    createGeoMap(df, 
+                 yVars=list("pctCovidICU"=c("label"="Covid", "color"="red"), 
+                            "pctICU"=c("label"="Total", "color"="black")
+                            ), 
+                 fullList=list("pctICU"=expression(icu_beds_occupied/icu_beds), 
+                               "pctCovidICU"=expression(adult_icu_covid/icu_beds)
+                               ), 
+                 plotTitle="Average % ICU Capacity Filled by Week", 
+                 plotSubtitle=plotSub, 
+                 plotScaleLabel="% ICU\nUsed", 
+                 returnData=FALSE
+                 )
+
+    # Get list of states that may complicate map
+    pctState <- df %>% 
+        mutate(pctAdult=adult_beds_occupied/adult_beds, pctCovidAdult=adult_beds_covid/adult_beds)
+    exclStates <- pctState %>% filter(pctAdult > maxCapacity) %>% count(state) %>% pull(state)
+    if(length(exclStates) > 0) plotSub <- paste0(plotSub, "\n(", paste(exclStates, collapse=", "), " data excluded)")
+
+    # Create the adult beds summary    
+    createGeoMap(df %>% filter(!(state %in% all_of(exclStates))), 
+                 yVars=list("pctCovidAdult"=c("label"="Covid", "color"="red"), 
+                            "pctAdult"=c("label"="Total", "color"="black")
+                            ), 
+                 fullList=list("pctAdult"=expression(adult_beds_occupied/adult_beds), 
+                               "pctCovidAdult"=expression(adult_beds_covid/adult_beds)
+                               ), 
+                 plotTitle="Average % Adult Beds Capacity Filled by Week", 
+                 plotSubtitle=plotSub, 
+                 plotScaleLabel="% Adult\nBeds\nUsed", 
+                 returnData=FALSE
+                 )
+    
+    # Return the data if requested (defaults to only if createData is TRUE)
+    if(isTRUE(returnData)) return(df)
+    
+}
+
+hospitalCapacityCDCDaily(modStateHosp_20220501, createData=FALSE, plotSub="August 2020 to April 2022")
+
+```
+  
