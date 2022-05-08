@@ -2870,4 +2870,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 runs peakValleyCDCDaily()  
 * Coronavirus_CDC_Daily_v004 runs additional hospital post-processing  
 * Coronavirus_CDC_Daily_v004 function hospitalCapacityCDCDaily() written  
+* Coronavirus_Statistics_USAF_v006 updated with latest burden data  
   
