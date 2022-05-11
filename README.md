@@ -2875,4 +2875,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 09-MAY-2022  
 * Coronavirus_Statistics_USAF_v006 updated with latest vaccines data  
 * Coronavirus_Statistics_USAF_v006 updates postProcessCountyData()  
+* Coronavirus_Statistics_USAF_v006 updates additionalCountyPostProcess()  
   
