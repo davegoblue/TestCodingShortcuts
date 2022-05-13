@@ -1040,3 +1040,84 @@ tmpCombine %>%
 
 ```
   
+A function is written for the extracts:  
+```{r, fig.height=9, fig.width=9}
+
+compareBurdenVaxCounty <- function(lstBurden, 
+                                   lstVax, 
+                                   ctyIDs, 
+                                   burdenVars=c("cpm7", "dpm7", "tcpm7", "tdpm7"), 
+                                   vaxVars=c("vxcpoppct", "vxcgte65pct"), 
+                                   plotVars=c(burdenVars, vaxVars),
+                                   plotVarNames=c("1. Death per million", "2. Death per million (cum)", 
+                                                  "3. Case per million", "4. Case per million (cum)", 
+                                                  "5. % Vaccinated (all)", "6. % Vaccinated (65+)"
+                                                  ), 
+                                   printPlot=TRUE, 
+                                   returnData=!isTRUE(printPlot)
+                                   ) {
+
+    # FUNCTION ARGUMENTS:
+    # lstBurden: processed file containing county-level burden data
+    # lstVax: processed file containing county-level vaccines data
+    # ctyIDs: vector of county-FIPS to process
+    # burdenVars: variables to plot from burden data
+    # vaxVars: variables to plot from vaccines data
+    # plotVars: variables to be plotted
+    # plotVarNames: names to be associated to plotVars
+    # printPlot: boolean, should plot be created and printed?
+    # returnData: boolean, should data frame be returned?
+    
+    # Convert ctyIDs to 5-string characters (zero-padded as needed)
+    ctyIDs <- zeroPad5(ctyIDs)
+    
+    # Extract name and population data
+    dfNamePop <- lstBurden[["countyData"]] %>%
+        filter(countyFIPS %in% ctyIDs) %>%
+        mutate(fullName=paste0(countyName, ", ", state, " (pop: ", round(pop/1000), "k)"))
+
+    # Extract burden per-capita data
+    dfBurden <- lstBurden[["dfPerCapita"]] %>%
+        filter(countyFIPS %in% ctyIDs)
+
+    # Extract vaccines per-capita data
+    dfVax <- lstVax[["vaxFix"]] %>%
+        filter(FIPS %in% ctyIDs)
+    
+    # Create integrated database of burden and vaccines
+    dfCombine <- dfBurden %>%
+        select(countyFIPS, date, all_of(burdenVars)) %>%
+        full_join(dfVax %>% select(countyFIPS=FIPS, date, all_of(vaxVars)), 
+                  by=c("countyFIPS", "date")
+                  ) %>%
+        pivot_longer(-c(countyFIPS, date))
+
+    # Create vectors for mapping countyFIPS and metric abbreviations to descriptive names
+    namePopVec <- dfNamePop$fullName %>% purrr::set_names(dfNamePop$countyFIPS)
+    varNameVec <- plotVarNames %>% purrr::set_names(plotVars)
+
+    # Create and display plot (if requested)
+    if(isTRUE(printPlot)) {
+        p1 <- dfCombine %>%
+            filter(name %in% all_of(plotVars), !is.na(value)) %>%
+            ggplot(aes(x=date, y=value)) + 
+            geom_line(aes(color=namePopVec[countyFIPS], group=countyFIPS)) + 
+            facet_wrap(~varNameVec[name], scales="free_y", ncol=2) + 
+            labs(x=NULL, y=NULL, title="Evolution of metrics by select county") +
+            scale_color_discrete("")
+        print(p1)
+    }
+    
+    # Return data if requested
+    if(isTRUE(returnData)) return(dfCombine)
+    
+}
+
+# Run with defaults
+compareBurdenVaxCounty(lstBurden=cty_newdata_20220507, lstVax=cty_vaxdata_20220508, ctyIDs=ctyList)
+
+# Run for data only
+compareBurdenVaxCounty(lstBurden=cty_newdata_20220507, lstVax=cty_vaxdata_20220508, ctyIDs=ctyList, printPlot=FALSE)
+
+```
+  
