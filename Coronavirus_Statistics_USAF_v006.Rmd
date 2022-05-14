@@ -1046,7 +1046,7 @@ A function is written for the extracts:
 compareBurdenVaxCounty <- function(lstBurden, 
                                    lstVax, 
                                    ctyIDs, 
-                                   burdenVars=c("cpm7", "dpm7", "tcpm7", "tdpm7"), 
+                                   burdenVars=c("dpm7", "tdpm7", "cpm7", "tcpm7"), 
                                    vaxVars=c("vxcpoppct", "vxcgte65pct"), 
                                    plotVars=c(burdenVars, vaxVars),
                                    plotVarNames=c("1. Death per million", "2. Death per million (cum)", 
@@ -1060,7 +1060,9 @@ compareBurdenVaxCounty <- function(lstBurden,
     # FUNCTION ARGUMENTS:
     # lstBurden: processed file containing county-level burden data
     # lstVax: processed file containing county-level vaccines data
-    # ctyIDs: vector of county-FIPS to process
+    # ctyIDs: vector of county-FIPS to process OR named list of county-FIPS to amalgamate
+    #         if vector, each plotted separately with county name as legend and color
+    #         if named list, each element amalgamated with list name as legend and color
     # burdenVars: variables to plot from burden data
     # vaxVars: variables to plot from vaccines data
     # plotVars: variables to be plotted
@@ -1068,21 +1070,23 @@ compareBurdenVaxCounty <- function(lstBurden,
     # printPlot: boolean, should plot be created and printed?
     # returnData: boolean, should data frame be returned?
     
-    # Convert ctyIDs to 5-string characters (zero-padded as needed)
-    ctyIDs <- zeroPad5(ctyIDs)
+    # Create valid list of countyFIPS for processing
+    # If passed as list, convert to vector; convert all to 5-string characters
+    if("list" %in% class(ctyIDs)) ctyUse <- zeroPad5(unname(unlist(ctyIDs)))
+    else ctyUse <- zeroPad5(ctyIDs)
     
     # Extract name and population data
     dfNamePop <- lstBurden[["countyData"]] %>%
-        filter(countyFIPS %in% ctyIDs) %>%
+        filter(countyFIPS %in% ctyUse) %>%
         mutate(fullName=paste0(countyName, ", ", state, " (pop: ", round(pop/1000), "k)"))
 
     # Extract burden per-capita data
     dfBurden <- lstBurden[["dfPerCapita"]] %>%
-        filter(countyFIPS %in% ctyIDs)
+        filter(countyFIPS %in% ctyUse)
 
     # Extract vaccines per-capita data
     dfVax <- lstVax[["vaxFix"]] %>%
-        filter(FIPS %in% ctyIDs)
+        filter(FIPS %in% ctyUse)
     
     # Create integrated database of burden and vaccines
     dfCombine <- dfBurden %>%
@@ -1091,20 +1095,37 @@ compareBurdenVaxCounty <- function(lstBurden,
                   by=c("countyFIPS", "date")
                   ) %>%
         pivot_longer(-c(countyFIPS, date))
-
+    
+    # If data to be amalgamated, run here
+    if("list" %in% class(ctyIDs)) {
+        # Create mapping frame
+        mapFrame <- map_dfr(names(ctyIDs), .f=function(x) tibble::tibble(mapName=x, countyFIPS=ctyIDs[[x]]))
+        # Add population data and mapped name
+        dfCombine <- dfCombine %>%
+            filter(!is.na(value)) %>%
+            inner_join(select(dfNamePop, countyFIPS, pop), by="countyFIPS") %>%
+            inner_join(mapFrame, by="countyFIPS") %>%
+            group_by(mapName, date, name) %>%
+            summarize(value=sum(value*pop)/sum(pop), pop=sum(pop), .groups="drop")
+    }
+    
     # Create vectors for mapping countyFIPS and metric abbreviations to descriptive names
-    namePopVec <- dfNamePop$fullName %>% purrr::set_names(dfNamePop$countyFIPS)
     varNameVec <- plotVarNames %>% purrr::set_names(plotVars)
-
+    
+    # Create vectors for mapping countyFIPS to descriptive names (only relevant if not amalgamated)
+    namePopVec <- dfNamePop$fullName %>% purrr::set_names(dfNamePop$countyFIPS)
+    
     # Create and display plot (if requested)
     if(isTRUE(printPlot)) {
         p1 <- dfCombine %>%
             filter(name %in% all_of(plotVars), !is.na(value)) %>%
             ggplot(aes(x=date, y=value)) + 
-            geom_line(aes(color=namePopVec[countyFIPS], group=countyFIPS)) + 
             facet_wrap(~varNameVec[name], scales="free_y", ncol=2) + 
             labs(x=NULL, y=NULL, title="Evolution of metrics by select county") +
             scale_color_discrete("")
+        # Add lines colored appropriately
+        if("list" %in% class(ctyIDs)) p1 <- p1 + geom_line(aes(color=mapName, group=mapName))
+        else p1 <- p1 + geom_line(aes(color=namePopVec[countyFIPS], group=countyFIPS))
         print(p1)
     }
     
@@ -1118,6 +1139,22 @@ compareBurdenVaxCounty(lstBurden=cty_newdata_20220507, lstVax=cty_vaxdata_202205
 
 # Run for data only
 compareBurdenVaxCounty(lstBurden=cty_newdata_20220507, lstVax=cty_vaxdata_20220508, ctyIDs=ctyList, printPlot=FALSE)
+
+```
+  
+The function has been updated so that it can take an amalgamation of counties:  
+```{r, fig.height=9, fig.width=9}
+
+# Single amalgamation
+compareBurdenVaxCounty(lstBurden=cty_newdata_20220507, lstVax=cty_vaxdata_20220508, ctyIDs=list("all"=ctyList))
+
+# Select states
+keyStates <- c("NY", "LA", "CA", "TX")
+tmpStates <- cty_newdata_20220507$countyData %>% 
+    filter(pop >= 100000, pop <= 500000, state %in% all_of(keyStates))
+tmpList <- lapply(keyStates, FUN=function(x) tmpStates %>% filter(state==x) %>% pull(countyFIPS)) %>%
+    purrr::set_names(paste0(keyStates, " counties 100k-500k"))
+compareBurdenVaxCounty(lstBurden=cty_newdata_20220507, lstVax=cty_vaxdata_20220508, ctyIDs=tmpList, returnData=TRUE)
 
 ```
   
