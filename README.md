@@ -2879,4 +2879,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 plots burden and vaccines for select counties  
 * Coronavirus_Statistics_USAF_v006 compareBurdenVaxCounty() written  
 * Coronavirus_Statistics_USAF_v006 compareBurdenVaxCounty() aggregate capability added  
+* Coronavirus_Statistics_USAF_v006 compareBurdenVaxCounty() run segmented by vxcgte18pct  
   
