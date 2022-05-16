@@ -2881,3 +2881,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 compareBurdenVaxCounty() aggregate capability added  
 * Coronavirus_Statistics_USAF_v006 compareBurdenVaxCounty() run segmented by vxcgte18pct  
   
+### Expansions week of 16-MAY-2022  
+* Coronavirus_Statistics_USAF_v006 compareBurdenVaxCounty() run segmented by deaths in past year  
+  
