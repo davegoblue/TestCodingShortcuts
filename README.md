@@ -2883,4 +2883,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 16-MAY-2022  
 * Coronavirus_Statistics_USAF_v006 compareBurdenVaxCounty() run segmented by deaths in past year  
+* Coronavirus_Statistics_USAF_v006 compareBurdenVaxCounty() run segmented by cases in past year  
   
