@@ -1255,3 +1255,92 @@ compareBurdenVaxCounty(lstBurden=cty_newdata_20220507, lstVax=cty_vaxdata_202205
 
 ```
   
+The process is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+plotCountyEvolution <- function(lst,
+                                lstVax,
+                                cutsLabels,
+                                baseVar,
+                                segVar=baseVar,
+                                popRange=c(0, +Inf), 
+                                dateRange=c(lubridate::days(0))
+                                ) {
+    
+    # FUNCTION ARGUMNETS:
+    # lst: processed list file containing per-capita and county population data
+    # lstVax: processed list file containing vaccines data
+    # cutsLabels: named character vector of form c("label"="values-up-tp")
+    # baseVar: base variable to be used for segmenting (needs to be not-NA)
+    # segVar: variable used in segmentation (may be a transform of baseVar, allow for different name)
+    # popRange: character vector of length 2 for minimum and maximum population to include
+    # dateRange: dates to be considered for segmenting (all subtracted from max(date))
+    
+    # Create database including population, filter by population and relevant dates, remove NA issues
+    df <- lst[["dfPerCapita"]] %>% 
+        inner_join(select(lst[["countyData"]], countyFIPS, pop), by="countyFIPS") %>%
+        inner_join(select(lstVax[["vaxFix"]], date, countyFIPS=FIPS, vxcpoppct, vxcgte18pct, vxcgte65pct), 
+                  by=c("date", "countyFIPS")
+                  ) %>%
+        filter(pop >= popRange[1], 
+               pop <= popRange[2], 
+               date %in% (max(date)-dateRange), 
+               !is.na(get(baseVar))
+               )
+ 
+    # NOT YET IMPLEMENTED: multiple time periods and associated variables   
+    # df <- df %>%
+    # group_by(countyFIPS) %>%
+    # mutate(deltaCase=max(tcpm)-min(tcpm)) %>%
+    # ungroup()
+
+    # Histogram for key variables
+    p1 <- df %>%
+        ggplot(aes_string(x=segVar)) + 
+        geom_histogram(fill="lightblue", bins=100) + 
+        labs(x=paste0("Variable: ", segVar), 
+             y=NULL, 
+             title=paste0("# counties by ", segVar, " bucket by time period")
+             ) + 
+        facet_wrap(~date)
+    print(p1)
+    
+    # Create buckets for plotting
+    df <- df %>%
+        filter(date==max(date)) %>%
+        mutate(bucket=c(names(cutsLabels), "999. error high")[1+findInterval(get(segVar), unname(cutsLabels))])
+    
+    # Create county list
+    tmpList <- lapply(c(names(cutsLabels), "999. error high"), 
+                      FUN=function(x) filter(df, bucket==x) %>% pull(countyFIPS)
+                      ) %>%
+        purrr::set_names(c(names(cutsLabels), "999. error high"))
+    
+    # Create plot of metrics over time
+    compareBurdenVaxCounty(lstBurden=lst, lstVax=lstVax, ctyIDs=tmpList, returnData=TRUE)
+    
+}
+
+plotCountyEvolution(cty_newdata_20220507, 
+                    lstVax=cty_vaxdata_20220508,
+                    baseVar="tcpm",
+                    popRange=c(100000, 250000), 
+                    cutsLabels=c("1. Under 200k"=200000, "2. 200k-300k"=300000, "3. Over 300k"=500000)
+                    )
+
+plotCountyEvolution(cty_newdata_20220507, 
+                    lstVax=cty_vaxdata_20220508,
+                    baseVar="tdpm",
+                    popRange=c(100000, 250000), 
+                    cutsLabels=c("1. Under 2000"=2000, "2. 2000-4000"=4000, "3. Over 4000"=10000)
+                    )
+
+plotCountyEvolution(cty_newdata_20220507, 
+                    lstVax=cty_vaxdata_20220508,
+                    baseVar="vxcgte65pct",
+                    popRange=c(100000, 250000), 
+                    cutsLabels=c("1. Under 80%"=80, "2. 80%-90%"=90, "3. Over 90%"=100)
+                    )
+
+```
+  
