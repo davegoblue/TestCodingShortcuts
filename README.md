@@ -2887,4 +2887,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 plotCountyEvolution() written to automated updates  
 * Coronavirus_Statistics_USAF_v006 plotCountyEvolution() includes filtering capability  
 * Coronavirus_Statistics_USAF_v006 plotCountyEvolution() includes delta-metric as a segmentation capability  
+* Coronavirus_Statistics_USAF_v006 plotCountyEvolution() includes plot labelling options  
   
