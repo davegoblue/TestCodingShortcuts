@@ -1255,8 +1255,105 @@ compareBurdenVaxCounty(lstBurden=cty_newdata_20220507, lstVax=cty_vaxdata_202205
 
 ```
   
-The process is converted to functional form:  
+The process is converted to functional form, allowing for custom labels:  
 ```{r, fig.height=9, fig.width=9}
+
+compareBurdenVaxCounty <- function(lstBurden, 
+                                   lstVax, 
+                                   ctyIDs, 
+                                   burdenVars=c("dpm7", "tdpm7", "cpm7", "tcpm7"), 
+                                   vaxVars=c("vxcpoppct", "vxcgte65pct"), 
+                                   plotVars=c(burdenVars, vaxVars),
+                                   plotVarNames=c("1. Death per million", "2. Death per million (cum)", 
+                                                  "3. Case per million", "4. Case per million (cum)", 
+                                                  "5. % Vaccinated (all)", "6. % Vaccinated (65+)"
+                                                  ), 
+                                   printPlot=TRUE, 
+                                   p1Title="Evolution of metrics by select county",
+                                   p1SubTitle=ggplot2::waiver(),
+                                   p1ScaleLabel="",
+                                   returnData=!isTRUE(printPlot)
+                                   ) {
+
+    # FUNCTION ARGUMENTS:
+    # lstBurden: processed file containing county-level burden data
+    # lstVax: processed file containing county-level vaccines data
+    # ctyIDs: vector of county-FIPS to process OR named list of county-FIPS to amalgamate
+    #         if vector, each plotted separately with county name as legend and color
+    #         if named list, each element amalgamated with list name as legend and color
+    # burdenVars: variables to plot from burden data
+    # vaxVars: variables to plot from vaccines data
+    # plotVars: variables to be plotted
+    # plotVarNames: names to be associated to plotVars
+    # printPlot: boolean, should plot be created and printed?
+    # p1Title: title to be used in plot
+    # p1SubTitle: subtitle to be used in plot
+    # p1ScaleLabel: label to be used for the color scale in plot
+    # returnData: boolean, should data frame be returned?
+    
+    # Create valid list of countyFIPS for processing
+    # If passed as list, convert to vector; convert all to 5-string characters
+    if("list" %in% class(ctyIDs)) ctyUse <- zeroPad5(unname(unlist(ctyIDs)))
+    else ctyUse <- zeroPad5(ctyIDs)
+    
+    # Extract name and population data
+    dfNamePop <- lstBurden[["countyData"]] %>%
+        filter(countyFIPS %in% ctyUse) %>%
+        mutate(fullName=paste0(countyName, ", ", state, " (pop: ", round(pop/1000), "k)"))
+
+    # Extract burden per-capita data
+    dfBurden <- lstBurden[["dfPerCapita"]] %>%
+        filter(countyFIPS %in% ctyUse)
+
+    # Extract vaccines per-capita data
+    dfVax <- lstVax[["vaxFix"]] %>%
+        filter(FIPS %in% ctyUse)
+    
+    # Create integrated database of burden and vaccines
+    dfCombine <- dfBurden %>%
+        select(countyFIPS, date, all_of(burdenVars)) %>%
+        full_join(dfVax %>% select(countyFIPS=FIPS, date, all_of(vaxVars)), 
+                  by=c("countyFIPS", "date")
+                  ) %>%
+        pivot_longer(-c(countyFIPS, date))
+    
+    # If data to be amalgamated, run here
+    if("list" %in% class(ctyIDs)) {
+        # Create mapping frame
+        mapFrame <- map_dfr(names(ctyIDs), .f=function(x) tibble::tibble(mapName=x, countyFIPS=ctyIDs[[x]]))
+        # Add population data and mapped name
+        dfCombine <- dfCombine %>%
+            filter(!is.na(value)) %>%
+            inner_join(select(dfNamePop, countyFIPS, pop), by="countyFIPS") %>%
+            inner_join(mapFrame, by="countyFIPS") %>%
+            group_by(mapName, date, name) %>%
+            summarize(value=sum(value*pop)/sum(pop), pop=sum(pop), .groups="drop")
+    }
+    
+    # Create vectors for mapping countyFIPS and metric abbreviations to descriptive names
+    varNameVec <- plotVarNames %>% purrr::set_names(plotVars)
+    
+    # Create vectors for mapping countyFIPS to descriptive names (only relevant if not amalgamated)
+    namePopVec <- dfNamePop$fullName %>% purrr::set_names(dfNamePop$countyFIPS)
+    
+    # Create and display plot (if requested)
+    if(isTRUE(printPlot)) {
+        p1 <- dfCombine %>%
+            filter(name %in% all_of(plotVars), !is.na(value)) %>%
+            ggplot(aes(x=date, y=value)) + 
+            facet_wrap(~varNameVec[name], scales="free_y", ncol=2) + 
+            labs(x=NULL, y=NULL, title=p1Title, subtitle=p1SubTitle) +
+            scale_color_discrete(p1ScaleLabel)
+        # Add lines colored appropriately
+        if("list" %in% class(ctyIDs)) p1 <- p1 + geom_line(aes(color=mapName, group=mapName))
+        else p1 <- p1 + geom_line(aes(color=namePopVec[countyFIPS], group=countyFIPS))
+        print(p1)
+    }
+    
+    # Return data if requested
+    if(isTRUE(returnData)) return(dfCombine)
+    
+}
 
 plotCountyEvolution <- function(lst,
                                 lstVax,
@@ -1266,7 +1363,10 @@ plotCountyEvolution <- function(lst,
                                 lstExclude=list(),
                                 segVar=baseVar,
                                 popRange=c(0, +Inf), 
-                                dateRange=c(lubridate::days(0))
+                                dateRange=c(lubridate::days(0)), 
+                                p1Title="Evolution of metrics by select county",
+                                p1SubTitle=ggplot2::waiver(),
+                                p1ScaleLabel=""
                                 ) {
     
     # FUNCTION ARGUMNETS:
@@ -1281,6 +1381,9 @@ plotCountyEvolution <- function(lst,
     # dateRange: dates to be considered for segmenting (all subtracted from max(date))
     #            if length 1, that date is used for segmenting on the key metric
     #            if length 2, change in variables between those dates is used on the key metric
+    # p1Title: title to be used in plot
+    # p1SubTitle: subtitle to be used in plot
+    # p1ScaleLabel: label to be used for the color scale in plot
     
     # Check that dateRange is length-1 or length-2
     if(!(length(dateRange) %in% c(1, 2))) error("\nMust pass a dateRange vector of length 1 or length 2\n")
@@ -1332,7 +1435,14 @@ plotCountyEvolution <- function(lst,
         purrr::set_names(c(names(cutsLabels), "999. error high"))
     
     # Create plot of metrics over time
-    compareBurdenVaxCounty(lstBurden=lst, lstVax=lstVax, ctyIDs=tmpList, returnData=TRUE)
+    compareBurdenVaxCounty(lstBurden=lst, 
+                           lstVax=lstVax, 
+                           ctyIDs=tmpList, 
+                           returnData=TRUE, 
+                           p1Title=p1Title, 
+                           p1SubTitle=p1SubTitle, 
+                           p1ScaleLabel=p1ScaleLabel
+                           )
     
 }
 
@@ -1367,7 +1477,9 @@ plotCountyEvolution(cty_newdata_20220507,
                     lstExclude=list("state"=c("CO", "GA", "HI", "NM", "OH", "SD", "TX", "UT", "VA", "WV")),
                     popRange=c(100000, 250000), 
                     cutsLabels=c("1. Under 1000"=1000, "2. 1000-2000"=2000, "3. Over 2000"=4000), 
-                    dateRange=c(lubridate::days(0), lubridate::days(360))
+                    dateRange=c(lubridate::days(0), lubridate::days(360)), 
+                    p1ScaleLabel="Segmented By: DPM\n(most recent 360 days)", 
+                    p1SubTitle=paste0("US counties of 100k-250k (excluding states with spiky data)\n")
                     )
 
 ```
