@@ -2890,3 +2890,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 plotCountyEvolution() includes plot labelling options  
 * Coronavirus_Statistics_USAF_v006 plotCountyEvolution() explores South Central counties  
   
+### Expansions week of 23-MAY-2022  
+* Coronavirus_Statistics_USAF_v006 plotCountyEvolution() shows county counts in legend  
+  
