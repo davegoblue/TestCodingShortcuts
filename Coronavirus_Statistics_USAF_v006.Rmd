@@ -1517,3 +1517,47 @@ plotCountyEvolution(cty_newdata_20220507,
 
 ```
   
+Further exploration is made of growth rates in key metrics:  
+```{r, fig.height=9, fig.width=9}
+
+# Create integrated data, using only select time periods
+dfVaxBurden_20220507 <- cty_newdata_20220507$dfPerCapita %>% 
+    inner_join(cty_vaxdata_20220508$vaxFix, by=c("countyFIPS"="FIPS", "state", "date")) %>% 
+    filter(date %in% c(max(date)-lubridate::days(c(4, 369))))
+
+# Summarize and create plot
+dfPlotVaxBurden <- dfVaxBurden_20220507 %>% 
+    filter(pop >= 25000) %>%
+    mutate(minday=ifelse(date==min(date), 1, 0), maxday=ifelse(date==max(date), 1, 0)) %>%
+    group_by(countyFIPS) %>% 
+    filter(n()==2) %>%
+    summarize(across(c(tcpm7, tdpm7, cpm7, dpm7), 
+                     .fns=function(x) sum(x*maxday)/sum(x*minday)-1, 
+                     .names="g_{.col}"
+                     ), 
+              pop=median(pop), 
+              mu_vxcpoppct=mean(vxcpoppct)
+              ) %>% 
+    pivot_longer(-c(countyFIPS, pop, mu_vxcpoppct)) %>%
+    filter(value >= -1, 
+           value <= 10
+           ) 
+
+dfPlotVaxBurden %>% 
+    ggplot(aes(x=mu_vxcpoppct, y=value)) + 
+    geom_point(aes(size=pop), alpha=0.25) + 
+    geom_smooth(aes(weight=pop), method="lm") + 
+    geom_hline(yintercept=c(-1, 0, 1), lty=2, color="red") +
+    labs(y="Growth rate from 1 year ago", 
+         x="% population vaccinated", 
+         title="Association of 1-year change in burden with vaccination", 
+         subtitle="Linear model is population weighted for counties >25k population with growth between -1 and 10"
+         ) +
+    facet_wrap(~name)
+
+dfPlotVaxBurden %>%
+    lm(value ~ mu_vxcpoppct:name + name + 0, data=., weights=pop) %>%
+    summary()
+
+```
+
