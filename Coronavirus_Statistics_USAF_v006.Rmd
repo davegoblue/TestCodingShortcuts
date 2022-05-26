@@ -1585,9 +1585,85 @@ integrateCountyBurdenVax <- function(lstBurden, lstVax, keyDates=NULL) {
     
 }
 
+
+# 2. Create integrated county plot data
+makeIntegratedCountyPlotData <- function(df, 
+                                         burdenVars=c("tcpm7", "tdpm7", "cpm7", "dpm7"), 
+                                         vaxVars=c("vxcpoppct", "vxcgte18pct", "vxcgte65pct"), 
+                                         makeBurdenGrowth=TRUE,
+                                         fnBurden=mean,
+                                         makeVaxGrowth=FALSE,
+                                         fnVax=mean
+                                         ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: processed data frame with integrated burden and vaccines
+    # burdenVars: burden variables to be summarized
+    # vaxVars: vaccine variables to be summarized
+    # makeBurdenGrowth: boolean, should burden be calculated as latest minus earliest?
+    # fnBurden: function for summarizing burden fields (used only if makeBurdenGrowth is FALSE)
+    # makeVaxGrowth: boolean, should vaccines be calculated as latest minus earliest?
+    # fnVax: function for summarizing vaccine fields (used only if makeBurdenGrowth is FALSE)
+    
+    # Create the prefixes for the burden and vaccines variables
+    burdenPrefix <- ifelse(isTRUE(makeBurdenGrowth), "g", deparse(substitute(fnBurden)))
+    vaxPrefix <- ifelse(isTRUE(makeVaxGrowth), "g", deparse(substitute(fnVax)))
+    
+    # Create delta variables if requested
+    df %>% 
+        mutate(minday=ifelse(date==min(date), 1, 0), maxday=ifelse(date==max(date), 1, 0)) %>%
+        group_by(countyFIPS) %>% 
+        summarize(across(all_of(burdenVars), 
+                         .fns=if(isTRUE(makeBurdenGrowth)) function(x) sum(x*maxday)/sum(x*minday)-1 else fnBurden, 
+                         .names=paste0(burdenPrefix, "_{.col}")
+                         ), 
+                  pop=median(pop), 
+                  across(all_of(vaxVars), 
+                         .fns=if(isTRUE(makeVaxGrowth)) function(x) sum(x*maxday)/sum(x*minday)-1 else fnVax, 
+                         .names=paste0(vaxPrefix, "_{.col}")
+                         ),
+                  hasMaxMin=(sum(maxday)==1 & sum(minday)==1)
+                  ) %>% 
+        pivot_longer(-c(countyFIPS))
+    
+}
+
+
 # Example for all dates and for select dates
 integrateCountyBurdenVax(cty_newdata_20220507, cty_vaxdata_20220508)
 integrateCountyBurdenVax(cty_newdata_20220507, cty_vaxdata_20220508, keyDates=c(4, 369))
+
+# Example for integrated plot data
+integrateCountyBurdenVax(cty_newdata_20220507, cty_vaxdata_20220508, keyDates=c(4, 369)) %>%
+    makeIntegratedCountyPlotData()
+
+# Check that data are the same
+dfCheck1 <- integrateCountyBurdenVax(cty_newdata_20220507, cty_vaxdata_20220508, keyDates=c(4, 369)) %>%
+    makeIntegratedCountyPlotData() %>%
+    pivot_wider(countyFIPS) %>%
+    filter(pop >= 25000, hasMaxMin==1)
+dfCheck2 <- dfPlotVaxBurden %>% 
+    pivot_wider(c(countyFIPS, pop, mu_vxcpoppct)) %>%
+    rename(mean_vxcpoppct=mu_vxcpoppct)
+
+# Confirm same fields
+setdiff(names(dfCheck1), names(dfCheck2))
+setdiff(names(dfCheck2), names(dfCheck1))
+
+# Confirm same counties
+setdiff(dfCheck1$countyFIPS, dfCheck2$countyFIPS)
+
+# Confirm same value, except for NA
+dfCheck <- dfCheck1 %>% 
+    pivot_longer(-c(countyFIPS)) %>%
+    inner_join(dfCheck2 %>% pivot_longer(-c(countyFIPS)), by=c("countyFIPS", "name")) %>%
+    mutate(diff=(is.na(value.x) != is.na(value.y)) | (!is.na(value.x) & !is.na(value.y) & value.x != value.y))
+# Summary of differences by field
+dfCheck %>% count(name, diff) %>% pivot_wider(name, names_from="diff", values_from="n")
+# Check that all are where the previous filtering rules produced NA for value.y
+dfCheck %>% filter(diff) %>% is.na %>% colSums()
+# Check values for mismatches
+dfCheck %>% filter(diff) %>% mutate(exceeds=(value.x > 10 | value.x < -1)) %>% count(name, exceeds)
 
 ```
 
