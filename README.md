@@ -2896,4 +2896,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 integrateCountyBurdenVax() written to integrate county-level data  
 * Coronavirus_Statistics_USAF_v006 makeIntegratedCountyPlotData() written to convert county-level data for plotting  
 * Coronavirus_Statistics_USAF_v006 plotIntegratedCounty() written to plot county-level associations  
+* Coronavirus_Statistics_USAF_v006 regIntegratedCounty() written for linear regression of county-level associations  
   
