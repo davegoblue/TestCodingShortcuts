@@ -2899,3 +2899,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 regIntegratedCounty() written for linear regression of county-level associations  
 * Coronavirus_Statistics_USAF_v006 plotIntegratedCounty() updated for better labelling  
   
+### Expansions week of 30-MAY-2022  
+* Coronavirus_Statistics_USAF_v006 plotIntegratedCounty() run for 65+  
+  
