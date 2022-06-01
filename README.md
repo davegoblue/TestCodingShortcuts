@@ -2902,4 +2902,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 30-MAY-2022  
 * Coronavirus_Statistics_USAF_v006 plotIntegratedCounty() run for 65+  
 * Coronavirus_Statistics_USAF_v006 plotIntegratedCounty() run for 18+  
+* Coronavirus_Statistics_USAF_v006 plotIntegratedCounty() run simultaneously for all/18+/65+  
   
