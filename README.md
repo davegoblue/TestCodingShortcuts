@@ -2904,4 +2904,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 plotIntegratedCounty() run for 18+  
 * Coronavirus_Statistics_USAF_v006 plotIntegratedCounty() run simultaneously for all/18+/65+  
 * Coronavirus_Statistics_USAF_v006 plotIntegratedCounty() run using 6-month time period  
+* Coronavirus_CDC_Daily_v004 downloads and processes latest data  
   
