@@ -2906,4 +2906,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 plotIntegratedCounty() run using 6-month time period  
 * Coronavirus_CDC_Daily_v004 downloads and processes latest data  
 * Coronavirus_CDC_Daily_v004 runs postProcessCDCDaily()  
+* Coronavirus_CDC_Daily_v004 runs peakValleyCDCDaily()  
   
