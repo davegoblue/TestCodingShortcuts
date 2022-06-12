@@ -1910,3 +1910,46 @@ integrateCountyBurdenVax(cty_newdata_20220606, cty_vaxdata_20220607, keyDates=c(
 
 ```
   
+A select group of counties can have evolution of burden and vaccines plotted:  
+```{r, fig.height=9, fig.width=9}
+
+# Extract county population
+ctyPop <- cty_vaxdata_20220607$vaxFix %>% 
+    filter(date==max(date)) %>% 
+    select(countyFIPS=FIPS, countyName, state, pop) %>%
+    mutate(useName=paste0(stringr::str_remove_all(countyName, " County"), ", ", state))
+
+# Pivot vaccines data
+vaxPivot <- cty_vaxdata_20220607$vaxFix %>%
+    select(countyFIPS=FIPS, date, starts_with("vxc")) %>%
+    pivot_longer(-c(countyFIPS, date)) %>%
+    filter(!is.na(value))
+
+# Pivot burdens data
+burdenPivot <- cty_newdata_20220606$dfPerCapita %>%
+    select(countyFIPS, date, tcpm7, cpm7, tdpm7, dpm7) %>%
+    pivot_longer(-c(countyFIPS, date)) %>%
+    filter(!is.na(value))
+
+# Integrated data
+vaxBurden <- bind_rows(vaxPivot, burdenPivot)
+
+# Plot subset of counties (those around 250k population)
+tmpCountySelect <- c("29047", "53077", "48245", "42041")
+tmpMapper <- c("tdpm7"="Total DPM (7-day avg)", 
+               "tcpm7"="Total CPM (7-day avg)", 
+               "vxcgte65pct"="% Vax (65+)", 
+               "vxcpoppct"="% Vax (all)"
+               )
+vaxBurden %>%
+    filter(countyFIPS %in% c(tmpCountySelect), 
+           name %in% c("vxcpoppct", "vxcgte65pct", "tdpm7", "tcpm7")
+           ) %>%
+    left_join(select(ctyPop, countyFIPS, useName), by="countyFIPS") %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(color=useName, group=useName)) + 
+    facet_wrap(~tmpMapper[name], scales="free_y") + 
+    labs(x=NULL, y="Metric (% vaccinated or burden per million", title="Select counties around 250k population")
+
+```
+
