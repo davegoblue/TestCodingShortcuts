@@ -2915,4 +2915,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 updates postProcessCountyData()  
 * Coronavirus_Statistics_USAF_v006 updates additionalCountyPostProcess()  
 * Coronavirus_Statistics_USAF_v006 plots vaccines vs. burden  
+* Coronavirus_Statistics_USAF_v006 plots evolution of vaccines and burden by county  
   
