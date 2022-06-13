@@ -1953,3 +1953,37 @@ vaxBurden %>%
 
 ```
 
+Data can also be aggregated by population, excluding states that have significant discontinuities in vaccines or deaths or cases:  
+```{r, fig.height=9, fig.width=9}
+
+# States with problems
+problemStates <- c("VA", "TX", "SD", "HI", "GA", "CO", "GA", "FL", "NE", "VA")
+
+# Create aggregated lists of counties by vaccine status (not problem states, population 125k-250k)
+tmpCountyList <- ctyPop %>%
+    filter(pop >= 125000, pop <= 250000, !(state %in% problemStates)) %>%
+    left_join(filter(vaxPivot, name=="vxcpoppct", date==max(date)), by="countyFIPS") %>%
+    mutate(vaxPct=percent_rank(value), 
+           vaxBucket=case_when(vaxPct <= .25 ~ "3. Low", vaxPct >= .75 ~ "1. High", TRUE ~ "2. Medium")
+           ) %>%
+    split(f=.$vaxBucket)
+tmpCountyList
+
+# Create aggregated data
+tmpCountyList %>%
+    bind_rows() %>%
+    select(countyFIPS, vaxBucket, pop) %>%
+    left_join(vaxBurden, by=c("countyFIPS")) %>%
+    group_by(vaxBucket, date, name) %>%
+    summarize(value=sum(value*pop)/sum(pop), pop=sum(pop), n=n(), .groups="drop") %>%
+    filter(name %in% c("vxcpoppct", "vxcgte65pct", "tdpm7", "tcpm7")) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(color=vaxBucket, group=vaxBucket)) + 
+    facet_wrap(~tmpMapper[name], scales="free_y") + 
+    labs(x=NULL, 
+         y="Metric (% vaccinated or burden per million)", 
+         title="Counties 125k-250k population in states with continuous county data"
+         )
+
+```
+  
