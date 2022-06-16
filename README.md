@@ -2921,4 +2921,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 plots evolution of vaccines and burden by aggregates  
 * Coronavirus_Statistics_USAF_v006 createVaxBurdenData() written  
 * Coronavirus_Statistics_USAF_v006 plotVaxBurdenData() written  
+* Coronavirus_Statistics_USAF_v006 plotVaxBurdenData() includes aggregation capability  
   
