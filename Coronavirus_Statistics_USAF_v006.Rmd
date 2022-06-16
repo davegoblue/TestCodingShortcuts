@@ -2038,16 +2038,30 @@ plotVaxBurdenData <- function(lst,
 
     # FUNCTION ARGUMENTS:
     # lst: list of processed population and vaccines/burden data
-    # ctyPlot: character vector of countyFIPS to plot
+    # ctyPlot: OPTION 1: character vector of countyFIPS to plot (each plotted individually)
+    #          OPTION 2: list of form list("name1"=df1, "name2"=df2, ...) - each aggregate plotted
     # varMapper: named vector to map variables to descriptive labels
     # plotVars: variables to be plotted
     # plotTitle: title for the plot
+
+    # Create the dataset
+    if("list" %in% class(ctyPlot)) {
+        dfPlot <- ctyPlot %>%
+            bind_rows() %>%
+            select(countyFIPS, bucket, pop) %>%
+            left_join(lst[["dfVaxBurden"]], by="countyFIPS") %>%
+            group_by(useName=bucket, date, name) %>%
+            summarize(value=sum(value*pop)/sum(pop), pop=sum(pop), n=n(), .groups="drop") %>%
+            filter(name %in% all_of(plotVars))
+    } else {
+        dfPlot <- lst[["dfVaxBurden"]] %>%
+            filter(countyFIPS %in% all_of(ctyPlot), 
+                   name %in% all_of(plotVars)
+                   ) %>%
+            left_join(select(lst[["ctyPop"]], countyFIPS, useName), by="countyFIPS")
+    }
     
-    p1 <- lst[["dfVaxBurden"]] %>%
-        filter(countyFIPS %in% all_of(ctyPlot), 
-               name %in% all_of(plotVars)
-               ) %>%
-        left_join(select(lst[["ctyPop"]], countyFIPS, useName), by="countyFIPS") %>%
+    p1 <- dfPlot %>%
         ggplot(aes(x=date, y=value)) + 
         geom_line(aes(color=useName, group=useName)) + 
         facet_wrap(~varMapper[name], scales="free_y") + 
@@ -2065,10 +2079,15 @@ tmpVaxBurden <- createVaxBurdenData(lstVax=cty_vaxdata_20220607, lstBurden=cty_n
 identical(tmpVaxBurden$ctyPop, ctyPop)
 identical(tmpVaxBurden$dfVaxBurden, vaxBurden)
 
-# Example plot
+# Example plot - individual counties
 plotVaxBurdenData(tmpVaxBurden, 
                   ctyPlot=c("29047", "53077", "48245", "42041"), 
                   plotTitle="Select counties ~250k population"
+                  )
+# Example plot - aggregated counties
+plotVaxBurdenData(tmpVaxBurden, 
+                  ctyPlot=lapply(tmpCountyList, FUN=function(x) x %>% rename(bucket=vaxBucket)), 
+                  plotTitle="Counties 125k-250k population in states with continuous county data"
                   )
 
 ```
