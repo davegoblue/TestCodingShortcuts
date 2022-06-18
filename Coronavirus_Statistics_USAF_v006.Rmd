@@ -2020,7 +2020,7 @@ createVaxBurdenData <- function(lstVax,
     dfVaxBurden <- bind_rows(dfVax, dfBurden)
     
     # Return data
-    list(ctyPop=ctyPop, dfVaxBurden=dfVaxBurden)
+    list(ctyPop=dfPop, dfVaxBurden=dfVaxBurden)
     
 }
 
@@ -2033,7 +2033,9 @@ plotVaxBurdenData <- function(lst,
                                           "vxcpoppct"="% Vax (all)"
                                           ), 
                               plotVars=names(varMapper), 
-                              plotTitle="Select counties"
+                              plotTitle="Select counties", 
+                              scaleToDate=NULL, 
+                              scaleToVars=c("tdpm7", "tcpm7")
                               ) {
 
     # FUNCTION ARGUMENTS:
@@ -2043,6 +2045,8 @@ plotVaxBurdenData <- function(lst,
     # varMapper: named vector to map variables to descriptive labels
     # plotVars: variables to be plotted
     # plotTitle: title for the plot
+    # scaleToDate: date to be used as baseline (level=100) for burden - NULL means keep as-is
+    # scaleToVars: variables to have scaling to 100 applied
 
     # Create the dataset
     if("list" %in% class(ctyPlot)) {
@@ -2061,15 +2065,31 @@ plotVaxBurdenData <- function(lst,
             left_join(select(lst[["ctyPop"]], countyFIPS, useName), by="countyFIPS")
     }
     
+    # Scale if appropriate
+    if(!is.null(scaleToDate)) {
+        dfPlot <- dfPlot %>%
+            group_by(useName, name) %>%
+            mutate(value=ifelse(name %in% all_of(scaleToVars), 
+                                100*value/sum(value*ifelse(date==scaleToDate, 1, 0)), 
+                                value
+                                )
+                   ) %>%
+            ungroup()
+    }
+    
+    # Create y-axis label
+    if(is.null(scaleToDate)) yVar <- "Metric (% vaccinated or burden per million)"
+    else yVar <- paste0("Metric (% vaccinated or burden relative to date ", scaleToDate, " (index=100))")
     p1 <- dfPlot %>%
         ggplot(aes(x=date, y=value)) + 
         geom_line(aes(color=useName, group=useName)) + 
         facet_wrap(~varMapper[name], scales="free_y") + 
         labs(x=NULL, 
-             y="Metric (% vaccinated or burden per million)", 
+             y=yVar, 
              title=plotTitle
              ) + 
         scale_color_discrete(NULL)
+    if(!is.null(scaleToDate)) p1 <- p1 + geom_vline(xintercept=as.Date(scaleToDate), lty=2)
     print(p1)
 
 }
@@ -2093,9 +2113,9 @@ plotVaxBurdenData(tmpVaxBurden,
 # Example of other aggregations
 problemStates <- c("VA", "TX", "SD", "HI", "GA", "CO", "GA", "FL", "NE", "VA")
 southStates <- state.abb[state.region=="South"]
-tmpCountyList <- ctyPop %>%
+tmpCountyList <- tmpVaxBurden$ctyPop %>%
     filter(state %in% southStates, !(state %in% problemStates)) %>%
-    left_join(filter(vaxPivot, name=="vxcpoppct", date==max(date)), by="countyFIPS") %>%
+    left_join(filter(tmpVaxBurden$dfVaxBurden, name=="vxcpoppct", date==max(date)), by="countyFIPS") %>%
     mutate(vaxPct=percent_rank(value), 
            vaxBucket=case_when(vaxPct <= .25 ~ "3. Low", vaxPct >= .75 ~ "1. High", TRUE ~ "2. Medium")
            ) %>%
@@ -2104,7 +2124,11 @@ plotVaxBurdenData(tmpVaxBurden,
                   ctyPlot=lapply(tmpCountyList, FUN=function(x) x %>% rename(bucket=vaxBucket)), 
                   plotTitle="Counties in South states with continuous county data"
                   )
-
+plotVaxBurdenData(tmpVaxBurden, 
+                  ctyPlot=lapply(tmpCountyList, FUN=function(x) x %>% rename(bucket=vaxBucket)), 
+                  plotTitle="Counties in South states with continuous county data", 
+                  scaleToDate="2021-05-01"
+                  )
 
 ```
   
