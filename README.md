@@ -2926,3 +2926,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v006 allows for indexing burden to 100 on a specified date  
 * Coronavirus_Statistics_CDC_v005 refreshed with latest all-cause deaths data  
   
+### Expansions week of 20-JUN-2022  
+* Coronavirus_Statistics_CDC_v005 refreshed with latest deaths by age and location data  
+  
