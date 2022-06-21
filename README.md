@@ -2928,4 +2928,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 20-JUN-2022  
 * Coronavirus_Statistics_CDC_v005 refreshed with latest deaths by age and location data  
+* Coronavirus_Statistics_CDC_v005 refreshes cumulative death plots  
   
