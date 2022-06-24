@@ -2931,4 +2931,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v005 refreshes cumulative death plots  
 * Coronavirus_Statistics_CDC_v005 refreshes cumulative death facets  
 * Coronavirus_Statistics_CDC_v005 includes function excessDeathFacets()  
+* Coronavirus_Statistics_CDC_v006 created from _v005  
   
