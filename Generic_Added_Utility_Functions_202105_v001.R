@@ -42,6 +42,8 @@
 # 39. lagCorrCheck() - find best correlation and lag/lead for two series of data
 # 40. findPeaks() - function to find local extrema in a time series
 # 41. testImputeNA() - impute NA values for a vector based on another vector
+# 42. pivotData() - helper function for pivoting data (longer or wider)
+# 43. zeroNA() - convert NA data in a vector to 0
 
 # Function for saving an R object to RDS, including a check for whether the object already exists
 saveToRDS <- function(obj, 
@@ -1321,3 +1323,30 @@ testImputeNA <- function(x, y=NULL, naValues=c()) {
     xConv
     
 }
+
+
+# Function to pivot the data file longer
+pivotData <- function(df, 
+                      pivotKeys, 
+                      nameVar="name", 
+                      valVar="value",
+                      toLonger=TRUE, 
+                      ...
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the data frame
+    # pivotKeys: the keys (everything but cols for pivot_longer, id_cols for pivot_wider)
+    # nameVar: variable name for names_to or names_from
+    # valVar: variable name for values_to or values_from
+    # toLonger: boolean, should pivot_longer() be used rather than pivot_wider()?
+    # ...: other arguments to be passed to pivot_*()
+    
+    if (isTRUE(toLonger)) pivot_longer(df, -all_of(pivotKeys), names_to=nameVar, values_to=valVar, ...)
+    else pivot_wider(df, all_of(pivotKeys), names_from=all_of(nameVar), values_from=all_of(valVar), ...)
+    
+}
+
+
+# Convert NA data to 0
+zeroNA <- function(x) ifelse(is.na(x), 0, x)
