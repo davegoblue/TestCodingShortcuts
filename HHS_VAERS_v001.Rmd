@@ -1,0 +1,118 @@
+---
+title: "VAERS Exploration"
+author: "davegoblue"
+date: '2022-06-24'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background  
+This module explores vaccine adverse events (VAERS) in the United States, based on data available at [HHS - VAERS](https://vaers.hhs.gov/data/datasets.html).  Data are maintained on reported adverse events by vaccine, symptom or sign, year, etc. Because VAERS is a reporting system, it may include over-reporting of adverse events (e.g., false reports, errors, spurious correlation, etc.) and under-reporting of adverse events (e.g., patient or doctor is not aware of system or chooses not to spend time reporting). While there is under-reporting and over-reporting in VAERS, it is widely believed that VAERS significantly underestimates adverse events. This under-reporting ratio may differ by attributes such as vaccine, symptom, etc.
+
+The code leverages tidyverse and sourced functions throughout:  
+```{r}
+
+# All functions assume that tidyverse and its components are loaded and available
+library(tidyverse)
+
+# Generic added R functions will be available
+source("./Generic_Added_Utility_Functions_202105_v001.R")
+
+```
+  
+## Initial Exploration  
+An initial exploration is made using the 2020 data. There are three datasets provided in a ZIP file:  
+  
+* 2020VAERSDATA - patient information (blinded) unique by VAERS_ID such as age, sex, vaccine date, outcome, etc.  
+* 2020VAERSSYMPTOMS - additional detail on symptoms, keyed by VAERS_ID (not necessarily unique if many symptoms)  
+* 2020VAERSVAX - vaccine type, unique by VAERS_ID  
+  
+Data are in CSV format and are loaded accordingly:  
+```{r, fig.height=9, fig.width=9}
+
+# FILE #1: VAERS DATA (check for uniqueness by VAERS_ID)
+vaersData2020 <- readr::read_csv("./RInputFiles/Coronavirus/VAERS/Explore2020/2020VAERSDATA.csv", 
+                                 col_types="cccdddccccccccdcccccdccccccccdccccc"
+                                 ) %>%
+    mutate(across(c("RECVDATE", "RPT_DATE", "DATEDIED", "VAX_DATE", "ONSET_DATE", "TODAYS_DATE"), 
+                  .fns=function(x) lubridate::mdy(x)
+                  )
+           ) %>%
+    checkUniqueRows(uniqueBy="VAERS_ID")
+glimpse(vaersData2020)
+
+```
+  
+```{r, fig.height=9, fig.width=9}
+
+# FILE #2: VAERS SYMPTOMS
+vaersSymptoms2020 <- readr::read_csv("./RInputFiles/Coronavirus/VAERS/Explore2020/2020VAERSSYMPTOMS.csv", 
+                                     col_types="ccccccccccc"
+                                     )
+glimpse(vaersSymptoms2020)
+
+```
+  
+```{r, fig.height=9, fig.width=9}  
+
+# FILE #3: VAERS VAX
+vaersVax2020 <- readr::read_csv("./RInputFiles/Coronavirus/VAERS/Explore2020/2020VAERSVAX.csv")
+glimpse(vaersVax2020)
+
+```
+  
+```{r, fig.height=9, fig.width=9}
+
+# Check for overlaps and uniqueness of VAERS_ID
+vaersOverlap2020 <- vaersData2020 %>%
+    select(VAERS_ID) %>%
+    mutate(nData=1) %>%
+    checkUniqueRows() %>%
+    full_join(count(vaersSymptoms2020, VAERS_ID, name="nSymptoms"), by="VAERS_ID") %>%
+    full_join(count(vaersVax2020, VAERS_ID, name="nVax"), by="VAERS_ID")
+vaersOverlap2020 %>%
+    count(nData, nSymptoms, nVax) %>%
+    as.data.frame()
+vaersOverlap2020 %>% ggplot(aes(x=nSymptoms)) + geom_histogram(binwidth=1)
+vaersOverlap2020 %>% ggplot(aes(x=nVax)) + geom_histogram(binwidth=1)
+
+
+# Pull outlier VAERS_ID (roughly 1% of data has very many vaccines or very many symptoms)
+vaersOutlier2020 <- vaersOverlap2020 %>%
+    filter(nVax > 4 | nSymptoms > 4)
+vaersOutlier2020
+
+# Example data
+set.seed(22062422)
+vaersCheck <- vaersOutlier2020 %>% sample_n(size=5)
+vaersCheck
+
+vaersSymptoms2020 %>%
+    right_join(vaersCheck, by="VAERS_ID")
+vaersVax2020 %>%
+    right_join(vaersCheck, by="VAERS_ID")
+
+```
+  
+The VAERS symptoms data can be pivoted longer so that it is unique by VAERS_ID and SYMPTOM:  
+```{r, fig.height=9, fig.width=9}
+
+vaersSymptomsPivot2020 <- vaersSymptoms2020 %>%
+    pivot_longer(-VAERS_ID) %>%
+    filter(!is.na(value)) %>%
+    mutate(type=ifelse(stringr::str_detect(name, pattern="VERSION"), "code", "symptom")) %>%
+    group_by(VAERS_ID, type) %>%
+    mutate(number=row_number()) %>%
+    ungroup() %>%
+    pivot_wider(c(VAERS_ID, number), names_from="type", values_from="value") %>%
+    checkUniqueRows(uniqueBy=c("VAERS_ID", "symptom"))
+vaersSymptomsPivot2020
+colSums(is.na(vaersSymptomsPivot2020))
+vaersSymptomsPivot2020 %>% count(symptom, sort=TRUE)
+vaersSymptomsPivot2020 %>% count(code, sort=TRUE)
+
+```
+  
