@@ -2937,4 +2937,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 27-JUN-2022  
 * HHS_VAERS_v001 written to explore VAERS (vaccine adverse events reporting) data  
+* HHS_VAERS_v001 explores2020  adverse events by severity, sex, and month  
   
