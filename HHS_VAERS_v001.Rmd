@@ -235,3 +235,77 @@ identical(readRawVAERSVax("./RInputFiles/Coronavirus/VAERS/Explore2020/2020VAERS
 
 ```
   
+Additional processing can be run to ensure uniqueness of the vaccines data and convert the symptoms data so there is one row for each symptom-patient:  
+```{r, fig.height=9, fig.width=9}
+
+processRawVAERS <- function(dfMain=NULL, 
+                            dfSymptoms=NULL, 
+                            dfVax=NULL
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfMain: the main VAERS data file (NULL means do not use)
+    # dfSymptoms: the symptoms data file (NULL means do not use)
+    # dfVax: the vaccines data file (NULL means do not use)
+    
+    # Convert the symptoms to be unique by VAERS_ID-SYMPTOM
+    if(!is.null(dfSymptoms)) {
+        dfSymptoms <- dfSymptoms %>%
+            pivot_longer(-VAERS_ID) %>%
+            filter(!is.na(value)) %>%
+            mutate(type=ifelse(stringr::str_detect(name, pattern="VERSION"), "code", "symptom")) %>%
+            group_by(VAERS_ID, type) %>%
+            mutate(number=row_number()) %>%
+            ungroup() %>%
+            pivot_wider(c(VAERS_ID, number), names_from="type", values_from="value") %>%
+            checkUniqueRows(uniqueBy=c("VAERS_ID", "symptom"))
+        glimpse(dfSymptoms)
+        cat("\nNA record counts in pivoted symptoms data:\n")
+        colSums(is.na(dfSymptoms)) %>% print()
+        cat("\nCounts of top symptoms, codes, and number of symptoms in pivoted symptoms data:\n")
+        dfSymptoms %>% count(symptom, sort=TRUE) %>% print()
+        dfSymptoms %>% count(code, sort=TRUE) %>% print()
+        dfSymptoms %>% count(number, sort=TRUE) %>% print()
+    }
+    
+    # Convert the vaccines data to be unique
+    if(!is.null(dfVax)) {
+        dfVax <- dfVax %>%
+            group_by_at(all_of(names(dfVax))) %>%
+            summarize(nRecords=n(), .groups="drop") %>%
+            checkUniqueRows(uniqueBy=names(dfVax))
+        glimpse(dfVax)
+        cat("\nOccurences per vaccine record in raw VAERS vaccines data")
+        dfVax %>% count(nRecords, sort=TRUE) %>% print()
+    }
+
+    # Check overlap of data if all datasets passed
+    if(!is.null(dfMain) & !is.null(dfSymptoms) & !is.null(dfVax)) {
+        # Create overlap database
+        dfOverlap <- dfMain %>%
+            select(VAERS_ID) %>%
+            mutate(nData=1) %>%
+            full_join(dfSymptoms %>% group_by(VAERS_ID) %>% summarize(nSymptoms=max(number)), by="VAERS_ID") %>%
+            full_join(count(dfVax, VAERS_ID, name="nVax"), by="VAERS_ID") %>%
+            checkUniqueRows(uniqueBy="VAERS_ID")
+        # Confirm that every VAERS_ID is in each file
+        cat("\nChecking that overlap of main-symptoms-vax has zero NA (each VAERS_ID is in each file)\n")
+        colSums(is.na(dfOverlap)) %>% print()
+        cat("\n")
+    }
+
+    # Return a list of the processed data (or pass-through of NULL for data not provided)
+    list(dfMain=dfMain, dfSymptoms=dfSymptoms, dfVax=dfVax)
+    
+}
+
+processVAERS2020 <- processRawVAERS(dfMain=vaersData2020, dfSymptoms=vaersSymptoms2020, dfVax=vaersVax2020)
+identical(vaersData2020, processVAERS2020$dfMain)
+identical(vaersSymptomsPivot2020, processVAERS2020$dfSymptoms)
+# Making vaccines data unique changes sort order of some components for records with multiple vaccines
+all.equal(unique(vaersVax2020) %>% arrange(VAERS_ID, VAX_DOSE_SERIES, VAX_LOT, VAX_ROUTE, VAX_SITE), 
+          select(processVAERS2020$dfVax, -nRecords) %>% arrange(VAERS_ID, VAX_DOSE_SERIES, VAX_LOT, VAX_ROUTE, VAX_SITE)
+          )
+
+```
+  

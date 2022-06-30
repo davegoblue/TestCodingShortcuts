@@ -825,6 +825,163 @@ identical(readRawVAERSData(&quot;./RInputFiles/Coronavirus/VAERS/Explore2020/202
 ##   VAX_NAME = col_character()
 ## )</code></pre>
 <pre><code>## [1] TRUE</code></pre>
+<p>Additional processing can be run to ensure uniqueness of the vaccines
+data and convert the symptoms data so there is one row for each
+symptom-patient:</p>
+<pre class="r"><code>processRawVAERS &lt;- function(dfMain=NULL, 
+                            dfSymptoms=NULL, 
+                            dfVax=NULL
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfMain: the main VAERS data file (NULL means do not use)
+    # dfSymptoms: the symptoms data file (NULL means do not use)
+    # dfVax: the vaccines data file (NULL means do not use)
+    
+    # Convert the symptoms to be unique by VAERS_ID-SYMPTOM
+    if(!is.null(dfSymptoms)) {
+        dfSymptoms &lt;- dfSymptoms %&gt;%
+            pivot_longer(-VAERS_ID) %&gt;%
+            filter(!is.na(value)) %&gt;%
+            mutate(type=ifelse(stringr::str_detect(name, pattern=&quot;VERSION&quot;), &quot;code&quot;, &quot;symptom&quot;)) %&gt;%
+            group_by(VAERS_ID, type) %&gt;%
+            mutate(number=row_number()) %&gt;%
+            ungroup() %&gt;%
+            pivot_wider(c(VAERS_ID, number), names_from=&quot;type&quot;, values_from=&quot;value&quot;) %&gt;%
+            checkUniqueRows(uniqueBy=c(&quot;VAERS_ID&quot;, &quot;symptom&quot;))
+        glimpse(dfSymptoms)
+        cat(&quot;\nNA record counts in pivoted symptoms data:\n&quot;)
+        colSums(is.na(dfSymptoms)) %&gt;% print()
+        cat(&quot;\nCounts of top symptoms, codes, and number of symptoms in pivoted symptoms data:\n&quot;)
+        dfSymptoms %&gt;% count(symptom, sort=TRUE) %&gt;% print()
+        dfSymptoms %&gt;% count(code, sort=TRUE) %&gt;% print()
+        dfSymptoms %&gt;% count(number, sort=TRUE) %&gt;% print()
+    }
+    
+    # Convert the vaccines data to be unique
+    if(!is.null(dfVax)) {
+        dfVax &lt;- dfVax %&gt;%
+            group_by_at(all_of(names(dfVax))) %&gt;%
+            summarize(nRecords=n(), .groups=&quot;drop&quot;) %&gt;%
+            checkUniqueRows(uniqueBy=names(dfVax))
+        glimpse(dfVax)
+        cat(&quot;\nOccurences per vaccine record in raw VAERS vaccines data&quot;)
+        dfVax %&gt;% count(nRecords, sort=TRUE) %&gt;% print()
+    }
+
+    # Check overlap of data if all datasets passed
+    if(!is.null(dfMain) &amp; !is.null(dfSymptoms) &amp; !is.null(dfVax)) {
+        # Create overlap database
+        dfOverlap &lt;- dfMain %&gt;%
+            select(VAERS_ID) %&gt;%
+            mutate(nData=1) %&gt;%
+            full_join(dfSymptoms %&gt;% group_by(VAERS_ID) %&gt;% summarize(nSymptoms=max(number)), by=&quot;VAERS_ID&quot;) %&gt;%
+            full_join(count(dfVax, VAERS_ID, name=&quot;nVax&quot;), by=&quot;VAERS_ID&quot;) %&gt;%
+            checkUniqueRows(uniqueBy=&quot;VAERS_ID&quot;)
+        # Confirm that every VAERS_ID is in each file
+        cat(&quot;\nChecking that overlap of main-symptoms-vax has zero NA (each VAERS_ID is in each file)\n&quot;)
+        colSums(is.na(dfOverlap)) %&gt;% print()
+        cat(&quot;\n&quot;)
+    }
+
+    # Return a list of the processed data (or pass-through of NULL for data not provided)
+    list(dfMain=dfMain, dfSymptoms=dfSymptoms, dfVax=dfVax)
+    
+}
+
+processVAERS2020 &lt;- processRawVAERS(dfMain=vaersData2020, dfSymptoms=vaersSymptoms2020, dfVax=vaersVax2020)</code></pre>
+<pre><code>## 
+## *** File has been checked for uniqueness by: VAERS_ID symptom 
+## 
+## Rows: 178,542
+## Columns: 4
+## $ VAERS_ID &lt;chr&gt; &quot;0855017&quot;, &quot;0855017&quot;, &quot;0855017&quot;, &quot;0855017&quot;, &quot;0855018&quot;, &quot;08550~
+## $ number   &lt;int&gt; 1, 2, 3, 4, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 1, 2, 3, ~
+## $ symptom  &lt;chr&gt; &quot;Arthralgia&quot;, &quot;Chills&quot;, &quot;Injection site pain&quot;, &quot;Pyrexia&quot;, &quot;Ch~
+## $ code     &lt;chr&gt; &quot;22.10&quot;, &quot;22.10&quot;, &quot;22.10&quot;, &quot;22.10&quot;, &quot;22.10&quot;, &quot;22.10&quot;, &quot;22.10&quot;~
+## 
+## NA record counts in pivoted symptoms data:
+## VAERS_ID   number  symptom     code 
+##        0        0        0        0 
+## 
+## Counts of top symptoms, codes, and number of symptoms in pivoted symptoms data:
+## # A tibble: 4,055 x 2
+##    symptom                     n
+##    &lt;chr&gt;                   &lt;int&gt;
+##  1 Pyrexia                  6674
+##  2 Headache                 6269
+##  3 Pain                     6152
+##  4 Injection site pain      5270
+##  5 Chills                   5146
+##  6 Pain in extremity        4850
+##  7 Fatigue                  4622
+##  8 No adverse event         4285
+##  9 Nausea                   3982
+## 10 Injection site erythema  3808
+## # ... with 4,045 more rows
+## # A tibble: 4 x 2
+##   code       n
+##   &lt;chr&gt;  &lt;int&gt;
+## 1 23.10 102114
+## 2 23.00  51837
+## 3 24.00  12467
+## 4 22.10  12124
+## # A tibble: 117 x 2
+##    number     n
+##     &lt;int&gt; &lt;int&gt;
+##  1      1 49651
+##  2      2 38524
+##  3      3 26575
+##  4      4 18854
+##  5      5 12970
+##  6      6  8797
+##  7      7  6006
+##  8      8  4184
+##  9      9  2934
+## 10     10  2081
+## # ... with 107 more rows
+## 
+## *** File has been checked for uniqueness by: VAERS_ID VAX_TYPE VAX_MANU VAX_LOT VAX_DOSE_SERIES VAX_ROUTE VAX_SITE VAX_NAME 
+## 
+## Rows: 59,430
+## Columns: 9
+## $ VAERS_ID        &lt;chr&gt; &quot;0855017&quot;, &quot;0855018&quot;, &quot;0855019&quot;, &quot;0855020&quot;, &quot;0855021&quot;,~
+## $ VAX_TYPE        &lt;chr&gt; &quot;VARZOS&quot;, &quot;UNK&quot;, &quot;VARZOS&quot;, &quot;VARZOS&quot;, &quot;VARZOS&quot;, &quot;VARZOS~
+## $ VAX_MANU        &lt;chr&gt; &quot;GLAXOSMITHKLINE BIOLOGICALS&quot;, &quot;UNKNOWN MANUFACTURER&quot;,~
+## $ VAX_LOT         &lt;chr&gt; NA, NA, NA, NA, NA, NA, NA, &quot;9DE73&quot;, NA, NA, &quot;UJ288AB&quot;~
+## $ VAX_DOSE_SERIES &lt;chr&gt; &quot;2&quot;, &quot;1&quot;, &quot;UNK&quot;, &quot;UNK&quot;, &quot;2&quot;, &quot;2&quot;, &quot;1&quot;, &quot;2&quot;, &quot;2&quot;, &quot;2&quot;, ~
+## $ VAX_ROUTE       &lt;chr&gt; &quot;SYR&quot;, &quot;IM&quot;, NA, &quot;IM&quot;, &quot;IM&quot;, &quot;IM&quot;, &quot;IM&quot;, &quot;IM&quot;, &quot;IM&quot;, &quot;~
+## $ VAX_SITE        &lt;chr&gt; &quot;LA&quot;, &quot;RA&quot;, NA, &quot;LA&quot;, &quot;RA&quot;, &quot;LA&quot;, &quot;LA&quot;, &quot;RA&quot;, &quot;LA&quot;, &quot;L~
+## $ VAX_NAME        &lt;chr&gt; &quot;ZOSTER (SHINGRIX)&quot;, &quot;VACCINE NOT SPECIFIED (OTHER)&quot;, ~
+## $ nRecords        &lt;int&gt; 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, ~
+## 
+## Occurences per vaccine record in raw VAERS vaccines data# A tibble: 8 x 2
+##   nRecords     n
+##      &lt;int&gt; &lt;int&gt;
+## 1        1 59273
+## 2        2   123
+## 3        3    24
+## 4       10     4
+## 5        4     3
+## 6        5     1
+## 7        6     1
+## 8        7     1
+## 
+## *** File has been checked for uniqueness by: VAERS_ID 
+## 
+## 
+## Checking that overlap of main-symptoms-vax has zero NA (each VAERS_ID is in each file)
+##  VAERS_ID     nData nSymptoms      nVax 
+##         0         0         0         0</code></pre>
+<pre class="r"><code>identical(vaersData2020, processVAERS2020$dfMain)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>identical(vaersSymptomsPivot2020, processVAERS2020$dfSymptoms)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code># Making vaccines data unique changes sort order of some components for records with multiple vaccines
+all.equal(unique(vaersVax2020) %&gt;% arrange(VAERS_ID, VAX_DOSE_SERIES, VAX_LOT, VAX_ROUTE, VAX_SITE), 
+          select(processVAERS2020$dfVax, -nRecords) %&gt;% arrange(VAERS_ID, VAX_DOSE_SERIES, VAX_LOT, VAX_ROUTE, VAX_SITE)
+          )</code></pre>
+<pre><code>## [1] TRUE</code></pre>
 </div>
 
 
