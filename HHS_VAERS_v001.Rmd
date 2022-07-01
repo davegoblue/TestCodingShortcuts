@@ -136,7 +136,6 @@ vaersData2020 %>%
          ) + 
     theme(axis.text.x = element_text(angle=90))
 
-
 ```
   
 The raw data loading processes are converted to functional form:  
@@ -306,6 +305,95 @@ identical(vaersSymptomsPivot2020, processVAERS2020$dfSymptoms)
 all.equal(unique(vaersVax2020) %>% arrange(VAERS_ID, VAX_DOSE_SERIES, VAX_LOT, VAX_ROUTE, VAX_SITE), 
           select(processVAERS2020$dfVax, -nRecords) %>% arrange(VAERS_ID, VAX_DOSE_SERIES, VAX_LOT, VAX_ROUTE, VAX_SITE)
           )
+
+```
+  
+A function is created for basic facetted bar plots of evolution in monthly VAERS:  
+```{r, fig.height=9, fig.width=9}
+
+plotVAERSMonthly <- function(lst, 
+                             vaxYears=NULL, 
+                             plotVars=c("DIED", "L_THREAT", "ER_VISIT", "HOSPITAL", "DISABLE", "REPORT"), 
+                             segVars=c(),
+                             monthAsChar=if(length(segVars)>0) TRUE else FALSE,
+                             plotTitle=NULL, 
+                             plotSubtitle=if(length(plotVars) > 1) "One event may be in multiple categories" else NULL, 
+                             plotYLabel=NULL, 
+                             plotXLabel=NULL, 
+                             printPlot=TRUE,
+                             returnDF=FALSE
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: list of processed VAERS data
+    # vaxYears: which years of vaccination should be included (NULL means all)
+    # plotVars: variables of interest (facets if length greater than 1)
+    # segVars: demographic variables of interest
+    # monthAsChar: boolean, should month be treated as a character variable (rather than converted to date)?
+    # plotTitle: title for the plot
+    # plotSubTitle: subtitle for the plot
+    # plotYLabel: y-label for the plot
+    # plotXLabel: x-label for the plot
+    # printPlot: boolean, should the plot be printed?
+    # returnDF: boolean, should the data frame be returned?
+    
+    # Extract data
+    df <- lst[["dfMain"]]
+    
+    # Filter for years if requested
+    if(!is.null(vaxYears)) df <- df %>% filter(lubridate::year(VAX_DATE) %in% all_of(vaxYears))
+    
+    # Create the custom date and reporting flag, keep only relevant variables, pivot, and count
+    df <- df %>% 
+        mutate(month=customYYYYMM(VAX_DATE), REPORT="Y") %>%
+        select(all_of(c("month", plotVars, segVars))) %>%
+        pivot_longer(-all_of(c("month", segVars))) %>%
+        group_by_at(all_of(c("month", segVars, "name"))) %>%
+        summarize(nEvent=sum(ifelse(is.na(value), 0, 1)), n=n(), .groups="drop")
+
+    # Create the plot
+    p1 <- df %>% 
+        ggplot(aes(x=if(isTRUE(monthAsChar)) month else lubridate::ym(month), y=nEvent)) + 
+        labs(title=plotTitle, 
+             subtitle=plotSubtitle, 
+             x=plotXLabel, 
+             y=plotYLabel
+             ) + 
+        theme(axis.text.x = element_text(angle=90))
+    
+    # Add a line plot if there are no segments, bar plot otherwise
+    if(length(segVars)==0) p1 <- p1 + geom_line()
+    else p1 <- p1 + 
+        geom_col(aes(group=get(segVars), fill=get(segVars)), position="stack") + 
+        scale_fill_discrete(segVars)
+    
+    # Add facets if relevant
+    if(length(plotVars) > 1) p1 <- p1 + facet_wrap(~name, scales="free_y")
+    
+    # Print the plot
+    if(isTRUE(printPlot)) print(p1)
+
+    # Return the data frame
+    if(isTRUE(returnDF)) return(df)
+    
+}
+
+plotVAERSMonthly(processVAERS2020, 
+                 plotTitle="Adverse events by severity and month based on 2020 VAERS data", 
+                 plotYLabel="Events reported in 2020 data"
+                 )
+plotVAERSMonthly(processVAERS2020, 
+                 vaxYears=2020, 
+                 plotTitle="Adverse events by severity and month based on 2020 VAERS data", 
+                 plotYLabel="Events in 2020 reported in 2020 data"
+                 )
+plotVAERSMonthly(processVAERS2020, 
+                 vaxYears=2020, 
+                 segVars="SEX",
+                 plotTitle="Adverse events by severity, sex, and month based on 2020 VAERS data", 
+                 plotYLabel="Events in 2020 reported in 2020 data", 
+                 returnDF=TRUE
+                 )
 
 ```
   
