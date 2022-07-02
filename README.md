@@ -2941,4 +2941,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * HHS_VAERS_v001 explores2020 includes readRawVAERS() and helper functions  
 * HHS_VAERS_v001 explores2020 includes processRawVAERS()  
 * HHS_VAERS_v001 explores2020 includes plotVAERSMonthly()  
+* HHS_VAERS_v001 explores2020 includes makeSkinnyVAERSList()  
   
