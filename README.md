@@ -2937,9 +2937,10 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 27-JUN-2022  
 * HHS_VAERS_v001 written to explore VAERS (vaccine adverse events reporting) data  
-* HHS_VAERS_v001 explores2020 adverse events by severity, sex, and month  
-* HHS_VAERS_v001 explores2020 includes readRawVAERS() and helper functions  
-* HHS_VAERS_v001 explores2020 includes processRawVAERS()  
-* HHS_VAERS_v001 explores2020 includes plotVAERSMonthly()  
-* HHS_VAERS_v001 explores2020 includes makeSkinnyVAERSList()  
+* HHS_VAERS_v001 explores 2020 adverse events by severity, sex, and month  
+* HHS_VAERS_v001 includes readRawVAERS() and helper functions  
+* HHS_VAERS_v001 includes processRawVAERS()  
+* HHS_VAERS_v001 includes plotVAERSMonthly()  
+* HHS_VAERS_v001 includes makeSkinnyVAERSList()  
+* HHS_VAERS_v001 applies functions to 2019 adverse events data  
   
