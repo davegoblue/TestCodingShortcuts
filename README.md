@@ -2944,3 +2944,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * HHS_VAERS_v001 includes makeSkinnyVAERSList()  
 * HHS_VAERS_v001 applies functions to 2019 adverse events data  
   
+### Expansions week of 04-JUL-2022  
+* HHS_VAERS_v001 applies functions to 2021 adverse events data  
+  
