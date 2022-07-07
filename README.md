@@ -2948,4 +2948,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * HHS_VAERS_v001 applies functions to 2021 adverse events data  
 * Coronavirus_CDC_Daily_v004 downloads and processes latest data  
 * Coronavirus_CDC_Daily_v004 runs postProcessCDCDaily()  
+* Coronavirus_CDC_Daily_v004 runs peakValleyCDCDaily()  
   
