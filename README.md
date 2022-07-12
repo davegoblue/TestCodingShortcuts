@@ -2955,4 +2955,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 11-JUL-2022  
 * Coronavirus_Statistics_USAF_v006 updates postProcessCountyData()  
+* Coronavirus_Statistics_USAF_v006 updates additionalCountyPostProcess()  
   
