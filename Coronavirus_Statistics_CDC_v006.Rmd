@@ -132,3 +132,52 @@ mapEpi %>%
 ```
   
 Data appear anomalous, particularly 2022 deaths in "Under 25 years" and "25-44 years". Partly, this is incomplete reporting in the most recent weeks (normal), but partly this may be driven by data not yet re-entered after the upgrade. It is striking that there are fewer reported all-cause deaths in the 2022-07-13 data than in the 2022-06-23 data for any cohort, as all-cause data almost always increases as additional reports are received from vital statistics departments. Trends among "45-64 years" and senior citizens, at a glance, are the more commonly observed build over time
+  
+The process is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+makeRestatementData <- function(vecFiles, key, vecNames=NULL, epiRange=as.Date(c("2014-12-01", "2031-01-31"))) {
+    
+    # FUNCTION ARGUMENTS:
+    # vecFiles: character vector of file names (will be extracted using readFromRDS)
+    # key: the extract element from each of the lists
+    # vecNames: names to be used in plot for each of the extracts (NULL means infer from ...)
+    # epiRange: range for converting epiweek and epiyear to date (should be a larger range than data)
+
+    # Create keyNames if not provided
+    if(is.null(vecNames)) {
+        vecNames <- as.character(lubridate::ymd(stringr::str_remove(vecFiles, ".*_"))) %>%
+            purrr::set_names(as.character(1:length(vecFiles)))
+    }
+    
+    # Create epi mapping file
+    dfEpi <- tibble::tibble(date=seq.Date(epiRange[1], epiRange[2], by=1)) %>%
+        mutate(epiYear=as.integer(lubridate::epiyear(date)), 
+               epiWeek=as.integer(lubridate::epiweek(date))
+               )
+
+    # Create single date for each epiWeek and epiYear
+    mapEpi <- dfEpi %>%
+        arrange(date) %>%
+        group_by(epiYear, epiWeek) %>%
+        filter(row_number()==1) %>%
+        ungroup() %>%
+        rename(yearint=epiYear, week=epiWeek)
+    
+    # Read and integrate file, add epiDate
+    purrr::map_dfr(.x=vecFiles, 
+                   .f=function(x) readFromRDS(x)[[key]], 
+                   .id="fileDate"
+                   ) %>%
+        mutate(fileDate=vecNames[fileDate]) %>%
+        left_join(mapEpi, by=c("yearint", "week"))
+    
+}
+
+makeRestatementData(c("cdcList_20220713", "cdcList_20220623", "cdcList_20220105"), key="ageAgg")
+makeRestatementData(c("cdcList_20220713", "cdcList_20220623", "cdcList_20220105"), key="stateAgg")
+makeRestatementData(c("cdcList_20220713", "cdcList_20220623", "cdcList_20220105"), key="clusterAgg")
+makeRestatementData(c("cdcList_20220713", "cdcList_20220623", "cdcList_20220105"), key="allUSAgg")
+
+```
+  
