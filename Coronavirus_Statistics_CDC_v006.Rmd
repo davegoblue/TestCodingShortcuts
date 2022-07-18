@@ -174,11 +174,12 @@ makeRestatementData <- function(vecFiles, key, vecNames=NULL, epiRange=as.Date(c
     
 }
 
-plotRestatementData <- function(df, wrapBy=NULL) {
+plotRestatementData <- function(df, wrapBy=NULL, asRatio=FALSE) {
     
     # FUNCTION ARGUMENTS:
     # df: data frame or tibble formatted for plotting
     # wrapBy: variable for facet_wrap (NULL means infer from file, FALSE means do not wrap)
+    # asRatio: boolean, should ratios be plotted rather than values?
 
     # Create the appropriate wrapBy if passed as NULL
     if(is.null(wrapBy)) {
@@ -188,13 +189,40 @@ plotRestatementData <- function(df, wrapBy=NULL) {
         else wrapBy <- FALSE
     }
     
+    plotTitle <- "US all-cause deaths by report date"
+    plotSubTitle <- NULL
+    plotYAxis <- "Reported all-cause US deaths"
+    
+    # Create ratios if appropriate
+    if(isTRUE(asRatio)) {
+        groupVars <- c("date")
+        if(!isFALSE(wrapBy)) groupVars <- c(groupVars, wrapBy)
+        df <- df %>%
+            rename(trueFileDate=fileDate, trueDeaths=deaths) %>%
+            arrange(trueFileDate) %>%
+            group_by_at(all_of(groupVars)) %>%
+            mutate(n=n(), 
+                   fileDate=ifelse(row_number()==1, trueFileDate, paste0(trueFileDate, " vs. ", lag(trueFileDate))), 
+                   deaths=ifelse(row_number()==1, trueDeaths, trueDeaths/lag(trueDeaths))
+                   ) %>%
+            ungroup()
+        plotTitle <- "Ratio of US all-cause deaths by report date"
+        plotSubTitle <- "Ratios filtered to exclude NA and results greater than 3"
+        plotYAxis <- "Ratio of reported all-cause US deaths"
+    }
+    
     # Create base plot
     p1 <- df %>%
+        filter(if(isTRUE(asRatio)) fileDate != min(fileDate) else TRUE) %>%
+        filter(if(isTRUE(asRatio)) !is.na(deaths) & deaths <= 3 else TRUE) %>%
         ggplot(aes(x=date, y=deaths)) + 
         geom_line(aes(color=fileDate, group=fileDate)) + 
         lims(y=c(0, NA)) +
-        labs(x=NULL, y="Reported all-cause US deaths", title="US all-cause deaths by report date") +
+        labs(x=NULL, y=plotYAxis, subtitle=plotSubTitle, title=plotTitle) +
         scale_color_discrete("File Date")
+    
+    # Add line at 1.0 if ratio
+    if(isTRUE(asRatio)) p1 <- p1 + geom_hline(yintercept=1, lty=2)
     
     # Add facetting if appropriate
     if(!isFALSE(wrapBy)) p1 <- p1 + facet_wrap(~get(wrapBy), scales="free_y")
@@ -207,8 +235,12 @@ plotRestatementData <- function(df, wrapBy=NULL) {
 makeRestatementData(c("cdcList_20220713", "cdcList_20220623", "cdcList_20220105"), key="ageAgg")
 makeRestatementData(c("cdcList_20220713", "cdcList_20220623", "cdcList_20220105"), key="ageAgg") %>%
     plotRestatementData()
+makeRestatementData(c("cdcList_20220713", "cdcList_20220623", "cdcList_20220105"), key="ageAgg") %>%
+    plotRestatementData(asRatio=TRUE)
 makeRestatementData(c("cdcList_20220713", "cdcList_20220623", "cdcList_20220105"), key="allUSAgg") %>%
     plotRestatementData()
+makeRestatementData(c("cdcList_20220713", "cdcList_20220623", "cdcList_20220105"), key="allUSAgg") %>%
+    plotRestatementData(asRatio=TRUE)
 
 ```
   
