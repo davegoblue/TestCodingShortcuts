@@ -2962,3 +2962,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 makeRestatementData() created  
 * Coronavirus_Statistics_CDC_v006 plotRestatementData() created  
   
+### Expansions week of 18-JUL-2022  
+* Coronavirus_Statistics_CDC_v006 plotRestatementData() includes ratios  
+  
