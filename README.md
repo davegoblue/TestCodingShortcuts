@@ -2965,4 +2965,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 18-JUL-2022  
 * Coronavirus_Statistics_CDC_v006 plotRestatementData() includes ratios  
 * Coronavirus_Statistics_CDC_v006 run with April 23, 2022 archived data  
+* Coronavirus_Statistics_CDC_v006 comparisons include April 23, 2022 archived data  
   
