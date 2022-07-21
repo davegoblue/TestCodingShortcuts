@@ -289,3 +289,56 @@ makeRestatementData(c("cdcList_20220713", "cdcList_arch_2022w17", "cdcList_20220
   
 The persistent gap between reported deaths in 2022-01-03 and later reports is the exclusion of several cluster 5 states from the 2022-01-03 processing due to data suppression issues. There continues to be an anomaly where deaths among people under age 45 decreased between 2022-04-25 and 2022-07-13. This trend of decreasing deaths is significantly reduced or not existent in data for ages 45+
 
+Data prior to exclusions are examined for consistency:  
+```{r, fig.height=9, fig.width=9}
+
+dfCheck <- readFromRDS("cdcList_arch_2022w17")$cdc %>%
+    select(state, weekEnding, age, deaths_220425=deaths) %>%
+    full_join(readFromRDS("cdcList_20220713")$cdc %>% select(state, weekEnding, age, deaths_220713=deaths), 
+              by=c("state", "weekEnding", "age")
+              ) %>%
+    mutate(delta=ifelse(is.na(deaths_220713), 0, deaths_220713)-ifelse(is.na(deaths_220425), 0, deaths_220425), 
+           neg=(delta < 0)
+           )
+dfCheck
+dfCheck %>% count(neg)
+
+# Get counts of changes by state
+dfCheck %>% 
+    group_by(state) %>%
+    summarize(nNeg=sum(neg), negDelta=sum(delta*neg), n=n(), .groups="drop") %>%
+    ggplot(aes(x=fct_reorder(state, negDelta), y=negDelta)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(label=negDelta), hjust=1) + 
+    coord_flip() + 
+    labs(y="Sum of negative changes in weekly deaths by age group from 2022-04-25 to 2022-07-13", 
+         x=NULL, 
+         title="Negative change in weekly death by state summary"
+         )
+
+# Examples overall
+dfCheck %>%
+    select(-delta, -neg) %>%
+    pivot_longer(starts_with("deaths")) %>%
+    group_by(weekEnding, age, name) %>%
+    summarize(deaths=specNA()(value), .groups="drop") %>%
+    ggplot(aes(x=weekEnding, y=deaths)) + 
+    geom_line(aes(group=name, color=name)) + 
+    lims(y=c(0, NA)) +
+    labs(x=NULL, y="Reported deaths", title="Reported deaths by age group and week in US") +
+    facet_wrap(~age, scales="free_y")
+
+# Examples from Florida (biggest change)
+dfCheck %>%
+    filter(state=="FL") %>%
+    select(-delta, -neg) %>%
+    pivot_longer(starts_with("deaths")) %>%
+    ggplot(aes(x=weekEnding, y=value)) + 
+    geom_line(aes(group=name, color=name)) + 
+    lims(y=c(0, NA)) +
+    labs(x=NULL, y="Reported deaths", title="Reported deaths by age group and week in Florida") +
+    facet_wrap(~age, scales="free_y")
+
+```
+  
+Florida data shows similarities to the national data, with negative restatements and negative recent trends primarily limited to the 0-44 years buckets.
