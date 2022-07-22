@@ -2967,4 +2967,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 run with April 23, 2022 archived data  
 * Coronavirus_Statistics_CDC_v006 comparisons include April 23, 2022 archived data  
 * Coronavirus_Statistics_CDC_v006 explores negative restatements  
+* Coronavirus_Statistics_CDC_v006 explores negative restatements by state  
   
