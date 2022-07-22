@@ -342,3 +342,51 @@ dfCheck %>%
 ```
   
 Florida data shows similarities to the national data, with negative restatements and negative recent trends primarily limited to the 0-44 years buckets.
+
+Each state and age group is assessed for the total amount of negative delta relative to the average number of annual deaths in the group:  
+```{r, fig.height=9, fig.width=9}
+
+dfCheckAvg <- dfCheck %>%
+    group_by(state, age) %>%
+    summarize(across(starts_with("deaths"), specNA(mean)), 
+              delta=specNA(sum)(ifelse(neg, delta, 0)),
+              .groups="drop"
+              ) %>%
+    mutate(deltaRatio=delta/deaths_220425)
+
+dfCheckAvg %>%
+    ggplot(aes(x=fct_reorder(state, deltaRatio, min), y=deltaRatio)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=deltaRatio/2, label=round(deltaRatio, 1))) + 
+    coord_flip() +
+    facet_wrap(~age, nrow=1) + 
+    labs(title="Total negative restatement", subtitle="Units are average number of weeks", y="Avg weeks", x=NULL)
+
+bigDelta <- c("CO", "AZ", "SC", "FL", "OK", "VT")
+
+dfCheck %>%
+    mutate(type=ifelse(state %in% bigDelta, "big delta", "all other")) %>%
+    group_by(weekEnding, type, age) %>%
+    summarize(across(starts_with("deaths"), specNA(sum)), .groups="drop") %>%
+    mutate(daynum=1L+7*as.integer(weekEnding-min(weekEnding))) %>% 
+    mutate(pred=predict(lm(deaths_220425 ~ daynum*type*age, data=., subset=lubridate::year(weekEnding)<=2019), 
+                        newdata=.
+                        )
+           ) %>%
+    select(-daynum) %>%
+    pivot_longer(-c(weekEnding, type, age, pred)) %>%
+    ggplot(aes(x=weekEnding, y=value)) + 
+    geom_line(aes(group=name, color=name)) +
+    geom_line(aes(y=pred), lty=2, lwd=0.5) +
+    lims(y=c(0, NA)) +
+    labs(title="Weekly deaths by state type", 
+         subtitle="Big delta states: CO, AZ, SC, FL, OK, VT\nDashed line is simple linear model using 2015-2019 data", 
+         x=NULL, 
+         y=NULL
+         ) +
+    facet_grid(type~age, scales="free_y")
+
+```
+  
+Much of the negative restatement is driven by a handful of states. There remains a general pattern of deaths, especially among younger groups, falling below historical trends in the most recent data
+
