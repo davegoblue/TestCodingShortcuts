@@ -2969,4 +2969,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 explores negative restatements  
 * Coronavirus_Statistics_CDC_v006 explores negative restatements by state  
 * Coronavirus_Statistics_CDC_v006 explores negative restatements by age group  
+* Coronavirus_Statistics_CDC_v006 calculateRestatementFromRaw() written  
   
