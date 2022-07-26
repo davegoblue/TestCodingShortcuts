@@ -457,12 +457,14 @@ identical(dfCheck,
 
 plotRestatementFromRaw <- function(df, 
                                    varNegTotal=c(), 
+                                   fnDateStack=NULL,
                                    timePeriod=NULL
                                    ) {
     
     # FUNCTION ARGUMENTS:
     # df: data frame from calculateRestatementFromRaw
     # varNegTotal: variables that should be plotted for sum of negative restatement
+    # fnDateStack: function to apply to weekEnding for stacking data (NULL means none)
     # timePeriod: character vector of time period of two data sources (NULL means infer from variable names)
     
     if(is.null(timePeriod)) {
@@ -478,17 +480,33 @@ plotRestatementFromRaw <- function(df,
     
     # Get counts of changes by varNegTotal
     for (keyVar in varNegTotal) {
-        p1 <- df %>% 
+        # Set up data for stacking
+        if(!is.null(fnDateStack)) {
+            p1 <- df %>%
+                mutate(stackVar=fnDateStack(weekEnding))
+            keyVar <- c(keyVar, "stackVar")
+        } else {
+            p1 <- df
+        }
+        # Create the totals
+        dfTot <- p1 %>%
+            group_by_at(all_of(keyVar[keyVar != "stackVar"])) %>%
+            summarize(negDelta=sum(delta*neg), .groups="drop")
+        # Set up base plot and labels
+        p1 <- p1 %>% 
             group_by_at(all_of(keyVar)) %>%
             summarize(nNeg=sum(neg), negDelta=sum(delta*neg), n=n(), .groups="drop") %>%
-            ggplot(aes(x=fct_reorder(get(keyVar), negDelta), y=negDelta)) + 
-            geom_col(fill="lightblue") + 
-            geom_text(aes(label=negDelta), hjust=1) + 
+            ggplot(aes(x=fct_reorder(get(keyVar[keyVar != "stackVar"]), negDelta), y=negDelta)) + 
+            geom_text(data=dfTot, aes(label=negDelta), hjust=1) +
             coord_flip() + 
             labs(y=paste0("Sum of negative changes in weekly deaths ", timePeriod), 
                  x=NULL, 
-                 title=paste0("Negative change in weekly death by ", keyVar)
+                 title=paste0("Negative change in weekly death by ", keyVar[keyVar != "stackVar"])
                  )
+        # Add the columns (either basic or stacked)
+        if(is.null(fnDateStack)) p1 <- p1 + geom_col(fill="lightblue")
+        else p1 <- p1 + geom_col(aes(fill=stackVar), position="stack")
+        # Print the plot
         print(p1)
     }
     
@@ -506,8 +524,19 @@ calculateRestatementFromRaw("cdcList_arch_2022w17",
                             ) %>%
     plotRestatementFromRaw(varNegTotal=c("state", "age"))
 
+# Create function for custom quarter-year
+tmpCustomQuarter <- function(x) 
+    ifelse(lubridate::year(x)==2022, paste0(lubridate::year(x), "-Q", lubridate::quarter(x)), lubridate::year(x))
+
+calculateRestatementFromRaw("cdcList_arch_2022w17", 
+                            "cdcList_20220713", 
+                            lstLabels=c("deaths_220425", "deaths_220713")
+                            ) %>%
+    plotRestatementFromRaw(varNegTotal=c("state", "age"), 
+                           fnDateStack=tmpCustomQuarter
+                           )
+
 ```
   
-Between the 2022-01-05 data and the 2022-04-25 data, negative restatements were 559 (104+455) among people under the age of 45. Between the 2022-04-25 data and the 2022-07-13 data, negative restatements were 11,236 (3,820 + 7,416) among people under the age of 45.
-
+Between the 2022-01-05 data and the 2022-04-25 data, negative restatements were 559 (104+455) among people under the age of 45. Between the 2022-04-25 data and the 2022-07-13 data, negative restatements were 11,236 (3,820 + 7,416) among people under the age of 45. The majority of the 2022-07-13 vs 2022-04-25 restatements are in 2022-Q1 data
 
