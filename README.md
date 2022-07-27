@@ -2974,4 +2974,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 25-JUL-2022  
 * Coronavirus_Statistics_CDC_v006 plotRestatementFromRaw() written  
 * Coronavirus_Statistics_CDC_v006 plotRestatementFromRaw() includes stack by time period  
+* Coronavirus_Statistics_CDC_v006 plotRestatementFromRaw() includes proportions of negative restatement  
   
