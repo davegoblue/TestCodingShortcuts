@@ -425,15 +425,18 @@ The process is converted to functional form:
 
 calculateRestatementFromRaw <- function(lst1Name, 
                                         lst2Name,
-                                        lstLabels
+                                        lstLabels, 
+                                        labelBase=FALSE
                                         ) {
 
     # FUNCTION ARGUMENTS
     # lst1Name: character name (for readFromRDS) of first list that includes raw CDC data
     # lst2Name: character name (for readFromRDS) of second list that includes raw CDC data
     # lstLabels: labels to be used for list data (e.g., c("deaths_220425", "deaths_220713"))
+    # labelBase: boolean, should a convenience column "base" be created from lst1Name for later summarization?
     
-    readFromRDS(lst1Name)$cdc %>%
+    # Create the data
+    df <- readFromRDS(lst1Name)$cdc %>%
         select(state, weekEnding, age, deaths) %>%
         colRenamer(c("deaths"="deaths1")) %>%
         full_join(readFromRDS(lst2Name)$cdc %>% 
@@ -443,7 +446,13 @@ calculateRestatementFromRaw <- function(lst1Name,
                   ) %>%
         mutate(delta=ifelse(is.na(deaths2), 0, deaths2)-ifelse(is.na(deaths1), 0, deaths1), 
                neg=(delta < 0)
-               ) %>%
+               ) 
+    
+    # Add the base column if requested
+    if(isTRUE(labelBase)) df <- df %>% mutate(base=deaths1)
+    
+    # Rename and return the data
+    df %>%
         colRenamer(c("deaths1"=lstLabels[1], "deaths2"=lstLabels[2]))
     
 }
@@ -480,6 +489,7 @@ plotRestatementFromRaw <- function(df,
     
     # Get counts of changes by varNegTotal
     for (keyVar in varNegTotal) {
+        
         # Set up data for stacking
         if(!is.null(fnDateStack)) {
             p1 <- df %>%
@@ -488,10 +498,12 @@ plotRestatementFromRaw <- function(df,
         } else {
             p1 <- df
         }
+        
         # Create the totals
         dfTot <- p1 %>%
             group_by_at(all_of(keyVar[keyVar != "stackVar"])) %>%
             summarize(negDelta=sum(delta*neg), .groups="drop")
+        
         # Set up base plot and labels
         p1 <- p1 %>% 
             group_by_at(all_of(keyVar)) %>%
@@ -503,9 +515,11 @@ plotRestatementFromRaw <- function(df,
                  x=NULL, 
                  title=paste0("Negative change in weekly death by ", keyVar[keyVar != "stackVar"])
                  )
+        
         # Add the columns (either basic or stacked)
         if(is.null(fnDateStack)) p1 <- p1 + geom_col(fill="lightblue")
         else p1 <- p1 + geom_col(aes(fill=stackVar), position="stack")
+        
         # Print the plot
         print(p1)
     }
@@ -536,7 +550,24 @@ calculateRestatementFromRaw("cdcList_arch_2022w17",
                            fnDateStack=tmpCustomQuarter
                            )
 
+# Plot of negative restatements in 2022
+calculateRestatementFromRaw("cdcList_arch_2022w17", 
+                            "cdcList_20220713", 
+                            lstLabels=c("deaths_220425", "deaths_220713"), 
+                            labelBase=TRUE
+                            ) %>%
+    filter(lubridate::year(weekEnding)==2022) %>% 
+    mutate(deltaNeg=ifelse(neg, delta, 0)) %>% 
+    group_by(age) %>% 
+    summarize(across(where(is.numeric), sum, na.rm=TRUE)) %>% 
+    mutate(pctNeg=deltaNeg/deaths_220425) %>%
+    ggplot(aes(x=age, y=pctNeg)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(y=pctNeg/2, label=paste0(round(100*pctNeg, 1), "%"))) +
+    coord_flip() +
+    labs(title="Proportion of 2022 deaths in 2022-04-25 data not in 2022-07-13 data", y=NULL, x=NULL)
+
 ```
   
-Between the 2022-01-05 data and the 2022-04-25 data, negative restatements were 559 (104+455) among people under the age of 45. Between the 2022-04-25 data and the 2022-07-13 data, negative restatements were 11,236 (3,820 + 7,416) among people under the age of 45. The majority of the 2022-07-13 vs 2022-04-25 restatements are in 2022-Q1 data
+Between the 2022-01-05 data and the 2022-04-25 data, negative restatements were 559 (104+455) among people under the age of 45. Between the 2022-04-25 data and the 2022-07-13 data, negative restatements were 11,236 (3,820 + 7,416) among people under the age of 45. The majority of the 2022-07-13 vs 2022-04-25 restatements are in 2022-Q1 data, and proportionally the younger population is much more heavily restated than the older population
 
