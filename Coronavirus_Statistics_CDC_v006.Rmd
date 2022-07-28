@@ -467,7 +467,9 @@ identical(dfCheck,
 plotRestatementFromRaw <- function(df, 
                                    varNegTotal=c(), 
                                    fnDateStack=NULL,
-                                   timePeriod=NULL
+                                   timePeriod=NULL, 
+                                   makeProp=FALSE, 
+                                   makePropYears=NULL
                                    ) {
     
     # FUNCTION ARGUMENTS:
@@ -475,6 +477,8 @@ plotRestatementFromRaw <- function(df,
     # varNegTotal: variables that should be plotted for sum of negative restatement
     # fnDateStack: function to apply to weekEnding for stacking data (NULL means none)
     # timePeriod: character vector of time period of two data sources (NULL means infer from variable names)
+    # makeProp: boolean, should proportional deaths be shown?
+    # makePropYears: integer vector of years to include in proportional chart (NULL means latest year in data)
     
     if(is.null(timePeriod)) {
         timePeriod <- df %>% 
@@ -492,20 +496,20 @@ plotRestatementFromRaw <- function(df,
         
         # Set up data for stacking
         if(!is.null(fnDateStack)) {
-            p1 <- df %>%
+            dfPlot <- df %>%
                 mutate(stackVar=fnDateStack(weekEnding))
             keyVar <- c(keyVar, "stackVar")
         } else {
-            p1 <- df
+            dfPlot <- df
         }
         
         # Create the totals
-        dfTot <- p1 %>%
+        dfTot <- dfPlot %>%
             group_by_at(all_of(keyVar[keyVar != "stackVar"])) %>%
             summarize(negDelta=sum(delta*neg), .groups="drop")
         
         # Set up base plot and labels
-        p1 <- p1 %>% 
+        p1 <- dfPlot %>% 
             group_by_at(all_of(keyVar)) %>%
             summarize(nNeg=sum(neg), negDelta=sum(delta*neg), n=n(), .groups="drop") %>%
             ggplot(aes(x=fct_reorder(get(keyVar[keyVar != "stackVar"]), negDelta), y=negDelta)) + 
@@ -522,21 +526,54 @@ plotRestatementFromRaw <- function(df,
         
         # Print the plot
         print(p1)
+        
+        # Create proportional plot if requested
+        if(isTRUE(makeProp)) {
+            
+            # Get the year if passed as NULL
+            if(is.null(makePropYears)) makePropYears <- max(lubridate::year(dfPlot$weekEnding))
+            
+            # Create the plot
+            p2 <- dfPlot %>% 
+                filter(lubridate::year(weekEnding) %in% all_of(makePropYears)) %>% 
+                mutate(deltaNeg=ifelse(neg, delta, 0)) %>% 
+                group_by_at(all_of(keyVar[keyVar != "stackVar"])) %>% 
+                summarize(across(where(is.numeric), sum, na.rm=TRUE)) %>% 
+                mutate(pctNeg=deltaNeg/base) %>%
+                ggplot(aes(x=fct_reorder(get(keyVar[keyVar != "stackVar"]), pctNeg), y=pctNeg)) + 
+                geom_col(fill="lightblue") + 
+                geom_text(aes(y=pctNeg/2, label=paste0(round(100*pctNeg, 1), "%"))) +
+                coord_flip() +
+                labs(title=paste0("Proportion of ", 
+                                  paste0(makePropYears, collapse="-"), 
+                                  " deaths negatively restated ", 
+                                  timePeriod
+                                  ), 
+                     y=NULL, 
+                     x=NULL
+                     )
+            
+            # Print the plot
+            print(p2)
+            
+        }
     }
     
 }
 
 calculateRestatementFromRaw("cdcList_20220105", 
                             "cdcList_arch_2022w17", 
-                            lstLabels=c("deaths_220105", "deaths_220425")
+                            lstLabels=c("deaths_220105", "deaths_220425"), 
+                            labelBase=TRUE
                             ) %>%
-    plotRestatementFromRaw(varNegTotal=c("state", "age"))
+    plotRestatementFromRaw(varNegTotal=c("state", "age"), makeProp=TRUE, makePropYears=2021)
 
 calculateRestatementFromRaw("cdcList_arch_2022w17", 
                             "cdcList_20220713", 
-                            lstLabels=c("deaths_220425", "deaths_220713")
+                            lstLabels=c("deaths_220425", "deaths_220713"), 
+                            labelBase=TRUE
                             ) %>%
-    plotRestatementFromRaw(varNegTotal=c("state", "age"))
+    plotRestatementFromRaw(varNegTotal=c("state", "age"), makeProp=TRUE, makePropYears=2022)
 
 # Create function for custom quarter-year
 tmpCustomQuarter <- function(x) 
@@ -549,23 +586,6 @@ calculateRestatementFromRaw("cdcList_arch_2022w17",
     plotRestatementFromRaw(varNegTotal=c("state", "age"), 
                            fnDateStack=tmpCustomQuarter
                            )
-
-# Plot of negative restatements in 2022
-calculateRestatementFromRaw("cdcList_arch_2022w17", 
-                            "cdcList_20220713", 
-                            lstLabels=c("deaths_220425", "deaths_220713"), 
-                            labelBase=TRUE
-                            ) %>%
-    filter(lubridate::year(weekEnding)==2022) %>% 
-    mutate(deltaNeg=ifelse(neg, delta, 0)) %>% 
-    group_by(age) %>% 
-    summarize(across(where(is.numeric), sum, na.rm=TRUE)) %>% 
-    mutate(pctNeg=deltaNeg/deaths_220425) %>%
-    ggplot(aes(x=age, y=pctNeg)) + 
-    geom_col(fill="lightblue") + 
-    geom_text(aes(y=pctNeg/2, label=paste0(round(100*pctNeg, 1), "%"))) +
-    coord_flip() +
-    labs(title="Proportion of 2022 deaths in 2022-04-25 data not in 2022-07-13 data", y=NULL, x=NULL)
 
 ```
   
