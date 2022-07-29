@@ -2976,4 +2976,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 plotRestatementFromRaw() includes stack by time period  
 * Coronavirus_Statistics_CDC_v006 includes proportions of negative restatement  
 * Coronavirus_Statistics_CDC_v006 plotRestatementFromRaw() creates proportions of negative restatement  
+* Coronavirus_Statistics_CDC_v006 runs negative restatement using 2021 data  
   
