@@ -2978,4 +2978,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 plotRestatementFromRaw() creates proportions of negative restatement  
 * Coronavirus_Statistics_CDC_v006 runs negative restatement using 2021 data  
 * Coronavirus_Statistics_CDC_v006 plots percent restatement by week and state  
+* Coronavirus_Statistics_CDC_v006 refines plots of percent restatement by week and state  
   
