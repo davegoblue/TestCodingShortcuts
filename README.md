@@ -2982,5 +2982,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 01-AUG-2022  
 * Coronavirus_Statistics_CDC_v006 plots percent restatement by week and state, faceted by age  
-* Coronavirus_Statistics_CDC_v006 plots trends by age and state  
+* Coronavirus_Statistics_CDC_v006 plots trends by age for a specified state  
   
