@@ -2984,4 +2984,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 plots percent restatement by week and state, faceted by age  
 * Coronavirus_Statistics_CDC_v006 plots trends by age for a specified state  
 * Coronavirus_Statistics_CDC_v006 function plotCDCRestatement() started  
+* Coronavirus_Statistics_CDC_v006 plotCDCRestatement() includes plots by state and week  
   
