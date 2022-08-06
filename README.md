@@ -2986,4 +2986,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 function plotCDCRestatement() started  
 * Coronavirus_Statistics_CDC_v006 plotCDCRestatement() includes plots by state and week  
 * Coronavirus_Statistics_CDC_v006 plotCDCRestatement() includes additional restatement plots  
+* Coronavirus_CDC_Daily_v004 downloads and processes latest data  
   
