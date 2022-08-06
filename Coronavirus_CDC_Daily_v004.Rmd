@@ -1127,3 +1127,121 @@ modStateHosp_20220704 <- hospitalCapacityCDCDaily(indivHosp_20220704, plotSub="A
 
 ```
   
+The latest data are downloaded and processed:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Update to helperSummaryMap for updated usmap::usmap_transform
+helperSummaryMap <- function(df, 
+                             mapLevel="states", 
+                             keyCol="state",
+                             values="cluster",
+                             discreteValues=NULL,
+                             legend.position="right",
+                             labelScale=TRUE,
+                             extraArgs=list(),
+                             countOnly=FALSE,
+                             textLabel=c(),
+                             ...
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a data frame containing a level of geography and an associated cluster
+    # mapLevel: a parameter for whether the map is "states" or "counties"
+    # keyCol: the key column for plotting (usmap::plot_usmap is particular, and this must be 'state' or 'fips')
+    # values: the character name of the field containing the data to be plotted
+    # discreteValues: boolean for whether the values are discrete (if not, use continuous)
+    #                 NULL means infer from data
+    # legend.position: character for the location of the legend in the plot
+    # labelScale: boolean, should an scale_fill_ be created?  Use FALSE if contained in extraArgs
+    # extraArgs: list of other arguments that will be appended as '+' to the end of the usmap::plot_usmap call
+    # countOnly: should a bar plot of counts only be produced?
+    # textLabel: a list of elements that should be labelled as text on the plot (too small to see)
+    # ...: other parameters to be passed to usmap::plot_usmap (e.g., labels, include, exclude, etc.)
+    
+    # Modify the data frame to contain only the relevant data
+    df <- df %>%
+        select(all_of(c(keyCol, values))) %>%
+        distinct()
+    
+    # Determine the type of data being plotted
+    if (is.null(discreteValues)) discreteValues <- !is.numeric(df[[values]])
+    
+    # Convert data type if needed
+    if (isTRUE(discreteValues) & is.numeric(df[[values]])) 
+        df[[values]] <- factor(df[[values]])
+    
+    # If count only is needed, create a count map; otherwise create a map
+    if (isTRUE(countOnly)) { 
+        gg <- df %>%
+            ggplot(aes(x=fct_rev(get(values)))) + 
+            geom_bar(aes_string(fill=values)) + 
+            stat_count(aes(label=..count.., y=..count../2), 
+                       geom="text", 
+                       position="identity", 
+                       fontface="bold"
+                       ) +
+            coord_flip() + 
+            labs(y="Number of members", x="")
+    } else {
+        gg <- usmap::plot_usmap(regions=mapLevel, data=df, values=values, ...)
+        if (length(textLabel) > 0) {
+            labDF <- df %>% 
+                filter(get(keyCol) %in% textLabel) %>%
+                mutate(rk=match(get(keyCol), textLabel)) %>%
+                arrange(rk) %>%
+                mutate(lon=-70.1-seq(0, 0.8*length(textLabel)-0.8, by=0.8), 
+                       lat=40.1-seq(0, 1.5*length(textLabel)-1.5, by=1.5)
+                       ) %>%
+                select(lon, lat, everything()) %>%
+                usmap::usmap_transform(output_names=c("lon.1", "lat.1"))
+            gg <- gg + geom_text(data=labDF, 
+                                 aes(x=lon.1, y=lat.1, label=paste(get(keyCol), get(values))), 
+                                 size=3.25
+                                 )
+        }
+    }
+    
+    # Position the legend as requested
+    gg <- gg + theme(legend.position=legend.position)
+    
+    # Create the scale if appropriate
+    if (isTRUE(labelScale)) gg <- gg + 
+        if(isTRUE(discreteValues)) scale_fill_discrete(values) else scale_fill_continuous(values)
+    
+    # Apply extra arguments
+    for (ctr in seq_along(extraArgs)) gg <- gg + extraArgs[[ctr]]
+    
+    # Return the map object
+    gg
+    
+}
+
+readList <- list("cdcDaily"="./RInputFiles/Coronavirus/CDC_dc_downloaded_220805.csv", 
+                 "cdcHosp"="./RInputFiles/Coronavirus/CDC_h_downloaded_220805.csv", 
+                 "vax"="./RInputFiles/Coronavirus/vaxData_downloaded_220805.csv"
+                 )
+compareList <- list("cdcDaily"=readFromRDS("cdc_daily_220704")$dfRaw$cdcDaily, 
+                    "cdcHosp"=readFromRDS("cdc_daily_220704")$dfRaw$cdcHosp, 
+                    "vax"=readFromRDS("cdc_daily_220704")$dfRaw$vax
+                    )
+
+cdc_daily_220805 <- readRunCDCDaily(thruLabel="Aug 3, 2022", 
+                                    downloadTo=lapply(readList, FUN=function(x) if(file.exists(x)) NA else x), 
+                                    readFrom=readList,
+                                    compareFile=compareList, 
+                                    writeLog=NULL, 
+                                    useClusters=readFromRDS("cdc_daily_210528")$useClusters, 
+                                    weightedMeanAggs=c("tcpm7", "tdpm7", "cpm7", "dpm7", "hpm7", 
+                                                       "vxcpm7", "vxcgte65pct"
+                                                       ),
+                                    skipAssessmentPlots=FALSE, 
+                                    brewPalette="Paired"
+                                    )
+saveToRDS(cdc_daily_220805, ovrWriteError=FALSE)
+
+# Run for latest data, save as RDS
+indivHosp_20220805 <- downloadReadHospitalData(loc="./RInputFiles/Coronavirus/HHS_Hospital_20220805.csv")
+saveToRDS(indivHosp_20220805, ovrWriteError=FALSE)
+
+```
+  
