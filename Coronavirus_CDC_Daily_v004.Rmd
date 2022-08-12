@@ -1334,3 +1334,70 @@ indivHosp_20220805 %>%
 
 ```
   
+The metrics process is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+checkHospitalMetrics <- function(df, 
+                                 startDate, 
+                                 endDate,
+                                 byDays=7, 
+                                 keyVars=NULL, 
+                                 createPlot=TRUE, 
+                                 returnData=!isTRUE(createPlot), 
+                                 plotTitle=NULL
+                                 ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: processed hospital-level data frame
+    # startDate: starting date for adding 0 if record does not exist
+    # endDate: ending date for adding 0 if record does not exist
+    # byDays: peiodicity for the date data (e.g., 7 is weekly)
+    # keyVars: variables to include in data frame and plot (NULL means all)
+    # createPlot: boolean, should the plot be created?
+    # returnData: boolean, should the data be returned?
+    # plotTitle title for the plot (NULL means no title)
+    
+    keyDays <- seq.Date(as.Date(startDate), as.Date(endDate), by=byDays)
+    
+    dfPlot <- df %>%
+        skinnyHHS() %>%
+        group_by(state, collection_week) %>%
+        summarize(across(where(is.numeric), 
+                         .fns=function(x) sum(ifelse(is.na(x), 0, ifelse(x==-999999, 0, x)))
+                         ), 
+                  .groups="drop"
+                  ) %>%
+        full_join(tibble::tibble(collection_week=rep(keyDays, 51), 
+                                 state=rep(c(state.abb, "DC"), each=length(keyDays))
+                                 ), 
+                  by=c("collection_week", "state")
+                  ) %>%
+        pivot_longer(-c(state, collection_week))
+    if(!is.null(keyVars)) dfPlot <- dfPlot %>% filter(name %in% all_of(keyVars))
+    
+    if(isTRUE(createPlot)) {
+    
+        p1 <- dfPlot %>%
+            ggplot(aes(x=collection_week, y=ifelse(is.na(value), 0, value))) + 
+            geom_line(aes(group=name, color=name)) + 
+            facet_wrap(~state, scales="free_y") + 
+            labs(title=plotTitle, x=NULL, y="Sum of Metric") + 
+            scale_color_discrete("Metric")
+        print(p1)
+    }
+
+    if(isTRUE(returnData)) return(dfPlot)
+    
+}
+
+icuVars <- c("adult_icu_covid", "icu_beds", "icu_beds_occupied")
+checkHospitalMetrics(indivHosp_20220805, 
+                     startDate="2020-07-31", 
+                     endDate="2022-07-24", 
+                     keyVars=icuVars, 
+                     plotTitle="Aug 2022 ICU Data", 
+                     returnData=TRUE
+                     )
+
+```
+
