@@ -2995,4 +2995,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 explores missing historical data  
 * Coronavirus_CDC_Daily_v004 plots ICU metrics in current data  
 * Coronavirus_CDC_Daily_v004 checkHospitalMetrics() written  
+* Coronavirus_CDC_Daily_v004 checkHospitalMetrics() run for latest data  
   
