@@ -3000,4 +3000,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 15-AUG-2022  
 * Coronavirus_CDC_Daily_v004 checkHospitalMetrics() outputs data  
+* Coronavirus_CDC_Daily_v004 compares 'total_beds'  
   
