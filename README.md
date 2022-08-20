@@ -3004,4 +3004,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 includes percent comparisons  
 * Coronavirus_CDC_Daily_v004 plotDeltaHospital() written for volume comparisons  
 * Coronavirus_CDC_Daily_v004 plotDeltaHospital() includes percent comparisons  
+* Coronavirus_CDC_Daily_v004 plotDeltaHospital() includes aggregation capability  
   
