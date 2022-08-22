@@ -3007,3 +3007,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 plotDeltaHospital() includes aggregation capability  
 * Coronavirus_CDC_Daily_v004 aggregated calculation for each metric  
   
+### Expansions week of 22-AUG-2022  
+* Coronavirus_CDC_Daily_v004 explores change in reported 'total_beds' by NY hospital  
+  
