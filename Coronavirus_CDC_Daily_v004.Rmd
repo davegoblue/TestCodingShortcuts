@@ -1592,3 +1592,58 @@ plotDeltaHospital(hosp_All, keyMetric="adult_icu_covid", aggStates=vecStates)
 ```
   
 ICU data seem consistent if the historical data are used to back-fill missing current data. Total beds and adult beds data appear to have a sharp fall-off in both data sources around 2022-01, in addition to missing historical entries in the latest data
+
+The drop in 'adult_beds' is explored:  
+```{r, fig.height=9, fig.width=9}
+
+# Explore for state: NY
+nyTest08 <- indivHosp_20220805 %>%
+    filter(state=="NY") %>%
+    mutate(keyMetric=ifelse(all_adult_hospital_beds_7_day_avg==-999999, NA, all_adult_hospital_beds_7_day_avg), 
+           yyyyqq=paste0(lubridate::year(collection_week), "-Q", lubridate::quarter(collection_week))
+           )
+nyTest08
+
+nyTest08 %>%
+    group_by(hospital_pk, yyyyqq) %>%
+    summarize(nNA=mean(is.na(keyMetric)), keyMetric=mean(ifelse(is.na(keyMetric), 0, keyMetric)), .groups="drop") %>%
+    group_by(yyyyqq) %>%
+    summarize(sum=sum(keyMetric, na.rm=TRUE), pctNA=mean(nNA))
+
+nyTest07 <- readFromRDS("indivHosp_20220704") %>%
+    filter(state=="NY") %>%
+    mutate(keyMetric=ifelse(all_adult_hospital_beds_7_day_avg==-999999, NA, all_adult_hospital_beds_7_day_avg), 
+           yyyyqq=paste0(lubridate::year(collection_week), "-Q", lubridate::quarter(collection_week))
+           )
+nyTest07
+
+nyTest07 %>%
+    group_by(hospital_pk, yyyyqq) %>%
+    summarize(nNA=mean(is.na(keyMetric)), keyMetric=mean(ifelse(is.na(keyMetric), 0, keyMetric)), .groups="drop") %>%
+    group_by(yyyyqq) %>%
+    summarize(sum=sum(keyMetric, na.rm=TRUE), pctNA=mean(nNA))
+
+# Explore 2021-Q2 to 2022-Q2 decline by hospital
+testSummary <- nyTest07 %>%
+    group_by(hospital_pk, yyyyqq) %>%
+    summarize(nNA=mean(is.na(keyMetric)), keyMetric=mean(ifelse(is.na(keyMetric), 0, keyMetric)), .groups="drop") %>%
+    filter(yyyyqq %in% c("2021-Q2", "2022-Q2")) %>%
+    mutate(name=ifelse(yyyyqq==min(yyyyqq), "older", "newer")) %>%
+    pivot_wider(hospital_pk, names_from="name", values_from="keyMetric", values_fill=0) %>%
+    mutate(delta=newer-older, pctDelta=delta/older) %>%
+    arrange(delta)
+colSums(testSummary %>% select(older, newer, delta))
+testReport <- testSummary %>%
+    left_join(unique(select(nyTest07, hospital_pk, hospital_name, city, hospital_subtype)), by="hospital_pk")
+testReport %>%
+    ggplot(aes(x=delta)) + 
+    geom_histogram(bins=50, fill="lightblue") + 
+    labs(x=NULL, y="# Hospitals", title="Change in reported adult_beds in NY hospitals Q2-2021 to Q2-2022")
+testReport %>%
+    print(n=25)
+testReport %>%
+    tail(20)
+
+```
+  
+Many NY hospitals appear to have stopped reporting adult_beds data
