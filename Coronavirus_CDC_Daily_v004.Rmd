@@ -1646,4 +1646,63 @@ testReport %>%
 
 ```
   
-Many NY hospitals appear to have stopped reporting adult_beds data
+Many NY hospitals appear to have stopped reporting adult_beds data. The process is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+exploreReportedChange <- function(dfNew, 
+                                  dfOld, 
+                                  useMetric="all_adult_hospital_beds_7_day_avg",
+                                  naMetric=-999999,
+                                  lstFilter=list(), 
+                                  lstExclude=list()
+                                  ) {
+    
+    # FUNCTION ARGUMENTS
+    # dfNew: the new data frame
+    # dfOld: the old data frame
+    # useMetric: metric to explore
+    # naMetric: vector of values to treat as NA
+    # lstFilter: a list for filtering records, of form list("field"=c("allowed values"))
+    # lstExclude: a list for filtering records, of form list("field"=c("disallowed values"))
+    
+    # Helper function to create frames
+    helperFrameCreator <- function(df) {
+        df %>%
+            rowFilter(lstFilter=lstFilter, lstExclude=lstExclude) %>%
+            mutate(keyMetric=ifelse(get(useMetric)==-999999, NA, get(useMetric)), 
+                   customTime=paste0(lubridate::year(collection_week), "-Q", lubridate::quarter(collection_week))
+                   )
+    }
+    
+    # Create the data frames
+    testNew <- helperFrameCreator(dfNew)
+    testOld <- helperFrameCreator(dfOld)
+    
+    # Helper function to summarize key metrics
+    helperGroupMetrics <- function(df, lab=NULL) {
+        if(!is.null(lab)) cat("\nData summary for: ", lab, "\n")
+        df %>%
+            group_by(hospital_pk, customTime) %>%
+            summarize(nNA=mean(is.na(keyMetric)), 
+                      keyMetric=mean(ifelse(is.na(keyMetric), 0, keyMetric)), 
+                      .groups="drop"
+                      ) %>%
+            group_by(customTime) %>%
+            summarize(sum=sum(keyMetric, na.rm=TRUE), pctNA=mean(nNA))
+    }
+
+    helperGroupMetrics(testNew) %>%
+        full_join(helperGroupMetrics(testOld), by=c("customTime"), suffix=c("_newer", "_older")) %>%
+        select(customTime, starts_with("sum"), starts_with("pct"), everything()) %>%
+        arrange(customTime) %>%
+        print()
+    
+}
+
+exploreReportedChange(dfNew=indivHosp_20220805, 
+                      dfOld=readFromRDS("indivHosp_20220704"), 
+                      lstFilter=list("state"=c("NY"))
+                      )
+
+```
+  
