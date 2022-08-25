@@ -1652,7 +1652,10 @@ Many NY hospitals appear to have stopped reporting adult_beds data. The process 
 exploreReportedChange <- function(dfNew, 
                                   dfOld, 
                                   useMetric="all_adult_hospital_beds_7_day_avg",
+                                  metricMapper=hhsMapper,
                                   naMetric=-999999,
+                                  checkTimes=c("2021-Q2", "2022-Q2"),
+                                  useLabels=c("1. Older", "2. Newer"),
                                   lstFilter=list(), 
                                   lstExclude=list()
                                   ) {
@@ -1661,7 +1664,10 @@ exploreReportedChange <- function(dfNew,
     # dfNew: the new data frame
     # dfOld: the old data frame
     # useMetric: metric to explore
+    # metricMapper: mapping file for 'use_metric' to descriptive name
     # naMetric: vector of values to treat as NA
+    # checkTimes: vector of lenght two with time periods of interest for measuring change in 'use_metric'
+    # useLabels: the labels for the data sources in the plot, as length-two character vector
     # lstFilter: a list for filtering records, of form list("field"=c("allowed values"))
     # lstExclude: a list for filtering records, of form list("field"=c("disallowed values"))
     
@@ -1698,38 +1704,60 @@ exploreReportedChange <- function(dfNew,
         arrange(customTime)
     
     # Print summary
-    print(testTable)
+    # print(testTable)
     
-    # Plot summary
+    # Plot summary of testTable
     p1 <- testTable %>%
         pivot_longer(-c(customTime)) %>%
         mutate(metric=stringr::str_extract(name, pattern="^[a-zA-Z]+"), 
                timePeriod=stringr::str_extract(name, pattern="[a-zA-Z]+$"), 
-               useValue=ifelse(is.na(value), 0, value)
+               useValue=ifelse(is.na(value), 0, value), 
+               keyLabel=useLabels[ifelse(timePeriod=="older", 1, 2)]
                ) %>%
         ggplot(aes(x=fct_rev(customTime), y=useValue)) + 
-        geom_point(aes(color=timePeriod)) + 
+        geom_point(aes(color=keyLabel)) + 
         geom_text(data=~filter(., timePeriod=="newer"), 
-                  aes(label=round(useValue, ifelse(useValue > 1, 0, 3)), color=timePeriod), 
-                  color="red", 
+                  aes(label=round(useValue, ifelse(useValue > 1, 0, 3))), 
+                  color=ifelse(useLabels[1] < useLabels[2], "darkgreen", "red"), 
                   nudge_x=0.2
                   ) +
         geom_text(data=~filter(., timePeriod=="older"), 
-                  aes(label=round(useValue, ifelse(useValue > 1, 0, 3)), color=timePeriod), 
-                  color="darkgreen", 
+                  aes(label=round(useValue, ifelse(useValue > 1, 0, 3))), 
+                  color=ifelse(useLabels[1] < useLabels[2], "red", "darkgreen"), 
                   nudge_x=-0.2
                   ) +
         facet_wrap(~metric, scales="free_x") + 
         coord_flip() + 
-        labs(x=NULL, y=NULL, title="Metric summaries by data source", subtitle="Sum and percent of values NA") +
+        labs(x=NULL, 
+             y=NULL, 
+             title=paste0("Summaries by data source for metric: ", metricMapper[useMetric]), 
+             subtitle="Sum and percent of hospital-week records NA"
+             ) +
         scale_color_discrete("Source:")
     print(p1)
+
+    # Create the summary data frame of declines by hospital
+    testFull <- testOld %>%
+        group_by(hospital_pk, customTime) %>%
+        summarize(nNA=mean(is.na(keyMetric)), 
+                  keyMetric=mean(ifelse(is.na(keyMetric), 0, keyMetric)), 
+                  .groups="drop"
+                  ) %>%
+        filter(customTime %in% all_of(checkTimes)) %>%
+        mutate(name=ifelse(customTime==min(customTime), "older", "newer")) %>%
+        pivot_wider(hospital_pk, names_from="name", values_from="keyMetric", values_fill=0) %>%
+        mutate(delta=newer-older, pctDelta=delta/older) %>%
+        arrange(delta) %>%
+        left_join(unique(select(testOld, hospital_pk, hospital_name, city, hospital_subtype)), by="hospital_pk")
+    
+    # Return the data
+    testFull
     
 }
 
 exploreReportedChange(dfNew=indivHosp_20220805, 
                       dfOld=readFromRDS("indivHosp_20220704"), 
-                      lstFilter=list("state"=c("NY"))
+                      useLabels=c("2022-07-04 data", "2022-08-05 data")
                       )
 
 ```
