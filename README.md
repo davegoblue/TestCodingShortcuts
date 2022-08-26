@@ -3012,4 +3012,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 exploreReportedChange() created  
 * Coronavirus_CDC_Daily_v004 exploreReportedChange() updated with control total plot  
 * Coronavirus_CDC_Daily_v004 exploreReportedChange() outputs change by hospital  
+* Coronavirus_CDC_Daily_v004 explores one hospital  
   
