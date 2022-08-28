@@ -3014,4 +3014,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 exploreReportedChange() outputs change by hospital  
 * Coronavirus_CDC_Daily_v004 explores one hospital  
 * Coronavirus_CDC_Daily_v004 explores select metrics for one hospital  
+* Coronavirus_CDC_Daily_v004 explores coverage metrics for one hospital  
   
