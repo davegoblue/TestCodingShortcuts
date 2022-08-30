@@ -1845,4 +1845,86 @@ readFromRDS("indivHosp_20220704") %>%
     
 ```
   
-Reported coverage has declined for select metrics. A new measure of hospital capacity should be created from the raw data
+Reported coverage has declined for select metrics. A new measure of hospital capacity should be created from the raw data. The process is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+tempPlotHospitalMetrics <- function(df, 
+                                    keyHospitalPk, 
+                                    weekOffset=c(0, 52),
+                                    createPlotDF=TRUE,
+                                    keyMetType="age", 
+                                    keyMetMap=c("age"="Coverage", "avg"="Average", "sum"="Sum"), 
+                                    returnData=isTRUE(createPlotDF)
+                                    ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: data frame for analysis
+    # keyHospitalPk: hospital_pk value to be selected
+    # weekOffset: weeks of the data to compare (default is most recent vs. one year prior)
+    # createPlotDF: boolean, should plot data be created? (if FALSE, plotData assumed to be passed)
+    # keyMetType: metric type to evaluate ("age", "avg", "sum")
+    # returnData: boolean, should data be returned?
+    
+    # Create plot data if requested
+    if(isTRUE(createPlotDF)) {
+        df <- df %>%
+            filter(hospital_pk==keyHospitalPk, 
+                   collection_week %in% (max(collection_week)-7*weekOffset)
+                   ) %>%
+            select(hospital_pk, collection_week, hospital_name, city, where(is.numeric)) %>%
+            pivot_longer(-c(hospital_pk, collection_week, hospital_name, city)) %>%
+            mutate(valueNA=ifelse(is.na(value), 1, ifelse(value==-999999, 1, 0)), 
+                   metType=stringr::str_sub(name, start=-3L, end=-1L)
+                   )
+    }
+    
+    # Get key dates (assumes weekOffset passed ascending)
+    keyDates <- df %>% 
+        count(collection_week) %>% 
+        mutate(useWeek=paste0(lubridate::year(collection_week), "-", zeroPad2(lubridate::month(collection_week)))) %>%
+        pull(useWeek) %>%
+        sort(decreasing=TRUE)
+    
+    # Get key hospital name
+    keyHospName <- df %>% 
+        mutate(hospName=paste0(hospital_name, ", ", city, " (", hospital_pk, ")")) %>%
+        slice(1) %>%
+        pull(hospName)
+    
+    # Create plot (assumes only two options for weekOffset)
+    p1 <- df %>%
+        filter(metType %in% all_of(keyMetType)) %>%
+        ggplot(aes(x=name, 
+                   y=ifelse(valueNA==1, 0, value), 
+                   color=ifelse((collection_week==max(collection_week)), keyDates[1], keyDates[2])
+                   )
+               ) + 
+        geom_point() + 
+        geom_text(aes(label=ifelse(valueNA==1, 0, value), 
+                      hjust=ifelse(collection_week==max(collection_week), -1, 1)
+                      )
+                  ) +
+        coord_flip() + 
+        labs(x=NULL, 
+             y=NULL, 
+             title=paste0(keyMetMap[keyMetType], " metrics for ", paste0(keyDates, collapse=" and ")), 
+             subtitle=keyHospName
+             ) +
+        scale_color_discrete("Time\nPeriod")
+    print(p1)
+    
+    # Return data if requested
+    if(isTRUE(returnData)) return(df)
+
+}
+
+tmpCleveland <- tempPlotHospitalMetrics(readFromRDS("indivHosp_20220704"), 
+                                        keyHospitalPk="360180", 
+                                        weekOffset=c(0, 52),
+                                        keyMetType="age"
+                                        )
+tempPlotHospitalMetrics(tmpCleveland, weekOffset=c(0, 52), keyMetType="avg", createPlotDF=FALSE)
+tempPlotHospitalMetrics(tmpCleveland, weekOffset=c(0, 52), keyMetType="sum", createPlotDF=FALSE)
+
+```
+  
