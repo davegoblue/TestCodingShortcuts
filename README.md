@@ -3018,4 +3018,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 29-AUG-2022  
 * Coronavirus_CDC_Daily_v004 explores average usage metrics for one hospital  
+* Coronavirus_CDC_Daily_v004 tempPlotHospitalMetrics() created  
   
