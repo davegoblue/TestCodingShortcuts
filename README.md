@@ -3020,4 +3020,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 explores average usage metrics for one hospital  
 * Coronavirus_CDC_Daily_v004 tempPlotHospitalMetrics() created  
 * Coronavirus_CDC_Daily_v004 explores capacity using different metrics  
+* Coronavirus_CDC_Daily_v004 explores aggregate capacity using different metrics  
   
