@@ -1981,3 +1981,78 @@ dfTemp %>%
 ```
   
 The metrics appears more stable, with coverage included throughout the dataset time period. There are still some surprising changes in beds reported over time, though ratios of utilization appear more stable
+
+Function hospitalCapacityCDCDaily() is updated:  
+```{r, fig.height=9, fig.width=9}
+
+hhsAdd <- c("inpatient_beds_used_7_day_avg"="inpatient_beds_occupied", 
+            "inpatient_beds_used_covid_7_day_avg"="inpatient_beds_covid"
+            )
+hhsMapperUpdated <- c(hhsMapper, hhsAdd)
+
+hospitalCapacityCDCDaily <- function(df, 
+                                     createData=TRUE, 
+                                     returnData=createData,
+                                     maxCapacity=1.2,
+                                     plotSub="start to finish"
+                                     ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: the key data frame
+    # createData: boolean, if TRUE then convert df for use in processing
+    #                      if FALSE, use df as-is
+    # returnData: boolean, should df be returned (defaults to TRUE is modified, FALSE otherwise)
+    # maxCapacity: states that exceed this capacity level will not be plotted (explore separately)
+    # plotSub: subtitle to use for plots
+    
+    # Convert data if requested
+    if(isTRUE(createData)) df <- skinnyHHS(df, varMapper=hhsMapperUpdated) %>% imputeNACapacity() %>% sumImputedHHS()
+
+    # Create ICU summary
+    createGeoMap(df, 
+                 yVars=list("pctCovidICU"=c("label"="Covid", "color"="red"), 
+                            "pctICU"=c("label"="Total", "color"="black")
+                            ), 
+                 fullList=list("pctICU"=expression(icu_beds_occupied/icu_beds), 
+                               "pctCovidICU"=expression(adult_icu_covid/icu_beds)
+                               ), 
+                 plotTitle="Average % ICU Capacity Filled by Week", 
+                 plotSubtitle=plotSub, 
+                 plotScaleLabel="% ICU\nUsed", 
+                 returnData=FALSE
+                 )
+
+    # Get list of states that may complicate map
+    pctState <- df %>% 
+        mutate(pctAdult=inpatient_beds_occupied/inpatient_beds, pctCovidAdult=inpatient_beds_covid/inpatient_beds)
+    exclStates <- pctState %>% 
+        filter(inpatient_beds >0 & (pctAdult > maxCapacity | pctCovidAdult > maxCapacity)) %>% 
+        count(state) %>% 
+        pull(state)
+    if(length(exclStates) > 0) plotSub <- paste0(plotSub, "\n(", paste(exclStates, collapse=", "), " data excluded)")
+
+    # Create the adult beds summary    
+    createGeoMap(df %>% filter(!(state %in% all_of(exclStates)), inpatient_beds > 0), 
+                 yVars=list("pctCovidAdult"=c("label"="Covid", "color"="red"), 
+                            "pctAdult"=c("label"="Total", "color"="black")
+                            ), 
+                 fullList=list("pctAdult"=expression(inpatient_beds_occupied/inpatient_beds), 
+                               "pctCovidAdult"=expression(inpatient_beds_covid/inpatient_beds)
+                               ), 
+                 plotTitle="Average % Adult Beds Capacity Filled by Week", 
+                 plotSubtitle=plotSub, 
+                 plotScaleLabel="% Adult\nBeds\nUsed", 
+                 returnData=FALSE
+                 )
+    
+    # Return the data if requested (defaults to only if createData is TRUE)
+    if(isTRUE(returnData)) return(df)
+    
+}
+
+modStateHosp_20220805 <- hospitalCapacityCDCDaily(indivHosp_20220805, plotSub="August 2020 to July 2022")
+modStateHosp_20220704 <- hospitalCapacityCDCDaily(readFromRDS("indivHosp_20220704"), plotSub="August 2020 to June 2022")
+
+```
+
+The updated process run on older data appears reasonable. The older data should be spiced in to the newer data, for completeness of 2020 through mid-2021
