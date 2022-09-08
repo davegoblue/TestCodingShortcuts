@@ -3029,4 +3029,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v004 runs peakValleyCDCDaily()  
 * Coronavirus_CDC_Daily_v004 runs hospitalCapacityCDCDaily()  
 * Coronavirus_CDC_Daily_v004 updates hospitalCapacityCDCDaily() with blend of new and old data  
+* Coronavirus_CDC_Daily_v005 created from v004  
   
