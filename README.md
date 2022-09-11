@@ -3032,4 +3032,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 created from v004  
 * Coronavirus_CDC_Daily_v005 integrates new and old hospital data for capacity plots  
 * Coronavirus_CDC_Daily_v005 plots new and old hospital data for disconnects  
+* Coronavirus_CDC_Daily_v005 plots disconnect dates  
   
