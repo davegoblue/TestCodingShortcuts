@@ -209,3 +209,51 @@ dfTemp %>%
     
 ```
   
+The process is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+multiSourceDataCombine <- function(lst, timeVec, keyVar="collection_week", idName="src") {
+    
+    # FUNCTION ARGUMENTS:
+    # lst: list of data frames to be combined
+    # timeVec: vector of time cut points (data before timeVec[1] taken from lst[[1]], etc.)
+    # keyVar: variable describing time in the data
+    # idName: name of column for .id when files combined
+    
+    # Check list lengths
+    if(length(lst)==0) {
+        cat("\nEmpty list passed, returning 0x0 tibble\n")
+        return(tibble::tibble())
+    } else if (length(lst)==1) {
+        cat("\nList of length 1 passed, returning item in list as-is")
+        return(lst[[1]])
+    }
+    
+    # Check that timeVec matches
+    if(length(lst) != length(timeVec) + 1) stop("\nMismatch of lst and timeVec\n")
+    
+    # Check that all data frames have the same column names in the same order
+    vecNames <- names(lst[[1]])
+    for(n in 2:length(lst)) if(!isTRUE(identical(names(lst[[n]]), vecNames))) stop("\nName mismatch in files\n")
+    
+    # Combine data
+    bind_rows(lst, .id=idName) %>%
+        mutate(srcNum=as.integer(get(idName)), 
+               dateMin=ifelse(srcNum==1, NA, timeVec[srcNum-1]), 
+               dateMax=ifelse(srcNum==max(srcNum), NA, timeVec[srcNum])
+               ) %>%
+        filter(is.na(dateMin) | get(keyVar) >= dateMin, 
+               is.na(dateMax) | get(keyVar) < dateMax
+               ) %>%
+        select(-srcNum, -dateMin, -dateMax)
+    
+}
+
+multiSourceDataCombine(list(readFromRDS("indivHosp_20220704"), indivHosp_20220907), 
+                       timeVec=as.Date("2022-01-01")
+                       ) %>%
+    select(-src) %>%
+    identical(modHospData %>% select(-src))
+
+```
+  
