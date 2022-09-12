@@ -3034,3 +3034,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 plots new and old hospital data for disconnects  
 * Coronavirus_CDC_Daily_v005 plots disconnect dates  
   
+### Expansions week of 12-SEP-2022  
+* Coronavirus_CDC_Daily_v005 multiSourceDataCombine() written  
+  
