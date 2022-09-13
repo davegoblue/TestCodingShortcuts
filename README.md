@@ -3036,4 +3036,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 12-SEP-2022  
 * Coronavirus_CDC_Daily_v005 multiSourceDataCombine() written  
+* Coronavirus_CDC_Daily_v005 includes hospital capacity plots  
   
