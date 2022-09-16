@@ -3039,4 +3039,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 includes hospital capacity plots  
 * Coronavirus_Statistics_USAF_v007 created  
 * Coronavirus_Statistics_USAF_v007 updated with latest burden and vaccines data  
+* Coronavirus_Statistics_USAF_v007 updates postProcessCountyData()  
   
