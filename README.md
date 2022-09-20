@@ -3045,4 +3045,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 19-SEP-2022  
 * Coronavirus_Statistics_USAF_v007 explores counties with burden decline  
+* Coronavirus_Statistics_USAF_v007 plots counties by reported death decline  
   
