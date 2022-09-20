@@ -154,7 +154,7 @@ plotVaxBurdenData(tmpVaxBurden,
 Multiple data anomalies need to be addressed - vaccines data covering only a short time period, counties significantly revising burden downwards, etc.
   
 Counties with significant negative burden are investigated:  
-```{r}
+```{r, fig.height=9, fig.width=9}
 
 keyRatio <- cty_newdata_20220913$dfPerCapita %>%
     select(countyFIPS, state, date, cases, deaths) %>%
@@ -190,4 +190,39 @@ keyRatio %>%
 
 ```
 
-Restatement of deaths is much more common than restatement of cases
+Restatement of deaths is much more common than restatement of cases. Counties with declines are further explored:  
+```{r, fig.height=9, fig.width=9}
+
+decStatus <- keyRatio %>%
+    mutate(rd=case_when(is.na(keyRatDeath) ~ -1, 
+                        keyRatDeath==1 ~ 1, 
+                        keyRatDeath>=.95 ~ .95, 
+                        keyRatDeath>=.9 ~ .9, 
+                        keyRatDeath>=.75 ~ .75, 
+                        keyRatDeath>=.5 ~ .5, 
+                        TRUE ~ 0
+                        )
+           )
+decStatus %>%
+    count(rd)
+decStatus %>%
+    count(rd, state) %>%
+    filter(rd<.95, rd>=0, n>1) %>%
+    arrange(rd, -n)
+
+cty_newdata_20220913$dfPerCapita %>%
+    left_join(select(decStatus, countyFIPS, state, rd), by=c("countyFIPS", "state")) %>%
+    group_by(rd, date) %>%
+    summarize(cases=sum(cases), deaths=sum(deaths), n=n(), .groups="drop") %>%
+    mutate(labFacet=paste0(rd, " (n=", n, ")")) %>%
+    ggplot(aes(x=date, y=deaths)) + 
+    geom_line() + 
+    facet_wrap(~labFacet, scales="free_y") + 
+    labs(x=NULL, 
+         y="Reported deaths", 
+         title="Reported deaths, facetted by change from maximum"
+         )
+
+```
+  
+Illinois and Nebraska appear to be main drivers of reported declines (discontinuities) in deaths. Reporting is potentially lagged, as much of the issue appears to be recent.
