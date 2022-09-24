@@ -285,7 +285,7 @@ cty_newdata_20220913$dfPerCapita %>%
     left_join(select(decStatus, countyFIPS, state, rd), by=c("countyFIPS", "state")) %>%
     filter(rd > 0, rd < 0.9) %>%
     ggplot(aes(x=date, y=deaths)) + 
-    geom_line(aes(group=countyFIPS)) + 
+    geom_line(aes(group=countyFIPS, color=state)) + 
     facet_wrap(~rd, scales="free_y") + 
     labs(x=NULL, 
          y="Reported deaths by county", 
@@ -326,8 +326,49 @@ dfMinMax %>%
     left_join(cty_newdata_20220913$dfPerCapita, by="countyFIPS") %>%
     ggplot(aes(x=date, y=deaths)) + 
     geom_line(aes(group=countyFIPS)) + 
-    facet_wrap(~countyFIPS, scales="free_y")
+    facet_wrap(~countyFIPS, scales="free_y") + 
+    labs(title="Reported deaths by counties with zero following non-zero", x=NULL, y="Reported deaths")
 
 ```
   
 While some of the declines are anomalous, others appear to be curves that are either very low volume or smooth on a rolling-7 basis
+
+The process is repeated to examine issues by state:  
+```{r, fig.height=9, fig.width=9}
+
+keyRatioDateState <- cty_newdata_20220913$dfPerCapita %>%
+    group_by(state, date) %>%
+    summarize(across(c(cases, deaths), .fns=function(x) sum(x, na.rm=TRUE)), .groups="drop") %>%
+    pivot_longer(-c(state, date)) %>%
+    arrange(state, name, date) %>%
+    group_by(state, name) %>%
+    mutate(ratMax=value/max(value, na.rm=TRUE), cumMax=ifelse(cummax(value)==0, 1, value/cummax(value))) %>%
+    ungroup()
+keyRatioDateState
+dfMinMaxState <- keyRatioDateState %>%
+    filter(!is.na(cumMax)) %>%
+    group_by(state, name) %>%
+    summarize(minMax=min(cumMax), .groups="drop") 
+dfMinMaxState %>%
+    ggplot(aes(x=minMax)) + 
+    geom_density(aes(group=name, color=name)) + 
+    labs(title="Ratio of burden vs. cumulative maximum of burden (expected to be 1 for ascending sequence)", 
+         subtitle="Lowest value per state and metric plotted", 
+         x="Lowest value of daily burden vs. cumulative maximum of burden", 
+         y="Density"
+         ) + 
+    scale_color_discrete("Metric")
+dfMinMaxState %>%
+    filter(minMax < 0.95, name=="deaths") %>%
+    select(state) %>%
+    left_join(cty_newdata_20220913$dfPerCapita, by="state") %>%
+    group_by(state, date) %>%
+    summarize(across(c(cases, deaths), .fns=function(x) sum(x, na.rm=TRUE)), .groups="drop") %>%
+    ggplot(aes(x=date, y=deaths)) + 
+    geom_line(aes(group=state)) + 
+    facet_wrap(~state, scales="free_y") + 
+    labs(title="Reported deaths by states with meaningfully non-ascending trend", x=NULL, y="Reported deaths")
+
+```
+  
+Significant restatements appear to be in MA, while missing recent data appears to be in IL. It is unclear if MO and NE are still reporting county-level deaths. The data is potentially less complete and accurate than in previous iterations
