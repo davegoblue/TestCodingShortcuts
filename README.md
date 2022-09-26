@@ -3051,4 +3051,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v007 further explores specific counties with reported death declines  
 * Coronavirus_Statistics_USAF_v007 explores state impact of reported death declines  
 * Coronavirus_Statistics_USAF_v007 further explores state impact of reported death and case declines  
+
+### Expansions week of 26-SEP-2022  
+* Coronavirus_Statistics_CDC_v006 updated with latest data  
   
