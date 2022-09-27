@@ -3054,4 +3054,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 26-SEP-2022  
 * Coronavirus_Statistics_CDC_v006 updated with latest data  
+* Coronavirus_Statistics_CDC_v006 plotCDCRestatement() run  
   
