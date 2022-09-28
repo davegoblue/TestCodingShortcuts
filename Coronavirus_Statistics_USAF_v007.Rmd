@@ -426,3 +426,39 @@ dfMinMaxState_v2 %>%
 ```
   
 The updated methodology better flags states with meaningful restatement problems
+
+The process is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+# Function to calculate distance from global maxima and previous maxima (including self)
+findDeltaFromMax <- function(df, groupBy=c(), timeVar="date", numVars=NULL) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a data frame
+    # groupBy: levels to which the final data should be aggregated
+    # timeVar: time variable to which data should be aggregated
+    # numVars: numeric variables to be summarized (NULL means all numeric variables)
+    
+    # Find numVars if not provided
+    if(is.null(numVars)) numVars <- df %>% select(where(is.numeric)) %>% names %>% setdiff(groupBy)
+    
+    df %>%
+        group_by_at(all_of(c(groupBy, timeVar))) %>%
+        summarize(across(all_of(numVars), .fns=function(x) sum(x, na.rm=TRUE)), .groups="drop") %>%
+        pivot_longer(all_of(numVars)) %>%
+        arrange(across(all_of(c(groupBy, "name", timeVar)))) %>%
+        group_by_at(all_of(c(groupBy, "name"))) %>%
+        mutate(ratMax=value/max(value, na.rm=TRUE), 
+               cumMax=ifelse(cummax(value)==0, 1, value/cummax(value)), 
+               delMax=ifelse(cummax(value)==0, 1, (value-cummax(value))/max(value, na.rm=TRUE))
+               ) %>%
+        ungroup()
+    
+}
+
+dfTest <- findDeltaFromMax(cty_newdata_20220913$dfPerCapita, groupBy="state", numVar=c("cases", "deaths"))
+identical(dfTest %>% select(-delMax), keyRatioDateState)
+identical(dfTest %>% select(-cumMax) %>% rename(cumMax=delMax), keyRatioDateState_v2)
+
+```
+  
