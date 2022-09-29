@@ -3056,4 +3056,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 updated with latest data  
 * Coronavirus_Statistics_CDC_v006 plotCDCRestatement() run  
 * Coronavirus_Statistics_CDC_v006 findDeltaFromMax() created  
+* Coronavirus_Statistics_CDC_v006 findDeltaFromMax() tested for counties  
   
