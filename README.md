@@ -3058,6 +3058,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 findDeltaFromMax() created  
 * Coronavirus_Statistics_CDC_v006 findDeltaFromMax() tested for counties  
 * Coronavirus_Statistics_CDC_v006 plotDeltaFromMax() created  
-* Coronavirus_Statistics_CDC_v006 assesses reported dates for vaccines  
-* Coronavirus_Statistics_CDC_v006 assesses reported completed series for vaccines  
+* Coronavirus_Statistics_USAF_v007 assesses reported dates for vaccines  
+* Coronavirus_Statistics_USAF_v007 assesses reported completed series for vaccines  
   
+### Expansions week of 03-OCT-2022  
