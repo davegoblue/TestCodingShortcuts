@@ -351,3 +351,154 @@ peakValleyCDCDaily(cdc_daily_221002)
 
 ```
   
+A function is written for the hospital data availability checks:  
+Data availability by source and time is assessed:  
+```{r, fig.height=9, fig.width=9}
+
+checkHospitalDataComplete <- function(df1=NULL, 
+                                      df2=NULL,
+                                      dfAll=NULL,
+                                      lab1="DF1", 
+                                      lab2="DF2", 
+                                      trendBreaks=c(), 
+                                      makeP1=TRUE, 
+                                      makeP2=TRUE,
+                                      returnData=FALSE
+                                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df1: the first data frame (NULL means integrated frame passed as dfAll)
+    # df2: the second data frame (NULL means integrated frame passed as dfAll)
+    # dfAll: integrated data frame from previous iteration of function (will ignore df1 and df2)
+    # lab1: plot label for the first data frame
+    # lab2: plot label for the second data frame
+    # trendBreaks: character vector of trend break dates of form YYYY-MM-DD - if c(), no trend brek vlines plotted
+    # makeP1: boolean, should the first plot be created and printed?
+    # makeP2: boolean, should the first plot be created and printed?
+    # returnData: boolean, should dfAll be returned?
+    
+    # Temporary function to aggregate data
+    tempCountComplete <- function(df) {
+        df %>%
+            select(hospital_pk, collection_week, all_of(names(hhsMapper))) %>%
+            colRenamer(vecRename=hhsMapper) %>%
+            pivot_longer(-c(hospital_pk, collection_week)) %>%
+            filter(!is.na(value), value>0) %>%
+            count(collection_week, name)
+    }
+    
+    # Create or use passed data
+    if(is.null(dfAll)) {
+        if(is.null(df1) | is.null(df2)) stop("dfAll not passed requires both df1 and df2 to be passed\n")
+        dfAll <- bind_rows(tempCountComplete(df1), tempCountComplete(df2), .id="src")
+    } else {
+        if(!is.null(df1) | !is.null(df2)) warning("dfAll passed and will be used; df1 and/or df2 ignored\n")
+    }
+    
+    # Plot data completeness - hospitals reporting >0 on metric by week
+    if(isTRUE(makeP1)) {
+        p1 <- dfAll %>%
+            select(collection_week, name) %>%
+            unique() %>%
+            bind_rows(., ., .id="src")  %>%
+            full_join(dfAll, by=c("src", "collection_week", "name")) %>%
+            mutate(src=c("1"=lab1, "2"=lab2)[src]) %>%
+            mutate(n=ifelse(is.na(n), 0, n)) %>%
+            ggplot(aes(x=collection_week, y=n)) +
+            geom_line(aes(group=src, color=src)) + 
+            facet_wrap(~name) + 
+            labs(title="Number of hospitals in US reporting >0 on metric by week", 
+                 x=NULL, 
+                 y="# Hospitals Reporting > 0"
+                 ) + 
+            scale_color_discrete("Data Source:")
+        if(length(trendBreaks) > 0) {
+            p1 <- p1 + geom_vline(xintercept=as.Date(all_of(trendBreaks)), lty=2) +
+                labs(subtitle=paste0("Trend break dashed lines at ", 
+                                     paste0(all_of(trendBreaks), collapse=" and ")
+                                     )
+                     )
+        }
+        print(p1)
+    }
+    
+
+    # Plot data completeness - showing difference in reported data and trend break dates
+    if(isTRUE(makeP2)) {
+        p2 <- dfAll %>%
+            select(collection_week, name) %>%
+            unique() %>%
+            bind_rows(., ., .id="src")  %>%
+            full_join(dfAll, by=c("src", "collection_week", "name")) %>%
+            mutate(src=c("1"=lab1, "2"=lab2)[src]) %>%
+            mutate(n=ifelse(is.na(n), 0, n)) %>% 
+            group_by(collection_week, name) %>% 
+            summarize(delta=sum(ifelse(src==lab2, n, 0)-ifelse(src!=lab2, n, 0)), .groups="drop") %>%
+            ggplot(aes(x=collection_week, y=delta)) +
+            geom_line(aes(color=case_when(delta>=0 ~ "darkgreen", TRUE ~ "red"))) +
+            geom_hline(yintercept=0, lty=2) +
+            scale_color_identity(NULL) +
+            facet_wrap(~name) + 
+            labs(title="Delta in Number of hospitals in US reporting >0 on metric by week", 
+                 x=NULL, 
+                 y="Delta in # Hospitals Reporting > 0"
+                 )
+        if(length(trendBreaks) > 0) {
+            p2 <- p2 + geom_vline(xintercept=as.Date(all_of(trendBreaks)), lty=2) +
+                labs(subtitle=paste0("Trend break dashed lines at ", 
+                                     paste0(all_of(trendBreaks), collapse=" and ")
+                                     )
+                )
+        }
+        print(p2)
+    }
+    
+    if(isTRUE(returnData)) return(dfAll)
+    
+}
+
+# Create the data
+dfTemp <- checkHospitalDataComplete(df1=readFromRDS("indivHosp_20221003"), 
+                                    df2=readFromRDS("indivHosp_20220704"), 
+                                    makeP1=FALSE, 
+                                    makeP2=FALSE,
+                                    returnData=TRUE
+                                    )
+
+# Create the first plot
+checkHospitalDataComplete(dfAll=dfTemp,
+                          lab1="OCT-2022", 
+                          lab2="JUL-2022", 
+                          makeP2=FALSE, 
+                          trendBreaks=c("2021-09-25", "2022-06-24")
+                          )
+
+# Create the second plot
+checkHospitalDataComplete(dfAll=dfTemp,
+                          lab1="OCT-2022", 
+                          lab2="JUL-2022", 
+                          makeP1=FALSE, 
+                          trendBreaks=c("2021-10-30", "2022-06-24")
+                          )
+
+```
+  
+Plot 2 is not working as intended (discontinuity of the difference line) and should be updated
+
+Hospital data are pieced together as needed:
+```{r, fig.height=9, fig.width=9}
+
+# Create modified hospital data
+# multiSourceHosp_20221002 <- multiSourceDataCombine(list(readFromRDS("indivHosp_20220704"), 
+#                                                         indivHosp_20221003
+#                                                         ), 
+#                                                    timeVec=as.Date("2022-01-01")
+#                                                    )
+
+# Confirm that function produces expected output
+# multiSourceHosp_20221002 %>%
+#     select(-src) %>%
+#     identical(modHospData %>% select(-src))
+
+```
+  
