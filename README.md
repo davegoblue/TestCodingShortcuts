@@ -3070,3 +3070,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 checkHospitalDataComplete() updated  
 * Coronavirus_CDC_Daily_v005 multiSourceDataCombine() run  
   
+### Expansions week of 10-OCT-2022  
+* Coronavirus_CDC_Daily_v005 updates hospitalCapacityCDCDaily() with blend of new and old data  
+  
