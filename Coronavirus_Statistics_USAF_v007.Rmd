@@ -672,3 +672,167 @@ saveToRDS(cty_postdata_20221010, ovrWriteError=FALSE)
 
 ```
   
+The Alaska portion of usmap::plot_usmap() has an issue with Valdex county. The function is updated to allow for excluding problematic states:  
+```{r}
+
+# Updated to allow for include and exclude
+makeBurdenDatePlot <- function(df, 
+                               keyVar,
+                               timeLabel,
+                               plotTitle=NULL,
+                               varLabel=NULL,
+                               varFloor=0,
+                               varCeiling=+Inf,
+                               varDivBy=1,
+                               vecRename=c("countyFIPS"="fips"), 
+                               includeStates=c(), 
+                               excludeStates=c()
+                               ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a processed data frame with fips, asofDate, burden
+    # keyVar: character string for variable to be plotted
+    # timeLabel: character string for amount of time (e.g., "1-month" or "5-week")
+    # plotTitle: title for the plot (NULL means infer from other arguments)
+    # varLabel: label for the variable in plot scale (NULL means infer from other arguments)
+    # varFloor: minimum value to be allowed for variable (-Inf means no floor applied)
+    # varCeiling: maximum value to be allowed for variable (Inf means no ceiling applied)
+    # varDivBy: variable should be divivded by this for plotting
+    # vecRename: renaming vector to get desired variables in frame
+    # includeStates: specific states to be plotted, where c() means all states
+    # excludeStates: specific states NOT to be plotted (ignored if includeStates has length > 0)
+    
+    # Create varLabel if passed as NULL
+    if(is.null(varLabel)) {
+        varLabel <- stringr::str_to_upper(stringr::str_extract(keyVar, "^[A-Za-z]*"))
+        if((varDivBy > 1) & isTRUE(all.equal(log10(varDivBy) %% 1, 0))) 
+            varLabel <- paste0(varLabel, "(", stringr::str_replace(varDivBy, pattern="1", replacement=""), "s)")
+        else if (varDivBy != 1) varLabel <- paste0(varLabel, "(units of ", varDivBy, ")")
+    }
+    
+    # Create plotTitle if passed as NULL
+    if(is.null(plotTitle)) 
+        plotTitle <- paste0(timeLabel, 
+                            " coronavirus ", 
+                            if(str_detect(stringr::str_to_upper(keyVar), pattern="CPM")) "cases" else "deaths",
+                            " by county"
+        )
+    
+    # Resolve includeStates and excludeStates
+    if(length(includeStates) > 0) {
+        if(length(excludeStates) > 0) {
+            cat("\nParamater excludeStates will be ignored since includeStates was passed\n")
+            excludeStates <- c()
+        }
+        invalidInclude <- setdiff(includeStates, c(state.abb, "DC"))
+        if(length(invalidInclude) > 0) {
+            cat("\nInvalid states passed in includeStates deleted:", paste(invalidInclude, collapse=", "), "\n")
+            includeStates <-setdiff(includeStates, invalidInclude)
+        }
+    }
+    
+    # Create and return plot
+    p1 <- df %>%
+        colRenamer(vecRename=vecRename) %>%
+        mutate(burden=pmax(pmin(get(all_of(keyVar)), varCeiling), varFloor)/varDivBy) %>%
+        select(fips, burden, asofDate) %>%
+        usmap::plot_usmap(regions="counties", data=., values="burden", include=includeStates, exclude=excludeStates) + 
+        labs(title=plotTitle, 
+             subtitle=if(varFloor > -Inf | varCeiling < +Inf) "Floors and/or ceilings applied" else NULL, 
+             caption="Source: USA Facts"
+        ) +
+        scale_fill_continuous(paste0(varLabel, "\n", timeLabel), low="grey", high="red") +
+        facet_wrap(~asofDate) + 
+        theme(legend.position="bottom")
+    p1
+    
+}
+
+postProcessCountyData <- function(lstCtyBurden,
+                                  lstCtyVax,
+                                  lstState, 
+                                  maxDate=NULL, 
+                                  minDateBurden="2020-02-15", 
+                                  minDateVax="2021-04-01", 
+                                  includeStates=c(), 
+                                  excludeStates=c()
+                                  ) {
+    
+    # FUNCTION ARGUMENTS:
+    # lstCtyBurden: list of processed county-level burden data (or a dfPerCapita file from this list)
+    # lstCtyVax: list of processed county-level vaccines data (or a vaxFix file from this list)
+    # lstState: list of processed state-level burden data (or a dfPerCapita file from this list)
+    # maxDate: maximum date to use for plotting (NULL means latest date in both lstCty and lstState)
+    # minDateBurden: earliest date for scoring burden similarity across files
+    # minDateVax: earliest date for scoring vaccine similarity across files
+    # includeStates: specific states to be plotted, where c() means all states
+    # excludeStates: specific states NOT to be plotted (ignored if includeStates has length > 0)
+    
+    # Extract the relevant perCapita and vaxFix data if needed
+    if("list" %in% class(lstCtyBurden)) lstCtyBurden <- lstCtyBurden[["dfPerCapita"]]
+    if("list" %in% class(lstState)) lstState <- lstState[["dfPerCapita"]]
+    if("list" %in% class(lstCtyVax)) lstCtyVax <- lstCtyVax[["vaxFix"]]
+    
+    # Get maxDate if not provided
+    if(is.null(maxDate)) maxDate <- min(max(lstCtyBurden$date, na.rm=TRUE), max(lstState$date, na.rm=TRUE))
+    cat("\nParameter maxDate is:", as.character(maxDate), "\n\n")
+    
+    # Data for score similarity process
+    dfCompare <- compareStateSummedCounty(dfState=lstState, 
+                                          dfCounty=lstCtyBurden, 
+                                          inclStates=c(state.abb, "DC"), 
+                                          dateThru=maxDate, 
+                                          makePlot=FALSE,
+                                          returnData=TRUE
+    )
+    scoreSimilarity(dfCompare, minDate=minDateBurden, maxDate=maxDate, makeFacet=FALSE)
+    
+    # Check differences in data sources
+    dfAllState <- integrateStateVaccine(lstCtyVax, statePerCap=lstState, treatNAZero=TRUE)
+    vaxDiff <- scoreVaxSimilarity(dfAllState, minDate=minDateVax, maxDate=maxDate, returnBaseData=TRUE)
+    
+    # Create county-level burden data by quarters
+    dfRoll91 <- createBurdenCountyDate(lstCtyBurden, 
+                                       maxDate=maxDate, 
+                                       rollBy=months(c(0, -3, -6, -9)), 
+                                       dateSpan=91
+    )
+    makeBurdenDatePlot(dfRoll91, 
+                       keyVar="cpm91", 
+                       timeLabel="3-month", 
+                       varCeiling=100000, 
+                       varDivBy=1000, 
+                       includeStates=includeStates, 
+                       excludeStates=excludeStates
+                       ) %>% 
+        print()
+    makeBurdenDatePlot(dfRoll91, 
+                       keyVar="dpm91", 
+                       timeLabel="3-month", 
+                       varCeiling=1500, 
+                       includeStates=includeStates, 
+                       excludeStates=excludeStates
+                       ) %>% 
+        print()
+    
+    # Return the key elements
+    list(dfCompare=dfCompare, dfAllState=dfAllState, vaxDiff=vaxDiff, dfRoll91=dfRoll91)
+    
+}
+
+```
+
+County-level data are post-processed:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+cty_postdata_20221010_v2 <- postProcessCountyData(lstCtyBurden=cty_newdata_20221010$dfPerCapita, 
+                                                  lstCtyVax=cty_vaxdata_20221011$vaxFix, 
+                                                  lstState=readFromRDS("cdc_daily_221002")$dfPerCapita, 
+                                                  excludeStates="AK"
+                                                  )
+
+# Check equivalence of data files
+identical(cty_postdata_20221010, cty_postdata_20221010_v2)
+
+```
+  
