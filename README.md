@@ -3074,5 +3074,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 updates hospitalCapacityCDCDaily() with blend of new and old data  
 * Coronavirus_Statistics_USAF_v007 updated with latest burden data  
 * Coronavirus_Statistics_USAF_v007 updated with latest vaccines data  
-* Coronavirus_Statistics_USAF_v007 updates postProcessCountyData()  
+* Coronavirus_Statistics_USAF_v007 runs postProcessCountyData()  
+* Coronavirus_Statistics_USAF_v007 updates makeBurdenDatePlot() and postProcessCountyData()  
   
