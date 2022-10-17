@@ -3079,3 +3079,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v007 runs additionalCountyPostProcess()  
 * Coronavirus_Statistics_USAF_v007 updates additionalCountyPostProcess()  
   
+### Expansions week of 17-OCT-2022  
+* Coronavirus_Statistics_USAF_v007 re-runs additionalCountyPostProcess()  
+  
