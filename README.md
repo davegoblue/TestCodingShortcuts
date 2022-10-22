@@ -3085,4 +3085,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v007 plots select states using plotDeltaFromMax()  
 * Coronavirus_Statistics_USAF_v007 explores states with high restatement  
 * Coronavirus_Statistics_USAF_v007 explores key counties driving high restatement  
+* Coronavirus_Statistics_CDC_v006 updated with latest data  
   
