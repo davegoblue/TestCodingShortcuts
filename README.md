@@ -3091,4 +3091,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 24-OCT-2022  
 * Coronavirus_Statistics_USAF_v007 explores key counties driving high case restatement  
 * Coronavirus_Statistics_USAF_v007 explores case trends by restatement status  
+* Coronavirus_Statistics_USAF_v007 plotByRestatement() created  
   
