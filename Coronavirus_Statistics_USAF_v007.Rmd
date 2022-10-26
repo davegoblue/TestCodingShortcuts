@@ -1086,3 +1086,84 @@ anom_cty %>%
 Case data appear reasonable after anomalies are removed. The large percentage changes make some impact but appear to generally average out and remain on trend. The large volume changes appear to be anomalies that impact trends, especially in the most recent time periods.
 
 The process is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+plotByRestatement <- function(dfRatio, 
+                              dfBurden, 
+                              idVars=c("countyFIPS", "state"),
+                              keyMetric="cases", 
+                              keyMetricBurden=keyMetric, 
+                              delMaxHurdle=0,
+                              bigVolHurdle=0, 
+                              returnData=FALSE
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfRatio: file containing key metrics for determining restatement status
+    # dfBurden: the burden data by geography
+    # idVars: variables that identify a geographical unit
+    # keyMetric: name of variable in the ratio file
+    # keyMetricBurden: name of variable in the burden file
+    # delMaxHurdle: cutoff for determining large delMax
+    # bigVolHurdle: cutoff for determining large delMax*value
+    # returnData: boolean, should dfSeg be returned?
+    
+    # Create segment data
+    dfSeg <- dfRatio %>% 
+        filter(name==keyMetric) %>%
+        mutate(bigPct=(delMax < delMaxHurdle), bigVol=(delMax*value < bigVolHurdle))
+    
+    # Report on segment data
+    dfSeg %>%
+        count(bigPct, bigVol) %>%
+        print()
+
+    # Create and print plot
+    p1 <- dfSeg %>%
+        select(c(all_of(idVars), "bigPct", "bigVol")) %>%
+        inner_join(dfBurden, by=all_of(idVars)) %>%
+        mutate(type=case_when(bigVol ~ "2) Big volume change", 
+                              bigPct ~ "3) Big percent change", 
+                              TRUE ~ "1) Low/no percent change"
+                              )
+               ) %>%
+        group_by(type, date) %>%
+        summarize(across(all_of(keyMetricBurden), sum), .groups="drop") %>%
+        ggplot(aes_string(x="date", y=keyMetricBurden[1])) + 
+        geom_line() + 
+        facet_wrap(~type, scales="free_y") + 
+        labs(title="Sum of cases by segment", 
+             x=NULL, 
+             y="Sum of cases", 
+             subtitle=paste0("Big volume change is more than ", 
+                             -bigVolHurdle, 
+                             " ", 
+                             keyMetricBurden[1],  
+                             ", big percentage change is at least ", 
+                             round(-100*delMaxHurdle), 
+                             "% (but not ", 
+                             -bigVolHurdle, 
+                             " ", 
+                             keyMetricBurden[1], 
+                             ")"
+                             )
+             )
+    print(p1)
+
+    # Return data if requested
+    if(isTRUE(returnData)) return(dfSeg)
+    
+}
+
+
+dfSegTest <- plotByRestatement(dfRatio_cty, 
+                               dfBurden=cty_newdata_20221010$dfPerCapita, 
+                               keyMetric="cases", 
+                               delMaxHurdle=-0.05, 
+                               bigVolHurdle=-2000, 
+                               returnData=TRUE
+                               )
+identical(anom_cty, dfSegTest)
+
+```
+  
