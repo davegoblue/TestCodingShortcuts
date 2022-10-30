@@ -3095,4 +3095,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v007 checkRestatementData() created  
 * Coronavirus_Statistics_USAF_v007 checkRestatementData() run for states and counties  
 * Coronavirus_Statistics_USAF_v007 checkRestatementData() run to create ratio data for counties  
+* Coronavirus_Statistics_USAF_v007 checkRestatementData() run to create ratio data for states  
   
