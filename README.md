@@ -3097,3 +3097,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v007 checkRestatementData() run to create ratio data for counties  
 * Coronavirus_Statistics_USAF_v007 checkRestatementData() run to create ratio data for states  
   
+### Expansions week of 31-OCT-2022  
+* Coronavirus_Statistics_USAF_v007 plots state ratio data  
+  
