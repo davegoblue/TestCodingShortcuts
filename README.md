@@ -3103,4 +3103,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v007 plots county case restatement ratio data  
 * Coronavirus_CDC_Daily_v005 downloads and processes latest case, death, and vaccine data  
 * Coronavirus_CDC_Daily_v005 downloads and processes latest hospital data  
+* Coronavirus_CDC_Daily_v005 runs postProcessCDCDaily()  
   
