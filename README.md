@@ -3112,4 +3112,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v007 updated with latest burden data  
 * Coronavirus_Statistics_USAF_v007 updated with latest vaccines data  
 * Coronavirus_Statistics_USAF_v007 runs postProcessCountyData()  
+* Coronavirus_Statistics_USAF_v007 runs additionalCountyPostProcess()  
   
