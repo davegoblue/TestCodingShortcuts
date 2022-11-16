@@ -3118,4 +3118,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 14-NOV-2022  
 * Coronavirus_Statistics_CDC_v006 plotCDCRestatement() run  
 * Coronavirus_CDC_Daily_v005 downloads weekly burden data  
+* Coronavirus_CDC_Daily_v005 explores alignment of weekly and daily totals  
   
