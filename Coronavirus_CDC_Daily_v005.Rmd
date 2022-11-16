@@ -645,3 +645,59 @@ tmpStateBurden %>%
 ```
   
 NYC data appear to be tracked separately from NY data, requiring combination. Otherwise, the expected geographical units appear to be included, and with totals and sum of new matching (exceptions for deaths in DC, NYC, and Kansas).
+
+Similarity of total burden is compared:  
+```{r, fig.height=9, fig.width=9}
+
+tmpBurdenDate <- tmpBurden %>%
+    select(date=end_date, state, where(is.numeric)) %>%
+    bind_rows(cdc_daily_221102$dfProcess$cdcDaily, .id="src") %>%
+    mutate(src=c("1"="CDC weekly (new)", "2"="CDC daily (old)")[src])
+tmpBurdenDate
+
+# Plot for total deaths and total cases
+tmpBurdenDate %>%
+    filter(state %in% c(state.abb, "DC", "NYC")) %>%
+    group_by(src, date) %>%
+    summarize(across(where(is.numeric), sum, na.rm=TRUE), .groups="drop") %>%
+    pivot_longer(where(is.numeric)) %>%
+    filter(name %in% c("tot_cases", "tot_deaths")) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(color=src, group=src)) + 
+    facet_wrap(~name, scales="free_y")
+
+# Plot by state - latest burden
+tmpBurdenDate %>%
+    filter(state %in% c(state.abb, "DC", "NYC")) %>%
+    group_by(src, state) %>%
+    summarize(across(where(is.numeric), last, order_by=date), .groups="drop") %>%
+    pivot_longer(where(is.numeric)) %>%
+    filter(name %in% c("tot_cases", "tot_deaths")) %>%
+    ggplot(aes(x=fct_reorder(state, value), y=value)) + 
+    geom_point(aes(color=src)) + 
+    facet_wrap(~name, scales="free_x") + 
+    coord_flip() + 
+    labs(x=NULL, y=NULL, title="Most recent burden by state and data source") + 
+    scale_color_discrete("Source")
+
+# Plot by state - difference in burden
+tmpBurdenDate %>%
+    filter(state %in% c(state.abb, "DC", "NYC")) %>%
+    group_by(src, state) %>%
+    summarize(across(where(is.numeric), last, order_by=date), .groups="drop") %>%
+    pivot_longer(where(is.numeric)) %>%
+    filter(name %in% c("tot_cases", "tot_deaths")) %>%
+    group_by(state, name) %>%
+    summarize(value=sum(ifelse(src!="CDC daily (old)", value, 0)) - sum(ifelse(src=="CDC daily (old)", value, 0)), 
+              .groups="drop"
+              ) %>%
+    ggplot(aes(x=fct_reorder(state, value), y=value)) + 
+    geom_point() + 
+    facet_wrap(~name, scales="free_x") + 
+    coord_flip() + 
+    labs(x=NULL, y=NULL, title="Change in most recent burden by state (new minus old)") + 
+    geom_hline(yintercept=0, lty=2)
+
+```
+  
+At a first glance, national totals are well aligned between the existing daily data file and the new weekly data file. The newer data has two weeks of extra reporting, so most recent totals by state are generally slightly higher. The new data breaks apart NYC and NY, which need to be combined for processing the new file
