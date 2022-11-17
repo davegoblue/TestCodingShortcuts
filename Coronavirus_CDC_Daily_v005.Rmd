@@ -701,3 +701,163 @@ tmpBurdenDate %>%
 ```
   
 At a first glance, national totals are well aligned between the existing daily data file and the new weekly data file. The newer data has two weeks of extra reporting, so most recent totals by state are generally slightly higher. The new data breaks apart NYC and NY, which need to be combined for processing the new file
+
+Function readQCRawCDCDaily() is updated:  
+```{r, fig.height=9, fig.width=9}
+
+# Function to read and check a raw data file (last updated 16-NOV-2022, previously updated 02-AUG-2021)
+readQCRawCDCDaily <- function(fileName, 
+                              writeLog=NULL,
+                              ovrwriteLog=TRUE,
+                              dfRef=NULL,
+                              urlType=NULL,
+                              url=NULL, 
+                              getData=TRUE,
+                              ovrWriteDownload=FALSE, 
+                              vecRename=NULL, 
+                              selfList=NULL,
+                              fullList=NULL,
+                              uniqueBy=NULL, 
+                              step3Group=NULL,
+                              step3Vals=NULL, 
+                              step4KeyVars=NULL, 
+                              step5PlotItems=NULL,
+                              step6AggregateList=NULL,
+                              inferVars=list("url"=urlMapper, 
+                                             "vecRename"=renMapper, 
+                                             "selfList"=selfListMapper, 
+                                             "fullList"=fullListMapper, 
+                                             "uniqueBy"=uqMapper, 
+                                             "step3Group"=checkControlGroupMapper,
+                                             "step3Vals"=checkControlVarsMapper, 
+                                             "step4KeyVars"=checkSimilarityMapper, 
+                                             "step5PlotItems"=plotSimilarityMapper,
+                                             "step6AggregateList"=keyAggMapper
+                                             )
+                              ) {
+    
+    # FUNCTION ARGUMENTS
+    # fileName: the location where downloaded data either is, or will be, stored
+    # writeLog: the external file location for printing (NULL means use the main log stdout)
+    # ovrwriteLog: boolean, if using an external log, should it be started from scratch (overwritten)?
+    # dfRef: a reference data frame for comparison (either NULL or NA means do not run comparisons)
+    # urlType: character vector that can be mapped using urlMapper and keyVarMapper
+    # url: direct URL passed as character string
+    #      NOTE that if both url and urlType are NULL, no file will be downloaded
+    # getData: boolean, should an attempt be made to get new data using urlType or url?
+    # ovrWriteDownload: boolean, if fileName already exists, should it be overwritten?
+    # vecRename: vector for renaming c('existing name'='new name'), can be any length from 0 to ncol(df)
+    #            NULL means infer from urlType, if not available there use c()
+    # selfList: list for functions to apply to self, list('variable'=fn) will apply variable=fn(variable)
+    #           processed in order, so more than one function can be applied to self
+    #           NULL means infer from urlType, if not available in mapping file use list()
+    # fullList: list for general functions to be applied, list('new variable'=expression(code))
+    #           will create 'new variable' as eval(expression(code))
+    #           for now, requires passing an expression
+    #           NULL means infer from urlType, use list() if not in mapping file
+    # uniqueBy: combination of variables for checking uniqueness
+    #           NULL means infer from data, keep as NULL (meaning use-all) if cannot be inferred
+    # step3Group: variable to be used as the x-axis (grouping) for step 3 plots
+    #             NULL means infer from data
+    # step3Vals: values to be plotted on the y-axis for step 3 plots
+    #            NULL means infer from data
+    # step4KeyVars: list of parameters to be passed as keyVars= in step 4
+    #               NULL means infer from urlType
+    # step5PlotItems: items to be plotted in step 5
+    #                 NULL means infer from urlType
+    # step6AggregateList: drives the elements to be passed to compareAggregate() and flagLargeDelta()
+    #                     NULL means infer from urlType
+    # inferVars: vector of c('variable'='mapper') for inferring parameter values when passed as NULL
+    
+    # Step 0a: Use urlType to infer key variables if passed as NULL
+    for (vrbl in names(inferVars)) {
+        mapper <- inferVars[[vrbl]]
+        if (is.null(get(vrbl))) {
+            if (urlType %in% names(mapper)) assign(vrbl, mapper[[urlType]])
+            else if ("default" %in% names(mapper)) assign(vrbl, mapper[["default"]])
+        }
+    }
+    
+    # Step 1: Download a new file (if requested)
+    if (!is.null(url) & isTRUE(getData)) fileDownload(fileName=fileName, url=url, ovrWrite=ovrWriteDownload)
+    else cat("\nNo file has been downloaded, will use existing file:", fileName, "\n")
+    
+    # Step 2: Read file, rename and mutate variables, confirm uniqueness by expected levels
+    dfRaw <- fileRead(fileName) %>% 
+        colRenamer(vecRename) %>% 
+        colMutater(selfList=selfList, fullList=fullList) %>%
+        checkUniqueRows(uniqueBy=uniqueBy)
+    
+    # Step 3: Plot basic control totals for new cases and new deaths by month
+    dfRaw %>%
+        checkControl(groupBy=step3Group, useVars=step3Vals, printControls=FALSE, na.rm=TRUE) %>%
+        helperLinePlot(x=step3Group, y="newValue", facetVar="name", facetScales="free_y", groupColor="name")
+    
+    # If there is no file for comparison, return the data
+    if (is.null(dfRef) | if(length(dfRef)==1) is.na(dfRef) else FALSE) return(dfRaw)
+    
+    # Step 4b: Check similarity of existing and reference file
+    # ovrWriteLog=FALSE since everything should be an append after the opening text line in step 0
+    diffRaw <- checkSimilarity(df=dfRaw, 
+                               ref=dfRef, 
+                               keyVars=step4KeyVars, 
+                               writeLog=writeLog, 
+                               ovrwriteLog=FALSE
+                               )
+    
+    # Step 5: Plot the similarity checks
+    plotSimilarity(diffRaw, plotItems=step5PlotItems)
+    
+    # Step 6: Plot and report on differences in aggregates
+    helperAggMap <- function(x) {
+        h1 <- compareAggregate(df=dfRaw, ref=dfRef, grpVar=x$grpVar, numVars=x$numVars, 
+                               sameUniverse=x$sameUniverse, plotData=x$plotData, isLine=x$isLine, 
+                               returnDelta=x$returnDelta)
+        if (isTRUE(x$flagLargeDelta)) {
+            h2 <- flagLargeDelta(h1, pctTol=x$pctTol, absTol=x$absTol, sortBy=x$sortBy, 
+                                 dropNA=x$dropNA, printAll=x$printAll
+                                 )
+            if (is.null(writeLog)) print(h2)
+            else {
+                cat(nrow(h2), " records", sep="")
+                txt <- paste0("\n\n***Differences of at least ", 
+                              x$absTol, 
+                              " and at least ", 
+                              round(100*x$pctTol, 3), "%\n\n"
+                              )
+                printLog(h2, txt=txt, writeLog=writeLog)
+            }
+        }
+    }
+    lapply(step6AggregateList, FUN=helperAggMap)
+    
+    cat("\n\n")
+    
+    # Return the raw data file
+    dfRaw
+    
+}
+
+# Explore for only reading and returning new data
+testFile <- "./RInputFiles/Coronavirus/Weekly_United_States_COVID-19_Cases_and_Deaths_by_State.csv"
+dfTest <- readQCRawCDCDaily(fileName=testFile, 
+                            getData=FALSE, 
+                            urlType="cdcWeekly",
+                            url=c(),
+                            vecRename=c("end_date"="date"),
+                            selfList=list(),
+                            fullList=list(),
+                            uniqueBy=c("state", "date"), 
+                            step3Group=c("date"), 
+                            step3Vals=c("new_cases", "new_deaths"),
+                            step4KeyVars=list("date"=list("label"="date", "countOnly"=TRUE, "convChar"=TRUE), 
+                                              "state"=list("label"="state", "countOnly"=FALSE)
+                                              ), # will need to update checkSimilarityMapper
+                            step5PlotItems=c("date"),
+                            step6AggregateList=list() # will need to update keyAggMapper
+                            )
+all.equal(dfTest, rename(tmpBurden, date=end_date))
+
+```
+  
+The function for processing downloaded data, without comparison to previous data, works as intended. Next steps are to update the appropriate mapping files to include "cdcWeeklyBurden" as an option, then check that the function runs as intended.
