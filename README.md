@@ -3123,4 +3123,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 runs readQCRawCDCDaily() on dowloaded weekly data  
 * Coronavirus_CDC_Daily_v005 uses updated mapping file to read data  
 * Coronavirus_CDC_Daily_v005 uses updated mapping file to download data  
+* Coronavirus_CDC_Daily_v005 tests comparison to previous data  
   
