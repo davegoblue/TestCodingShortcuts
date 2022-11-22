@@ -969,3 +969,68 @@ testFull %>%
 ```
   
 The field appears to be working as intended. Next steps are to compare the cases and deaths data to the previous daily data files:  
+```{r, fig.height=9, fig.width=9}
+
+# Conversion of raw CDC daily data to cumsum
+cdcDailyTest <- cdc_daily_221102$dfRaw$cdcDaily %>%
+    select(date, state, new_cases, new_deaths) %>%
+    arrange(state, date) %>%
+    group_by(state) %>%
+    mutate(cum_cases=cumsum(new_cases), cum_deaths=cumsum(new_deaths)) %>%
+    ungroup()
+
+# Integration of new weekly data, using end_date=date
+testCombo <- testFull %>%
+    select(date=end_date, state, wkly_tot_cases=tot_cases, wkly_tot_deaths=tot_deaths) %>%
+    left_join(cdcDailyTest, by=c("date", "state"))
+testCombo
+
+# Calculation of RMSE by state for 'tot_deaths'
+testCombo %>%
+    filter(date <= "2022-10-12") %>%
+    mutate(delta=wkly_tot_deaths-cum_deaths) %>%
+    group_by(state) %>%
+    summarize(rmse=sqrt(mean(delta**2)), r2=1-rmse/mean(cum_deaths)) %>%
+    filter(state %in% c(state.abb, "DC", "NYC")) %>%
+    ggplot(aes(x=fct_reorder(state, r2), y=r2)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(label=round(r2, 2)), hjust=0) +
+    coord_flip() + 
+    labs(x=NULL, y="Similarity of reported deaths (weekly vs. daily)\n(1.0 means perfect alignment)")
+
+# Select states plotted
+testCombo %>%
+    filter(state %in% c("OR", "LA", "DC", "PA", "NE", "WA", "OH", "MO", "AK")) %>%
+    select(date, state, wkly_tot_deaths, cum_deaths) %>%
+    pivot_longer(-c(state, date)) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=name, 
+                  color=c("wkly_tot_deaths"="Weekly data (new)", "cum_deaths"="Daily data (old)")[name]
+                  )
+              ) + 
+    facet_wrap(~state, scales="free_y") + 
+    scale_color_discrete("Source:") + 
+    labs(title="Comparison of cumulative deaths by source", y="Cumulative deaths", x=NULL)
+
+# Overall data
+testCombo %>%
+    filter(state %in% c(state.abb, "DC", "NYC")) %>%
+    group_by(date) %>%
+    summarize(across(where(is.numeric), specNA())) %>%
+    select(date, wkly_tot_deaths, cum_deaths) %>%
+    pivot_longer(-c(date)) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=name, 
+                  color=c("wkly_tot_deaths"="Weekly data (new)", "cum_deaths"="Daily data (old)")[name]
+                  )
+              ) + 
+    scale_color_discrete("Source:") + 
+    labs(title="Comparison of cumulative deaths by source", 
+         y="Cumulative deaths", 
+         x=NULL, 
+         subtitle="50 states plus DC"
+         )
+
+```
+  
+Alignment of reported deaths varies by state. In aggregate, the newer data appears to report slightly more deaths
