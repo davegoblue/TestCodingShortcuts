@@ -3129,4 +3129,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 explores new_historic_*  
 * Coronavirus_CDC_Daily_v005 compares new weekly data to old daily data  
 * Coronavirus_CDC_Daily_v005 runs processRawFile() on dowloaded weekly data  
+* Coronavirus_CDC_Daily_v005 runs createPerCapita() on weekly data  
   
