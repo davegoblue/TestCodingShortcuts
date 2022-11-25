@@ -1074,3 +1074,62 @@ dfTestPerCapita
 
 ```
   
+A function is written for the conversion of weekly data to daily data:  
+```{r, fig.height=9, fig.width=9}
+
+convertWeeklyDaily <- function(df, 
+                               timeVar="date", 
+                               otherVars=c("state"),
+                               timeUnitDays=1, 
+                               locfVars=c("tot_cases", "tot_deaths"), 
+                               naVars=c("new_cases", "new_deaths")
+                               ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: the original daily frame
+    # timeVar: the time variable in the original dataset
+    # otherVars: other variables of importance (df should be unique by otherVars-timeVar)
+    # timeUnitDays: final data should be every 'timeUnitDays' days (e.g., 2 would be every other day)
+    # locfVars: variables for applying zoo::na.locf
+    # naVars: variables for applying ifelse(is.na(x), 0, x)
+    
+    # Check that all variables are included
+    nms1 <- sort(names(df))
+    nms2 <- sort(c(timeVar, otherVars, locfVars, naVars))
+    if(!isTRUE(all.equal(nms1, nms2))) {
+        warning(paste0("\nSome variables not passed to convertWeeklyDaily() will be treated as-is:", 
+                       "\ndf has variables: ", 
+                       paste0(nms1, collapse=", "), 
+                       "\nvariables passed as arguments are: ", 
+                       paste0(nms2, collapse=", "), 
+                       "\n"
+                       )
+                )
+    }
+    
+    # Relevant times to include
+    keyTimes <- seq.Date(df %>% pull(timeVar) %>% min, df %>% pull(timeVar) %>% max, by=timeUnitDays) %>%
+        tibble::tibble() %>%
+        purrr::set_names(timeVar)
+    
+    # Relevant levels to include
+    keyLevels <- df %>% select(all_of(otherVars)) %>% unique()
+    
+    # Return cross-join tibble
+    tibble::tibble(keyTimes) %>%
+        full_join(keyLevels, by=character()) %>%
+        purrr::set_names(c(timeVar, otherVars)) %>% 
+        left_join(df, by=c(timeVar, otherVars)) %>% 
+        arrange(across(c(all_of(otherVars), all_of(timeVar)))) %>%
+        group_by(across(all_of(otherVars))) %>%
+        mutate(across(all_of(locfVars), .fns=function(x) zoo::na.locf(x)), 
+               across(all_of(naVars), .fns=function(x) ifelse(is.na(x), 0, x))
+               ) %>%
+        ungroup()
+
+}
+
+all.equal(dfTestProcessDaily %>% arrange(state, date), convertWeeklyDaily(dfTestProcess), check.attributes=FALSE)
+
+```
+  
