@@ -3131,4 +3131,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 runs processRawFile() on dowloaded weekly data  
 * Coronavirus_CDC_Daily_v005 runs createPerCapita() on weekly data  
 * Coronavirus_CDC_Daily_v005 convertWeeklyData() written  
+* Coronavirus_CDC_Daily_v005 diagnoseClusters() run on weekly burden data  
   
