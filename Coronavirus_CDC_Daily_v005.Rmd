@@ -1151,4 +1151,153 @@ plotDataTest <- diagnoseClusters(lst=list("stateData"=getStateData(),
 
 ```
   
-The missing hospital data need to be located and/or processing updated. Otherwise, existing functionality appears to work on weekly data converted to daily data
+The missing hospital data need to be located and/or processing updated. Otherwise, existing functionality appears to work on weekly data converted to daily data. These should integrate naturally if included in processing, as hospital and vaccine data are still available from existing sources. Function readRunCDCDaily() is updated for conversions:  
+```{r, fig.height=9, fig.width=9}
+
+# Function to download/load, process, segment, and analyze data for CDC daily (last updated 02-AUG-2021)
+readRunCDCDaily <- function(thruLabel, 
+                            downloadTo=list("cdcDaily"=NA, "cdcHosp"=NA, "vax"=NA), 
+                            readFrom=downloadTo, 
+                            compareFile=list("cdcDaily"=NA, "cdcHosp"=NA, "vax"=NA),
+                            writeLog=NULL,
+                            ovrwriteLog=TRUE,
+                            dfPerCapita=NULL,
+                            useClusters=NULL,
+                            hierarchical=TRUE,
+                            returnList=!isTRUE(hierarchical), 
+                            kCut=6,
+                            reAssignState=vector("list", 0),
+                            weightedMeanAggs=eval(formals(diagnoseClusters)$wm_aggVars),
+                            detailedPlotAggs=weightedMeanAggs,
+                            skipAssessmentPlots=FALSE,
+                            brewPalette=NA,
+                            convertWeekly=c("cdcWeeklyBurden"),
+                            ...
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # thruLabel: the label for when the data are through (e.g., "Aug 30, 2020")
+    # donwloadTo: named list for locations to download data (cdcDaily and cdcHosp)
+    #             NA means do not download data for that particular element
+    # readFrom: named list for locations to read data from (defaults to donwloadTo)
+    # compareFile: named list for the reference file to be used for cdcDaily and cdcHosp 
+    #              NA means do not use a reference file for that element
+    # dateChangePlot: boolean, should changes in dates be captured as a plot rather than as a list?
+    # dateMetricPrint: boolean, should the changes by date and metric be printed to the main log?
+    # writeLog: name of a separate log file for capturing detailed data on changes between files
+    #           NULL means no detailed data captured
+    # ovrwriteLog: boolean, should the log file be overwritten and started again from scratch?
+    # dfPerCapita: file can be passed directly, which bypasses the loading and processing steps
+    #              default NULL means create dfPerCapita using steps 2-4
+    # useClusters: file containing clusters by state (NULL means make the clusters from the data)
+    # hierarchical: boolean, should hierarchical clusters be produced (if FALSE, will be k-means)?
+    # returnList: boolean, should a list be returned or just the cluster object?
+    #             refers to what is returned by clusterStates(); the main function always returns a list
+    # kCut: number of segments when cutting the hierarchical tree
+    # reAssignState: mapping file for assigning a state to another state's cluster
+    #                format list("stateToChange"="stateClusterToAssign")
+    # weightedMeanAggs: variables where a population-weighted cluster mean should be created
+    # detailedPlotAggs: variables that should be included in the cluster-level disease evolution detailed plots
+    # skipAssessmentPlots: boolean to skip the plots for assessClusters()
+    #                      especially useful if just exploring dendrograms or silhouette widths
+    # brewPalette: create plots using this color scheme (needs to be valid in ggplot2::scale_*_brewer())
+    #              NA means use R default color schemes
+    # convertWeekly: signals that dfProcess for this data frame should be passed through convertWeeklyDaily()
+    # ...: arguments to be passed to clusterStates(), will be used only if useClusters is NULL
+    
+    # STEP 0: Function to create the return list
+    createFinalList <- function(plots=TRUE) {
+        list(stateData=stateData, 
+             dfRaw=dfRawList, 
+             dfProcess=dfProcessList, 
+             dfPerCapita=dfPerCapita, 
+             useClusters=useClusters, 
+             plotDataList=if(plots) plotDataList else NULL
+             )
+    }
+    
+    # STEP 1: Get state data
+    stateData <- getStateData()
+    
+    # If a log file is requested, create the log file (allows for append=TRUE for all downstream functions)
+    if (!is.null(writeLog)) genNewLog(writeLog=writeLog, ovrwriteLog=ovrwriteLog)
+    
+    # Get the data types to be used (will be the elements of readFrom) and create a file storage list
+    elemUsed <- names(readFrom)
+    dfRawList <- vector("list", length=length(elemUsed)) %>% purrr::set_names(elemUsed)
+    dfProcessList <- vector("list", length=length(elemUsed)) %>% purrr::set_names(elemUsed)
+    
+    # Steps 2-4 are run only is dfPerCapita has not been passed
+    if (is.null(dfPerCapita)) {
+        
+        # Step 2: Download and QC all of the requested data
+        for (elem in elemUsed) {
+            dfRawList[[elem]] <- readQCRawCDCDaily(fileName=readFrom[[elem]], 
+                                                   writeLog=writeLog, 
+                                                   ovrwriteLog=FALSE,
+                                                   urlType=elem, 
+                                                   getData=if(is.na(downloadTo[[elem]])) FALSE else TRUE, 
+                                                   dfRef=compareFile[[elem]]
+                                                   )
+            glimpseLog(dfRawList[[elem]], txt=paste0("\nRaw file for ", elem, ":\n"), logFile=writeLog)
+        }
+        
+        # Step 3: Process all of the requested data
+        for (elem in elemUsed) {
+            dfProcessList[[elem]] <- processRawFile(dfRawList[[elem]], 
+                                                    vecRename=c(), # already handled in readQCRawCDCDaily()
+                                                    vecSelect=vecSelectMapper[[elem]], 
+                                                    lstCombo=lstComboMapper[[elem]], 
+                                                    lstFilter=lstFilterMapper[[elem]]
+                                                    )
+            # Run conversions of weekly to daily if needed
+            if(elem %in% all_of(convertWeekly)) dfProcessList[[elem]] <- convertWeeklyDaily(dfProcessList[[elem]])
+            glimpseLog(dfProcessList[[elem]], txt=paste0("\nProcessed for ", elem, ":\n"), logFile=writeLog)
+        }
+        
+        # Step 4: Integrate in to a dfPerCapita file and glimpse (to specified log file)
+        dfPerCapita <- createPerCapita(dfProcessList, 
+                                       uqBy=c("state", "date"), 
+                                       popData=stateData, 
+                                       mapper=perCapMapper, 
+                                       asIsVars=if(isTRUE(exists("asIsMapper"))) asIsMapper[[elem]] else c()
+                                       )
+        glimpseLog(dfPerCapita, txt="\nIntegrated per capita data file:\n", logFile=writeLog)
+        
+    } else {
+        dfRawList <- NULL
+        dfProcessList <- NULL
+    }
+    
+    # STEP 5: Create the clusters (if they have not been passed)
+    if (is.null(useClusters)) {
+        clData <- clusterStates(df=dfPerCapita, hierarchical=hierarchical, returnList=returnList, ...)
+        useClusters <- getClusters(clData, hier=hierarchical, kCut=kCut, reAssign=reAssignState)
+    }
+    
+    # STEP 5a: Stop the process and return what is available if skipAssessmentPlots is TRUE
+    if (skipAssessmentPlots) 
+        return(createFinalList(plots=FALSE))
+    
+    # STEP 6: Create the cluster assessments
+    lstFuns <- list("stateData"=function(x) colSelector(x, vecSelect=c("state", "pop")), 
+                    "dfPerCapita"=NULL
+                    )
+    plotDataList <- diagnoseClusters(lst=list("stateData"=stateData, 
+                                              "dfPerCapita"=dfPerCapita, 
+                                              "useClusters"=useClusters
+                                              ), 
+                                     lstExtract=lstFuns,
+                                     wm_aggVars=weightedMeanAggs,
+                                     detailAggVars=detailedPlotAggs,
+                                     brewPalette=brewPalette
+                                     )
+    
+    # STEP 7: Return a list of the key data
+    return(createFinalList(plots=TRUE))
+    
+}
+
+```
+  
+Next steps are to test the function on all data sources at the same time
