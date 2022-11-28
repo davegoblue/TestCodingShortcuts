@@ -3130,7 +3130,10 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 compares new weekly data to old daily data  
 * Coronavirus_CDC_Daily_v005 runs processRawFile() on dowloaded weekly data  
 * Coronavirus_CDC_Daily_v005 runs createPerCapita() on weekly data  
-* Coronavirus_CDC_Daily_v005 convertWeeklyData() written  
+* Coronavirus_CDC_Daily_v005 convertWeeklyDaily() written  
 * Coronavirus_CDC_Daily_v005 diagnoseClusters() run on weekly burden data  
 * Coronavirus_CDC_Daily_v005 readRunCDCDaily() updated for weekly processing  
+  
+### Expansions week of 28-NOV-2022  
+* Coronavirus_CDC_Daily_v005 diagnoseClusters() run with case, death, and hospital data  
   
