@@ -3137,4 +3137,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 28-NOV-2022  
 * Coronavirus_CDC_Daily_v005 diagnoseClusters() run with case, death, and hospital data  
 * Coronavirus_CDC_Daily_v005 readRunCDCDaily() run for all elements  
+* Coronavirus_CDC_Daily_v005 plots counts per million from weekly data  
   
