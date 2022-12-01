@@ -1373,20 +1373,48 @@ saveToRDS(cdc_daily_221128, ovrWriteError=FALSE)
 Data are checked for consistency with previous data:  
 ```{r, fig.height=9, fig.width=9}
 
-natPop <- getStateData() %>% pull(pop) %>% sum()
+tempGetBurden <- function(df, 
+                          numVars=c("tcpm7", "cpm7", "tdpm7", "dpm7"), 
+                          natPop=getStateData() %>% pull(pop) %>% sum()
+                          ) {
 
-cdc_daily_221128$dfPerCapita %>%
-    select(date, state, tcpm7, cpm7, tdpm7, dpm7) %>%
-    pivot_longer(-c(state, date)) %>%
-    filter(!is.na(value)) %>%
-    left_join(getStateData() %>% select(state, pop), by="state") %>%
-    group_by(date, name) %>%
-    summarize(natPerCap=sum(value*pop)/natPop, .groups="drop") %>%
+    df %>%
+        select(c("state", "date", all_of(numVars))) %>%
+        pivot_longer(-c(state, date)) %>%
+        filter(!is.na(value)) %>%
+        left_join(getStateData() %>% select(state, pop), by="state") %>%
+        group_by(date, name) %>%
+        summarize(natPerCap=sum(value*pop)/natPop, .groups="drop")
+    
+}
+
+# Plot for new weekly data
+tempGetBurden(cdc_daily_221128$dfPerCapita) %>%
     ggplot(aes(x=date, y=natPerCap)) + 
     geom_line() + 
     facet_wrap(~name, scales="free_y") + 
     labs(x=NULL, y="Rolling 7 per million", title="Weekly data per million (rolling 7-day average)")
     
+# Plot for old daily data
+tempGetBurden(cdc_daily_221102$dfPerCapita) %>%
+    ggplot(aes(x=date, y=natPerCap)) + 
+    geom_line() + 
+    facet_wrap(~name, scales="free_y") + 
+    labs(x=NULL, y="Rolling 7 per million", title="Daily data per million (rolling 7-day average)")
 
+# Integrated data
+tempGetBurden(cdc_daily_221128$dfPerCapita) %>%
+    bind_rows(tempGetBurden(cdc_daily_221102$dfPerCapita), .id="src") %>%
+    mutate(src=c("1"="New Weekly", "2"="Old Daily")[src]) %>%
+    ggplot(aes(x=date, y=natPerCap)) + 
+    geom_line(aes(color=src, group=src)) + 
+    facet_wrap(~name, scales="free_y") + 
+    labs(x=NULL, 
+         y="Rolling 7 per million", 
+         title="Data per million comparison of new weekly and old daily (rolling 7-day average)"
+         )
+    
 ```
+  
+As expected, there are minor differences in rolling-7 totals by day for data reported on a daily and weekly basis. Overall, trends and data volumes are very similar, at a national level, between the data sources. Weekly data could be shifted "backwards" by a few days to reflect that a spike of 5 deaths per day will report as ...0-0-0-0-0-0-35-0-0..., which converts to rolling-7 as 0-0-0-5-5-5-5-5-5-5... Given the many issues in the data capture and reporting, this likely has minor, if any, practical impact
   
