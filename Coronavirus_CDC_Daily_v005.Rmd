@@ -1418,3 +1418,58 @@ tempGetBurden(cdc_daily_221128$dfPerCapita) %>%
   
 As expected, there are minor differences in rolling-7 totals by day for data reported on a daily and weekly basis. Overall, trends and data volumes are very similar, at a national level, between the data sources. Weekly data could be shifted "backwards" by a few days to reflect that a spike of 5 deaths per day will report as ...0-0-0-0-0-0-35-0-0..., which converts to rolling-7 as 0-0-0-5-5-5-5-5-5-5... Given the many issues in the data capture and reporting, this likely has minor, if any, practical impact
   
+Comparisons are also made by state and metric:  
+```{r, fig.height=9, fig.width=9}
+
+dfSimilar <- cdc_daily_221102$dfPerCapita %>%
+    select(c("state", "date", where(is.numeric))) %>%
+    pivot_longer(-c(state, date)) %>%
+    filter(!is.na(value)) %>%
+    bind_rows(cdc_daily_221128$dfPerCapita %>%
+                  select(c("state", "date", where(is.numeric))) %>%
+                  pivot_longer(-c(state, date)) %>%
+                  filter(!is.na(value)), 
+              .id="src"
+              ) %>%
+    mutate(src=c("1"="Old Daily", "2"="New Weekly")[src]) %>%
+    filter(name %in% c("tcpm7", "tdpm7", "cpm7", "dpm7"))
+dfSimilar
+
+# Ratio comparisons
+dfSimilar %>%
+    filter(date >= "2020-03-01", date <= "2022-10-15") %>%
+    pivot_wider(c(state, date, name), names_from="src", values_fill=0) %>%
+    group_by(state, name) %>%
+    summarize(meanDelta=sqrt(mean((`Old Daily`-`New Weekly`)**2)), 
+              meanDaily=mean(`Old Daily`), 
+              meanWeekly=mean(`New Weekly`), 
+              .groups="drop"
+              ) %>%
+    mutate(keyMetric=meanDelta*2/(meanDaily+meanWeekly)) %>%
+    ggplot(aes(x=fct_reorder(state, keyMetric), y=keyMetric)) + 
+    geom_col(fill="lightblue") + 
+    geom_text(aes(label=round(keyMetric, 2))) + 
+    coord_flip() + 
+    facet_wrap(~name, scales="free_x", nrow=1) + 
+    labs(x=NULL, y="RMSE divided by mean", title="Difference in weekly and daily data by state")
+
+# Plotting data for Maine (high RMSE in cpm7)
+dfSimilar %>%
+    filter(state=="ME") %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=src, color=src)) + 
+    facet_wrap(~name, scales="free_y") + 
+    labs(title="Example data for Maine", x=NULL, y="Burden per million (rolling 7-day average)")
+
+# Plotting data for Washington (high RMSE in tdpm7)
+dfSimilar %>%
+    filter(state=="WA") %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=src, color=src)) + 
+    facet_wrap(~name, scales="free_y") + 
+    labs(title="Example data for Washington", x=NULL, y="Burden per million (rolling 7-day average)")
+
+```
+  
+At a state level, there are some differences in timing of waves between the daily and weekly data. Washington is particularly anomalous in having spikes in deaths offset by several weeks or months, even as cases are well aligned.
+  
