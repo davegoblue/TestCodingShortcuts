@@ -3139,4 +3139,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 readRunCDCDaily() run for all elements  
 * Coronavirus_CDC_Daily_v005 plots counts per million from weekly data  
 * Coronavirus_CDC_Daily_v005 compares national burden in weekly and daily data  
+* Coronavirus_CDC_Daily_v005 compares state burden in weekly and daily data  
   
