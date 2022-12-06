@@ -3145,4 +3145,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 05-DEC-2022  
 * Coronavirus_CDC_Daily_v005 runs postProcessCDCDaily()  
+* Coronavirus_CDC_Daily_v005 runs peakValleyCDCDaily()  
   
