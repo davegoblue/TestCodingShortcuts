@@ -3152,3 +3152,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v007 cleanMem() written to manage RStudio objects  
 * Coronavirus_Statistics_USAF_v007 updated with latest burden data  
   
+### Expansions week of 12-DEC-2022  
+* Coronavirus_Statistics_USAF_v007 updated with latest vaccines data  
+  
