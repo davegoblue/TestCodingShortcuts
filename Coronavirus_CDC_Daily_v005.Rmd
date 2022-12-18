@@ -1574,7 +1574,7 @@ modStateHosp_20221202 <- hospitalCapacityCDCDaily(multiSourceHosp_20221202,
 ```
   
 The original makePeakValley() and findPeaks() functions are copied for reference:  
-```{r}
+```{r, fig.height=9, fig.width=9}
 
 # Annotate peaks and valleys in CDC daily data
 # makePeakValley <- function(df, 
@@ -1728,12 +1728,82 @@ The original makePeakValley() and findPeaks() functions are copied for reference
 
 # Example for issue with weekly data converted to daily
 testVec <- c(rep(c(3,2,4,5,2,3), each=7))
-ggplot(data.frame(x=1:42, y=testVec, c=findPeaks(testVec, width=7)), 
-       aes(x=x, y=y, color=c)
-       ) + 
-    geom_point() + 
+tibble::tibble(x=1:42, y1=testVec, y2=zoo::rollmean(testVec, 7, fill=NA), c=findPeaks(testVec, width=7)) %>%
+    pivot_longer(-c(x, c)) %>%
+    ggplot(aes(x=x, y=value, color=c)) + 
+    geom_point() +
+    labs(title="Example for findPeaks()", x="Index", y="Value") +
+    facet_wrap(~c("y1"="Original", "y2"="Rolling 7")[name]) +
+    scale_fill_discrete("Identified as peak?")
+
+# Example for rolling-7 data
+testVec2 <- zoo::rollmean(testVec, k=7, fill=0)
+tibble::tibble(x=1:42, y1=testVec2, c=findPeaks(testVec2, width=7)) %>%
+    pivot_longer(-c(x, c)) %>%
+    ggplot(aes(x=x, y=value, color=c)) + 
+    geom_point() +
+    labs(title="Example for findPeaks()", x="Index", y="Value") +
     scale_fill_discrete("Identified as peak?")
 
 ```
 
-Issues to address include 1) the midpoint always identified as a maximum, and 2) multiple tied values all identified as peaks
+Issues to address include 1) the midpoint always identified as a maximum, and 2) multiple tied values all identified as peaks. The issue appears to be addressed by first passing the data as rolling-7
+
+The definition for maximum can be updated for improved precision. Using the concept of window k (assuming an odd number and "center", this means looking (k-1)/2 in each direction), then a peak can be defined as:  
+  
+* The value is greater than all of the previous (k-1)/2 points  
+* The value is at least as high as all of the next (k-1)/2 points  
+  
+This should preclude finding points in the middle of an equal range even when they are clearly not peaks. An example includes:  
+```{r, fig.height=9, fig.width=9}
+
+# Example for plain data
+tibble::tibble(x=1:42, 
+               y=testVec, 
+               testGT=testVec-zoo::rollapply(lag(testVec, 1), width=3, FUN=max, fill=NA, align="right"), 
+               testGTE=testVec-zoo::rollapply(lead(testVec, 1), width=3, FUN=max, fill=NA, align="left"), 
+               isPeak=(testGT>0) & (testGTE>=0)
+               ) %>%
+    pivot_longer(-c(x, y)) %>%
+    mutate(color=ifelse(name=="isPeak", 
+                        ifelse(!is.na(value) & value>0, "01. Peak", "02. Not Peak"), 
+                        case_when(is.na(value) ~ "06. NA", 
+                                  value==0 ~ "04. Zero", 
+                                  value>0 ~ "03. GT", 
+                                  value<0 ~ "05. LT"
+                                  )
+                        )
+           ) %>%
+    ggplot(aes(x=x, y=y, color=color)) + 
+    geom_point() + 
+    geom_point(data=~filter(., name=="isPeak", color=="01. Peak"), shape=21, size=10) +
+    facet_wrap(~c("testGT"="Previous 3", "testGTE"="Next 3", "isPeak"="Identified as Peak")[name]) +
+    scale_color_discrete("Versus closest 3?") + 
+    labs(title="Exploring options for findPeaks()", x="Index", y="Value")
+
+# Example for rolling-7 data
+tibble::tibble(x=1:42, 
+               y=testVec2, 
+               testGT=testVec2-zoo::rollapply(lag(testVec2, 1), width=3, FUN=max, fill=NA, align="right"), 
+               testGTE=testVec2-zoo::rollapply(lead(testVec2, 1), width=3, FUN=max, fill=NA, align="left"), 
+               isPeak=(testGT>0) & (testGTE>=0)
+               ) %>%
+    pivot_longer(-c(x, y)) %>%
+    mutate(color=ifelse(name=="isPeak", 
+                        ifelse(!is.na(value) & value>0, "01. Peak", "02. Not Peak"), 
+                        case_when(is.na(value) ~ "06. NA", 
+                                  value==0 ~ "04. Zero", 
+                                  value>0 ~ "03. GT", 
+                                  value<0 ~ "05. LT"
+                                  )
+                        )
+           ) %>%
+    ggplot(aes(x=x, y=y, color=color)) + 
+    geom_point() + 
+    geom_point(data=~filter(., name=="isPeak", color=="01. Peak"), shape=21, size=10) +
+    facet_wrap(~c("testGT"="Previous 3", "testGTE"="Next 3", "isPeak"="Identified as Peak")[name]) +
+    scale_color_discrete("Versus closest 3?") + 
+    labs(title="Exploring options for findPeaks()", x="Index", y="Value")
+
+```
+  
