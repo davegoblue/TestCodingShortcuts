@@ -3158,6 +3158,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v007 runs additionalCountyPostProcess()  
 * Coronavirus_Statistics_CDC_v006 updated with latest data  
 * Coronavirus_Statistics_CDC_v006 plotCDCRestatement() run  
-* Coronavirus_Statistics_CDC_v006 explores behavior of findPeaks()  
-* Coronavirus_Statistics_CDC_v006 explores alternate process for peak identification  
+* Coronavirus_CDC_Daily_v005 explores behavior of findPeaks()  
+* Coronavirus_CDC_Daily_v005 explores alternate process for peak identification  
   
