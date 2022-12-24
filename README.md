@@ -3167,4 +3167,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 updatedFindPeaks() run on deaths data  
 * Coronavirus_CDC_Daily_v005 updatedFindPeaks() updated for finding minima  
 * Coronavirus_CDC_Daily_v005 makePeakValley() explored for double counting  
+* Coronavirus_CDC_Daily_v005 updatedMakePeakValley() uses updatedFindPeaks() to address over-plotting  
   
