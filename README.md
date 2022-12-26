@@ -3170,3 +3170,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 updatedMakePeakValley() uses updatedFindPeaks() to address over-plotting  
 * Coronavirus_CDC_Daily_v005 updatedMakePeakValley() for burden metrics  
   
+### Expansions week of 26-DEC-2022  
+* Coronavirus_CDC_Daily_v005 updatedMakePeakValley() for vaccine metrics  
+  
