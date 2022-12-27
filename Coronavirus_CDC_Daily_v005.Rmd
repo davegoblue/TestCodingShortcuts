@@ -2108,7 +2108,7 @@ dfPeakDeath_v2 %>%
 
 ```
   
-The overplotting issue is addressed. There are still issues of how much lift should be required to declare a peak, especially as a time series becomes long. The function is run for all the burden variables:  
+The overplotting issue is addressed. There are still issues of how much lift should be required to declare a peak, especially as a time series becomes long. The function is run for all the vaccine variables:  
 ```{r, fig.height=9, fig.width=9}
 
 dfPeaksVax <- cdc_daily_221202$dfPerCapita %>%
@@ -2157,7 +2157,7 @@ dfPeaksVax %>%
 
 ```
   
-The function is run for all the vaccine variables:  
+The function is run for all the burden variables:  
 ```{r, fig.height=9, fig.width=9}
 
 dfPeaks <- cdc_daily_221202$dfPerCapita %>%
@@ -2201,4 +2201,112 @@ dfPeaks %>%
 
 ```
   
-The vaccines data also need to be converted for weekly rather than daily input beginning in June 2022
+The vaccines data also need to be converted for weekly rather than daily input beginning in June 2022. The convertWeeklyDaily() function is tested:  
+```{r, fig.height=9, fig.width=9}
+
+convertWeeklyDaily <- function(df, 
+                               timeVar="date", 
+                               otherVars=c("state"),
+                               timeUnitDays=1, 
+                               locfVars=c("tot_cases", "tot_deaths"), 
+                               naVars=c("new_cases", "new_deaths")
+                               ) {
+
+    # FUNCTION ARGUMENTS:
+    # df: the original daily frame
+    # timeVar: the time variable in the original dataset
+    # otherVars: other variables of importance (df should be unique by otherVars-timeVar)
+    # timeUnitDays: final data should be every 'timeUnitDays' days (e.g., 2 would be every other day)
+    # locfVars: variables for applying zoo::na.locf
+    # naVars: variables for applying ifelse(is.na(x), 0, x)
+    
+    # Check that all variables are included
+    nms1 <- sort(names(df))
+    nms2 <- sort(c(timeVar, otherVars, locfVars, naVars))
+    if(!isTRUE(all.equal(nms1, nms2))) {
+        warning(paste0("\nSome variables not passed to convertWeeklyDaily() will be treated as-is:", 
+                       "\ndf has variables: ", 
+                       paste0(nms1, collapse=", "), 
+                       "\nvariables passed as arguments are: ", 
+                       paste0(nms2, collapse=", "), 
+                       "\n"
+                       )
+                )
+    }
+    
+    # Relevant times to include
+    keyTimes <- seq.Date(df %>% pull(timeVar) %>% min, df %>% pull(timeVar) %>% max, by=timeUnitDays) %>%
+        tibble::tibble() %>%
+        purrr::set_names(timeVar)
+    
+    # Relevant levels to include
+    keyLevels <- df %>% select(all_of(otherVars)) %>% unique()
+    
+    # Return cross-join tibble
+    tibble::tibble(keyTimes) %>%
+        full_join(keyLevels, by=character()) %>%
+        purrr::set_names(c(timeVar, otherVars)) %>% 
+        left_join(df, by=c(timeVar, otherVars)) %>% 
+        arrange(across(c(all_of(otherVars), all_of(timeVar)))) %>%
+        group_by(across(all_of(otherVars))) %>%
+        mutate(across(all_of(locfVars), .fns=function(x) zoo::na.locf(x, na.rm=FALSE)), 
+               across(all_of(naVars), .fns=function(x) ifelse(is.na(x), 0, x))
+               ) %>%
+        ungroup()
+
+}
+
+keyVars <- cdc_daily_221202$dfPerCapita %>%
+    select(starts_with("vx")) %>%
+    names
+
+dfVaxDaily <- cdc_daily_221202$dfPerCapita %>%
+    select(date, state, all_of(keyVars)) %>%
+    convertWeeklyDaily(locfVars=keyVars, naVars=c())
+
+dfPeaksVax_v2 <- dfVaxDaily %>%
+    inner_join(getStateData(), by=c("state")) %>%
+    filter(pop >= 8000000) %>%
+    select(c("state", "date", "vxc", "vxa")) %>%
+    arrange(date, state) %>%
+    group_by(state) %>%
+    mutate(across(c(vxa, vxc), .fns=function(x) x-lag(x))) %>%
+    ungroup() %>%
+    filter(date >= as.Date("2020-12-15")) %>%
+    updatedMakePeakValley(numVar=c("vxa", "vxc"), 
+                          windowWidth = 71, 
+                          rollMean=21, 
+                          facetVar=c("state"), 
+                          fnNumVar=list("vxa"=function(x) x/1000, 
+                                        "vxc"=function(x) x/1000
+                                        ), 
+                          fnPeak=list("vxa"=function(x) x+25*max(x, na.rm=TRUE)/400, 
+                                      "vxc"=function(x) x+25*max(x, na.rm=TRUE)/400
+                                      ),
+                          fnValley=list("vxa"=function(x) x-25*max(x, na.rm=TRUE)/400, 
+                                        "vxc"=function(x) x-25*max(x, na.rm=TRUE)/400
+                                        ),
+                          fnGroupFacet=TRUE,
+                          useTitle=c("vxa"=paste0("Vaccines adminsitered (states with population >= ", 8000000, ")"), 
+                                     "vxc"=paste0("Became fully vaccinated (states with population >= ", 8000000, ")")
+                                     ), 
+                          yLab=c("vxa"=paste0("Rolling ", 21, "-day mean administered (000)"),
+                                 "vxc"=paste0("Rolling ", 21,"-day mean completed (000)")
+                                 )
+                   )
+
+
+dfPeaksVax_v2 %>%
+    mutate(regn=c(as.character(state.region), "South")[match(state, c(state.abb, "DC"))]) %>%
+    select(date, state, contains("isPeak")) %>%
+    pivot_longer(-c(date, state)) %>%
+    filter(value) %>%
+    group_by(state, name) %>%
+    mutate(idx=1:n()) %>%
+    ggplot() + 
+    geom_text(aes(x=date, y=factor(idx), label=date), size=3) +
+    facet_grid(name~state) + 
+    labs(x=NULL, y="Index", "Peaks identified in vaccines data")
+
+```
+  
