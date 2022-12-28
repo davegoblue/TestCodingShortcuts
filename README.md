@@ -3173,4 +3173,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 26-DEC-2022  
 * Coronavirus_CDC_Daily_v005 updatedMakePeakValley() for vaccine metrics  
 * Coronavirus_CDC_Daily_v005 updatedMakePeakValley() with vaccines converted to daily  
+* Coronavirus_CDC_Daily_v005 convenience function makeDaily() written to call convertWeeklyDaily()  
   
