@@ -3175,4 +3175,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 updatedMakePeakValley() with vaccines converted to daily  
 * Coronavirus_CDC_Daily_v005 convenience function makeDaily() written to call convertWeeklyDaily()  
 * Coronavirus_CDC_Daily_v005 readRunCDCDaily() updated for weekly vaccines data  
+* Coronavirus_CDC_Daily_v005 updated readRunCDCDaily() run on existing data  
   
