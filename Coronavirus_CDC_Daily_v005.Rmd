@@ -2514,3 +2514,77 @@ saveToRDS(cdc_daily_221202_v2, ovrWriteError=FALSE)
 
 ```
   
+The components are compared:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Raw data
+all.equal(cdc_daily_221202$dfRaw$cdcWeeklyBurden, cdc_daily_221202_v2$dfRaw$cdcWeeklyBurden)
+all.equal(cdc_daily_221202$dfRaw$cdcHosp, cdc_daily_221202_v2$dfRaw$cdcHosp)
+all.equal(cdc_daily_221202$dfRaw$vax, cdc_daily_221202_v2$dfRaw$vax)
+
+# Processed data, other than vaccines
+all.equal(cdc_daily_221202$dfProcess$cdcWeeklyBurden, cdc_daily_221202_v2$dfProcess$cdcWeeklyBurden)
+all.equal(cdc_daily_221202$dfProcess$cdcHosp, cdc_daily_221202_v2$dfProcess$cdcHosp)
+
+# Per capita data other than vaccines
+identical(dim(cdc_daily_221202$dfPerCapita), dim(cdc_daily_221202_v2$dfPerCapita))
+identical(names(cdc_daily_221202$dfPerCapita), names(cdc_daily_221202_v2$dfPerCapita))
+identical(cdc_daily_221202$dfPerCapita %>% select(-contains("vx")), 
+          cdc_daily_221202_v2$dfPerCapita %>% select(-contains("vx"))
+          )
+
+# Per-capita vaccines data plotted nationally
+dfVaxTest <- cdc_daily_221202$dfPerCapita %>%
+    select(date, state, contains("vx")) %>%
+    bind_rows(cdc_daily_221202_v2$dfPerCapita %>% select(date, state, contains("vx")), .id="src") %>%
+    left_join(getStateData(), by="state") %>%
+    mutate(src=c("1"="Original", "2"="Modified")[src])
+glimpse(dfVaxTest)
+
+# Plots for vxa, vxc, vxcgte65, vxcgte18
+dfVaxTest %>%
+    select(src, date, vxa, vxc, vxcgte65, vxcgte18) %>%
+    group_by(src, date) %>%
+    summarize(across(where(is.numeric), specNA(sum)), .groups="drop") %>%
+    pivot_longer(-c(src, date)) %>%
+    filter(!is.na(value)) %>%
+    ggplot(aes(x=date, y=value/1000000)) + 
+    geom_line(aes(group=src, color=src)) + 
+    facet_wrap(~name, scales="free_y") + 
+    labs(title="National vaccine metrics after converting to daily", x=NULL, y="Number vaccinated (millions)")
+
+# Plots for vxcpoppct, vxcgte65pct, vxcgte18pct
+dfVaxTest %>%
+    select(src, date, pop, vxcpoppct, vxcgte65pct, vxcgte18pct) %>%
+    group_by(src, date) %>%
+    summarize(across(starts_with("vxc"), 
+                     .fns=function(x) specNA(sum)(x*pop)/sum(pop)
+                     ), 
+              .groups="drop"
+              ) %>%
+    pivot_longer(-c(src, date)) %>%
+    filter(!is.na(value)) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=src, color=src)) + 
+    facet_wrap(~name, scales="free_y") + 
+    labs(title="National percent vaccinated metrics after converting to daily", x=NULL, y="% vaccinated")
+
+# Plots for vxapm, vxcpm, vxapm7, vxcpm7
+dfVaxTest %>%
+    select(src, date, pop, vxapm, vxcpm, vxapm7, vxcpm7) %>%
+    group_by(src, date) %>%
+    summarize(across(starts_with("vx"), 
+                     .fns=function(x) specNA(sum)(x*pop)/sum(pop)
+                     ), 
+              .groups="drop"
+              ) %>%
+    pivot_longer(-c(src, date)) %>%
+    filter(!is.na(value)) %>%
+    ggplot(aes(x=date, y=value)) + 
+    geom_line(aes(group=src, color=src)) + 
+    facet_wrap(~name, scales="free_y") + 
+    labs(title="National per-million vaccine metrics after converting to daily", x=NULL, y="Vaccinated per million")
+
+```
+  
+The update repairs the vaccinated per million rolling-7 totals while keeping close alignment for the other vaccine metrics
