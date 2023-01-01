@@ -3177,4 +3177,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 readRunCDCDaily() updated for weekly vaccines data  
 * Coronavirus_CDC_Daily_v005 updated readRunCDCDaily() run on existing data  
 * Coronavirus_CDC_Daily_v005 updated readRunCDCDaily() checked against previous version  
+* Coronavirus_CDC_Daily_v005 explores periodicity in post-update processed data  
   
