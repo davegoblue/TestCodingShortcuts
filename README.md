@@ -3179,3 +3179,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 updated readRunCDCDaily() checked against previous version  
 * Coronavirus_CDC_Daily_v005 explores periodicity in post-update processed data  
   
+### Expansions week of 02-JAN-2023  
+* Coronavirus_CDC_Daily_v005 explores periodicity in hospital data  
+  
