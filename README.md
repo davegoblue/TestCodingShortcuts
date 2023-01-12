@@ -3192,4 +3192,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v007 checks memory usage  
 * Coronavirus_Statistics_USAF_v007 updated with latest burden data  
 * Coronavirus_Statistics_USAF_v007 updated with latest vaccines data  
+* Coronavirus_Statistics_USAF_v007 runs postProcessCountyData()  
   
