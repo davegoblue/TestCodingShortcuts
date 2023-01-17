@@ -70,3 +70,144 @@ proc.time() - startTime
 
 ```
   
+Hands are scored for their hand type, optionally using wilds. Functions are written:  
+```{r}
+
+# Determine if a hand is a flush
+isFlush <- function(suits, useWild=4) {
+    apply(suits, 1, FUN=function(x) ifelse(min(x)==max(x), TRUE, (max(x[x!=useWild])==min(x[x!=useWild]))))
+}
+
+# Determine if a hand is a straight (hard-coded for 5-card hands in a 13-card deck, Ace high or low)
+isStraight <- function(rankCounts, isEligible=TRUE) {
+    # Exclusion matrix for straights, currently designed only for 13-card decks and A high or low
+    strMatrix <- matrix(data=0L, nrow=13, ncol=10)
+    strMatrix[c(1, 10, 11, 12, 13), 1] <- 1L
+    for (intCtr in 1:9) { strMatrix[intCtr:(intCtr+4), intCtr+1] <- 1L }
+    apply(rankCounts, 1, max)<=1 & rowSums(rankCounts%*%(strMatrix-1)==0)>=1 & isEligible
+}
+
+# Hard-coded for 52-card deck with 1 joker
+findHandTypes <- function (aHands, retAll=FALSE) {
+    
+    # Track hands that contain the joker and total number of wilds
+    aJoker <- rowSums(aHands==53)>0
+    nWild <- aJoker + rowSums(aHands%%13==2)
+    
+    # 1. Calculate natural values
+    # 1a. Calculate ranks and suits, counting the joker as having no "rank" and being of a fifth "suit"
+    aRanks <- ifelse(aHands==53, 0, 1 + (aHands-1) %% 13)
+    aSuits <- ifelse(aHands==53, 0, 1 + (aHands-1) %/% 13)
+
+    # 1b. Find the counts by rank in each hand
+    aRankCount <- matrix(data=-1L, nrow=nrow(aHands), ncol=13)
+    for (intCtr in 1:13) { aRankCount[, intCtr] <- rowSums(aRanks == intCtr) }
+        
+    # 1c. Find the natural flushes and straights
+    nFlush <- isFlush(aSuits, useWild=-1)
+    nStraight <- isStraight(aRankCount, isEligible=!aJoker)
+
+    # 1d. Find max and count of ranks
+    nQuads <- rowSums(aRankCount == 4)
+    nTrips <- rowSums(aRankCount == 3)
+    nPairs <- rowSums(aRankCount == 2)
+
+    # 1e. Score the natural hand values (default is that a hand has nothing of value)
+    nType <- rep(0L, nrow(aHands))
+    # Five wilds (cannot exist) <- 1
+    nType[nFlush==1 & nStraight==1 & aRankCount[, 1]==1 & aRankCount[, 13]==1] <- 2 # Royal
+    # Five of a kind (cannot exist as natural) <- 3
+    nType[nFlush==1 & nStraight==1 & (aRankCount[, 1]!=1 | aRankCount[, 13]!=1)] <- 4 # Straight flush
+    nType[nQuads==1] <- 5 # Four of a kind
+    nType[nTrips==1 & nPairs==1] <- 6 # Full House
+    nType[nFlush==1 & nStraight==0] <- 7 # Flush
+    nType[nFlush==0 & nStraight==1] <- 8 # Straight
+    nType[nTrips==1 & nPairs==0] <- 9 # Three of a Kind
+    nType[nPairs==2] <- 10 # Two Pair
+    nType[nTrips==0 & nPairs==1] <- 11 # Pair
+
+    
+    # 2. Calculate wild values
+    # 2a. Calculate ranks and suits, counting the joker and 2's as having no "rank" and being of a fifth "suit"
+    wRanks <- ifelse(aHands==53|(aHands%%13==2), 0, 1 + (aHands-1) %% 13)
+    wSuits <- ifelse(aHands==53|(aHands%%13==2), 0, 1 + (aHands-1) %/% 13)
+
+    # 2b. Find the counts by rank in each hand
+    wRankCount <- matrix(data=-1L, nrow=nrow(aHands), ncol=13)
+    for (intCtr in 1:13) { wRankCount[, intCtr] <- rowSums(wRanks == intCtr) }
+        
+    # 2c. Find the wild flushes and straights
+    wFlush <- isFlush(wSuits, useWild=0)
+    wStraight <- isStraight(wRankCount, isEligible=TRUE)
+    
+    # 2d. Find max and count of ranks
+    wQuads <- rowSums(wRankCount == 4)
+    wTrips <- rowSums(wRankCount == 3)
+    wPairs <- rowSums(wRankCount == 2)
+
+    # 2e. Score the wild hand values (default is that a hand has nothing of value)
+    wType <- rep(0L, nrow(aHands))
+    
+    # 2e1. Calculate number of royal cards in hand
+    nRoyal <- rowSums(wRankCount[, c(1, 10, 11, 12, 13)])
+    
+    # 2e2. Five wilds (always five wilds)
+    wType[nWild==5] <- 1 # Five wild
+    
+    # 2e3. Four wilds (always either royal flush or five of a kind)
+    wType[nWild==4 & nRoyal==1] <- 2 # Royal
+    wType[nWild==4 & nRoyal==0] <- 3 # Five of a kind
+    
+    # 2e4. Three wilds (always either royal flush or five of a kind or straight flush or four of a kind)
+    wType[nWild==3 & wFlush==1 & wStraight==1 & nRoyal==2] <- 2 # Royal
+    wType[nWild==3 & wPairs==1] <- 3 # Five of a kind
+    wType[nWild==3 & wFlush==1 & wStraight==1 & nRoyal<2] <- 4 # Straight Flush
+    wType[nWild==3 & !(wFlush==1 & wStraight==1) & wPairs==0] <- 5 # Four of a kind
+    
+    # 2e5. Two wilds (always either royal, five of a kind, straight flush, four of a kind, flush, straight, trips)
+    # Cannot be a full house as any 3-2 using two wilds could instead be 5-0 or 1-4 and thus a better hand
+    wType[nWild==2 & wFlush==1 & wStraight==1 & nRoyal==3] <- 2 # Royal
+    wType[nWild==2 & wTrips==1] <- 3 # Five of a kind
+    wType[nWild==2 & wFlush==1 & wStraight==1 & nRoyal<3] <- 4 # Straight Flush
+    wType[nWild==2 & wPairs==1] <- 5 # Four of a kind
+    wType[nWild==2 & wFlush==1 & wStraight==0] <- 7 # Flush
+    wType[nWild==2 & wFlush==0 & wStraight==1] <- 8 # Straight
+    wType[nWild==2 & !(wFlush==1 | wStraight==1) & wPairs==0 & wTrips==0] <- 9 # Three of a kind
+    
+    # 2e6. One wild (can be anything from pair to royal, with the exception of never two pair)
+    wType[nWild==1 & wFlush==1 & wStraight==1 & nRoyal==4] <- 2 # Royal
+    wType[nWild==1 & wQuads==1] <- 3 # Five of a kind
+    wType[nWild==1 & wFlush==1 & wStraight==1 & nRoyal<4] <- 4 # Straight Flush
+    wType[nWild==1 & wTrips==1] <- 5 # Four of a kind
+    wType[nWild==1 & wPairs==2] <- 6 # Full House
+    wType[nWild==1 & wFlush==1 & wStraight==0] <- 7 # Flush
+    wType[nWild==1 & wFlush==0 & wStraight==1] <- 8 # Straight
+    wType[nWild==1 & wPairs==1] <- 9 # Three of a kind
+    wType[nWild==1 & !(wFlush==1 | wStraight==1) & wPairs==0 & wTrips==0 & wQuads==0] <- 11 # Pair
+    
+    # 2e7. No wild (is identical to natural)
+    wType[nWild==0] <- nType[nWild==0]
+    
+    # Return the requested data
+    if (isTRUE(retAll)) {
+        list(nType=nType, 
+             wType=wType, 
+             nWild=nWild,
+             wRankCount=wRankCount,
+             aRankCount=aRankCount
+             )
+    } else {
+        list(nType=nType, wType=wType, nWild=nWild)
+    }
+    
+}
+
+```
+  
+```{r, cache=TRUE}
+
+# Calculate hands
+tmpTime <- proc.time(); tmpHandTypes<-findHandTypes(mtxHands, retAll=TRUE); proc.time()-tmpTime
+
+```
+
