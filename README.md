@@ -3197,3 +3197,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 updated with latest data  
 * Coronavirus_Statistics_CDC_v006 plotCDCRestatement() run  
   
+### Expansions week of 16-JAN-2023  
+* InitialCardGameAnalysis_202301_v001 created to explore card-deck probabilities  
+  
