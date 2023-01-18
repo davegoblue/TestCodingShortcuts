@@ -3200,4 +3200,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 16-JAN-2023  
 * InitialCardGameAnalysis_202301_v001 created to explore card-deck probabilities  
 * InitialCardGameAnalysis_202301_v001 creates initial hand types  
+* InitialCardGameAnalysis_202301_v001 analyzes initial hand types  
   
