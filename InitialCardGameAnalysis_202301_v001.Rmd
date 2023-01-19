@@ -254,3 +254,66 @@ tblAllTypes %>%
 
 ```
   
+Hands can be scored based on a paytable for both wild-type hands and natural-type hands (only the highest payout applies). An example from the game "DJ Wild" is assessed:  
+```{r, fig.height=9, fig.width=9}
+
+# Hand values
+handValues <- tibble::tibble(handRank=c(1:11, 99), 
+                             handDesc=c("5W", "RF", "5K", "SF", "4K", "FH", "FL", "ST", "3K", "2P", "1P", "HC"),
+                             handLabel=paste0(handRank, " (", handDesc, ")"),
+                             blindPay=c(2000, 100, 40, 25, 5, 4, 3, 2, 0, 0, 0, 0),
+                             wildPay=c(2000, 90, 70, 25, 6, 5, 4, 3, 1, -1, -1, -1), 
+                             naturalPay=c(NA, 1000, NA, 200, 60, 30, 25, 20, 6, -1, -1, -1)
+                             )
+handValues
+
+# Create a mapping vector for type to description
+vecMapHands <- handValues$handLabel %>% purrr::set_names(handValues$handRank)
+
+# Payout grid plotted for all possible values
+allValueGrid <- expand.grid(wildType=c(1:11, 99), naturalType=c(1:11, 99)) %>%
+    tibble::tibble() %>%
+    full_join(count(tblAllTypes, wType, nType), by=c("wildType"="wType", "naturalType"="nType")) %>%
+    mutate(bestType=pmin(wildType, naturalType)) %>%
+    left_join(select(handValues, handRank, wildPay), by=c("wildType"="handRank")) %>%
+    left_join(select(handValues, handRank, naturalPay), by=c("naturalType"="handRank")) %>%
+    left_join(select(handValues, handRank, blindPay), by=c("bestType"="handRank")) %>%
+    mutate(bonusPay=pmax(wildPay, naturalPay, na.rm=TRUE))
+allValueGrid
+
+# Plot of payout values
+allValueGrid %>%
+    filter(!is.na(n)) %>%
+    ggplot(aes(x=fct_rev(factor(vecMapHands[as.character(wildType)], levels=vecMapHands)), 
+               y=fct_rev(factor(vecMapHands[as.character(naturalType)], levels=vecMapHands))
+               )
+           ) + 
+    geom_tile(fill="lightgreen") +
+    geom_text(aes(label=bonusPay)) + 
+    labs(title="Example payouts by type in 53c5 game", 
+         subtitle="Deuces can be natural or wild, joker (card 53) is wild only", 
+         y="Natural hand type", 
+         x="Wild hand type"
+         )
+
+# EV of payout values
+allValueGrid %>%
+    filter(!is.na(n)) %>%
+    summarize(totPays=sum(n*bonusPay), n=sum(n)) %>%
+    mutate(ev=totPays/n)
+
+# Table by hand type
+allValueTable <- allValueGrid %>%
+    filter(!is.na(n)) %>%
+    mutate(natWild=ifelse(naturalPay>wildPay, "Natural", "Wild"), 
+           reportBonusType=ifelse(natWild=="Natural", naturalType, wildType),
+           reportBonusLabel=factor(vecMapHands[as.character(reportBonusType)], levels=vecMapHands)
+           ) %>%
+    group_by(natWild, reportBonusLabel, bonusPay) %>%
+    summarize(n=sum(n), .groups="drop") %>%
+    mutate(prob=n/sum(n), per=1/prob, ev=n*bonusPay/sum(n))
+allValueTable
+allValueTable %>% select(n, ev) %>% colSums() %>% round(4)
+
+```
+  
