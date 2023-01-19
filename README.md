@@ -3201,4 +3201,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 created to explore card-deck probabilities  
 * InitialCardGameAnalysis_202301_v001 creates initial hand types  
 * InitialCardGameAnalysis_202301_v001 analyzes initial hand types  
+* InitialCardGameAnalysis_202301_v001 explores EV using DJ Wild trips table  
   
