@@ -736,6 +736,161 @@ allValueTable</code></pre>
 <pre class="r"><code>allValueTable %&gt;% select(n, ev) %&gt;% colSums() %&gt;% round(4)</code></pre>
 <pre><code>##            n           ev 
 ## 2869685.0000      -0.0616</code></pre>
+<p>Convert all hands to a value with ranks for tie-breaking (Ace high,
+with 5432A straights treated as having first tie-breaker 5 and last
+tie-breaker A). Hands are first converted to counts by rank with wild
+cards filling the next best ranks:</p>
+<pre class="r"><code># Get the number of wilds in each hand
+perHandNWild &lt;- (rowSums(mtxHands==53)&gt;0) + rowSums(mtxHands%%13==2)
+
+# Get the ranks in each hand
+perHandRanks &lt;- ifelse(mtxHands==53, 0, 1 + (mtxHands-1) %% 13) # track joker as wild
+perHandRanks[perHandRanks==2] &lt;- 0 # track deuces as wild, ignore rank (place as best later)
+perHandRanks[perHandRanks==1] &lt;- 14 # count Aces as high
+
+# Create the matrix of card types
+perHandRankCount &lt;- matrix(data=-1L, nrow=nrow(mtxHands), ncol=14)
+for (intCtr in 1:14) { perHandRankCount[, intCtr] &lt;- rowSums(perHandRanks == intCtr) }
+
+# Create a tie-breaker matrix filled with 0&#39;s (column 13 is Ace)
+mtxTieBreak &lt;- matrix(data=0L, nrow=nrow(mtxHands), ncol=13)
+
+# Function to get the cards in a straight
+getStraightType &lt;- function(x) {
+    if(min(x[x&gt;0]) &gt;= 10) c(10, 11, 12, 13, 14)
+    else if(min(x[x&gt;0]) &lt;= 5 &amp; max(x)==14) c(2, 3, 4, 5, 14) # this treats Ace as the last card to resolve (Ace low)
+    else seq(min(x[x&gt;0]), min(x[x&gt;0])+4)
+}
+
+# Function to get the cards in a flush
+getFlushType &lt;- function(x) {
+    # Wild cards should be added as highest rank not already in hand (try A then K then Q then J then T)
+    numAdd &lt;- sum(x==0)
+    if(numAdd &gt; 0) {
+        notThere &lt;- (14:10)[!((14:10) %in% x)][1:numAdd]
+        x &lt;- c(x[x!=0], notThere)
+    }
+    sort(x, decreasing=TRUE)
+}
+
+# Function to get the cards in a four of a kind, full house, three of a kind, two pair, pair, or high card
+getHighTypes &lt;- function(rks, idx=1:14, outNum=c(1, 1, 1, 1, 1)) {
+    vecOut &lt;- rep(0L, length(outNum))
+    for(x in seq_along(outNum)) {
+        vecOut[x]&lt;-max((rks==max(rks)) * idx)
+        rks[match(vecOut[x], idx)] &lt;- 0
+    }
+    rep(vecOut, times=outNum)
+}
+
+# 1. Five wild (nothing to do)
+# 2. Royal flush (make the ranks 1 in the last 5 columns)
+perHandRanks[tmpHandTypes$wType==2, ] &lt;- t(apply(perHandRanks[tmpHandTypes$wType==2, ], 1, FUN=getStraightType))
+# 3. Five of a kind (make the ranks all the same as the only rank)
+perHandRanks[tmpHandTypes$wType==3, ] &lt;- t(apply(perHandRankCount[tmpHandTypes$wType==3, ], 
+                                           1, 
+                                           FUN=getHighTypes, 
+                                           outNum=c(5)
+                                           )
+                                     )
+# 4. Straight flush (make the ranks all the best straight possible)
+perHandRanks[tmpHandTypes$wType==4, ] &lt;- t(apply(perHandRanks[tmpHandTypes$wType==4, ], 1, FUN=getStraightType))
+# 5. Four of a kind (make the ranks four of the most frequent card or the highest card, one of the other)
+perHandRanks[tmpHandTypes$wType==5, ] &lt;- t(apply(perHandRankCount[tmpHandTypes$wType==5, ], 
+                                           1, 
+                                           FUN=getHighTypes, 
+                                           outNum=c(4, 1)
+                                           )
+                                     )
+# 6. Full house (make the ranks three of the most frequent card, two of the other)
+perHandRanks[tmpHandTypes$wType==6, ] &lt;- t(apply(perHandRankCount[tmpHandTypes$wType==6, ], 
+                                           1, 
+                                           FUN=getHighTypes, 
+                                           outNum=c(3, 2)
+                                           )
+                                     )
+# 7. Flush (need to implement)
+perHandRanks[tmpHandTypes$wType==7, ] &lt;- t(apply(perHandRanks[tmpHandTypes$wType==7, ], 1, FUN=getFlushType))
+# 8. Straight (make the ranks all the best straight possible)
+perHandRanks[tmpHandTypes$wType==8, ] &lt;- t(apply(perHandRanks[tmpHandTypes$wType==8, ], 1, FUN=getStraightType))
+# 9. Three of a kind (make the ranks three of the most frequent or highest card, one each of the other)
+perHandRanks[tmpHandTypes$wType==9, ] &lt;- t(apply(perHandRankCount[tmpHandTypes$wType==9, ], 
+                                           1, 
+                                           FUN=getHighTypes, 
+                                           outNum=c(3, 1, 1)
+                                           )
+                                     )
+# 10. Two pair (make the ranks two of the highest pair, two of the lowest pair, one of the remainder)
+perHandRanks[tmpHandTypes$wType==10, ] &lt;- t(apply(perHandRankCount[tmpHandTypes$wType==10, ], 
+                                            1, 
+                                            FUN=getHighTypes, 
+                                            outNum=c(2, 2, 1)
+                                            )
+                                      )
+# 11. One pair (make the ranks two of the pair or highest card, one each of the remainder)
+perHandRanks[tmpHandTypes$wType==11, ] &lt;- t(apply(perHandRankCount[tmpHandTypes$wType==11, ], 
+                                            1, 
+                                            FUN=getHighTypes, 
+                                            outNum=c(2, 1, 1, 1)
+                                            )
+                                      )
+# 0. High card (make the ranks in order of the highest cards)
+perHandRanks[tmpHandTypes$wType==0, ] &lt;- t(apply(perHandRankCount[tmpHandTypes$wType==0, ], 
+                                            1, 
+                                            FUN=getHighTypes, 
+                                            outNum=c(1, 1, 1, 1, 1)
+                                            )
+                                      )
+
+# Create the hand ranking table
+allHandRanks &lt;- tibble::tibble(handNum=1:nrow(mtxHands), wType=tmpHandTypes$wType) %&gt;% 
+    bind_cols(perHandRanks) %&gt;% 
+    set_names(c(&quot;handNum&quot;, &quot;wType&quot;, &quot;tb1&quot;, &quot;tb2&quot;, &quot;tb3&quot;, &quot;tb4&quot;, &quot;tb5&quot;)) %&gt;% 
+    mutate(wType=ifelse(wType==0, 99, wType)) %&gt;% 
+    arrange(wType, desc(tb1), desc(tb2), desc(tb3), desc(tb4), desc(tb5)) %&gt;% 
+    mutate(chgRank=ifelse(row_number()==1 | wType!=lag(wType) | tb1 != lag(tb1) | tb2 != lag(tb2) | tb3 != lag(tb3) | tb4 != lag(tb4) | tb5 != lag(tb5), 1, 0), 
+           rank=cumsum(chgRank)
+           )</code></pre>
+<pre><code>## New names:
+## • `` -&gt; `...3`
+## • `` -&gt; `...4`
+## • `` -&gt; `...5`
+## • `` -&gt; `...6`
+## • `` -&gt; `...7`</code></pre>
+<pre class="r"><code>allHandRanks %&gt;%
+    count(wType, rank, tb1, tb2, tb3, tb4, tb5) %&gt;%
+    arrange(-n, rank) %&gt;%
+    mutate(nvr=row_number()) %&gt;%
+    group_by(wType) %&gt;%
+    mutate(nty=row_number()) %&gt;%
+    ungroup() %&gt;%
+    filter(nvr&lt;=10 | nty==1)</code></pre>
+<pre><code>## # A tibble: 20 × 10
+##    wType  rank   tb1   tb2   tb3   tb4   tb5     n   nvr   nty
+##    &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;int&gt; &lt;int&gt; &lt;int&gt;
+##  1     8  1071    10    11    12    13    14 13320     1     1
+##  2     8  1072     9    10    11    12    13  9660     2     2
+##  3     8  1073     8     9    10    11    12  9660     3     3
+##  4     8  1074     7     8     9    10    11  9660     4     4
+##  5     8  1075     6     7     8     9    10  9660     5     5
+##  6     8  1076     5     6     7     8     9  9660     6     6
+##  7     8  1077     4     5     6     7     8  9660     7     7
+##  8     8  1078     3     4     5     6     7  9660     8     8
+##  9     8  1079     2     3     4     5    14  3060     9     9
+## 10    11  2402    14    14    13    12     9  1644    10     1
+## 11     9  1083    14    14    14    13     9  1144   471     1
+## 12    99  4380    14    13    12    11     9  1020   636     1
+## 13     2     2    10    11    12    13    14  1004  1420     1
+## 14     4    15     9    10    11    12    13   484  1916     1
+## 15     5    27    14    14    14    14     9   484  1923     1
+## 16     7   289    14    13    12    11     7   324  3574     1
+## 17     6   155    14    14    14    13    13   204  3581     1
+## 18    10  1740    14    14    13    13    12   144  3675     1
+## 19     3     8     9     9     9     9     9   125  4335     1
+## 20     1     1     0     0     0     0     0     1  5163     1</code></pre>
+<p>As expected, straight is the hand type with the greatest number of
+possible ties (there are only 10 types of straight and each can have
+1,024 permutations of suits)</p>
 </div>
 </div>
 
