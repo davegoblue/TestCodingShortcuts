@@ -3204,4 +3204,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 explores EV using DJ Wild trips table  
 * InitialCardGameAnalysis_202301_v001 ranks hand types  
 * InitialCardGameAnalysis_202301_v001 analyzes example hand  
+* InitialCardGameAnalysis_202301_v001 creates list of impossible hands by unavailable card  
   
