@@ -3206,3 +3206,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 analyzes example hand  
 * InitialCardGameAnalysis_202301_v001 creates list of impossible hands by unavailable card  
   
+### Expansions week of 23-JAN-2023  
+* InitialCardGameAnalysis_202301_v001 analyzes example hand without replacement  
+  
