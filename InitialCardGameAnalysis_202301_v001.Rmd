@@ -542,3 +542,57 @@ proc.time() - t
 
 As expected, probabilities change slightly due to cards made unavailable (in player's hands or otherwise). Wild cards are very important in expected value of hand quality
 
+A function is added to run multiple hands:  
+```{r, fig.height=9, fig.width=9}
+
+# Blind payouts
+blindPay <- c(2000, 100, 40, 25, 5, 4, 3, 2, 0, 0, 0, 0) %>% purrr::set_names(paste0("b_", c(1:11, 99)))
+
+# Add number of wilds
+sortedHandRanks <- sortedHandRanks %>%
+    mutate(nWild=perHandNWild)
+
+calculateResults <- function(useHandNums, dfRanks=sortedHandRanks, hands=mtxHands, bPay=blindPay) {
+
+    map_dfr(useHandNums, 
+            .f=function(x) {
+                getKeyValues(keyRank=dfRanks$rank[x], exclCards=as.vector(hands[x,])) %>%
+                    mutate(type=dfRanks$wType[x], 
+                           handNum=x, 
+                           betPlay=ifelse((4*pWQ+3*pWN+2*pTQ+2*pTN)<(pLQ+pLN), 0, ifelse(pWNoTie<0.5, 1, 2)), 
+                           evAnte=ifelse(betPlay==0, -1, pWQ-pLQ-pLN), 
+                           evPlay=betPlay*(pWQ+pWN-pLQ-pLN),
+                           evBlind=ifelse(betPlay==0, -1, bPay[paste0("b_", type)]*(pWQ+pWN)-pLQ-pLN), 
+                           evAll=evAnte+evPlay+evBlind
+                           )
+                }
+            )
+}
+
+# Run for example hand of all hand types 4 (straight flush) or better
+seq1a <- sortedHandRanks %>% 
+    filter(wType <= 4) %>%
+    group_by(nWild, wType, tb1, tb2, tb3, tb4, tb5) %>% 
+    filter(row_number()==1) %>% 
+    ungroup()
+
+# Run for select hands
+t <- proc.time(); resSFPlus <- calculateResults(useHandNums=seq1a$handNum); proc.time()-t
+
+# Statistics for EV by hand type
+resSFPlus %>%
+    group_by(type) %>%
+    summarize(n=n(), across(c(pWNoTie, evAll), .fns=list(min=min, mean=mean, med=median, max=max)))
+
+# Plot for result type
+resSFPlus %>%
+    mutate(qualifies=pWQ+pTQ+pLQ, ties=pTQ+pTN) %>%
+    select(handNum, type, pWQ, pWN, pLQ, pLN, ties, qualifies) %>%
+    pivot_longer(-c(handNum, type)) %>%
+    ggplot(aes(x=factor(type), y=value)) + 
+    geom_boxplot(fill="lightblue") + 
+    facet_wrap(~name) + 
+    labs(title="Probabilities of results by hand type", x="Hand type", y="Probability")
+
+```
+  
