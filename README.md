@@ -3208,4 +3208,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 23-JAN-2023  
 * InitialCardGameAnalysis_202301_v001 analyzes example hand without replacement  
+* InitialCardGameAnalysis_202301_v001 analyzes example hands of type 1-4  
   
