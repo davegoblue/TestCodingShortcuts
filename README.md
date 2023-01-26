@@ -3210,4 +3210,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 analyzes example hand without replacement  
 * InitialCardGameAnalysis_202301_v001 analyzes example hands of type 1-4  
 * InitialCardGameAnalysis_202301_v001 analyzes example hands of type 5-8  
+* InitialCardGameAnalysis_202301_v001 analyzes example hands of type 9-10  
   
