@@ -3215,3 +3215,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 analyzes example hands of type 11 (1 wild) and type 99  
 * InitialCardGameAnalysis_202301_v001 combines and saves results  
   
+### Expansions week of 30-JAN-2023  
+* InitialCardGameAnalysis_202301_v001 explores combined results  
+  
