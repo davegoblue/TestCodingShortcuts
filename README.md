@@ -3213,4 +3213,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 analyzes example hands of type 9-10  
 * InitialCardGameAnalysis_202301_v001 analyzes example hands of type 11 (0 wild)  
 * InitialCardGameAnalysis_202301_v001 analyzes example hands of type 11 (1 wild) and type 99  
+* InitialCardGameAnalysis_202301_v001 combines and saves results  
   
