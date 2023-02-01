@@ -3218,4 +3218,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 30-JAN-2023  
 * InitialCardGameAnalysis_202301_v001 explores combined results  
 * InitialCardGameAnalysis_202301_v001 simulates bonus outcomes  
+* InitialCardGameAnalysis_202301_v001 simulates main outcomes  
   
