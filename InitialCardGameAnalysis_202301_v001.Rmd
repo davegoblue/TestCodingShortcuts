@@ -877,3 +877,65 @@ cat("\n",
 
 ```
   
+Volatility of the main bet is explored, assuming 100 hands:  
+```{r, fig.height=9, fig.width=9}
+
+dfHandData <- dfResAll_202301_v001 %>%
+    select(wType, nOfType, betPlay, starts_with("p")) %>%
+    mutate(win=pWQ+pWN, tie=pTQ+pTN, lose=pLQ+pLN, blindPay=blindPay[paste0("b_", wType)])
+dfHandData
+
+getHandOutcome <- function(pWQ, pWN, tie, lose, betPlay, blindPay) {
+    if(betPlay==0) return(tibble::tibble(result="fold", ante=-1, blind=-1, play=0))
+    result <- sample(c("win/qualify", "win/no qualify", "tie", "lose"), 
+                     size=1, 
+                     replace=TRUE, 
+                     prob=c(pWQ, pWN, tie, lose)
+                     )
+    return(tibble::tibble(result=result, 
+                          ante=case_when(result=="win/qualify" ~ 1, 
+                                         result %in% c("win/no qualify", "tie") ~ 0, 
+                                         result=="lose" ~ -1, 
+                                         TRUE ~ -99
+                                         ),
+                          blind=case_when(result %in% c("win/qualify", "win/no qualify") ~ blindPay, 
+                                          result=="tie" ~ 0, 
+                                          result=="lose" ~ -1, 
+                                          TRUE ~ -99
+                                          ), 
+                          play=case_when(result %in% c("win/qualify", "win/no qualify") ~ betPlay, 
+                                         result=="tie" ~ 0, 
+                                         result=="lose" ~ -betPlay, 
+                                         TRUE ~ -99
+                                         )
+                          )
+           )
+    
+}
+
+lst200 <- lapply(1:200, FUN=function(y) {
+    map_dfr(1:100, 
+            .f=function(x) {
+                rn <- sample(1:nrow(dfHandData), size=1, replace=TRUE, prob=dfHandData$nOfType)
+                rd <- dfHandData[rn,]
+                getHandOutcome(pWQ=rd$pWQ, 
+                               pWN=rd$pWN, 
+                               tie=rd$tie, 
+                               lose=rd$lose, 
+                               betPlay=rd$betPlay, 
+                               blindPay=rd$blindPay
+                               ) %>%
+                    mutate(rn=rn, n=1)
+                }
+            )
+            }
+    )
+
+res200 <- map_dfr(lst200, .f=function(x) summarize(x, across(c("ante", "blind", "play"), .fns=sum), n=n()))
+res200
+
+res200 %>%
+    mutate(overall=ante+blind+play) %>%
+    summarize(across(.fns=mean))
+```
+  

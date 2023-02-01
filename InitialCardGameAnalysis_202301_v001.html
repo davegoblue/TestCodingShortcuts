@@ -986,7 +986,7 @@ t &lt;- proc.time(); getKeyValues(exHandRank, exclCards=mtxHands[exHandNum,], df
 ##   &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt;    &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;   &lt;int&gt;   &lt;dbl&gt; &lt;dbl&gt;
 ## 1 0.735 0.0408     0 0.000141     0 0.224 1712304   0.224  4509</code></pre>
 <pre><code>##    user  system elapsed 
-##    1.32    0.28    1.73</code></pre>
+##    1.41    0.36    2.28</code></pre>
 <pre class="r"><code># Heads up probabilities, dealer does not have a wild card
 t &lt;- proc.time() 
 getKeyValues(exHandRank, exclCards=unique(c(mtxHands[exHandNum,], 2, 15, 28, 41, 53)), dfSort=smallSorted)</code></pre>
@@ -996,7 +996,7 @@ getKeyValues(exHandRank, exclCards=unique(c(mtxHands[exHandNum,], 2, 15, 28, 41,
 ## 1 0.529 0.0725     0 0.000250     0 0.398 962598   0.398  4509</code></pre>
 <pre class="r"><code>proc.time() - t</code></pre>
 <pre><code>##    user  system elapsed 
-##    0.93    0.05    1.11</code></pre>
+##    0.79    0.06    0.86</code></pre>
 <p>As expected, probabilities change slightly due to cards made
 unavailable (in player’s hands or otherwise). Wild cards are very
 important in expected value of hand quality</p>
@@ -1438,6 +1438,95 @@ quantile(simTotal, c(0, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.97
     )</code></pre>
 <pre><code>## 
 ##  65.3% of simulations are losers, with mean loss per losing simulation: -26.7 and median loss per losing simulation: -26</code></pre>
+<p>Volatility of the main bet is explored, assuming 100 hands:</p>
+<pre class="r"><code>dfHandData &lt;- dfResAll_202301_v001 %&gt;%
+    select(wType, nOfType, betPlay, starts_with(&quot;p&quot;)) %&gt;%
+    mutate(win=pWQ+pWN, tie=pTQ+pTN, lose=pLQ+pLN, blindPay=blindPay[paste0(&quot;b_&quot;, wType)])
+dfHandData</code></pre>
+<pre><code>## # A tibble: 7,309 × 14
+##    wType nOfType betPlay   pLQ   pLN      pTQ   pTN   pWQ   pWN pWNoTie   win
+##    &lt;dbl&gt;   &lt;int&gt;   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;    &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;   &lt;dbl&gt; &lt;dbl&gt;
+##  1    11    1260       2 0.306     0 0.000232     0 0.397 0.297   0.694 0.694
+##  2    11    1260       2 0.304     0 0.000232     0 0.399 0.297   0.696 0.696
+##  3    11    1260       2 0.301     0 0.000232     0 0.402 0.297   0.699 0.699
+##  4    11    1260       2 0.297     0 0.000232     0 0.406 0.297   0.703 0.703
+##  5    11    1260       2 0.290     0 0.000232     0 0.413 0.297   0.710 0.710
+##  6    11    1260       2 0.281     0 0.000232     0 0.422 0.297   0.719 0.719
+##  7    11    1260       2 0.268     0 0.000232     0 0.435 0.297   0.732 0.732
+##  8    11    1260       2 0.251     0 0.000232     0 0.452 0.297   0.749 0.749
+##  9    11    1260       2 0.305     0 0.000232     0 0.398 0.297   0.695 0.695
+## 10    11    1260       2 0.303     0 0.000232     0 0.399 0.297   0.697 0.697
+## # … with 7,299 more rows, and 3 more variables: tie &lt;dbl&gt;, lose &lt;dbl&gt;,
+## #   blindPay &lt;dbl&gt;</code></pre>
+<pre class="r"><code>getHandOutcome &lt;- function(pWQ, pWN, tie, lose, betPlay, blindPay) {
+    if(betPlay==0) return(tibble::tibble(result=&quot;fold&quot;, ante=-1, blind=-1, play=0))
+    result &lt;- sample(c(&quot;win/qualify&quot;, &quot;win/no qualify&quot;, &quot;tie&quot;, &quot;lose&quot;), 
+                     size=1, 
+                     replace=TRUE, 
+                     prob=c(pWQ, pWN, tie, lose)
+                     )
+    return(tibble::tibble(result=result, 
+                          ante=case_when(result==&quot;win/qualify&quot; ~ 1, 
+                                         result %in% c(&quot;win/no qualify&quot;, &quot;tie&quot;) ~ 0, 
+                                         result==&quot;lose&quot; ~ -1, 
+                                         TRUE ~ -99
+                                         ),
+                          blind=case_when(result %in% c(&quot;win/qualify&quot;, &quot;win/no qualify&quot;) ~ blindPay, 
+                                          result==&quot;tie&quot; ~ 0, 
+                                          result==&quot;lose&quot; ~ -1, 
+                                          TRUE ~ -99
+                                          ), 
+                          play=case_when(result %in% c(&quot;win/qualify&quot;, &quot;win/no qualify&quot;) ~ betPlay, 
+                                         result==&quot;tie&quot; ~ 0, 
+                                         result==&quot;lose&quot; ~ -betPlay, 
+                                         TRUE ~ -99
+                                         )
+                          )
+           )
+    
+}
+
+lst200 &lt;- lapply(1:200, FUN=function(y) {
+    map_dfr(1:100, 
+            .f=function(x) {
+                rn &lt;- sample(1:nrow(dfHandData), size=1, replace=TRUE, prob=dfHandData$nOfType)
+                rd &lt;- dfHandData[rn,]
+                getHandOutcome(pWQ=rd$pWQ, 
+                               pWN=rd$pWN, 
+                               tie=rd$tie, 
+                               lose=rd$lose, 
+                               betPlay=rd$betPlay, 
+                               blindPay=rd$blindPay
+                               ) %&gt;%
+                    mutate(rn=rn, n=1)
+                }
+            )
+            }
+    )
+
+res200 &lt;- map_dfr(lst200, .f=function(x) summarize(x, across(c(&quot;ante&quot;, &quot;blind&quot;, &quot;play&quot;), .fns=sum), n=n()))
+res200</code></pre>
+<pre><code>## # A tibble: 200 × 4
+##     ante blind  play     n
+##    &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;int&gt;
+##  1   -21   -27    62   100
+##  2    -6   -23    76   100
+##  3   -27   -34    42   100
+##  4   -31   -42    36   100
+##  5   -36   -39    48   100
+##  6   -28   -14    40   100
+##  7   -27   -32    45   100
+##  8   -35   -32    39   100
+##  9   -20   -36    64   100
+## 10   -20   -30    54   100
+## # … with 190 more rows</code></pre>
+<pre class="r"><code>res200 %&gt;%
+    mutate(overall=ante+blind+play) %&gt;%
+    summarize(across(.fns=mean))</code></pre>
+<pre><code>## # A tibble: 1 × 5
+##    ante blind  play     n overall
+##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;   &lt;dbl&gt;
+## 1 -28.2 -26.3  44.6   100   -9.84</code></pre>
 </div>
 </div>
 
