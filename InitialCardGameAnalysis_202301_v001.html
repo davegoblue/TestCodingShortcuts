@@ -986,7 +986,7 @@ t &lt;- proc.time(); getKeyValues(exHandRank, exclCards=mtxHands[exHandNum,], df
 ##   &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt;    &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;   &lt;int&gt;   &lt;dbl&gt; &lt;dbl&gt;
 ## 1 0.735 0.0408     0 0.000141     0 0.224 1712304   0.224  4509</code></pre>
 <pre><code>##    user  system elapsed 
-##    1.41    0.36    2.28</code></pre>
+##    1.11    0.20    1.31</code></pre>
 <pre class="r"><code># Heads up probabilities, dealer does not have a wild card
 t &lt;- proc.time() 
 getKeyValues(exHandRank, exclCards=unique(c(mtxHands[exHandNum,], 2, 15, 28, 41, 53)), dfSort=smallSorted)</code></pre>
@@ -996,7 +996,7 @@ getKeyValues(exHandRank, exclCards=unique(c(mtxHands[exHandNum,], 2, 15, 28, 41,
 ## 1 0.529 0.0725     0 0.000250     0 0.398 962598   0.398  4509</code></pre>
 <pre class="r"><code>proc.time() - t</code></pre>
 <pre><code>##    user  system elapsed 
-##    0.79    0.06    0.86</code></pre>
+##    0.83    0.06    0.89</code></pre>
 <p>As expected, probabilities change slightly due to cards made
 unavailable (in player’s hands or otherwise). Wild cards are very
 important in expected value of hand quality</p>
@@ -1527,6 +1527,159 @@ res200</code></pre>
 ##    ante blind  play     n overall
 ##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;   &lt;dbl&gt;
 ## 1 -28.2 -26.3  44.6   100   -9.84</code></pre>
+<p>The process is converted for parallel processing:</p>
+<pre class="r"><code># Simulations of 100 hands
+set.seed(23020115)
+nSims &lt;- 10000
+nPerSim &lt;- 100
+simTotal &lt;- vector(&quot;numeric&quot;, length=nSims)
+
+# Get the hand numbers for the simulation
+rn &lt;- sample(1:nrow(dfHandData), size=nPerSim*nSims, replace=TRUE, prob=dfHandData$nOfType)
+
+# Get the outcomes for the simulation
+rd &lt;- dfHandData[rn,] %&gt;% 
+    mutate(prob=runif(nPerSim*nSims), 
+           wintie=win+tie, 
+           res=case_when(prob&lt;=pWQ ~ &quot;winQ&quot;, 
+                         prob&lt;=win ~ &quot;winNo&quot;, 
+                         prob &lt;= wintie ~ &quot;tie&quot;, 
+                         prob &lt;= wintie+lose ~ &quot;lose&quot;, 
+                         TRUE ~ &quot;ERROR&quot;
+                         )
+           )
+
+# Convert to payouts by bet
+rp &lt;- rd %&gt;%
+    mutate(resActual=ifelse(betPlay==0, &quot;fold&quot;, res), 
+           resPlay=case_when(resActual %in% c(&quot;winQ&quot;, &quot;winNo&quot;) ~ betPlay, 
+                             resActual %in% c(&quot;fold&quot;, &quot;tie&quot;) ~ 0, 
+                             resActual %in% c(&quot;lose&quot;) ~ -betPlay, 
+                             TRUE ~ -Inf
+                             ), 
+           resBlind=case_when(resActual %in% c(&quot;winQ&quot;, &quot;winNo&quot;) ~ blindPay, 
+                              resActual %in% c(&quot;tie&quot;) ~ 0, 
+                              resActual %in% c(&quot;lose&quot;, &quot;fold&quot;) ~ -1, 
+                              TRUE ~ -Inf
+                              ), 
+           resAnte=case_when(resActual %in% c(&quot;winQ&quot;) ~ 1, 
+                             resActual %in% c(&quot;tie&quot;, &quot;winNo&quot;) ~ 0, 
+                             resActual %in% c(&quot;lose&quot;, &quot;fold&quot;) ~ -1, 
+                             TRUE ~ -Inf
+                             ), 
+           resAll=resPlay+resBlind+resAnte
+           ) %&gt;%
+    select(wType, betPlay, res, resActual, resPlay, resBlind, resAnte, resAll)
+rp</code></pre>
+<pre><code>## # A tibble: 1,000,000 × 8
+##    wType betPlay res   resActual resPlay resBlind resAnte resAll
+##    &lt;dbl&gt;   &lt;dbl&gt; &lt;chr&gt; &lt;chr&gt;       &lt;dbl&gt;    &lt;dbl&gt;   &lt;dbl&gt;  &lt;dbl&gt;
+##  1    11       2 lose  lose           -2       -1      -1     -4
+##  2     8       2 winQ  winQ            2        2       1      5
+##  3    99       0 lose  fold            0       -1      -1     -2
+##  4    11       2 winQ  winQ            2        0       1      3
+##  5    10       2 winNo winNo           2        0       0      2
+##  6     9       2 winNo winNo           2        0       0      2
+##  7    11       2 lose  lose           -2       -1      -1     -4
+##  8    11       2 lose  lose           -2       -1      -1     -4
+##  9    11       1 lose  lose           -1       -1      -1     -3
+## 10     9       2 winQ  winQ            2        0       1      3
+## # … with 999,990 more rows</code></pre>
+<pre class="r"><code># Get statistics by key attributes
+rp %&gt;%
+    summarize(n=n(), across(c(resPlay, resBlind, resAnte, resAll), .fns=mean))</code></pre>
+<pre><code>## # A tibble: 1 × 5
+##         n resPlay resBlind resAnte  resAll
+##     &lt;int&gt;   &lt;dbl&gt;    &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;
+## 1 1000000   0.457   -0.254  -0.274 -0.0709</code></pre>
+<pre class="r"><code>rp %&gt;%
+    group_by(wType, betPlay) %&gt;%
+    summarize(n=n(), across(c(resPlay, resBlind, resAnte, resAll), .fns=mean), .groups=&quot;drop&quot;) %&gt;%
+    arrange(desc(wType), betPlay)</code></pre>
+<pre><code>## # A tibble: 14 × 7
+##    wType betPlay      n resPlay resBlind resAnte   resAll
+##    &lt;dbl&gt;   &lt;dbl&gt;  &lt;int&gt;   &lt;dbl&gt;    &lt;dbl&gt;   &lt;dbl&gt;    &lt;dbl&gt;
+##  1    99       0 259500   0       -1     -1        -2    
+##  2    99       1  19608  -0.495   -0.748 -0.748    -1.99 
+##  3    11       1 218048  -0.261   -0.630 -0.527    -1.42 
+##  4    11       2 248743   0.541   -0.365 -0.0166    0.159
+##  5    10       2  33267   0.956   -0.261  0.222     0.917
+##  6     9       2 159596   1.51    -0.123  0.455     1.84 
+##  7     8       2  29385   1.85     1.88   0.616     4.35 
+##  8     7       2   6699   1.90     2.90   0.639     5.44 
+##  9     6       2   5287   1.91     3.89   0.669     6.47 
+## 10     5       2  17688   1.98     4.97   0.660     7.61 
+## 11     4       2   1307   2.00    25.0    0.657    27.6  
+## 12     3       2    500   2       40      0.624    42.6  
+## 13     2       2    370   2      100      0.649   103.   
+## 14     1       2      2   2     2000      0.5    2002.</code></pre>
+<pre class="r"><code>rp %&gt;%
+    group_by(wType, resActual) %&gt;%
+    summarize(n=n(), across(c(resPlay, resBlind, resAnte, resAll), .fns=mean), .groups=&quot;drop&quot;) %&gt;%
+    arrange(desc(wType), resActual) %&gt;%
+    print(n=40)</code></pre>
+<pre><code>## # A tibble: 37 × 7
+##    wType resActual      n resPlay resBlind resAnte  resAll
+##    &lt;dbl&gt; &lt;chr&gt;      &lt;int&gt;   &lt;dbl&gt;    &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;
+##  1    99 fold      259500    0          -1      -1   -2   
+##  2    99 lose       14660   -1          -1      -1   -3   
+##  3    99 tie            3    0           0       0    0   
+##  4    99 winNo       4945    1           0       0    1   
+##  5    11 lose      228193   -1.40       -1      -1   -3.40
+##  6    11 tie           67    0           0       0    0   
+##  7    11 winNo     129395    1.55        0       0    1.55
+##  8    11 winQ      109136    1.79        0       1    2.79
+##  9    10 lose        8682   -2          -1      -1   -4   
+## 10    10 winNo       8508    2           0       0    2   
+## 11    10 winQ       16077    2           0       1    3   
+## 12     9 lose       19582   -2          -1      -1   -4   
+## 13     9 tie           11    0           0       0    0   
+## 14     9 winNo      47842    2           0       0    2   
+## 15     9 winQ       92161    2           0       1    3   
+## 16     8 lose        1094   -2          -1      -1   -4   
+## 17     8 tie           49    0           0       0    0   
+## 18     8 winNo       9042    2           2       0    4   
+## 19     8 winQ       19200    2           2       1    5   
+## 20     7 lose         164   -2          -1      -1   -4   
+## 21     7 winNo       2093    2           3       0    5   
+## 22     7 winQ        4442    2           3       1    6   
+## 23     6 lose         119   -2          -1      -1   -4   
+## 24     6 winNo       1513    2           4       0    6   
+## 25     6 winQ        3655    2           4       1    7   
+## 26     5 lose          87   -2          -1      -1   -4   
+## 27     5 winNo       5848    2           5       0    7   
+## 28     5 winQ       11753    2           5       1    8   
+## 29     4 lose           1   -2          -1      -1   -4   
+## 30     4 winNo        446    2          25       0   27   
+## 31     4 winQ         860    2          25       1   28   
+## 32     3 winNo        188    2          40       0   42   
+## 33     3 winQ         312    2          40       1   43   
+## 34     2 winNo        130    2         100       0  102   
+## 35     2 winQ         240    2         100       1  103   
+## 36     1 winNo          1    2        2000       0 2002   
+## 37     1 winQ           1    2        2000       1 2003</code></pre>
+<pre class="r"><code>rp %&gt;%
+    group_by(betPlay, resActual, res) %&gt;%
+    summarize(n=n(), 
+              across(c(resPlay, resBlind, resAnte, resAll), .fns=list(mean=mean)), 
+              .groups=&quot;drop&quot;
+              ) %&gt;%
+    arrange(betPlay)</code></pre>
+<pre><code>## # A tibble: 11 × 8
+##    betPlay resActual res        n resPlay_mean resBlind_mean resAnte_m…¹ resAl…²
+##      &lt;dbl&gt; &lt;chr&gt;     &lt;chr&gt;  &lt;int&gt;        &lt;dbl&gt;         &lt;dbl&gt;       &lt;dbl&gt;   &lt;dbl&gt;
+##  1       0 fold      lose  227552            0        -1              -1   -2   
+##  2       0 fold      tie       35            0        -1              -1   -2   
+##  3       0 fold      winNo  31913            0        -1              -1   -2   
+##  4       1 lose      lose  152121           -1        -1              -1   -3   
+##  5       1 tie       tie       16            0         0               0    0   
+##  6       1 winNo     winNo  62986            1         0               0    1   
+##  7       1 winQ      winQ   22533            1         0               1    2   
+##  8       2 lose      lose  120461           -2        -1              -1   -4   
+##  9       2 tie       tie      114            0         0               0    0   
+## 10       2 winNo     winNo 146965            2         0.635           0    2.64
+## 11       2 winQ      winQ  235304            2         0.787           1    3.79
+## # … with abbreviated variable names ¹​resAnte_mean, ²​resAll_mean</code></pre>
 </div>
 </div>
 

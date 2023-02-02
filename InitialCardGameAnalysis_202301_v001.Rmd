@@ -878,7 +878,7 @@ cat("\n",
 ```
   
 Volatility of the main bet is explored, assuming 100 hands:  
-```{r, fig.height=9, fig.width=9}
+```{r, fig.height=9, fig.width=9, cache=TRUE}
 
 dfHandData <- dfResAll_202301_v001 %>%
     select(wType, nOfType, betPlay, starts_with("p")) %>%
@@ -937,5 +937,77 @@ res200
 res200 %>%
     mutate(overall=ante+blind+play) %>%
     summarize(across(.fns=mean))
+```
+  
+The process is converted for parallel processing:  
+```{r, fig.height=9, fig.width=9}
+
+# Simulations of 100 hands
+set.seed(23020115)
+nSims <- 10000
+nPerSim <- 100
+simTotal <- vector("numeric", length=nSims)
+
+# Get the hand numbers for the simulation
+rn <- sample(1:nrow(dfHandData), size=nPerSim*nSims, replace=TRUE, prob=dfHandData$nOfType)
+
+# Get the outcomes for the simulation
+rd <- dfHandData[rn,] %>% 
+    mutate(prob=runif(nPerSim*nSims), 
+           wintie=win+tie, 
+           res=case_when(prob<=pWQ ~ "winQ", 
+                         prob<=win ~ "winNo", 
+                         prob <= wintie ~ "tie", 
+                         prob <= wintie+lose ~ "lose", 
+                         TRUE ~ "ERROR"
+                         )
+           )
+
+# Convert to payouts by bet
+rp <- rd %>%
+    mutate(resActual=ifelse(betPlay==0, "fold", res), 
+           resPlay=case_when(resActual %in% c("winQ", "winNo") ~ betPlay, 
+                             resActual %in% c("fold", "tie") ~ 0, 
+                             resActual %in% c("lose") ~ -betPlay, 
+                             TRUE ~ -Inf
+                             ), 
+           resBlind=case_when(resActual %in% c("winQ", "winNo") ~ blindPay, 
+                              resActual %in% c("tie") ~ 0, 
+                              resActual %in% c("lose", "fold") ~ -1, 
+                              TRUE ~ -Inf
+                              ), 
+           resAnte=case_when(resActual %in% c("winQ") ~ 1, 
+                             resActual %in% c("tie", "winNo") ~ 0, 
+                             resActual %in% c("lose", "fold") ~ -1, 
+                             TRUE ~ -Inf
+                             ), 
+           resAll=resPlay+resBlind+resAnte
+           ) %>%
+    select(wType, betPlay, res, resActual, resPlay, resBlind, resAnte, resAll)
+rp
+
+# Get statistics by key attributes
+rp %>%
+    summarize(n=n(), across(c(resPlay, resBlind, resAnte, resAll), .fns=mean))
+
+rp %>%
+    group_by(wType, betPlay) %>%
+    summarize(n=n(), across(c(resPlay, resBlind, resAnte, resAll), .fns=mean), .groups="drop") %>%
+    arrange(desc(wType), betPlay)
+
+rp %>%
+    group_by(wType, resActual) %>%
+    summarize(n=n(), across(c(resPlay, resBlind, resAnte, resAll), .fns=mean), .groups="drop") %>%
+    arrange(desc(wType), resActual) %>%
+    print(n=40)
+
+rp %>%
+    group_by(betPlay, resActual, res) %>%
+    summarize(n=n(), 
+              across(c(resPlay, resBlind, resAnte, resAll), .fns=list(mean=mean)), 
+              .groups="drop"
+              ) %>%
+    arrange(betPlay)
+
 ```
   
