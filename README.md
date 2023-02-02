@@ -3219,4 +3219,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 explores combined results  
 * InitialCardGameAnalysis_202301_v001 simulates bonus outcomes  
 * InitialCardGameAnalysis_202301_v001 simulates main outcomes  
+* InitialCardGameAnalysis_202301_v001 makes simulation process parallel  
   
