@@ -3220,4 +3220,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 simulates bonus outcomes  
 * InitialCardGameAnalysis_202301_v001 simulates main outcomes  
 * InitialCardGameAnalysis_202301_v001 makes simulation process parallel  
+* Coronavirus_CDC_Daily_v005 downloads and processes latest case, death, and vaccine data  
   
