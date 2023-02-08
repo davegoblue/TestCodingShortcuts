@@ -3227,4 +3227,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 06-FEB-2023  
 * Coronavirus_CDC_Daily_v005 runs updatedMakePeakValley()  
 * Coronavirus_CDC_Daily_v005 runs multiSourceDataCombine()  
+* Coronavirus_CDC_Daily_v005 runs hospitalCapacityCDCDaily()  
   
