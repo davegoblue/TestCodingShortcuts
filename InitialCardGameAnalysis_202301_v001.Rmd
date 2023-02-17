@@ -937,6 +937,7 @@ res200
 res200 %>%
     mutate(overall=ante+blind+play) %>%
     summarize(across(.fns=mean))
+
 ```
   
 The process is converted for parallel processing:  
@@ -1010,4 +1011,56 @@ rp %>%
     arrange(betPlay)
 
 ```
+  
+The value of holding a specific card (no other values known) is explored:  
+```{r, fig.height=9, fig.width=9}
+
+# Full database of hands and outcomes
+fullHandDB <- sortedHandRanks %>%
+    select(handNum, rank, qual, nWild) %>%
+    full_join(select(dfResAll_202301_v001, -handNum), by=c("rank", "nWild")) %>%
+    mutate(nType=tblAllTypes$nType) %>%
+    left_join(select(allValueGrid, wType=wildType, nType=naturalType, bonusPay), by=c("wType", "nType"))
+fullHandDB
+
+# Average bonus value given presence of card in hand
+cardBonusValue <- map_dfr(.x=1:53,
+                          .f=function(x) fullHandDB %>%
+                              mutate(keyHand=ifelse(handNum %in% cardInHand[[x]], "Y", "N")) %>%
+                              group_by(keyHand) %>%
+                              summarize(n=n(), ev=mean(bonusPay), pctWin=mean(bonusPay>0)), 
+                          .id="cardNum"
+                          )
+
+# Check that values are suit independent
+map_dfr(.x=1:13, 
+        .f=function(x) cardBonusValue %>% 
+            filter(as.integer(cardNum) %in% (x+c(0, 13, 26, 39))) %>%
+            group_by(keyHand) %>%
+            summarize(across(where(is.numeric), .fns=function(x) max(x)-min(x))), 
+        .id="cardRank"
+        ) %>%
+    summary()
+
+# Show hand values
+cardBonusValue %>%
+    filter(as.integer(cardNum) %in% c(1:13, 53)) %>%
+    select(haveCard=keyHand, cardNum, ev, winProb=pctWin) %>%
+    pivot_longer(-c(haveCard, cardNum)) %>%
+    mutate(haveCard=ifelse(haveCard=="Y", "1. First card is this", "2. First card is NOT this")) %>%
+    ggplot(aes(x=fct_reorder(cardNum, 
+                             value, 
+                             .fun=function(x) x[order(x, decreasing=TRUE)[2]] + min(x)/100
+                             )
+               )
+           ) + 
+    geom_point(aes(y=value)) + 
+    geom_text(aes(y=value+0.01, label=round(value, 3)), size=2.5, hjust=0) +
+    coord_flip() + 
+    facet_grid(haveCard~name, scales="free_x") +
+    labs(title="Expected value of bonus given single card in hand", y="Average", x="Card Index")
+
+```
+  
+As expected, wild cards are very valuable and make bonus hands much more likely. The deuce is more valuable than the joker since it can make higher-paying natural straights and flushes. Of the non-wild cards, 10 is most valuable (can make any straight, including royal), followed by 7-8-9 (can make any straight, naturally or wild)
   
