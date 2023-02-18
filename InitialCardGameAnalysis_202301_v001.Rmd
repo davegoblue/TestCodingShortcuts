@@ -1064,3 +1064,67 @@ cardBonusValue %>%
   
 As expected, wild cards are very valuable and make bonus hands much more likely. The deuce is more valuable than the joker since it can make higher-paying natural straights and flushes. Of the non-wild cards, 10 is most valuable (can make any straight, including royal), followed by 7-8-9 (can make any straight, naturally or wild)
   
+The value of holding a specific card (no other values known) is explored:  
+```{r, fig.height=9, fig.width=9}
+
+# Average bonus value given presence of card in hand
+cardMainValue <- map_dfr(.x=1:53,
+                         .f=function(x) fullHandDB %>%
+                             mutate(keyHand=ifelse(handNum %in% cardInHand[[x]], "Y", "N")) %>%
+                             group_by(keyHand, betPlay) %>%
+                             summarize(n=n(), 
+                                       across(c(pLQ, pLN, pTQ, pTN, pWQ, pWN, evPlay, evAll), .fns=mean), 
+                                       .groups="drop"
+                                       ), 
+                         .id="cardNum"
+                         )
+
+# Check that values are suit independent
+map_dfr(.x=1:13, 
+        .f=function(x) cardMainValue %>% 
+            filter(as.integer(cardNum) %in% (x+c(0, 13, 26, 39))) %>%
+            group_by(keyHand, betPlay) %>%
+            summarize(across(where(is.numeric), .fns=function(x) max(x)-min(x)), .groups="drop"), 
+        .id="cardRank"
+        ) %>%
+    summary()
+
+# Show play bet size probabilities by initial card
+cardMainValue %>%
+    filter(as.integer(cardNum) %in% c(1:13, 53), keyHand=="Y") %>%
+    group_by(cardNum) %>%
+    mutate(pct=n/sum(n), cumpct=cumsum(pct)-pct/2) %>%
+    ungroup() %>%
+    ggplot(aes(x=factor(cardNum, levels=c(53, 2, 1, 13:3)))) + 
+    geom_col(aes(y=pct, fill=fct_rev(factor(betPlay))), position="fill") + 
+    geom_text(aes(y=cumpct, label=round(pct,3)), size=2.5) +
+    labs(title="Play bet size by initial card", x="Initial card", y="Frequency") + 
+    scale_fill_discrete("Play Bet")
+
+# Show main bet EV by initial card and bet amount
+cardMainValue %>%
+    filter(as.integer(cardNum) %in% c(1:13, 53), keyHand=="Y") %>%
+    group_by(cardNum) %>%
+    summarize(across(c(evPlay, evAll), .fns=function(x) sum(x*n)/sum(n)), .groups="drop") %>%
+    pivot_longer(-c(cardNum)) %>%
+    ggplot(aes(x=factor(cardNum, levels=c(3:13, 1, 2, 53)))) + 
+    geom_col(aes(y=value), fill="lightblue") + 
+    geom_text(aes(y=value/2, label=round(value,3)), size=2.5) +
+    labs(title="EV by initial card", x="Initial card", y="EV") + 
+    coord_flip() +
+    facet_wrap(~name)
+
+# Show main bet EV by initial card and bet amount
+cardMainValue %>%
+    filter(as.integer(cardNum) %in% c(1:13, 53), keyHand=="Y") %>%
+    select(cardNum, betPlay, evPlay, evAll) %>%
+    pivot_longer(-c(cardNum, betPlay)) %>%
+    ggplot(aes(x=factor(cardNum, levels=c(3:13, 1, 2, 53)))) + 
+    geom_col(aes(y=value), fill="lightblue") + 
+    geom_text(aes(y=value/2, label=round(value,3)), size=2.5) +
+    labs(title="EV by initial card and bet size", x="Initial card", y="EV") + 
+    coord_flip() +
+    facet_grid(betPlay~name)
+
+```
+  
