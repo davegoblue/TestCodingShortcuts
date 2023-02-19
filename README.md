@@ -3240,4 +3240,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 updated parameters for 2023  
 * InitialCardGameAnalysis_202301_v001 explores bonus EV given first card  
 * InitialCardGameAnalysis_202301_v001 explores main EV given first card  
+* InitialCardGameAnalysis_202301_v001 explores overall EV given first card  
   
