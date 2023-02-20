@@ -3242,3 +3242,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 explores main EV given first card  
 * InitialCardGameAnalysis_202301_v001 explores overall EV given first card  
   
+### Expansions week of 20-FEB-2023  
+* InitialCardGameAnalysis_202301_v001 explores main EV given first two cards include joker  
+  
