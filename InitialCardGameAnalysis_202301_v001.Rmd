@@ -1152,3 +1152,71 @@ cardMainValue %>%
 
 ```
   
+The value of holding both a wild card and a specific card (no other values known) is explored:  
+```{r, fig.height=9, fig.width=9}
+
+# Average bonus value given presence of card in hand
+cardWithWildValue <- map_dfr(.x=c(1:52),
+                             .f=function(x) fullHandDB %>%
+                                 mutate(keyHand=ifelse(handNum %in% intersect(cardInHand[[x]], cardInHand[[53]]), 
+                                                       "Y", 
+                                                       "N"
+                                                       )
+                                        ) %>%
+                                 group_by(keyHand, betPlay) %>%
+                                 summarize(n=n(), 
+                                           across(c(pLQ, pLN, pTQ, pTN, pWQ, pWN, evPlay, evAll), .fns=mean), 
+                                           .groups="drop"
+                                           ), 
+                             .id="cardNum"
+                             )
+
+# Check that values are suit independent
+map_dfr(.x=1:13, 
+        .f=function(x) cardWithWildValue %>% 
+            filter(as.integer(cardNum) %in% (x+c(0, 13, 26, 39))) %>%
+            group_by(keyHand, betPlay) %>%
+            summarize(across(where(is.numeric), .fns=function(x) max(x)-min(x)), .groups="drop"), 
+        .id="cardRank"
+        ) %>%
+    summary()
+
+# Show play bet size probabilities by second card
+cardWithWildValue %>%
+    filter(as.integer(cardNum) %in% c(1:13), keyHand=="Y") %>%
+    group_by(cardNum) %>%
+    mutate(pct=n/sum(n), cumpct=cumsum(pct)-pct/2) %>%
+    ungroup() %>%
+    ggplot(aes(x=factor(cardNum, levels=c(2, 1, 13:3)))) + 
+    geom_col(aes(y=pct, fill=fct_rev(factor(betPlay))), position="fill") + 
+    geom_text(aes(y=cumpct, label=round(pct,3)), size=2.5) +
+    labs(title="Play bet size by second card given first card joker", x="Second card", y="Frequency") + 
+    scale_fill_discrete("Play Bet")
+
+# Show main bet EV by second card and bet amount
+cardWithWildValue %>%
+    filter(as.integer(cardNum) %in% c(1:13), keyHand=="Y") %>%
+    group_by(cardNum) %>%
+    summarize(across(c(evPlay, evAll), .fns=function(x) sum(x*n)/sum(n)), .groups="drop") %>%
+    pivot_longer(-c(cardNum)) %>%
+    ggplot(aes(x=factor(cardNum, levels=c(3:13, 1, 2)))) + 
+    geom_col(aes(y=value), fill="lightblue") + 
+    geom_text(aes(y=value/2, label=round(value,3)), size=2.5) +
+    labs(title="EV by second card given first card joker", x="Second card", y="EV") + 
+    coord_flip() +
+    facet_wrap(~name)
+
+# Show main bet EV by second card and bet amount
+cardWithWildValue %>%
+    filter(as.integer(cardNum) %in% c(1:13), keyHand=="Y") %>%
+    select(cardNum, betPlay, evPlay, evAll) %>%
+    pivot_longer(-c(cardNum, betPlay)) %>%
+    ggplot(aes(x=factor(cardNum, levels=c(3:13, 1, 2)))) + 
+    geom_col(aes(y=value), fill="lightblue") + 
+    geom_text(aes(y=value/2, label=round(value,3)), size=2.5) +
+    labs(title="EV by second card (assumes first is joker) and bet size", x="Second card", y="EV") + 
+    coord_flip() +
+    facet_grid(betPlay~name)
+
+```
+  
