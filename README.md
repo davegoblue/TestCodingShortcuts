@@ -3247,4 +3247,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 explores main EV given first two cards unsuited  
 * InitialCardGameAnalysis_202301_v001 explores main EV given first two cards suited  
 * InitialCardGameAnalysis_202301_v001 explores card exclusion algorithm  
+* InitialCardGameAnalysis_202301_v001 explores timing of current card exclusion algorithm  
   
