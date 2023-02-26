@@ -3249,4 +3249,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 explores card exclusion algorithm  
 * InitialCardGameAnalysis_202301_v001 explores timing of current card exclusion algorithm  
 * InitialCardGameAnalysis_202301_v001 continues exploring timing of current card exclusion algorithm  
+* InitialCardGameAnalysis_202301_v001 explores counts of hands by suit and number of wilds  
   
