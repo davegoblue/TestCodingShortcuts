@@ -1495,4 +1495,76 @@ handSuit %>%
 
 ```
   
-There is still significant duplication in this data, as 4s-3s-A-K-Q and 4s-3s-K-A-Q are the same for 2-1-1-1. But just this initial filtering reduces the volume to simulate by a factor of 6-7
+There is still significant duplication in this data, as 4s-3s-A-K-Q and 4s-3s-K-A-Q are the same for 2-1-1-1. But just this initial filtering reduces the volume to simulate by a factor of 6-7. As an example, the natural hands with no pair that are A-K-J-x-x are explored:  
+```{r, fig.height=9, fig.width=9}
+
+# Key hands to use - Filter for only descending order
+handEligible <- handSuit %>%
+    filter(n2 <= n1, n3 <= n2, n4 <= n3)
+handEligible
+
+# Eligible hands of type AKJxx
+eligibleAKJxx <- allHandRanks %>% 
+    filter(wType==99, tb1==14, tb2==13, tb3 == 11) %>%
+    semi_join(handEligible, by=c("handNum"))
+eligibleAKJxx
+
+# Create tibble of hand types
+mtxSmallTest <- mtxHands[eligibleAKJxx$handNum,]
+tblSmallTest <- tibble::as_tibble(mtxSmallTest, .name_repair=make.names) %>%
+    purrr::set_names(paste0("V", 1:5)) %>%
+    mutate(handNum=eligibleAKJxx$handNum)
+tblSmallTest
+
+# Get suit counts of descending cards
+tmpCheckSuits <- tblSmallTest %>%
+    pivot_longer(-c(handNum)) %>%
+    mutate(rank=1 + (value-1) %% 13, rank=ifelse(rank==1, 14, rank), suit=(value-1) %/% 13) %>%
+    arrange(handNum, desc(rank))
+tmpCheckSuits
+
+# Get count of hands with Ace as first suit, King as first or second suit - 1,120 hands
+tmpAKJxxUse <- tmpCheckSuits %>%
+    filter((rank==14 & suit==0) | (rank==13 & suit %in% c(0, 1))) %>%
+    group_by(handNum) %>%
+    summarize(n=n()) %>%
+    filter(n==2)
+tmpAKJxxUse
+
+```
+  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Run for example hand of AKJxx that have A as suit 1 and K as suit 1 or 2
+t <- proc.time()
+resAKJxx <- calculateResults(useHandNums=tmpAKJxxUse$handNum)
+proc.time()-t
+
+```
+  
+```{r, fig.height=9, fig.width=9}
+
+# Plot of EV by hand type
+resAKJxx %>% 
+    mutate(evAllIfPlay=2*pWQ+pWN-3*pLQ-3*pLN) %>% 
+    left_join(tmpCheckSuits %>% 
+                  filter(!(rank %in% c(14, 13, 11))) %>% 
+                  group_by(handNum) %>% 
+                  mutate(label=paste0("AKJ", max(rank), min(rank)), label=str_replace(label, "10", "T")) %>% 
+                  filter(row_number()==1) %>% 
+                  ungroup(), 
+              by="handNum"
+              ) %>% 
+    ggplot(aes(x=factor(label))) + 
+    coord_flip() + 
+    labs(x=NULL, 
+         y="Distribution", 
+         title="EV if playing hands of type 99, ranks AKJxx", 
+         subtitle="Fold is EV -2"
+         ) + 
+    geom_boxplot(aes(y=evAllIfPlay), fill="lightblue") + 
+    geom_hline(yintercept=-2, lty=2)
+
+```
+  
+Significant reductions in processing time can be achieved through systemizing an approach like this
