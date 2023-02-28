@@ -1567,4 +1567,98 @@ resAKJxx %>%
 
 ```
   
-Significant reductions in processing time can be achieved through systemizing an approach like this
+Significant reductions in processing time can be achieved through systemizing an approach like this. Additional hand types of Ace-high are also explored:  
+```{r}
+
+# Eligible hands of type AKxxx (excluding AKJxx, already created)
+eligibleAKxxx <- allHandRanks %>% 
+    filter(wType==99, tb1==14, tb2==13, tb3 != 11) %>%
+    semi_join(handEligible, by=c("handNum"))
+eligibleAKxxx
+
+# Create tibble of hand types
+mtxSmallTest <- mtxHands[eligibleAKxxx$handNum,]
+tblSmallTest <- tibble::as_tibble(mtxSmallTest, .name_repair=make.names) %>%
+    purrr::set_names(paste0("V", 1:5)) %>%
+    mutate(handNum=eligibleAKxxx$handNum)
+tblSmallTest
+
+# Get suit counts of descending cards
+tmpCheckSuits <- tblSmallTest %>%
+    pivot_longer(-c(handNum)) %>%
+    mutate(rank=1 + (value-1) %% 13, rank=ifelse(rank==1, 14, rank), suit=(value-1) %/% 13) %>%
+    arrange(handNum, desc(rank))
+tmpCheckSuits
+
+# Get count of hands with Ace as first suit, King as first or second suit - 3,640 hands
+tmpAKxxxUse <- tmpCheckSuits %>%
+    filter((rank==14 & suit==0) | (rank==13 & suit %in% c(0, 1))) %>%
+    group_by(handNum) %>%
+    summarize(n=n()) %>%
+    filter(n==2)
+tmpAKxxxUse
+
+```
+  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Run for all hands of AKxxx (except for AKJxx, previously run)
+t <- proc.time()
+resAKxxx <- calculateResults(useHandNums=tmpAKxxxUse$handNum)
+proc.time()-t
+
+```
+  
+```{r}
+
+# Save file for use later
+resAK99 <- resAKJxx %>%
+    bind_rows(resAKxxx)
+saveToRDS(resAK99, ovrWriteError=FALSE)
+
+```
+  
+```{r, fig.height=9, fig.width=9}
+
+tmpHR <- allHandRanks %>% 
+    filter(wType==99, tb1==14, tb2==13) %>%
+    semi_join(handEligible, by=c("handNum")) %>%
+    pull(handNum)
+
+tmpHS <- mtxHands[tmpHR,] %>%
+    tibble::as_tibble(.name_repair=make.names) %>%
+    purrr::set_names(paste0("V", 1:5)) %>%
+    mutate(handNum=tmpHR) %>%
+    pivot_longer(-c(handNum)) %>%
+    mutate(rank=1 + (value-1) %% 13, rank=ifelse(rank==1, 14, rank), suit=(value-1) %/% 13) %>%
+    arrange(handNum, desc(rank))
+
+# Plot of EV by hand type
+resAK99 %>% 
+    mutate(evAllIfPlay=2*pWQ+pWN-3*pLQ-3*pLN) %>% 
+    left_join(tmpHS %>% 
+                  filter(!(rank %in% c(14, 13))) %>% 
+                  group_by(handNum) %>% 
+                  mutate(label=paste0("AK", max(rank), nth(rank, 2), min(rank)), 
+                         label=str_replace(label, "12", "Q"),
+                         label=str_replace(label, "11", "V"),
+                         label=str_replace(label, "10", "T"),
+                         card3=str_sub(label, 3, 3)
+                         ) %>% 
+                  filter(row_number()==1) %>% 
+                  ungroup(), 
+              by="handNum"
+              ) %>% 
+    ggplot(aes(x=factor(label))) + 
+    coord_flip() + 
+    labs(x=NULL, 
+         y="Distribution", 
+         title="EV if playing hands of type 99, ranks AKxxx", 
+         subtitle="Fold is EV -2"
+         ) + 
+    geom_boxplot(aes(y=evAllIfPlay), fill="lightblue") + 
+    geom_hline(yintercept=-2, lty=2) + 
+    facet_wrap(~(card3 %in% c("Q", "V")), scales="free_y")
+
+```
+  
