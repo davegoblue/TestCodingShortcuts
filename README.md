@@ -3253,4 +3253,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 27-FEB-2023  
 * InitialCardGameAnalysis_202301_v001 explores hands of type AKJxx  
+* InitialCardGameAnalysis_202301_v001 explores hands of type AKxxx  
   
