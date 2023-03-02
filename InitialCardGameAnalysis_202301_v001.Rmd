@@ -1703,4 +1703,65 @@ testSameEV %>%
 
 ```
   
-As an example, AKQJ9 with suits 2-1-1-1 have identical EV provided the matching suit cards are A/K, A/Q, or A/J
+As an example, AKQJ9 with suits 2-1-1-1 have identical EV provided the matching suit cards are A/K, A/Q, or A/J.
+
+Natural hands of type JJxxx are also explored, though suit eligibility needs to be modified:  
+```{r, fig.height=9, fig.width=9}
+
+# Eligible hands of type JJxxx
+eligibleJJxxx <- allHandRanks %>% 
+    filter(wType==11, tb1==11, tb2==11) %>% 
+    semi_join(handSuit %>% filter(n2 <= n1, n4 <= n3, nWild==0), by=c("handNum"))
+eligibleJJxxx
+
+# Create tibble of hand types
+mtxSmallTest <- mtxHands[eligibleJJxxx$handNum,]
+tblSmallTest <- tibble::as_tibble(mtxSmallTest, .name_repair=make.names) %>%
+    purrr::set_names(paste0("V", 1:5)) %>%
+    mutate(handNum=eligibleJJxxx$handNum)
+tblSmallTest
+
+# Get suit counts of descending cards
+tmpCheckSuits <- tblSmallTest %>%
+    pivot_longer(-c(handNum)) %>%
+    mutate(rank=1 + (value-1) %% 13, rank=ifelse(rank==1, 14, rank), suit=(value-1) %/% 13) %>%
+    arrange(handNum, desc(rank))
+tmpCheckSuits
+
+# Get count of hands with Jack as first two suits
+tmpJJxxxUse <- tmpCheckSuits %>%
+    filter((rank==11 & suit==0) | (rank==11 & suit %in% c(1))) %>%
+    group_by(handNum) %>%
+    summarize(n=n()) %>%
+    filter(n==2)
+tmpJJxxxUse
+
+# Get suit counts by whether hands are used
+tmpCheckSuits %>% 
+    group_by(handNum, suit) %>% 
+    summarize(n=n(), .groups="drop") %>% 
+    mutate(suit=paste0("V", suit)) %>%
+    pivot_wider(id_cols=handNum, names_from="suit", values_from="n", values_fill=0) %>%
+    full_join(tmpJJxxxUse, by=c("handNum")) %>%
+    mutate(type=ifelse(is.na(n), "Ineligible", "Eligible")) %>%
+    count(type, V0, V1, V2, V3) %>%
+    print(n=30)
+
+```
+
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Run for all hands of JJxxx (no wild)
+t1 <- proc.time()
+resJJxxx <- calculateResults(useHandNums=tmpJJxxxUse$handNum)
+proc.time()-t1
+
+```
+  
+```{r}
+
+# Save file for use later
+saveToRDS(resJJxxx, ovrWriteError=FALSE)
+
+```
+  
