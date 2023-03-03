@@ -3256,4 +3256,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 explores hands of type AKxxx  
 * InitialCardGameAnalysis_202301_v001 explores identical probability hands of type AKxxx  
 * InitialCardGameAnalysis_202301_v001 explores hands of type JJxxx (no wild)  
+* Coronavirus_CDC_Daily_v005 downloads and processes latest case, death, and vaccine data  
   
