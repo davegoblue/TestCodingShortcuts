@@ -3267,4 +3267,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_USAF_v008 attempted update with latest burden data  
 * Coronavirus_Statistics_CDC_v006 updated with latest data  
 * Coronavirus_Statistics_CDC_v006 plotCDCRestatement() run  
+* InitialCardGameAnalysis_202301_v001 explores evPlay for hands of type JJxxx (no wild)  
   
