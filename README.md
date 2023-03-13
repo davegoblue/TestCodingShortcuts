@@ -3269,3 +3269,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 plotCDCRestatement() run  
 * InitialCardGameAnalysis_202301_v001 explores evPlay for hands of type JJxxx (no wild)  
   
+### Expansions week of 13-MAR-2023  
+* InitialCardGameAnalysis_202301_v001 explores hands of type JJxxx (with wild)  
+  
