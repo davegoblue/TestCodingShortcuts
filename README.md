@@ -3271,4 +3271,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 13-MAR-2023  
 * InitialCardGameAnalysis_202301_v001 explores hands of type JJxxx (with wild)  
+* InitialCardGameAnalysis_202301_v001 explores evPlay for hands of type JJxxx (with wild)  
   
