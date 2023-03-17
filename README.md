@@ -3274,4 +3274,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 explores evPlay for hands of type JJxxx (with wild)  
 * InitialCardGameAnalysis_202301_v001 explores hands of type TTxxx (with wild)  
 * InitialCardGameAnalysis_202301_v001 explores evPlay for hands of type TTxxx (with wild)  
+* InitialCardGameAnalysis_202301_v001 explores hands of type QQxxx (no wild)  
   
