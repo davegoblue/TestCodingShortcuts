@@ -2142,3 +2142,83 @@ resQQxxx %>%
 ```
   
 All natural pairs of rank QQxxx have positive evPlay. There are step-increases as xxx includes one or two cards of rank that can outpair QQ (A or K)
+
+A subset of hands is explored that can be analyzed:  
+  
+1) Wilds, if any, are in ascending order (e.g., 2-15 is OK, but just 53 is not)  
+2) Number of non-wild cards by suit is non-ascending (Spades >= Hearts >= Diamonds >= Clubs)  
+3) If two suits have the same number of cards, the "rank is non-ascending  (Spades >= Hearts >= Diamonds >= Clubs)  
+  
+Code for the first two rules includes:  
+```{r, fig.height=9, fig.width=9}
+
+# Eligible wild combinations
+all5Wild <- purrr::reduce(.x=cardInHand[c(2, 15, 28, 41, 53)], .f=intersect)
+first4Wild <- purrr::reduce(.x=cardInHand[c(2, 15, 28, 41)], .f=intersect) %>%
+    setdiff(purrr::reduce(.x=cardInHand[c(53)], .f=union))
+first3Wild <- purrr::reduce(.x=cardInHand[c(2, 15, 28)], .f=intersect) %>%
+    setdiff(purrr::reduce(.x=cardInHand[c(41, 53)], .f=union))
+first2Wild <- purrr::reduce(.x=cardInHand[c(2, 15)], .f=intersect) %>%
+    setdiff(purrr::reduce(.x=cardInHand[c(28, 41, 53)], .f=union))
+first1Wild <- purrr::reduce(.x=cardInHand[c(2)], .f=intersect) %>%
+    setdiff(purrr::reduce(.x=cardInHand[c(15, 28, 41, 53)], .f=union))
+has0Wild <- (1:nrow(mtxHands)) %>%
+    setdiff(purrr::reduce(.x=cardInHand[c(2, 15, 28, 41, 53)], .f=union))
+wildEligible <- tibble::tibble(handNum=c(all5Wild, first4Wild, first3Wild, first2Wild, first1Wild, has0Wild)) %>%
+    arrange(handNum)
+sortedHandRanks %>%
+    mutate(wildEligible=ifelse(handNum %in% wildEligible$handNum, "Eligible", "Not")) %>%
+    count(nWild, wildEligible) %>%
+    arrange(desc(nWild), wildEligible) %>%
+    pivot_wider(id_cols=c("nWild"), names_from="wildEligible", values_from="n", values_fill=0) %>%
+    bind_rows(colSums(.)) %>%
+    mutate(nWild=case_when(nWild<=5~as.character(nWild), TRUE~"Total"), pctOK=Eligible/(Eligible+Not))
+
+# Count by suit
+t <- proc.time()
+uaSpades <- tibble::tibble(handNum=purrr::reduce(.x=cardInHand[c(1, 3:13)], .f=union_all))
+uaHearts <- tibble::tibble(handNum=purrr::reduce(.x=cardInHand[c(14, 16:26)], .f=union_all))
+uaDiamonds <- tibble::tibble(handNum=purrr::reduce(.x=cardInHand[c(27, 29:39)], .f=union_all))
+uaClubs <- tibble::tibble(handNum=purrr::reduce(.x=cardInHand[c(40, 42:52)], .f=union_all))
+uaAll <- bind_rows(uaSpades, uaHearts, uaDiamonds, uaClubs, .id="suit") %>%
+    mutate(suit=c("1"="Spades", "2"="Hearts", "3"="Diamonds", "4"="Clubs")[suit])
+nPerSuit <- uaAll %>%
+    mutate(n=1) %>%
+    pivot_wider(id_cols="handNum", names_from="suit", values_from="n", values_fn=sum, values_fill=0)
+proc.time()-t
+
+# Analysis of eligibility
+suitCountEligible <- nPerSuit %>%
+    mutate(isOK=ifelse((Spades >= Hearts) & (Hearts >= Diamonds) & (Diamonds >= Clubs), "yes", "no"))
+suitCountIneligible <- suitCountEligible %>% filter(isOK=="no") %>% pull(handNum)
+sortedHandRanks %>%
+    mutate(wildEligible=ifelse(handNum %in% wildEligible$handNum, "Eligible", "Not"), 
+           suitCountEligible=ifelse(handNum %in% suitCountIneligible, "Not", "Eligible")
+           ) %>%
+    count(nWild, wildEligible, suitCountEligible) %>%
+    mutate(nEligible=ifelse(wildEligible=="Eligible" & suitCountEligible=="Eligible", n, 0))
+
+# Masks for suits
+t <- proc.time()
+maskSpade <- mtxHands %in% c(1, 3:13) %>% matrix(nrow=nrow(mtxHands), ncol=5, byrow=FALSE)
+maskHeart <- mtxHands %in% (13+c(1, 3:13)) %>% matrix(nrow=nrow(mtxHands), ncol=5, byrow=FALSE)
+maskDiamond <- mtxHands %in% (26+c(1, 3:13)) %>% matrix(nrow=nrow(mtxHands), ncol=5, byrow=FALSE)
+maskClub <- mtxHands %in% (39+c(1, 3:13)) %>% matrix(nrow=nrow(mtxHands), ncol=5, byrow=FALSE)
+suitCountCheck <- tibble::tibble(handNum=1:nrow(mtxHands),
+                                 nSpade=rowSums(maskSpade), 
+                                 nHeart=rowSums(maskHeart), 
+                                 nDiamond=rowSums(maskDiamond), 
+                                 nClub=rowSums(maskClub)
+                                 )
+proc.time()-t
+
+# Confirm same results
+nPerSuit %>%
+    right_join(select(sortedHandRanks, handNum), by="handNum") %>%
+    mutate(across(-c(handNum), .fns=function(x) ifelse(is.na(x), 0, x))) %>%
+    arrange(handNum) %>%
+    purrr::set_names(names(suitCountCheck)) %>%
+    identical(x=., y=suitCountCheck)
+
+```
+  

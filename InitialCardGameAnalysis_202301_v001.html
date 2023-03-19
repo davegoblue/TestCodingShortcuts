@@ -988,7 +988,7 @@ t &lt;- proc.time(); getKeyValues(exHandRank, exclCards=mtxHands[exHandNum,], df
 ##   &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt;    &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;   &lt;int&gt;   &lt;dbl&gt; &lt;dbl&gt;
 ## 1 0.735 0.0408     0 0.000141     0 0.224 1712304   0.224  4509</code></pre>
 <pre><code>##    user  system elapsed 
-##    0.98    0.08    1.14</code></pre>
+##    0.78    0.10    0.95</code></pre>
 <pre class="r"><code># Heads up probabilities, dealer does not have a wild card
 t &lt;- proc.time() 
 getKeyValues(exHandRank, exclCards=unique(c(mtxHands[exHandNum,], 2, 15, 28, 41, 53)), dfSort=smallSorted)</code></pre>
@@ -998,7 +998,7 @@ getKeyValues(exHandRank, exclCards=unique(c(mtxHands[exHandNum,], 2, 15, 28, 41,
 ## 1 0.529 0.0725     0 0.000250     0 0.398 962598   0.398  4509</code></pre>
 <pre class="r"><code>proc.time() - t</code></pre>
 <pre><code>##    user  system elapsed 
-##    1.19    0.20    1.64</code></pre>
+##    0.81    0.14    1.00</code></pre>
 <p>As expected, probabilities change slightly due to cards made
 unavailable (in player’s hands or otherwise). Wild cards are very
 important in expected value of hand quality</p>
@@ -2134,7 +2134,7 @@ map(1:10,
 ##   ..$ n   : int [1:4675] 1 605 53 53 87 53 87 104 69 104 ...</code></pre>
 <pre class="r"><code>proc.time() - t</code></pre>
 <pre><code>##    user  system elapsed 
-##   12.79    5.54   22.07</code></pre>
+##    9.36    3.78   13.33</code></pre>
 <pre class="r"><code># Existing process
 t &lt;- proc.time()
 calculateResults(useHandNums=1:10)</code></pre>
@@ -2155,7 +2155,7 @@ calculateResults(useHandNums=1:10)</code></pre>
 ## #   evBlind &lt;dbl&gt;, evAll &lt;dbl&gt;</code></pre>
 <pre class="r"><code>proc.time() - t</code></pre>
 <pre><code>##    user  system elapsed 
-##    6.38    1.76    9.01</code></pre>
+##    4.49    1.11    5.64</code></pre>
 <pre class="r"><code>cat(&quot;\nThe existing process would take around&quot;, round(choose(53,5) * 5 / 10 / 60), &quot;minutes for all hands\n&quot;)</code></pre>
 <pre><code>## 
 ## The existing process would take around 23914 minutes for all hands</code></pre>
@@ -2167,7 +2167,7 @@ t &lt;- proc.time()
 for(intCtr in 1:100) tmp &lt;- purrr::reduce(.x=cardInHand[c(1, 2, 3, 4, 5)], .f=union)
 proc.time() - t</code></pre>
 <pre><code>##    user  system elapsed 
-##   17.36    3.06   25.02</code></pre>
+##    9.29    2.06   11.40</code></pre>
 <pre class="r"><code># Timing impact for finding hand values (2.5 hands per second, 0.4 seconds per hand)
 tmpRank &lt;- sortedHandRanks$rank[1]
 t &lt;- proc.time()
@@ -2186,7 +2186,7 @@ for(intCtr in 1:100) {
 }
 proc.time() - t</code></pre>
 <pre><code>##    user  system elapsed 
-##   44.49   11.51   63.41</code></pre>
+##   32.28    8.85   41.58</code></pre>
 <p>The function for assessing probabilities of win, tie, lose, and
 qualify takes ~80% of the time, and is a candidate for further
 exploration:</p>
@@ -2204,7 +2204,7 @@ for(intCtr in 1:100) {
 }
 proc.time() - t</code></pre>
 <pre><code>##    user  system elapsed 
-##   48.23   13.75   69.03</code></pre>
+##   35.21   10.86   46.74</code></pre>
 <pre class="r"><code>t &lt;- proc.time()
 for(intCtr in 1:100) {
     sortedHandRanks %&gt;%
@@ -2212,7 +2212,7 @@ for(intCtr in 1:100) {
 }
 proc.time() - t</code></pre>
 <pre><code>##    user  system elapsed 
-##   22.46    7.58   32.48</code></pre>
+##   16.01    5.86   22.05</code></pre>
 <pre class="r"><code>t &lt;- proc.time()
 for(intCtr in 1:100) {
     smallSorted %&gt;%
@@ -2220,7 +2220,7 @@ for(intCtr in 1:100) {
 }
 proc.time() - t</code></pre>
 <pre><code>##    user  system elapsed 
-##   19.70    4.53   26.91</code></pre>
+##   12.88    3.55   16.90</code></pre>
 <p>Creating a variable and then counting is slower than summarizing. A
 significant chunk of the time is in the filtering to only the relevant
 hands. Most of the time takes place in the actual filtering step, even
@@ -3399,6 +3399,118 @@ resQQxxx %&gt;%
 <p>All natural pairs of rank QQxxx have positive evPlay. There are
 step-increases as xxx includes one or two cards of rank that can outpair
 QQ (A or K)</p>
+<p>A subset of hands is explored that can be analyzed:</p>
+<ol style="list-style-type: decimal">
+<li>Wilds, if any, are in ascending order (e.g., 2-15 is OK, but just 53
+is not)<br />
+</li>
+<li>Number of non-wild cards by suit is non-ascending (Spades &gt;=
+Hearts &gt;= Diamonds &gt;= Clubs)<br />
+</li>
+<li>If two suits have the same number of cards, the “rank is
+non-ascending (Spades &gt;= Hearts &gt;= Diamonds &gt;= Clubs)</li>
+</ol>
+<p>Code for the first two rules includes:</p>
+<pre class="r"><code># Eligible wild combinations
+all5Wild &lt;- purrr::reduce(.x=cardInHand[c(2, 15, 28, 41, 53)], .f=intersect)
+first4Wild &lt;- purrr::reduce(.x=cardInHand[c(2, 15, 28, 41)], .f=intersect) %&gt;%
+    setdiff(purrr::reduce(.x=cardInHand[c(53)], .f=union))
+first3Wild &lt;- purrr::reduce(.x=cardInHand[c(2, 15, 28)], .f=intersect) %&gt;%
+    setdiff(purrr::reduce(.x=cardInHand[c(41, 53)], .f=union))
+first2Wild &lt;- purrr::reduce(.x=cardInHand[c(2, 15)], .f=intersect) %&gt;%
+    setdiff(purrr::reduce(.x=cardInHand[c(28, 41, 53)], .f=union))
+first1Wild &lt;- purrr::reduce(.x=cardInHand[c(2)], .f=intersect) %&gt;%
+    setdiff(purrr::reduce(.x=cardInHand[c(15, 28, 41, 53)], .f=union))
+has0Wild &lt;- (1:nrow(mtxHands)) %&gt;%
+    setdiff(purrr::reduce(.x=cardInHand[c(2, 15, 28, 41, 53)], .f=union))
+wildEligible &lt;- tibble::tibble(handNum=c(all5Wild, first4Wild, first3Wild, first2Wild, first1Wild, has0Wild)) %&gt;%
+    arrange(handNum)
+sortedHandRanks %&gt;%
+    mutate(wildEligible=ifelse(handNum %in% wildEligible$handNum, &quot;Eligible&quot;, &quot;Not&quot;)) %&gt;%
+    count(nWild, wildEligible) %&gt;%
+    arrange(desc(nWild), wildEligible) %&gt;%
+    pivot_wider(id_cols=c(&quot;nWild&quot;), names_from=&quot;wildEligible&quot;, values_from=&quot;n&quot;, values_fill=0) %&gt;%
+    bind_rows(colSums(.)) %&gt;%
+    mutate(nWild=case_when(nWild&lt;=5~as.character(nWild), TRUE~&quot;Total&quot;), pctOK=Eligible/(Eligible+Not))</code></pre>
+<pre><code>## # A tibble: 7 × 4
+##   nWild Eligible    Not pctOK
+##   &lt;chr&gt;    &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt;
+## 1 5            1      0 1    
+## 2 4           48    192 0.2  
+## 3 3         1128  10152 0.1  
+## 4 2        17296 155664 0.1  
+## 5 1       194580 778320 0.2  
+## 6 0      1712304      0 1    
+## 7 Total  1925357 944328 0.671</code></pre>
+<pre class="r"><code># Count by suit
+t &lt;- proc.time()
+uaSpades &lt;- tibble::tibble(handNum=purrr::reduce(.x=cardInHand[c(1, 3:13)], .f=union_all))
+uaHearts &lt;- tibble::tibble(handNum=purrr::reduce(.x=cardInHand[c(14, 16:26)], .f=union_all))
+uaDiamonds &lt;- tibble::tibble(handNum=purrr::reduce(.x=cardInHand[c(27, 29:39)], .f=union_all))
+uaClubs &lt;- tibble::tibble(handNum=purrr::reduce(.x=cardInHand[c(40, 42:52)], .f=union_all))
+uaAll &lt;- bind_rows(uaSpades, uaHearts, uaDiamonds, uaClubs, .id=&quot;suit&quot;) %&gt;%
+    mutate(suit=c(&quot;1&quot;=&quot;Spades&quot;, &quot;2&quot;=&quot;Hearts&quot;, &quot;3&quot;=&quot;Diamonds&quot;, &quot;4&quot;=&quot;Clubs&quot;)[suit])
+nPerSuit &lt;- uaAll %&gt;%
+    mutate(n=1) %&gt;%
+    pivot_wider(id_cols=&quot;handNum&quot;, names_from=&quot;suit&quot;, values_from=&quot;n&quot;, values_fn=sum, values_fill=0)
+proc.time()-t</code></pre>
+<pre><code>##    user  system elapsed 
+##   25.69    1.54   27.59</code></pre>
+<pre class="r"><code># Analysis of eligibility
+suitCountEligible &lt;- nPerSuit %&gt;%
+    mutate(isOK=ifelse((Spades &gt;= Hearts) &amp; (Hearts &gt;= Diamonds) &amp; (Diamonds &gt;= Clubs), &quot;yes&quot;, &quot;no&quot;))
+suitCountIneligible &lt;- suitCountEligible %&gt;% filter(isOK==&quot;no&quot;) %&gt;% pull(handNum)
+sortedHandRanks %&gt;%
+    mutate(wildEligible=ifelse(handNum %in% wildEligible$handNum, &quot;Eligible&quot;, &quot;Not&quot;), 
+           suitCountEligible=ifelse(handNum %in% suitCountIneligible, &quot;Not&quot;, &quot;Eligible&quot;)
+           ) %&gt;%
+    count(nWild, wildEligible, suitCountEligible) %&gt;%
+    mutate(nEligible=ifelse(wildEligible==&quot;Eligible&quot; &amp; suitCountEligible==&quot;Eligible&quot;, n, 0))</code></pre>
+<pre><code>## # A tibble: 19 × 5
+##    nWild wildEligible suitCountEligible       n nEligible
+##    &lt;dbl&gt; &lt;chr&gt;        &lt;chr&gt;               &lt;int&gt;     &lt;dbl&gt;
+##  1     0 Eligible     Eligible           219252    219252
+##  2     0 Eligible     Not               1493052         0
+##  3     1 Eligible     Eligible            37731     37731
+##  4     1 Eligible     Not                156849         0
+##  5     1 Not          Eligible           150924         0
+##  6     1 Not          Not                627396         0
+##  7     2 Eligible     Eligible             2740      2740
+##  8     2 Eligible     Not                 14556         0
+##  9     2 Not          Eligible            24660         0
+## 10     2 Not          Not                131004         0
+## 11     3 Eligible     Eligible              210       210
+## 12     3 Eligible     Not                   918         0
+## 13     3 Not          Eligible             1890         0
+## 14     3 Not          Not                  8262         0
+## 15     4 Eligible     Eligible               12        12
+## 16     4 Eligible     Not                    36         0
+## 17     4 Not          Eligible               48         0
+## 18     4 Not          Not                   144         0
+## 19     5 Eligible     Eligible                1         1</code></pre>
+<pre class="r"><code># Masks for suits
+t &lt;- proc.time()
+maskSpade &lt;- mtxHands %in% c(1, 3:13) %&gt;% matrix(nrow=nrow(mtxHands), ncol=5, byrow=FALSE)
+maskHeart &lt;- mtxHands %in% (13+c(1, 3:13)) %&gt;% matrix(nrow=nrow(mtxHands), ncol=5, byrow=FALSE)
+maskDiamond &lt;- mtxHands %in% (26+c(1, 3:13)) %&gt;% matrix(nrow=nrow(mtxHands), ncol=5, byrow=FALSE)
+maskClub &lt;- mtxHands %in% (39+c(1, 3:13)) %&gt;% matrix(nrow=nrow(mtxHands), ncol=5, byrow=FALSE)
+suitCountCheck &lt;- tibble::tibble(handNum=1:nrow(mtxHands),
+                                 nSpade=rowSums(maskSpade), 
+                                 nHeart=rowSums(maskHeart), 
+                                 nDiamond=rowSums(maskDiamond), 
+                                 nClub=rowSums(maskClub)
+                                 )
+proc.time()-t</code></pre>
+<pre><code>##    user  system elapsed 
+##    1.56    0.44    2.02</code></pre>
+<pre class="r"><code># Confirm same results
+nPerSuit %&gt;%
+    right_join(select(sortedHandRanks, handNum), by=&quot;handNum&quot;) %&gt;%
+    mutate(across(-c(handNum), .fns=function(x) ifelse(is.na(x), 0, x))) %&gt;%
+    arrange(handNum) %&gt;%
+    purrr::set_names(names(suitCountCheck)) %&gt;%
+    identical(x=., y=suitCountCheck)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
 </div>
 </div>
 
