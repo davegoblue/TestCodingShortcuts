@@ -3278,3 +3278,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 explores evPlay for hands of type QQxxx (no wild)  
 * InitialCardGameAnalysis_202301_v001 explores subsetting to non-duplicated (suit) hands  
   
+### Expansions week of 20-MAR-2023  
+* InitialCardGameAnalysis_202301_v001 explores counts of subsetted non-duplicated (suit) hands  
+  
