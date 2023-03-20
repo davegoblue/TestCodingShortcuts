@@ -2222,3 +2222,84 @@ nPerSuit %>%
 
 ```
   
+The suit combinations of eligible hands are explored:  
+```{r, fig.height=9, fig.width=9}
+
+suitRankCountTable <- sortedHandRanks %>% 
+    select(handNum, nWild) %>% 
+    left_join(nPerSuit, by=c("handNum")) %>% 
+    mutate(across(-c(handNum, nWild), .fns=function(x) ifelse(is.na(x), 0, x)), 
+           wildEligible=ifelse(handNum %in% wildEligible$handNum, "Eligible", "Not"), 
+           suitEligible=ifelse((Spades>=Hearts) & (Hearts>=Diamonds) & (Diamonds>=Clubs), "yes", "no")
+           ) %>% 
+    count(nWild, wildEligible, suitEligible, Spades, Hearts, Diamonds, Clubs) %>% 
+    filter(wildEligible=="Eligible", suitEligible=="yes") %>% 
+    arrange(-nWild, -Spades, -Hearts) %>%
+    select(nWild, wildEligible, suitEligible, everything())
+suitRankCountTable
+
+# Duplicated combinations of 1-1-1-1 and 2-2
+tmpSingleRank <- expand.grid(spades=3:14, hearts=3:14, diamonds=3:14, clubs=3:14) %>%
+    tibble::as_tibble()
+tmpSingleRank
+
+# Resolving ties of type 1-1 (assume spades and hearts, suits are invariant)
+elig11 <- tmpSingleRank %>%
+    select(spades, hearts) %>%
+    unique() %>%
+    mutate(eligible=ifelse(spades>=hearts, "yes", "no"))
+elig11 %>% count(eligible) %>% mutate(pct=n/sum(n))
+
+# Resolving ties of type 2-2 (assume spades and hearts, suits are invariant)
+elig22 <- tmpSingleRank %>%
+    rename(spade2=diamonds, heart2=clubs) %>%
+    filter(spades>spade2, hearts>heart2) %>%
+    unique() %>%
+    mutate(eligible=ifelse((spades>hearts) | (spades==hearts & spade2>=heart2), "yes", "no"))
+elig22 %>% count(eligible) %>% mutate(pct=n/sum(n))
+
+# Resolving ties of type 1-1-1 (assume spades and hearts and diamonds, suits are invariant)
+elig111 <- tmpSingleRank %>%
+    select(spades, hearts, diamonds) %>%
+    unique() %>%
+    mutate(eligible=ifelse((spades>=hearts) & (hearts>=diamonds), "yes", "no"))
+elig111 %>% count(eligible) %>% mutate(pct=n/sum(n))
+
+# Resolving ties of type 1-1-1-1 (all suits)
+elig1111 <- tmpSingleRank %>%
+    select(spades, hearts, diamonds, clubs) %>%
+    unique() %>%
+    mutate(eligible=ifelse((spades>=hearts) & (hearts>=diamonds) & (diamonds>=clubs), "yes", "no"))
+elig1111 %>% count(eligible) %>% mutate(pct=n/sum(n))
+
+# Full eligibility data
+eligibleMap <- sapply(list(elig11, elig111, elig1111, elig22), FUN=function(x) mean(x$eligible=="yes")) %>%
+    purrr::set_names(c("1-1", "1-1-1", "1-1-1-1", "2-2"))
+eligibleMap <- c(eligibleMap, "none"=1)
+eligibleMap
+
+# Expected hands after de-duplications
+suitRankCountDedup <- suitRankCountTable %>%
+    mutate(dupType=case_when((Spades==1 & Hearts==1 & Diamonds==0)~"1-1", 
+                             (Spades==1 & Hearts==1 & Diamonds==1 & Clubs==0)~"1-1-1", 
+                             (Spades==2 & Hearts==2)~"2-2", 
+                             (Spades>1 & Hearts==1 & Diamonds==1 & Clubs==0)~"1-1", 
+                             (Spades==1 & Hearts==1 & Diamonds==1 & Clubs==1)~"1-1-1-1", 
+                             (Spades>1 & Hearts==1 & Diamonds==1 & Clubs==1)~"1-1-1", 
+                             TRUE~"none"
+                             ), 
+           dedupRatio=eligibleMap[dupType], 
+           uniqueN=n*dedupRatio
+           )
+suitRankCountDedup
+suitRankCountDedup %>% 
+    group_by(nWild) %>%
+    summarize(across(c(n, uniqueN), .fns=sum)) %>%
+    arrange(desc(nWild)) %>%
+    column_to_rownames("nWild") %>%
+    mutate(pctUniqueN=round(uniqueN/sum(uniqueN),4)) %>%
+    bind_rows(colSums(.))
+
+```
+  
+After de-duplication, there are 102,360 unique hands that can be dealt in the game (assuming that the rank of wilds does not matter and that the highest-powered suit in order is spades, hearts, diamonds, clubs). Most of these are hands that do not contain a wild
