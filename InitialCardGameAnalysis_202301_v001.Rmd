@@ -2303,3 +2303,102 @@ suitRankCountDedup %>%
 ```
   
 After de-duplication, there are 102,360 unique hands that can be dealt in the game (assuming that the rank of wilds does not matter and that the highest-powered suit in order is spades, hearts, diamonds, clubs). Most of these are hands that do not contain a wild
+
+The subset of non-duplicated hands with no wilds are extracted:  
+```{r, fig.height=9, fig.width=9}
+
+# Create a tibble of hands
+tblHands <- tibble::as_tibble(mtxHands) %>%
+    mutate(handNum=1:nrow(.))
+tblHands
+
+# Get the relevant last 3 cards for 2-1-1-1
+tmpLast3 <- elig111 %>%
+    mutate(across(c(spades, hearts, diamonds), .fns=function(x) ifelse(x==14, 1, x))) %>%
+    filter(eligible=="yes") %>%
+    rename(V5=diamonds, V4=hearts, V3=spades) %>%
+    mutate(V3=V3+13, V4=V4+26, V5=V5+39)
+
+# Get the set of 2-1-1-1 hands
+hn2111 <- tblHands %>%
+    semi_join(select(tmpLast3, V3, V4, V5), by=c("V3", "V4", "V5")) %>%
+    filter(V1 %in% c(1, 3:13), V2 %in% c(1, 3:13))
+hn2111
+
+# Check that hand numbers are all eligible
+nPerSuit %>%
+    semi_join(hn2111, by="handNum") %>%
+    mutate(wildOK=ifelse(handNum %in% wildEligible$handNum, "yes", "no")) %>%
+    count(wildOK, Spades, Hearts, Diamonds, Clubs)
+
+
+# Get the relevant first 4 cards for 2-2-1
+tmpFirst4 <- elig22 %>%
+    mutate(across(c(spades, spade2, hearts, heart2), .fns=function(x) ifelse(x==14, 1, x))) %>%
+    filter(eligible=="yes") %>%
+    mutate(V1=pmin(spades, spade2), 
+           V2=pmax(spades, spade2), 
+           V3=13+pmin(hearts, heart2),
+           V4=13+pmax(hearts, heart2)
+           )
+
+# Get the set of 2-2-1 hands
+hn221 <- tblHands %>%
+    semi_join(select(tmpFirst4, V1, V2, V3, V4), by=c("V1", "V2", "V3", "V4")) %>%
+    filter(V5 %in% c(27, 29:39))
+hn221
+
+# Check that hand numbers are all eligible
+nPerSuit %>%
+    semi_join(hn221, by="handNum") %>%
+    mutate(wildOK=ifelse(handNum %in% wildEligible$handNum, "yes", "no")) %>%
+    count(wildOK, Spades, Hearts, Diamonds, Clubs)
+
+
+# Get the relevant last 2 cards for 3-1-1
+tmpLast2 <- elig11 %>%
+    mutate(across(c(spades, hearts), .fns=function(x) ifelse(x==14, 1, x))) %>%
+    filter(eligible=="yes") %>%
+    mutate(V4=spades+13, V5=hearts+26)
+
+# Get the set of 3-1-1 hands
+hn311 <- tblHands %>%
+    semi_join(select(tmpLast2, V4, V5), by=c("V4", "V5")) %>%
+    filter(V1 %in% c(1, 3:13), V2 %in% c(1, 3:13), V3 %in% c(1, 3:13))
+hn311
+
+# Check that hand numbers are all eligible
+nPerSuit %>%
+    semi_join(hn311, by="handNum") %>%
+    mutate(wildOK=ifelse(handNum %in% wildEligible$handNum, "yes", "no")) %>%
+    count(wildOK, Spades, Hearts, Diamonds, Clubs)
+
+
+# Get the set of 3-2-0 and 4-1-0 and 5-0-0 hands
+tmp3Plus <- nPerSuit %>%
+    filter((Spades==5) | (Spades==4 & Hearts==1) | (Spades==3 & Hearts==2))
+
+hn3Plus <- tblHands %>%
+    semi_join(select(tmp3Plus, handNum), by=c("handNum"))
+hn3Plus
+
+# Check that hand numbers are all eligible
+nPerSuit %>%
+    semi_join(hn3Plus, by="handNum") %>%
+    mutate(wildOK=ifelse(handNum %in% wildEligible$handNum, "yes", "no")) %>%
+    count(wildOK, Spades, Hearts, Diamonds, Clubs)
+
+
+# Integrate all relevant hand numbers
+hn0Wild <- bind_rows(hn2111, hn221, hn311, hn3Plus) %>%
+    left_join(select(sortedHandRanks, handNum, wType, qual, nWild), by=c("handNum")) %>%
+    left_join(nPerSuit, by=c("handNum"))
+hn0Wild
+
+# Summarize hand types and suits
+hn0Wild %>% count(nWild, Spades, Hearts, Diamonds, Clubs)
+hn0Wild %>% count(nWild, qual, wType)
+hn0Wild %>% count(nWild, qual, wType, Spades, Hearts, Diamonds, Clubs) %>% print(n=30)
+
+```
+  
