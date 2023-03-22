@@ -3281,4 +3281,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 20-MAR-2023  
 * InitialCardGameAnalysis_202301_v001 explores counts of subsetted non-duplicated (suit) hands  
 * InitialCardGameAnalysis_202301_v001 creates all non-duplicated (suit) zero-wild hands  
+* InitialCardGameAnalysis_202301_v001 evaluates groups a and b of non-duplicated (suit) zero-wild hands  
   
