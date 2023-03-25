@@ -2529,17 +2529,117 @@ runHandSequence(handNums=seq2g$handNum, rdsName="ICGA_v001_seq2g", skipIfExists=
 
 ```
   
-```{r, fig.height=9, fig.width=9, cache=TRUE, eval=FALSE}
+```{r, fig.height=9, fig.width=9, cache=TRUE}
 
 # Run for all non-duplicate hands of type 11 (one pair) with no wild, sequence h
 runHandSequence(handNums=seq2h$handNum, rdsName="ICGA_v001_seq2h", skipIfExists=TRUE, saveFile=TRUE)
 
 ```
   
-```{r, fig.height=9, fig.width=9, cache=TRUE, eval=FALSE}
+```{r, fig.height=9, fig.width=9, cache=TRUE}
 
 # Run for all non-duplicate hands of type 10 (two pair) or better with no wild, sequence j
 runHandSequence(handNums=seq2j$handNum, rdsName="ICGA_v001_seq2j", skipIfExists=TRUE, saveFile=TRUE)
+
+```
+  
+The subset of non-duplicated hands with one wild are extracted:  
+```{r, fig.height=9, fig.width=9}
+
+# Get the relevant last 4 cards for 1-1-1-1
+tmpLast4 <- elig1111 %>%
+    mutate(across(c(spades, hearts, diamonds, clubs), .fns=function(x) ifelse(x==14, 1, x))) %>%
+    filter(eligible=="yes") %>%
+    rename(V5=clubs, V4=diamonds, V3=hearts) %>%
+    mutate(V1=ifelse(spades==1, spades, 2), V2=ifelse(spades==1, 2, spades), V3=V3+13, V4=V4+26, V5=V5+39)
+
+# Get the set of 1-1-1-1 hands
+hn1111 <- tblHands %>%
+    semi_join(select(tmpLast4, V1, V2, V3, V4, V5), by=c("V1", "V2", "V3", "V4", "V5"))
+hn1111
+
+# Check that hand numbers are all eligible
+nPerSuit %>%
+    semi_join(hn1111, by="handNum") %>%
+    mutate(wildOK=ifelse(handNum %in% wildEligible$handNum, "yes", "no")) %>%
+    count(wildOK, Spades, Hearts, Diamonds, Clubs)
+
+
+# Get the relevant first 4 cards for 2-2-0
+tmpWild22 <- elig22 %>%
+    mutate(across(c(spades, spade2, hearts, heart2), .fns=function(x) ifelse(x==14, 1, x))) %>%
+    filter(eligible=="yes") %>%
+    mutate(V1=pmin(spades, 2, spade2), 
+           V2=ifelse(V1==1, 2, pmin(spades, spade2)),
+           V3=pmax(spades, 2, spade2), 
+           V4=13+pmin(hearts, heart2),
+           V5=13+pmax(hearts, heart2)
+           )
+
+# Get the set of 2-2-0 hands
+hn22 <- tblHands %>%
+    semi_join(select(tmpWild22, V1, V2, V3, V4, V5), by=c("V1", "V2", "V3", "V4", "V5"))
+hn22
+
+# Check that hand numbers are all eligible
+nPerSuit %>%
+    semi_join(hn22, by="handNum") %>%
+    mutate(wildOK=ifelse(handNum %in% wildEligible$handNum, "yes", "no")) %>%
+    count(wildOK, Spades, Hearts, Diamonds, Clubs)
+
+
+# Get the relevant last 2 cards for 2-1-1
+tmpWild11 <- elig11 %>%
+    mutate(across(c(spades, hearts), .fns=function(x) ifelse(x==14, 1, x))) %>%
+    filter(eligible=="yes") %>%
+    mutate(V4=spades+13, V5=hearts+26)
+
+# Get the set of 2-1-1 hands
+hn211 <- tblHands %>%
+    semi_join(select(tmpWild11, V4, V5), by=c("V4", "V5")) %>%
+    filter(V1 %in% c(1:13), V2 %in% c(1:13), V3 %in% c(1:13), V1==2 | V2==2)
+hn211
+
+# Check that hand numbers are all eligible
+nPerSuit %>%
+    semi_join(hn211, by="handNum") %>%
+    mutate(wildOK=ifelse(handNum %in% wildEligible$handNum, "yes", "no")) %>%
+    count(wildOK, Spades, Hearts, Diamonds, Clubs)
+
+
+# Get the set of 3-1-0 and 4-0-0 hands
+tmpWild34 <- nPerSuit %>%
+    filter((Spades==3 & Hearts==1 & Diamonds==0 & Clubs==0) | (Spades==4 & Hearts==0 & Diamonds==0 & Clubs==0))
+
+hnWild34 <- tblHands %>%
+    semi_join(select(tmpWild34, handNum), by=c("handNum")) %>%
+    filter(V1==2 | V2==2)
+hnWild34
+
+# Check that hand numbers are all eligible
+nPerSuit %>%
+    semi_join(hnWild34, by="handNum") %>%
+    mutate(wildOK=ifelse(handNum %in% wildEligible$handNum, "yes", "no")) %>%
+    count(wildOK, Spades, Hearts, Diamonds, Clubs)
+
+
+# Integrate all relevant hand numbers
+hn1Wild <- bind_rows(hn1111, hn22, hn211, hnWild34) %>%
+    left_join(select(sortedHandRanks, handNum, wType, qual, nWild), by=c("handNum")) %>%
+    left_join(nPerSuit, by=c("handNum"))
+hn1Wild
+
+# Summarize hand types and suits
+hn1Wild %>% count(nWild, Spades, Hearts, Diamonds, Clubs)
+hn1Wild %>% count(nWild, qual, wType)
+hn1Wild %>% count(nWild, qual, wType, Spades, Hearts, Diamonds, Clubs) %>% print(n=30)
+
+```
+  
+```{r, fig.height=9, fig.width=9, cache=TRUE, eval=FALSE}
+
+# Run for all non-duplicate hands of type 10 (two pair) or better with no wild, sequence j
+runHandSequence(handNums=hn1Wild$handNum, rdsName="ICGA_v001_1wild", skipIfExists=TRUE, saveFile=TRUE)
 
 ```
   
