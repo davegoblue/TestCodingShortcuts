@@ -3287,3 +3287,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 evaluates groups h and j of non-duplicated (suit) zero-wild hands  
 * InitialCardGameAnalysis_202301_v001 evaluates non-duplicated (suit) one-wild hands  
   
+### Expansions week of 27-MAR-2023  
+* InitialCardGameAnalysis_202301_v001 evaluates non-duplicated (suit) two-wild hands  
+  
