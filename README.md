@@ -3290,4 +3290,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 27-MAR-2023  
 * InitialCardGameAnalysis_202301_v001 evaluates non-duplicated (suit) two-wild hands  
 * InitialCardGameAnalysis_202301_v001 evaluates non-duplicated (suit) three-plus-wild hands  
+* InitialCardGameAnalysis_202301_v001 consolidates non-duplicated (suit) hand results  
   
