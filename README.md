@@ -3294,4 +3294,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 plots win probability by rank  
 * InitialCardGameAnalysis_202301_v001 plots win probability for non-paired hands  
 * InitialCardGameAnalysis_202301_v001 plots win probability for one-pair hands  
+* InitialCardGameAnalysis_202301_v001 plots win probability for two-pair hands  
   
