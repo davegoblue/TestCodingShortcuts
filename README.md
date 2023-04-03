@@ -3296,3 +3296,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 plots win probability for one-pair hands  
 * InitialCardGameAnalysis_202301_v001 plots win probability for two-pair hands  
   
+### Expansions week of 03-APR-2023  
+* Coronavirus_CDC_Daily_v005 downloads and processes latest case, death, and vaccine data  
+  
