@@ -3299,4 +3299,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 03-APR-2023  
 * Coronavirus_CDC_Daily_v005 downloads and processes latest case, death, and vaccine data  
 * Coronavirus_CDC_Daily_v005 downloads and processes latest hospital data  
+* Coronavirus_CDC_Daily_v005 runs postProcessCDCDaily()  
   
