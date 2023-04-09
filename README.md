@@ -3303,4 +3303,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 runs peakValleyCDCDaily()  
 * Coronavirus_CDC_Daily_v005 runs multiSourceDataCombine()  
 * Coronavirus_CDC_Daily_v005 runs hospitalCapacityCDCDaily()  
+* Coronavirus_Statistics_CDC_v006 updated with latest data  
   
