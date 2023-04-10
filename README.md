@@ -3305,3 +3305,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v005 runs hospitalCapacityCDCDaily()  
 * Coronavirus_Statistics_CDC_v006 updated with latest data  
   
+### Expansions week of 10-APR-2023  
+* Coronavirus_Statistics_CDC_v006 plotCDCRestatement() run  
+  
