@@ -41,9 +41,12 @@
 # 38. tempStackPlot() - create stacked bar plots with a time dimension
 # 39. lagCorrCheck() - find best correlation and lag/lead for two series of data
 # 40. findPeaks() - function to find local extrema in a time series
+# 40b. oldFindPeaks() - previous version of function to find local extrema in a time series
 # 41. testImputeNA() - impute NA values for a vector based on another vector
 # 42. pivotData() - helper function for pivoting data (longer or wider)
 # 43. zeroNA() - convert NA data in a vector to 0
+# 44. findDeltaFromMax() - find declines in a series that should be monotonically non-decreasing
+# 45. cleanMem() - delete files and check memory impact
 
 # Function for saving an R object to RDS, including a check for whether the object already exists
 saveToRDS <- function(obj, 
@@ -179,6 +182,7 @@ fileRead <- function(fileName,
 
 
 
+# Updated to handle length-zero inputs
 # Generic function to rename columns in a file using an input vector
 colRenamer <- function(df, 
                        vecRename=c(), 
@@ -191,7 +195,8 @@ colRenamer <- function(df,
     # ...: additional arguments to be passed to rename_with
     
     # Rename the columns as requested
-    dplyr::rename_with(df, .fn=function(x) vecRename[x], .cols=names(vecRename), ...)
+    if(length(vecRename)>0) dplyr::rename_with(df, .fn=function(x) vecRename[x], .cols=names(vecRename), ...)
+    else df
     
 }
 
@@ -1253,8 +1258,51 @@ lagCorrCheck <- function(df, lagLead=0, varFix="dpm7", varMove="cpm7") {
 }
 
 
-# Function to find local extrema in a vector
-findPeaks <- function(x, 
+# Updated function to find local extrema in a vector
+findPeaks <- function(x,
+                      width=1,
+                      FUN=max,
+                      # gt=if(identical(FUN, max)) 0 else NULL,
+                      # lt=if(identical(FUN, min)) 0 else NULL,
+                      fillVal=NA,
+                      epsTol=1e-12,
+                      ...
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # x: a numeric vector
+    # width: the width of the window to use
+    # FUN: the function to be used (max to find peaks, min to find valleys)
+    # gt: to be defined, the value must be greater than gt (NULL means use any value)
+    # lt: to be defined, the value must be less than lt (NULL means use any value)
+    # fillVal: value to use as output if a window does not exist (too close to boundary)
+    # epsTol: the epsilon value for considering two values to be the same
+    # ...: any other arguments to be passed to zoo::rollapply()
+    
+    # If width is 1 or under, everything is a maximum or minimum
+    if(width <= 1) return(rep(TRUE, length(x)))
+    
+    # Check for window width (if even number, look further left than right)
+    lookLeft <- ceiling((width-1)/2)
+    lookRight <- floor((width-1)/2)
+    
+    # Run the look to the left
+    xLeft <- x-zoo::rollapply(lag(x, 1), width=lookLeft, FUN=FUN, fill=fillVal, align="right")
+    
+    # Run the look to the right, unless lookRight is 0
+    if(lookRight==0) xRight <- rep(0, length(x))
+    else xRight <- x-zoo::rollapply(lead(x, 1), width=lookRight, FUN=FUN, fill=fillVal, align="left")
+    
+    # Return the boolean vector (only enabled for MAX and MIN for now)
+    if(identical(FUN, max)) { !is.na(xLeft) & !is.na(xRight) & (xLeft>epsTol) & (xRight>=(-epsTol)) }
+    else if(identical(FUN, min)) { !is.na(xLeft) & !is.na(xRight) & (xLeft<(-epsTol)) & (xRight<=epsTol) }
+    else rep(NA, length(x))
+    
+}
+
+
+# Previous function to find local extrema in a vector
+oldFindPeaks <- function(x, 
                       width=1, 
                       align="center", 
                       FUN=max, 
@@ -1350,3 +1398,59 @@ pivotData <- function(df,
 
 # Convert NA data to 0
 zeroNA <- function(x) ifelse(is.na(x), 0, x)
+
+
+# Find change from maximum value
+findDeltaFromMax <- function(df, groupBy=c(), timeVar="date", numVars=NULL) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: a data frame
+    # groupBy: levels to which the final data should be aggregated
+    # timeVar: time variable to which data should be aggregated
+    # numVars: numeric variables to be summarized (NULL means all numeric variables)
+    
+    # Find numVars if not provided
+    if(is.null(numVars)) numVars <- df %>% select(where(is.numeric)) %>% names %>% setdiff(groupBy)
+    
+    df %>%
+        group_by_at(all_of(c(groupBy, timeVar))) %>%
+        summarize(across(all_of(numVars), .fns=function(x) sum(x, na.rm=TRUE)), .groups="drop") %>%
+        pivot_longer(all_of(numVars)) %>%
+        arrange(across(all_of(c(groupBy, "name", timeVar)))) %>%
+        group_by_at(all_of(c(groupBy, "name"))) %>%
+        mutate(ratMax=value/max(value, na.rm=TRUE), 
+               cumMax=ifelse(cummax(value)==0, 1, value/cummax(value)), 
+               delMax=ifelse(cummax(value)==0, 1, (value-cummax(value))/max(value, na.rm=TRUE))
+        ) %>%
+        ungroup()
+    
+}
+
+
+# Function for deleting files and checking memory impact
+cleanMem <- function(objs=c(), runGC=TRUE, delObjs=FALSE) {
+    
+    # FUNCTION ARGUMENTS:
+    # objs: character vector of objects to be removed
+    # runGC: boolean, should gc() be run before and after deletion?
+    # delObjs: boolean, should the objects be deleted?
+    
+    # Run gc() if requested
+    if(isTRUE(runGC)) {
+        cat("\nMemory usage prior to deleting files:\n")
+        print(gc())
+    }
+    
+    # Remove objects that exist, if requested
+    if(isTRUE(delObjs)) {
+        objs <- objs[sapply(objs, FUN=function(x) exists(x)) %>% unname]
+        rm(list=objs, inherits=TRUE)
+    }
+    
+    # Run gc() if requested
+    if(isTRUE(runGC)) {
+        cat("\nMemory usage after deleting files:\n")
+        print(gc())
+    }
+    
+}
