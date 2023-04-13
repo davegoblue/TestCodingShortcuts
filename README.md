@@ -3309,4 +3309,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 plotCDCRestatement() run  
 * Coronavirus_CDC_Daily_v006 created from v005  
 * Generic_Added_Utility_Functions_202105_v001.R functions updated  
+* Coronavirus_CDC_Daily_Functions_v002.R functions updated  
   
