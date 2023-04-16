@@ -3312,4 +3312,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_Functions_v002.R functions updated  
 * Coronavirus_CDC_Daily_Default_Mappings_v003.R updated  
 * InitialCardGameAnalysis_202301_v001 plots win probability for trips, straight, flush, and full house hands  
+* InitialCardGameAnalysis_202301_v001 plots win probability for quads or better  
   
