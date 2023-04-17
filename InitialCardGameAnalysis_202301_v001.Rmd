@@ -3086,3 +3086,55 @@ fullHandProbsData %>%
 ```
   
 Very strong hands almost always win, though Win probability increases slightly as the rank and/or number of wilds in a four-of-a-kind, straight flush, or five-of-a-kind increases
+
+Hands are arranged from highest to lowest win probability, with gaps explored:  
+```{r, fig.height=9, fig.width=9}
+
+# Create delta as lowest gap between preceeding and succeeding hand
+fullHandDelta <- fullHandProbsData %>%
+    mutate(pWpL=pWQ+pWN-pLQ-pLN) %>%
+    arrange(pWpL) %>%
+    mutate(delta=case_when(row_number()==1 ~ lead(pWpL)-pWpL, 
+                           row_number()==n() ~ pWpL-lag(pWpL), 
+                           TRUE ~ pmin(lead(pWpL)-pWpL, pWpL-lag(pWpL))
+                           )
+           ) %>%
+    select(delta, pWpL, everything())
+fullHandDelta
+
+# Summary of the delta statistic
+summary(fullHandDelta %>% mutate(delta=1000000*delta) %>% pull(delta))
+
+# Proportion of hands with zero delta
+fullHandDelta %>%
+    mutate(noGap = (1000000*delta < 0.1)) %>%
+    group_by(rank, type, nWild) %>%
+    summarize(n=n(), pct=mean(noGap), .groups="drop") %>%
+    group_by(type, nWild) %>%
+    summarize(pctNoGap=sum(pct*n)/sum(n), n=sum(n), .groups="drop") %>%
+    ggplot(aes(x=factor(type), y=pctNoGap)) + 
+    geom_text(aes(color=factor(nWild), label=round(pctNoGap, 3)), size=2.5) + 
+    labs(x="Hand type", 
+         y="Percent tied with previous and/or next", 
+         title="Hands of tied value in fullHandProbData by hand type"
+         ) + 
+    scale_color_discrete("# Wild")
+
+# Number of hands with zero delta
+fullHandDelta %>%
+    mutate(noGap = (1000000*delta < 0.1)) %>%
+    count(type, nWild, noGap) %>%
+    ggplot(aes(x=factor(type), y=n/1000)) + 
+    geom_col(aes(fill=factor(noGap))) + 
+    labs(x="Hand type", 
+         y="Number of hands (000)", 
+         title="Hands of tied value in fullHandProbData by hand type",
+         subtitle="Facetted by number of wilds"
+         ) + 
+    scale_fill_discrete("No Gap?") + 
+    facet_wrap(~nWild, scales="free_y") + 
+    theme(legend.position = "bottom")
+
+```
+  
+Even with the de-duplication process, many hands get the identical results as the previous or next hand. The majority of these cases are in hands with no wild and zero or one pair
