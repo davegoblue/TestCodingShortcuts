@@ -3314,3 +3314,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 plots win probability for trips, straight, flush, and full house hands  
 * InitialCardGameAnalysis_202301_v001 plots win probability for quads or better  
   
+### Expansions week of 17-APR-2023  
+* InitialCardGameAnalysis_202301_v001 explores hands of tied value  
+  
