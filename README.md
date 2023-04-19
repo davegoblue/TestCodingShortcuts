@@ -3317,4 +3317,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 17-APR-2023  
 * InitialCardGameAnalysis_202301_v001 explores hands of tied value  
 * InitialCardGameAnalysis_202301_v001 explores EV ranges for zero-pair hands of type AKQxx and AKJxx  
+* InitialCardGameAnalysis_202301_v001 explores EV by suit distribution for AKQJ9 and AKQJ8  
   
