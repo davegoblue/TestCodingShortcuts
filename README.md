@@ -3319,4 +3319,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 explores EV ranges for zero-pair hands of type AKQxx and AKJxx  
 * InitialCardGameAnalysis_202301_v001 explores EV by suit distribution for AKQJ9 and AKQJ8  
 * InitialCardGameAnalysis_202301_v001 explores EV by suit distribution for zero-pair hands of type AKQxx and AKJxx  
+* InitialCardGameAnalysis_202301_v001 explores range of EV by suit distribution and rank for zero-pair hands  
   
