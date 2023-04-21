@@ -3229,7 +3229,14 @@ noPairEVSuits <- fullHandProbsData %>%
     left_join(nPerSuit, by="handNum") %>%
     mutate(suits=paste(Spades, Hearts, Diamonds, Clubs, sep="-")) %>%
     group_by(rank, type, nWild, suits, tb1, tb2, tb3, tb4, tb5) %>%
-    summarize(n=n(), minEV=min(evIfPlay), meanEV=mean(evIfPlay), maxEV=max(evIfPlay), .groups="drop")
+    summarize(n=n(), 
+              minEV=min(evIfPlay), 
+              meanEV=mean(evIfPlay), 
+              maxEV=max(evIfPlay), 
+              sdEV=sd(evIfPlay), 
+              rngEV=diff(range(evIfPlay)),
+              .groups="drop"
+              )
 noPairEVSuits
 
 # Plot magnitude of EV range
@@ -3264,3 +3271,71 @@ noPairEVSuits %>%
 ```
 
 Consistently, holding hand rank constant, average EV is most positive for 2-1-1-1 suit distribution and least positive for 4-1-0-0 suit distribution
+
+A check for monotonicity within ranks and suit distributions is performed for hands with zero-pairs:  
+The impact of suit distribution on all AKQxx and AKJxx hands is explored:  
+```{r, fig.height=9, fig.width=9}
+
+tmpDeltaNeg <- noPairEVSuits %>%
+    arrange(rank, desc(suits)) %>%
+    group_by(rank) %>%
+    mutate(deltaNegFwd=ifelse(row_number()==1, FALSE, ifelse(minEV < lag(maxEV), TRUE, FALSE)),
+           deltaNegBwd=ifelse(row_number()==n(), FALSE, ifelse(maxEV > lead(minEV), TRUE, FALSE)),
+           deltaNeg=ifelse(deltaNegFwd, TRUE, ifelse(deltaNegBwd, TRUE, FALSE))
+           ) %>%
+    ungroup()
+tmpDeltaNeg
+
+# Counts of overlapping EV
+tmpDeltaNeg %>% 
+    count(deltaNeg, deltaNegFwd, deltaNegBwd)
+
+# Counts by rank of overlaps
+tmpDeltaNegCounts <- tmpDeltaNeg %>%
+    group_by(rank) %>%
+    summarize(sumDeltaNeg=sum(deltaNeg)) 
+tmpDeltaNegCounts %>%
+    count(sumDeltaNeg)
+
+# Example hand types for each
+for(intCtr in c(2, 3, 4, 5)) {
+    tmpDeltaNegCounts %>%
+        filter(sumDeltaNeg==intCtr) %>%
+        left_join(noPairEVSuits, by="rank", multiple="all") %>%
+        print()
+}
+
+# Magnitude of overlaps
+noPairEVSuits %>%
+    arrange(rank, desc(suits)) %>%
+    group_by(rank) %>%
+    mutate(deltaNext=ifelse(row_number()==n(), 0, lead(minEV)-maxEV)) %>%
+    filter(row_number() != n()) %>%
+    ungroup() %>%
+    ggplot(aes(x=deltaNext)) + 
+    geom_histogram(fill="lightblue", bins=100) + 
+    labs(title="Delta from max of current range to min of next range\n(<0 means overlapping)", 
+         y="Count", 
+         x=NULL
+         ) + 
+    geom_vline(xintercept = 0, lty=2)
+
+# Magnitude of overlaps
+noPairEVSuits %>%
+    arrange(rank, desc(suits)) %>%
+    group_by(rank) %>%
+    mutate(deltaNext=ifelse(row_number()==n(), 0, lead(meanEV)-meanEV)) %>%
+    filter(row_number() != n()) %>%
+    ungroup() %>%
+    ggplot(aes(x=deltaNext)) + 
+    geom_histogram(fill="lightblue", bins=100) + 
+    labs(title="Delta from mean of current range to mean of next range\n(<0 means discontinuity)", 
+         y="Count", 
+         x=NULL
+         ) + 
+    geom_vline(xintercept = 0, lty=2)
+
+```
+  
+On average, EV for zero-pair hands becomes more favorable as suit distribution moves from 4-1-0-0 to 2-1-1-1. Which cards fall in which suit buckets is sometimes important enough to make the sequence non-monotonic, though with extremely small impact on EV
+  
