@@ -3339,3 +3339,58 @@ noPairEVSuits %>%
   
 On average, EV for zero-pair hands becomes more favorable as suit distribution moves from 4-1-0-0 to 2-1-1-1. Which cards fall in which suit buckets is sometimes important enough to make the sequence non-monotonic, though with extremely small impact on EV
   
+A function is written to output hand types by cards excluded:  
+```{r, fig.height=9, fig.width=9}
+
+handTypesByExclusion <- function(exclCards=c(), df=sortedHandRanks, pivotWider=FALSE, keyVars="wType") {
+    
+    # Create the excluded hand numbers
+    exclHands <- purrr::reduce(.x=cardInHand[exclCards], .f=union, .init=c())
+                               
+    # Create the list of hand types
+    df <- df %>% 
+        mutate(isOut=ifelse(handNum %in% exclHands, "excl", "avail")) %>% 
+        group_by(across(.cols=c(keyVars, "isOut"))) %>%
+        summarize(n=n(), .groups="drop")
+    
+    # Pivot wider if requested, otherwise return as-is
+    if(isTRUE(pivotWider)) 
+        df %>% pivot_wider(id_cols=all_of(keyVars), names_from="isOut", values_from="n", values_fill=0)
+    else df
+    
+}
+
+# Example for no exclusions
+handTypesByExclusion(exclCards=c())
+
+# Example for joker exclusions
+handTypesByExclusion(exclCards=c(53), pivotWider=TRUE)
+
+# Example for AKQJ9 as 4-1-0-0 (9 as separate suit)
+handTypesByExclusion(exclCards=c(1, 13, 12, 11, 22), pivotWider=TRUE)
+
+# Example for AKQJ9 as 2-1-1-1 (A and 9 as same suit)
+handTypesByExclusion(exclCards=c(1, 26, 38, 50, 9), pivotWider=TRUE)
+
+# Example for stacking hands
+handTypesByExclusion(exclCards=c(1, 13, 12, 11, 22)) %>%
+    bind_rows(handTypesByExclusion(exclCards=c(1, 26, 38, 50, 9)), .id="src") %>%
+    mutate(src=c("1"="4-1-0-0", "2"="2-1-1-1")[src]) %>%
+    filter(isOut=="avail") %>%
+    pivot_wider(id_cols=c(wType, isOut), names_from="src", values_from="n") %>%
+    mutate(delta=`2-1-1-1`-`4-1-0-0`)
+
+# Example for stacking hands with wilds tracked
+handTypesByExclusion(exclCards=c(1, 13, 12, 11, 22), keyVars=c("wType", "nWild")) %>%
+    bind_rows(handTypesByExclusion(exclCards=c(1, 26, 38, 50, 9), keyVars=c("wType", "nWild")), .id="src") %>%
+    mutate(src=c("1"="4-1-0-0", "2"="2-1-1-1")[src]) %>%
+    filter(isOut=="avail") %>%
+    mutate(hasWild=(nWild>0)) %>%
+    group_by(src, wType, isOut, hasWild) %>%
+    summarize(n=sum(n), .groups="drop") %>%
+    pivot_wider(id_cols=c(wType, hasWild, isOut), names_from="src", values_from="n", values_fill=0) %>%
+    mutate(delta=`2-1-1-1`-`4-1-0-0`) %>%
+    arrange(desc(hasWild), wType)
+
+```
+  
