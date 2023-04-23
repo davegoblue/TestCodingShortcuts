@@ -3321,4 +3321,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 explores EV by suit distribution for zero-pair hands of type AKQxx and AKJxx  
 * InitialCardGameAnalysis_202301_v001 explores range of EV by suit distribution and rank for zero-pair hands  
 * InitialCardGameAnalysis_202301_v001 handTypesByExclusion() written to explore hands blocked by example cards  
+* InitialCardGameAnalysis_202301_v001 explores hand types blocked by AKQ87 and AKQ93  
   
