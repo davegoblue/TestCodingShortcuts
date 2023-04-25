@@ -3456,4 +3456,86 @@ handTypesByExclusion(exclCards=maxMinCards[1,1:5] %>% as.matrix() %>% as.vector(
 
 ```
 
-A main difference as before is the conversion of 458 non-wild flushes to non-pairing hands. The likelihood of winning with type 99 is explored next
+A main difference as before is the conversion of 458 non-wild flushes to non-pairing hands. The likelihood of winning with type 99 is explored next. The function to output hand types by cards excluded is updated:  
+```{r, fig.height=9, fig.width=9}
+
+handTypesByExclusion <- function(exclCards=c(), 
+                                 df=sortedHandRanks, 
+                                 pivotWider=FALSE, 
+                                 checkRank=NULL,
+                                 keyVars="wType"
+                                 ) {
+    
+    # Function arguments
+    # exclCards: cards to be excluded
+    # df: file containing hand ranks and types
+    # pivotWider: boolean, whould outputs be pivoted wider (unique by keyVars)?
+    # checkRank: rank for win/lose/tie (NULL means do not compare ranks)
+    # keyVars: key variables to be included in the final output
+    
+    # Add rankResult as a variable if checkRank is not NULL
+    if(!is.null(checkRank)) {
+        if(!("rankResult" %in% keyVars)) keyVars <- c(keyVars, "rankResult")
+    }
+    
+    # Create the excluded hand numbers
+    exclHands <- purrr::reduce(.x=cardInHand[exclCards], .f=union, .init=c())
+                               
+    # Create the list of hand types
+    df <- df %>% 
+        mutate(isOut=ifelse(handNum %in% exclHands, "excl", "avail")) 
+    if(!is.null(checkRank))  {
+        df <- df %>% 
+            mutate(rankResult=case_when(rank<checkRank~"lose", rank==checkRank~"tie", rank>checkRank~"win"))
+    }
+    df <- df %>% 
+        group_by(across(.cols=c(keyVars, "isOut"))) %>%
+        summarize(n=n(), .groups="drop")
+    
+    # Pivot wider if requested, otherwise return as-is
+    if(isTRUE(pivotWider)) 
+        df %>% pivot_wider(id_cols=all_of(keyVars), names_from="isOut", values_from="n", values_fill=0)
+    else df
+    
+}
+
+# Example for no exclusions
+handTypesByExclusion(exclCards=c())
+
+# Example for joker exclusions
+handTypesByExclusion(exclCards=c(53), pivotWider=TRUE)
+
+# Example for stacking hands with wilds tracked
+handTypesByExclusion(exclCards=c(1, 13, 12, 11, 22), keyVars=c("wType", "nWild"), checkRank=4380) %>%
+    bind_rows(handTypesByExclusion(exclCards=c(1, 26, 38, 50, 9), keyVars=c("wType", "nWild"), checkRank=4380), 
+              .id="src"
+              ) %>%
+    mutate(src=c("1"="4-1-0-0", "2"="2-1-1-1")[src]) %>%
+    filter(isOut=="avail") %>%
+    mutate(hasWild=(nWild>0)) %>%
+    group_by(src, wType, isOut, hasWild, rankResult) %>%
+    summarize(n=sum(n), .groups="drop") %>%
+    pivot_wider(id_cols=c(wType, hasWild, isOut, rankResult), names_from="src", values_from="n", values_fill=0) %>%
+    mutate(delta=`2-1-1-1`-`4-1-0-0`) %>%
+    arrange(desc(hasWild), wType) %>%
+    print(n=30)
+
+# Example for stacking hands with wilds tracked and win/loss tracked
+handTypesByExclusion(exclCards=c(1, 13, 12, 11, 22), keyVars=c("wType", "nWild"), checkRank=4380) %>%
+    bind_rows(handTypesByExclusion(exclCards=c(1, 26, 38, 50, 9), keyVars=c("wType", "nWild"), checkRank=4380), 
+              .id="src"
+              ) %>%
+    mutate(src=c("1"="4-1-0-0", "2"="2-1-1-1")[src]) %>%
+    filter(isOut=="avail") %>%
+    mutate(hasWild=(nWild>0)) %>%
+    group_by(src, wType, isOut, hasWild, rankResult) %>%
+    summarize(n=sum(n), .groups="drop") %>%
+    pivot_wider(id_cols=c(wType, hasWild, isOut, rankResult), names_from="src", values_from="n", values_fill=0) %>%
+    mutate(delta=`2-1-1-1`-`4-1-0-0`) %>%
+    arrange(desc(hasWild), wType) %>%
+    print(n=30)
+
+```
+  
+In the case of hand AKQJ9, converting from (AKQJ)s9h to AsKhQdJc9s results in 458 fewer flushes, with 2 of these becoming ties and 456 of these becoming wins. With 4-1-0-0, only 2 of the four possible AKQJ9 flush are blocked, while with 2-1-1-1, all 4 of four AKQJ9 flush are blocked. Every other conversion from flush to non-pair convertes AKQJ9 (strongest non-pair hand) to a winner
+  
