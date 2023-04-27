@@ -3584,3 +3584,82 @@ handTypesByExclusion(exclCards=maxMinCards[1,1:5] %>% as.matrix() %>% as.vector(
 As before, two of the four A7543 hands are converted from flush to tie as the suit distribution goes from 4-1-0-0 (blocks two of four flushes by cards of same rank) to 2-1-1-1 (blocks all four flushes by cards of same rank). The reduction of 458 flushes is less valuable to the player, since 61 of the unpaired hands beat the player's A7543 while 395 of the unpaired hands lose to the player's A7543. As the player's hand gets weaker, the benefit of blocking straights and flushes is reduced, since it is less likely the player can beat the spot cards.
 
 A function is written to automate the process including the win/loss/tie component:  
+```{r, fig.height=9, fig.width=9}
+
+compareHandExclusion <- function(c1, 
+                                 c2, 
+                                 keyVars=c("wType", "nWild"), 
+                                 checkRank=NULL,
+                                 labs=NULL
+                                 ) {
+    
+    # FUNCTION ARGUMENTS
+    # c1: card set number 1
+    # c2: card set number 2
+    # keyVars: variables passed to handTypesByExclusion
+    # checkRank: the rank for the relevant hands - can be passed as length 1 or length 2
+    #            (NULL means do not check win/lose/tie)
+    # labs: labels for the relevant columns (must be length-2)
+    
+    # Get the relevant checkRank parameters
+    if(is.null(checkRank)) {
+        cr1 <- NULL
+        cr2 <- NULL
+    } else if(length(checkRank)==1) {
+        cr1 <- checkRank
+        cr2 <- checkRank
+    } else if(length(checkRank)==2) {
+        cr1 <- checkRank[1]
+        cr2 <- checkRank[2]
+    } else stop("\nParameter checkRank must be NULL or length-1 or length-2\n")
+    
+    # Check that labels is of appropriate length
+    if(is.null(labs)) {
+        lab1 <- "Cards 1"
+        lab2 <- "Cards 2"
+    } else if(length(labs)==2) {
+        lab1 <- labs[1]
+        lab2 <- labs[2]
+    } else stop("\nlabs must be NULL or length-2\n")
+    
+    # Get the appropriate grouping variables
+    groupVars <- c("src", setdiff(keyVars, "nWild"), "hasWild", "isOut")
+    if(!is.null(checkRank)) groupVars <- c(groupVars, "rankResult")
+    
+    handTypesByExclusion(exclCards=c1, keyVars=keyVars, checkRank=cr1) %>%
+        bind_rows(handTypesByExclusion(exclCards=c2, keyVars=keyVars, checkRank=cr2), .id="src") %>%
+        mutate(src=c("1"=lab1, "2"=lab2)[src]) %>%
+        filter(isOut=="avail") %>%
+        mutate(hasWild=(nWild>0)) %>%
+        group_by(across(all_of(groupVars))) %>%
+        summarize(n=sum(n), .groups="drop") %>%
+        pivot_wider(id_cols=setdiff(groupVars, "src"), 
+                    names_from="src", 
+                    values_from="n", 
+                    values_fill=0
+                    ) %>%
+        mutate(delta=get(lab2)-get(lab1)) %>%
+        select(setdiff(groupVars, "src"), all_of(lab1), all_of(lab2), "delta", everything()) %>%
+        arrange(desc(hasWild), across(setdiff(keyVars, "nWild")))
+
+}
+
+# Checking for A7543
+compareHandExclusion(c1=c(1, 7, 18, 30, 42), 
+                     c2=c(3, 4, 5, 7, 14), 
+                     checkRank=maxRng$rank, 
+                     labs=c("2-1-1-1", "4-1-0-0")
+                     ) %>%
+    print(n=30)
+
+# Checking for AKQJTs vs 5-wild
+compareHandExclusion(c1=c(1, 10, 11, 12, 13), 
+                     c2=c(2, 15, 28, 41, 53), 
+                     checkRank=NULL, 
+                     labs=c("RF", "5W")
+                     ) %>%
+    print(n=30)
+
+```
+  
+The function appears to work as intended
