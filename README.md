@@ -3328,4 +3328,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 handTypesByExclusion() updated for win/tie/loss  
 * InitialCardGameAnalysis_202301_v001 explores A7543  
 * InitialCardGameAnalysis_202301_v001 compareHandExclusion() written to automate process  
+* InitialCardGameAnalysis_202301_v001 compares JJ543 and 2J543  
   
