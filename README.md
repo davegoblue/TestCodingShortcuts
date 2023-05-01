@@ -3332,3 +3332,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v001 compares JJKQ3 and JJAT9  
 * InitialCardGameAnalysis_202301_v001 compares TTAKQ and 2T985  
   
+### Expansions week of 01-MAY-2023  
+* InitialCardGameAnalysis_202301_v001 compares AKJ73 and AKJ74  
+  
