@@ -3335,5 +3335,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 01-MAY-2023  
 * InitialCardGameAnalysis_202301_v001 compares AKJ73 and AKJ74  
 * InitialCardGameAnalysis_202301_v001 compares QQ543 and 2Q543  
-* Coronavirus_CDC_Daily_v005 downloads and processes latest case, death, and vaccine data  
+* Coronavirus_CDC_Daily_v006 downloads and processes latest case, death, and vaccine data  
+* Coronavirus_CDC_Daily_v006 downloads and processes latest hospital data  
   
