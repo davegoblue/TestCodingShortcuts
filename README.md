@@ -3338,6 +3338,9 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v006 downloads and processes latest case, death, and vaccine data  
 * Coronavirus_CDC_Daily_v006 downloads and processes latest hospital data  
 * Coronavirus_CDC_Daily_v006 runs postProcessCDCDaily()  
-* Coronavirus_CDC_Daily_v005 runs peakValleyCDCDaily()  
-* Coronavirus_CDC_Daily_v005 runs multiSourceDataCombine()  
+* Coronavirus_CDC_Daily_v006 runs peakValleyCDCDaily()  
+* Coronavirus_CDC_Daily_v006 runs multiSourceDataCombine()  
+  
+### Expansions week of 08-MAY-2023  
+* Coronavirus_CDC_Daily_v006 runs hospitalCapacityCDCDaily()  
   
