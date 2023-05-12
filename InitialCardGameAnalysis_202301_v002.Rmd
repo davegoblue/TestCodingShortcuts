@@ -60,3 +60,395 @@ if(isTRUE(idxWild %in% 1:(nRanks*nSuits) %>% reduce(.f=`|`))) {
 ```
 
 The main functions are also captured:
+```{r}
+
+# Determine if a hand is a flush
+isFlush <- function(suits, useWild=4) {
+    apply(suits, 1, FUN=function(x) ifelse(min(x)==max(x), TRUE, (max(x[x!=useWild])==min(x[x!=useWild]))))
+}
+
+# Determine if a hand is a straight (hard-coded for 5-card hands in a 13-card deck, Ace high or low)
+isStraight <- function(rankCounts, isEligible=TRUE) {
+    # Exclusion matrix for straights, currently designed only for 13-card decks and A high or low
+    strMatrix <- matrix(data=0L, nrow=13, ncol=10)
+    strMatrix[c(1, 10, 11, 12, 13), 1] <- 1L
+    for (intCtr in 1:9) { strMatrix[intCtr:(intCtr+4), intCtr+1] <- 1L }
+    apply(rankCounts, 1, max)<=1 & rowSums(rankCounts%*%(strMatrix-1)==0)>=1 & isEligible
+}
+
+# Hard-coded for 52-card deck with 1 joker
+findHandTypes <- function (aHands, retAll=FALSE) {
+    
+    # Track hands that contain the joker and total number of wilds
+    aJoker <- rowSums(aHands==53)>0
+    nWild <- aJoker + rowSums(aHands%%13==2)
+    
+    # 1. Calculate natural values
+    # 1a. Calculate ranks and suits, counting the joker as having no "rank" and being of a fifth "suit"
+    aRanks <- ifelse(aHands==53, 0, 1 + (aHands-1) %% 13)
+    aSuits <- ifelse(aHands==53, 0, 1 + (aHands-1) %/% 13)
+
+    # 1b. Find the counts by rank in each hand
+    aRankCount <- matrix(data=-1L, nrow=nrow(aHands), ncol=13)
+    for (intCtr in 1:13) { aRankCount[, intCtr] <- rowSums(aRanks == intCtr) }
+        
+    # 1c. Find the natural flushes and straights
+    nFlush <- isFlush(aSuits, useWild=-1)
+    nStraight <- isStraight(aRankCount, isEligible=!aJoker)
+
+    # 1d. Find max and count of ranks
+    nQuads <- rowSums(aRankCount == 4)
+    nTrips <- rowSums(aRankCount == 3)
+    nPairs <- rowSums(aRankCount == 2)
+
+    # 1e. Score the natural hand values (default is that a hand has nothing of value)
+    nType <- rep(0L, nrow(aHands))
+    # Five wilds (cannot exist) <- 1
+    nType[nFlush==1 & nStraight==1 & aRankCount[, 1]==1 & aRankCount[, 13]==1] <- 2 # Royal
+    # Five of a kind (cannot exist as natural) <- 3
+    nType[nFlush==1 & nStraight==1 & (aRankCount[, 1]!=1 | aRankCount[, 13]!=1)] <- 4 # Straight flush
+    nType[nQuads==1] <- 5 # Four of a kind
+    nType[nTrips==1 & nPairs==1] <- 6 # Full House
+    nType[nFlush==1 & nStraight==0] <- 7 # Flush
+    nType[nFlush==0 & nStraight==1] <- 8 # Straight
+    nType[nTrips==1 & nPairs==0] <- 9 # Three of a Kind
+    nType[nPairs==2] <- 10 # Two Pair
+    nType[nTrips==0 & nPairs==1] <- 11 # Pair
+
+    
+    # 2. Calculate wild values
+    # 2a. Calculate ranks and suits, counting the joker and 2's as having no "rank" and being of a fifth "suit"
+    wRanks <- ifelse(aHands==53|(aHands%%13==2), 0, 1 + (aHands-1) %% 13)
+    wSuits <- ifelse(aHands==53|(aHands%%13==2), 0, 1 + (aHands-1) %/% 13)
+
+    # 2b. Find the counts by rank in each hand
+    wRankCount <- matrix(data=-1L, nrow=nrow(aHands), ncol=13)
+    for (intCtr in 1:13) { wRankCount[, intCtr] <- rowSums(wRanks == intCtr) }
+        
+    # 2c. Find the wild flushes and straights
+    wFlush <- isFlush(wSuits, useWild=0)
+    wStraight <- isStraight(wRankCount, isEligible=TRUE)
+    
+    # 2d. Find max and count of ranks
+    wQuads <- rowSums(wRankCount == 4)
+    wTrips <- rowSums(wRankCount == 3)
+    wPairs <- rowSums(wRankCount == 2)
+
+    # 2e. Score the wild hand values (default is that a hand has nothing of value)
+    wType <- rep(0L, nrow(aHands))
+    
+    # 2e1. Calculate number of royal cards in hand
+    nRoyal <- rowSums(wRankCount[, c(1, 10, 11, 12, 13)])
+    
+    # 2e2. Five wilds (always five wilds)
+    wType[nWild==5] <- 1 # Five wild
+    
+    # 2e3. Four wilds (always either royal flush or five of a kind)
+    wType[nWild==4 & nRoyal==1] <- 2 # Royal
+    wType[nWild==4 & nRoyal==0] <- 3 # Five of a kind
+    
+    # 2e4. Three wilds (always either royal flush or five of a kind or straight flush or four of a kind)
+    wType[nWild==3 & wFlush==1 & wStraight==1 & nRoyal==2] <- 2 # Royal
+    wType[nWild==3 & wPairs==1] <- 3 # Five of a kind
+    wType[nWild==3 & wFlush==1 & wStraight==1 & nRoyal<2] <- 4 # Straight Flush
+    wType[nWild==3 & !(wFlush==1 & wStraight==1) & wPairs==0] <- 5 # Four of a kind
+    
+    # 2e5. Two wilds (always either royal, five of a kind, straight flush, four of a kind, flush, straight, trips)
+    # Cannot be a full house as any 3-2 using two wilds could instead be 5-0 or 1-4 and thus a better hand
+    wType[nWild==2 & wFlush==1 & wStraight==1 & nRoyal==3] <- 2 # Royal
+    wType[nWild==2 & wTrips==1] <- 3 # Five of a kind
+    wType[nWild==2 & wFlush==1 & wStraight==1 & nRoyal<3] <- 4 # Straight Flush
+    wType[nWild==2 & wPairs==1] <- 5 # Four of a kind
+    wType[nWild==2 & wFlush==1 & wStraight==0] <- 7 # Flush
+    wType[nWild==2 & wFlush==0 & wStraight==1] <- 8 # Straight
+    wType[nWild==2 & !(wFlush==1 | wStraight==1) & wPairs==0 & wTrips==0] <- 9 # Three of a kind
+    
+    # 2e6. One wild (can be anything from pair to royal, with the exception of never two pair)
+    wType[nWild==1 & wFlush==1 & wStraight==1 & nRoyal==4] <- 2 # Royal
+    wType[nWild==1 & wQuads==1] <- 3 # Five of a kind
+    wType[nWild==1 & wFlush==1 & wStraight==1 & nRoyal<4] <- 4 # Straight Flush
+    wType[nWild==1 & wTrips==1] <- 5 # Four of a kind
+    wType[nWild==1 & wPairs==2] <- 6 # Full House
+    wType[nWild==1 & wFlush==1 & wStraight==0] <- 7 # Flush
+    wType[nWild==1 & wFlush==0 & wStraight==1] <- 8 # Straight
+    wType[nWild==1 & wPairs==1] <- 9 # Three of a kind
+    wType[nWild==1 & !(wFlush==1 | wStraight==1) & wPairs==0 & wTrips==0 & wQuads==0] <- 11 # Pair
+    
+    # 2e7. No wild (is identical to natural)
+    wType[nWild==0] <- nType[nWild==0]
+    
+    # Return the requested data
+    if (isTRUE(retAll)) {
+        list(nType=nType, 
+             wType=wType, 
+             nWild=nWild,
+             wRankCount=wRankCount,
+             aRankCount=aRankCount
+             )
+    } else {
+        list(nType=nType, wType=wType, nWild=nWild)
+    }
+    
+}
+
+# Function to get the cards in a straight
+getStraightType <- function(x) {
+    if(min(x[x>0]) >= 10) c(10, 11, 12, 13, 14)
+    else if(min(x[x>0]) <= 5 & max(x)==14) c(2, 3, 4, 5, 14) # this treats Ace as the last card to resolve (Ace low)
+    else seq(min(x[x>0]), min(x[x>0])+4)
+}
+
+# Function to get the cards in a flush
+getFlushType <- function(x) {
+    # Wild cards should be added as highest rank not already in hand (try A then K then Q then J then T)
+    numAdd <- sum(x==0)
+    if(numAdd > 0) {
+        notThere <- (14:10)[!((14:10) %in% x)][1:numAdd]
+        x <- c(x[x!=0], notThere)
+    }
+    sort(x, decreasing=TRUE)
+}
+
+# Function to get the cards in a four of a kind, full house, three of a kind, two pair, pair, or high card
+getHighTypes <- function(rks, idx=1:14, outNum=c(1, 1, 1, 1, 1)) {
+    vecOut <- rep(0L, length(outNum))
+    for(x in seq_along(outNum)) {
+        vecOut[x]<-max((rks==max(rks)) * idx)
+        rks[match(vecOut[x], idx)] <- 0
+    }
+    rep(vecOut, times=outNum)
+}
+
+# Function to get probabilities
+findHandProbs <- function(exRank, idxExclude=NULL, df=sortedHandRanks) {
+    rkData <- if(is.null(idxExclude)) df$rank else df$rank[-idxExclude]
+    qualData <- if(is.null(idxExclude)) df$qual else df$qual[-idxExclude]
+    pLN <- mean(rkData < exRank & qualData=="N")
+    pLQ <- mean(rkData < exRank & qualData=="Q")
+    pTN <- mean(rkData == exRank & qualData=="N")
+    pTQ <- mean(rkData == exRank & qualData=="Q")
+    pWN <- mean(rkData > exRank & qualData=="N")
+    pWQ <- mean(rkData > exRank & qualData=="Q")
+    pWNoTie <- (pWN+pWQ)/(1-pTN-pTQ)
+    c(pLN=pLN, pLQ=pLQ, pTN=pTN, pTQ=pTQ, pWN=pWN, pWQ=pWQ, pWNoTie=pWNoTie)
+}
+
+# Function to get key values
+getKeyValues <- function(keyRank, exclCards=c(), lstExclude=cardInHand, dfSort=sortedHandRanks) {
+
+    # Get the union of exclusions
+    if(length(exclCards)==0) exclHands<-c()
+    else exclHands <- purrr::reduce(.x=lstExclude[c(exclCards)], .f=union)
+
+    dfSort %>%
+        filter(!(handNum %in% exclHands)) %>%
+        summarize(pLQ=mean(qual=="Q" & rank<keyRank),
+                  pLN=mean(qual=="N" & rank<keyRank), 
+                  pTQ=mean(qual=="Q" & rank==keyRank),
+                  pTN=mean(qual=="N" & rank==keyRank), 
+                  pWQ=mean(qual=="Q" & rank>keyRank),
+                  pWN=mean(qual=="N" & rank>keyRank), 
+                  n=n()
+                  ) %>%
+        mutate(pWNoTie=(pWQ+pWN)/(1-pTQ-pTN), rank=keyRank)
+        
+}
+
+calculateResults <- function(useHandNums, dfRanks=sortedHandRanks, hands=mtxHands, bPay=blindPay) {
+
+    map_dfr(useHandNums, 
+            .f=function(x) {
+                getKeyValues(keyRank=dfRanks$rank[x], exclCards=as.vector(hands[x,])) %>%
+                    mutate(type=dfRanks$wType[x], 
+                           handNum=x, 
+                           betPlay=ifelse((4*pWQ+3*pWN+2*pTQ+2*pTN)<(pLQ+pLN), 0, ifelse(pWNoTie<0.5, 1, 2)), 
+                           evAnte=ifelse(betPlay==0, -1, pWQ-pLQ-pLN), 
+                           evPlay=betPlay*(pWQ+pWN-pLQ-pLN),
+                           evBlind=ifelse(betPlay==0, -1, bPay[paste0("b_", type)]*(pWQ+pWN)-pLQ-pLN), 
+                           evAll=evAnte+evPlay+evBlind
+                           )
+                }
+            )
+}
+
+getHandOutcome <- function(pWQ, pWN, tie, lose, betPlay, blindPay) {
+    if(betPlay==0) return(tibble::tibble(result="fold", ante=-1, blind=-1, play=0))
+    result <- sample(c("win/qualify", "win/no qualify", "tie", "lose"), 
+                     size=1, 
+                     replace=TRUE, 
+                     prob=c(pWQ, pWN, tie, lose)
+                     )
+    return(tibble::tibble(result=result, 
+                          ante=case_when(result=="win/qualify" ~ 1, 
+                                         result %in% c("win/no qualify", "tie") ~ 0, 
+                                         result=="lose" ~ -1, 
+                                         TRUE ~ -99
+                                         ),
+                          blind=case_when(result %in% c("win/qualify", "win/no qualify") ~ blindPay, 
+                                          result=="tie" ~ 0, 
+                                          result=="lose" ~ -1, 
+                                          TRUE ~ -99
+                                          ), 
+                          play=case_when(result %in% c("win/qualify", "win/no qualify") ~ betPlay, 
+                                         result=="tie" ~ 0, 
+                                         result=="lose" ~ -betPlay, 
+                                         TRUE ~ -99
+                                         )
+                          )
+           )
+    
+}
+
+# Function to check if file exists and run if so
+runHandSequence <- function(handNums, 
+                            rdsName, 
+                            skipIfExists=TRUE, 
+                            saveFile=TRUE, 
+                            ovrWrite=FALSE, 
+                            returnFile=!isTRUE(saveFile) | (!isTRUE(skipIfExists) & !isTRUE(ovrWrite))
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # handNums: sequence of hand numbers to evaluate
+    # rdsName: name of the RDS file (if exists or to be saved - no directory, no .RDS extension)
+    # skipIfExists: boolean, if TRUE, check whether the file is already saved, and skip running if so
+    # saveFile: boolean, should the file be saved after running
+    # ovrWrite: boolean, should the previous file be overwritten?
+    # returnFile: boolean, should the file be returned after creation?
+    
+    # Manage the file existence and decision to run or not run
+    keyLoc <- paste0(formals(readFromRDS)$dir, rdsName, formals(readFromRDS)$addSuffix)
+    fileExists <- file.exists(keyLoc)
+    if(isTRUE(skipIfExists) & isTRUE(fileExists)) {
+        cat("\nFile", keyLoc, "already exists, exiting without running or overwriting\n")
+        return(NULL)
+    }
+    
+    # Run the process and report on the time
+    t1 <- proc.time()
+    df <- calculateResults(useHandNums=handNums)
+    print(proc.time()-t1)
+    
+    # Save the file if requested (overwriting the existing file)
+    if(isTRUE(saveFile)) {
+        # If file is to be overwritten, delete it
+        if(isTRUE(ovrWrite) & isTRUE(fileExists)) {
+            cat("\nRemoving existing file", keyLoc, "so new file can be written\n")
+            Sys.chmod(keyLoc, mode="0777", use_umask=FALSE)
+            file.remove(keyLoc)
+        }
+        # Write the file
+        saveToRDS(obj=df, file=paste0(rdsName, ".RDS"), ovrWriteError=FALSE)
+    }
+    
+    # Return the file if requested
+    if(isTRUE(returnFile)) return(df)
+    
+}
+
+# Convert 14, 13, 12, 11, 10 to A, K, Q, J, T
+numberToCard <- function(x) 
+    case_when(x==14 ~ "A", x==13 ~ "K", x==12 ~ "Q", x==11 ~ "J", x==10 ~ "T", TRUE ~ as.character(x))
+
+# Hand types possible given excluded cards
+handTypesByExclusion <- function(exclCards=c(), 
+                                 df=sortedHandRanks, 
+                                 pivotWider=FALSE, 
+                                 checkRank=NULL,
+                                 keyVars="wType"
+                                 ) {
+    
+    # Function arguments
+    # exclCards: cards to be excluded
+    # df: file containing hand ranks and types
+    # pivotWider: boolean, whould outputs be pivoted wider (unique by keyVars)?
+    # checkRank: rank for win/lose/tie (NULL means do not compare ranks)
+    # keyVars: key variables to be included in the final output
+    
+    # Add rankResult as a variable if checkRank is not NULL
+    if(!is.null(checkRank)) {
+        if(!("rankResult" %in% keyVars)) keyVars <- c(keyVars, "rankResult")
+    }
+    
+    # Create the excluded hand numbers
+    exclHands <- purrr::reduce(.x=cardInHand[exclCards], .f=union, .init=c())
+                               
+    # Create the list of hand types
+    df <- df %>% 
+        mutate(isOut=ifelse(handNum %in% exclHands, "excl", "avail")) 
+    if(!is.null(checkRank))  {
+        df <- df %>% 
+            mutate(rankResult=case_when(rank<checkRank~"lose", rank==checkRank~"tie", rank>checkRank~"win"))
+    }
+    df <- df %>% 
+        group_by(across(.cols=c(keyVars, "isOut"))) %>%
+        summarize(n=n(), .groups="drop")
+    
+    # Pivot wider if requested, otherwise return as-is
+    if(isTRUE(pivotWider)) 
+        df %>% pivot_wider(id_cols=all_of(keyVars), names_from="isOut", values_from="n", values_fill=0)
+    else df
+    
+}
+
+# Automates calls to handTypeExclusion()
+compareHandExclusion <- function(c1, 
+                                 c2, 
+                                 keyVars=c("wType", "nWild"), 
+                                 checkRank=NULL,
+                                 labs=NULL
+                                 ) {
+    
+    # FUNCTION ARGUMENTS
+    # c1: card set number 1
+    # c2: card set number 2
+    # keyVars: variables passed to handTypesByExclusion
+    # checkRank: the rank for the relevant hands - can be passed as length 1 or length 2
+    #            (NULL means do not check win/lose/tie)
+    # labs: labels for the relevant columns (must be length-2)
+    
+    # Get the relevant checkRank parameters
+    if(is.null(checkRank)) {
+        cr1 <- NULL
+        cr2 <- NULL
+    } else if(length(checkRank)==1) {
+        cr1 <- checkRank
+        cr2 <- checkRank
+    } else if(length(checkRank)==2) {
+        cr1 <- checkRank[1]
+        cr2 <- checkRank[2]
+    } else stop("\nParameter checkRank must be NULL or length-1 or length-2\n")
+    
+    # Check that labels is of appropriate length
+    if(is.null(labs)) {
+        lab1 <- "Cards 1"
+        lab2 <- "Cards 2"
+    } else if(length(labs)==2) {
+        lab1 <- labs[1]
+        lab2 <- labs[2]
+    } else stop("\nlabs must be NULL or length-2\n")
+    
+    # Get the appropriate grouping variables
+    groupVars <- c("src", setdiff(keyVars, "nWild"), "hasWild", "isOut")
+    if(!is.null(checkRank)) groupVars <- c(groupVars, "rankResult")
+    
+    handTypesByExclusion(exclCards=c1, keyVars=keyVars, checkRank=cr1) %>%
+        bind_rows(handTypesByExclusion(exclCards=c2, keyVars=keyVars, checkRank=cr2), .id="src") %>%
+        mutate(src=c("1"=lab1, "2"=lab2)[src]) %>%
+        filter(isOut=="avail") %>%
+        mutate(hasWild=(nWild>0)) %>%
+        group_by(across(all_of(groupVars))) %>%
+        summarize(n=sum(n), .groups="drop") %>%
+        pivot_wider(id_cols=setdiff(groupVars, "src"), 
+                    names_from="src", 
+                    values_from="n", 
+                    values_fill=0
+                    ) %>%
+        mutate(delta=get(lab2)-get(lab1)) %>%
+        select(setdiff(groupVars, "src"), all_of(lab1), all_of(lab2), "delta", everything()) %>%
+        arrange(desc(hasWild), across(setdiff(keyVars, "nWild")))
+
+}
+
+```
+  
