@@ -3350,3 +3350,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v002 creates key objects  
 * InitialCardGameAnalysis_202301_v002 simulates bonus bet  
   
+### Expansions week of 15-MAY-2023  
+* InitialCardGameAnalysis_202301_v002 calculates relative rank of two-card and one-card hands  
+  
