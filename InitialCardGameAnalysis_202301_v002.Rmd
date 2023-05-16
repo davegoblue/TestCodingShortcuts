@@ -680,12 +680,67 @@ suitTwoRanks <- expand.grid(c1=3:14, c2=3:14) %>%
     filter(c2<c1) %>%
     mutate(rank=row_number()+3)
 suitTwoRanks
+tmp <- suitTwoRanks %>%
+    mutate(cards=paste(c1, c2, sep="-"))
+suitTwoMapper <- tmp$rank
+names(suitTwoMapper) <- tmp$cards
+suitTwoMapper
 
 suitOneRank <- expand.grid(c1=3:14) %>%
     tibble::as_tibble() %>%
     arrange(desc(c1)) %>%
     mutate(rank=row_number()+max(suitTwoRanks$rank))
 suitOneRank
+suitOneMapper <- suitOneRank$rank
+names(suitOneMapper) <- as.character(suitOneRank$c1)
+suitOneMapper
+
+suitZeroRank <- 1+max(suitOneRank$rank)
+suitZeroRank
 
 ```
   
+Cards per hand are converted to tibble, and ranks are assigned to each suit:  
+```{r}
+
+# Create tibble of hand types
+tblHands <- mtxHands %>%
+    as.data.frame()
+names(tblHands) <- paste0("V", 1:5)
+tblHands <- tblHands %>%
+    tibble::as_tibble() %>%
+    mutate(handNum=row_number(), across(where(is.numeric), as.integer))
+tblHands
+
+# Create tibble containing suits and ranks for each hand, ordered by hand, then suit, then descending rank
+tblSuitRank <- tblHands %>%
+    pivot_longer(cols=-c(handNum)) %>%
+    mutate(suit=case_when(value %in% c(2, 15, 28, 41, 53)~0L, 
+                          value %in% c(1:52) ~ 1+(value-1)%/%13, 
+                          TRUE~-99L
+                          ), 
+           rank=ifelse(suit==0, 0L, 1+(value-1)%%13), 
+           rank=ifelse(rank==1, 14L, rank), 
+           suit=as.integer(suit), 
+           rank=as.integer(rank)
+           ) %>%
+    arrange(handNum, suit, desc(rank))
+tblSuitRank
+
+# Calculate ranks for spades
+tblSuitRank %>%
+    filter(suit==1) %>%
+    group_by(handNum) %>%
+    summarize(n=n(), cards=paste0(rank, collapse="-")) %>%
+    mutate(score=case_when(n==5~1, 
+                           n==4~2, 
+                           n==3~3, 
+                           n==2~suitTwoMapper[cards], 
+                           n==1~suitOneMapper[cards], 
+                           TRUE~-99
+                           )
+           )
+
+```
+  
+
