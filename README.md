@@ -3353,4 +3353,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 15-MAY-2023  
 * InitialCardGameAnalysis_202301_v002 calculates relative rank of two-card and one-card hands  
 * InitialCardGameAnalysis_202301_v002 pre-processing for ranking suits by hand  
+* InitialCardGameAnalysis_202301_v002 each hand includes counts and ranks by suit  
   
