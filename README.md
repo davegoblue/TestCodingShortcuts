@@ -3354,4 +3354,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v002 calculates relative rank of two-card and one-card hands  
 * InitialCardGameAnalysis_202301_v002 pre-processing for ranking suits by hand  
 * InitialCardGameAnalysis_202301_v002 each hand includes counts and ranks by suit  
+* InitialCardGameAnalysis_202301_v002 maps each hand number to a symmetric hand  
   
