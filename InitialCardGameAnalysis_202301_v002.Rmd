@@ -749,3 +749,64 @@ tblSuitCore
 
 ```
   
+Hands are then converted back to an equivalent hand:  
+```{r cache=TRUE}
+
+tblNotWild <- tblSuitCore %>%
+    filter(suit!=0) %>%
+    left_join(tibble::tibble(cards=names(c(suitOneMapper, suitTwoMapper)), rank=c(suitOneMapper, suitTwoMapper)), 
+              by="cards"
+              ) %>% 
+    mutate(rank=case_when(suit==0~0, n==5~1, n==4~2, n==3~3, TRUE~rank)) %>% 
+    arrange(handNum, rank) %>%
+    group_by(handNum) %>%
+    mutate(newSuit=row_number()) %>%
+    ungroup() %>%
+    tidyr::separate_longer_delim(cols="cards", delim="-")
+tblNotWild
+
+tblWild <- tblSuitCore %>%
+    filter(suit==0)
+tblWild <- tibble::tibble(handNum=rep(tblWild$handNum, tblWild$n)) %>%
+    left_join(tblWild, by="handNum") %>%
+    group_by(handNum) %>%
+    mutate(cards=c(2, 15, 28, 41, 53)[row_number()]) %>%
+    ungroup()
+tblWild
+
+tblAll <- tblNotWild %>%
+    mutate(cards=as.integer(cards), 
+           cards=ifelse(cards==14, 1, cards) + 13*(newSuit-1)
+           ) %>%
+    bind_rows(mutate(tblWild, cards=as.numeric(cards))) %>%
+    arrange(handNum, cards)
+tblAll
+
+# Number of unique pairings
+tblUnique <- tblAll %>%
+    select(handNum, cards) %>%
+    group_by(handNum) %>%
+    mutate(name=paste0("V", row_number())) %>%
+    ungroup() %>%
+    pivot_wider(id_cols="handNum", names_from="name", values_from="cards")
+
+tblSuitCount <- tblSuitCore %>% 
+    filter(suit!=0) %>% 
+    arrange(handNum, desc(n)) %>% 
+    group_by(handNum) %>% 
+    summarize(suits=paste0(n, collapse="-"))
+tblSuitCount %>% count(suits)
+
+tmpCounts <- tblUnique %>%
+    left_join(select(sortedHandRanks, handNum, nWild), by=c("handNum")) %>%
+    left_join(tblSuitCount, by="handNum") %>%
+    count(nWild, suits, V1, V2, V3, V4, V5, name="numDup") %>%
+    count(nWild, suits, numDup) %>%
+    arrange(desc(nWild), desc(suits))
+tmpCounts %>% print(n=40)
+tmpCounts %>% group_by(nWild) %>% summarize(n=sum(n))
+tmpCounts %>% pull(n) %>% sum()
+
+```
+  
+The game can be simulated using 102,360 hands, since all other hands are symmetric as to ranks by suit and number of wilds. For example, AsKsTh8dJoker is symmetric to AcKcTd8h2s
