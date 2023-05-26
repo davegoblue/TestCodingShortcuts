@@ -3364,4 +3364,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v002 runs all unique hands with suits 5, 4-1, and 3-2  
 * InitialCardGameAnalysis_202301_v002 runs all unique hands with suits 3-1-1  
 * InitialCardGameAnalysis_202301_v002 full database for hand mappings and results  
+* InitialCardGameAnalysis_202301_v002 confirms results for sample of hands matches mapped unique hand results  
   
