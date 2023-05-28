@@ -1014,3 +1014,104 @@ tmpExample %>%
 
 ```
   
+The playing strategy is added to a subset of the full results:  
+```{r}
+
+# Strategy for playing:
+# Double if probability of winning exceeds probability of losing
+# Single if 4*pWQ+3*pWN+2*pTQ+2*pTN > plQ+pLN
+# Fold otherwise
+# Results outcome
+# if betPlay is 0, evAnte is -1, evBlind is -1, and evPlay is 0; otherwise,
+# evAnte: win 1 on pWQ, push on pWN+pTQ+pTN, lose on pLQ and pLN
+# evBlind: win or push based on blind table for pWQ and pWN, push on pTQ and pTN, lose on pLQ and pLN
+# evPlay: win betPlay on pWQ and pWN, push on pTQ and pTN, lose on pLQ and pLN
+tblPlayStrategy <- tblFullResults %>%
+    select(handNum, type, numDup, pWQ, pWN, pTQ, pTN, pLQ, pLN) %>%
+    mutate(betPlay=case_when(pWQ+pWN > pLQ+pLN ~ 2, 
+                             4*pWQ+3*pWN+2*pTQ+2*pTN > pLQ+pLN ~ 1, 
+                             TRUE ~ 0
+                             )
+           ) %>%
+    pivot_longer(cols=-c(handNum, type, numDup, betPlay)) %>%
+    mutate(resBlind=case_when(betPlay==0 ~ -1, 
+                              name %in% c("pLQ", "pLN") ~ -1, 
+                              name %in% c("pTQ", "pTN") ~ 0, 
+                              name %in% c("pWQ", "pWN") ~ blindPay[paste0("b_", type)], 
+                              TRUE ~ NA
+                              ), 
+           resAnte=case_when(betPlay==0 ~ -1, 
+                             name %in% c("pLQ", "pLN") ~ -1, 
+                             name %in% c("pTQ", "pTN", "pWN") ~ 0, 
+                             name %in% c("pWQ") ~ 1, 
+                             TRUE ~ NA
+                             ), 
+           resPlay=case_when(betPlay==0 ~ 0, 
+                             name %in% c("pLQ", "pLN") ~ -betPlay, 
+                             name %in% c("pTQ", "pTN") ~ 0, 
+                             name %in% c("pWQ", "pWN") ~ betPlay, 
+                             TRUE ~ NA
+                             ), 
+           resAll=resBlind+resAnte+resPlay
+           )
+tblPlayStrategy
+
+# Check for NA and basic summary
+tblPlayStrategy %>% summary
+tblPlayStrategy %>% is.na %>% colSums
+
+# Check for hand-weighted EV
+tblPlayStrategy %>%
+    summarize(across(starts_with("res"), .fns=function(x) sum(x*numDup*value)/sum(numDup*value)))
+tblPlayStrategy %>%
+    group_by(betPlay) %>%
+    summarize(across(starts_with("res"), .fns=function(x) sum(x*numDup*value)/sum(numDup*value)), 
+              nHands=sum(ifelse(name=="pWQ", numDup, 0))
+              )
+tblPlayStrategy %>%
+    group_by(type) %>%
+    summarize(across(starts_with("res"), .fns=function(x) sum(x*numDup*value)/sum(numDup*value)), 
+              nHands=sum(ifelse(name=="pWQ", numDup, 0))
+              )
+
+```
+  
+The EV for each bet and each hand type is also calculated:  
+```{r}
+
+# Get the EV per hand
+tblPerHandEV <- tblPlayStrategy %>%
+    group_by(handNum, type, numDup, betPlay) %>%
+    summarize(across(starts_with("res"), .fns=function(x) sum(x*value)), .groups="drop")
+tblPerHandEV
+
+# Summarize by overall
+tblPerHandEV %>% 
+    pivot_longer(-c(handNum, type, numDup, betPlay)) %>% 
+    group_by(name) %>% 
+    summarize(nUq=n(), 
+              nTot=sum(numDup), 
+              wtd_mean=sum(value*numDup)/sum(numDup), 
+              across(value, 
+                     .fns=list(mean=mean, median=median, max=max, min=min), 
+                     .names="ev_{.fn}"
+                     )
+              )
+
+# Summarize by betplay
+tblPerHandEV %>% 
+    pivot_longer(-c(handNum, type, numDup, betPlay)) %>% 
+    group_by(betPlay, name) %>% 
+    summarize(nUq=n(), 
+              nTot=sum(numDup), 
+              wtd_mean=sum(value*numDup)/sum(numDup), 
+              across(value, 
+                     .fns=list(mean=mean, median=median, max=max, min=min), 
+                     .names="ev_{.fn}"
+                     ), 
+              .groups="drop"
+              )
+
+```
+  
+As expected, the lowest overall EV for single-betting is -2, since folding can guarantee a result of -2. All of the play bet EV for single-betting are negative and all of the play bet EV for double-betting are positive, in line with the bet-sizing criteria

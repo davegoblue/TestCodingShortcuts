@@ -1735,6 +1735,183 @@ tmpExample %&gt;%
                   select(handNum=mapHand, everything())
               )</code></pre>
 <pre><code>## [1] TRUE</code></pre>
+<p>The playing strategy is added to a subset of the full results:</p>
+<pre class="r"><code># Strategy for playing:
+# Double if probability of winning exceeds probability of losing
+# Single if 4*pWQ+3*pWN+2*pTQ+2*pTN &gt; plQ+pLN
+# Fold otherwise
+# Results outcome
+# if betPlay is 0, evAnte is -1, evBlind is -1, and evPlay is 0; otherwise,
+# evAnte: win 1 on pWQ, push on pWN+pTQ+pTN, lose on pLQ and pLN
+# evBlind: win or push based on blind table for pWQ and pWN, push on pTQ and pTN, lose on pLQ and pLN
+# evPlay: win betPlay on pWQ and pWN, push on pTQ and pTN, lose on pLQ and pLN
+tblPlayStrategy &lt;- tblFullResults %&gt;%
+    select(handNum, type, numDup, pWQ, pWN, pTQ, pTN, pLQ, pLN) %&gt;%
+    mutate(betPlay=case_when(pWQ+pWN &gt; pLQ+pLN ~ 2, 
+                             4*pWQ+3*pWN+2*pTQ+2*pTN &gt; pLQ+pLN ~ 1, 
+                             TRUE ~ 0
+                             )
+           ) %&gt;%
+    pivot_longer(cols=-c(handNum, type, numDup, betPlay)) %&gt;%
+    mutate(resBlind=case_when(betPlay==0 ~ -1, 
+                              name %in% c(&quot;pLQ&quot;, &quot;pLN&quot;) ~ -1, 
+                              name %in% c(&quot;pTQ&quot;, &quot;pTN&quot;) ~ 0, 
+                              name %in% c(&quot;pWQ&quot;, &quot;pWN&quot;) ~ blindPay[paste0(&quot;b_&quot;, type)], 
+                              TRUE ~ NA
+                              ), 
+           resAnte=case_when(betPlay==0 ~ -1, 
+                             name %in% c(&quot;pLQ&quot;, &quot;pLN&quot;) ~ -1, 
+                             name %in% c(&quot;pTQ&quot;, &quot;pTN&quot;, &quot;pWN&quot;) ~ 0, 
+                             name %in% c(&quot;pWQ&quot;) ~ 1, 
+                             TRUE ~ NA
+                             ), 
+           resPlay=case_when(betPlay==0 ~ 0, 
+                             name %in% c(&quot;pLQ&quot;, &quot;pLN&quot;) ~ -betPlay, 
+                             name %in% c(&quot;pTQ&quot;, &quot;pTN&quot;) ~ 0, 
+                             name %in% c(&quot;pWQ&quot;, &quot;pWN&quot;) ~ betPlay, 
+                             TRUE ~ NA
+                             ), 
+           resAll=resBlind+resAnte+resPlay
+           )
+tblPlayStrategy</code></pre>
+<pre><code>## # A tibble: 614,160 × 10
+##    handNum  type numDup betPlay name     value resBlind resAnte resPlay resAll
+##      &lt;int&gt; &lt;dbl&gt;  &lt;int&gt;   &lt;dbl&gt; &lt;chr&gt;    &lt;dbl&gt;    &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;  &lt;dbl&gt;
+##  1  444444     1      1       2 pWQ   0.533        2000       1       2   2003
+##  2  444444     1      1       2 pWN   0.467        2000       0       2   2002
+##  3  444444     1      1       2 pTQ   0               0       0       0      0
+##  4  444444     1      1       2 pTN   0               0       0       0      0
+##  5  444444     1      1       2 pLQ   0              -1      -1      -2     -4
+##  6  444444     1      1       2 pLN   0              -1      -1      -2     -4
+##  7  134975     2      4       2 pWQ   0.736         100       1       2    103
+##  8  134975     2      4       2 pWN   0.264         100       0       2    102
+##  9  134975     2      4       2 pTQ   0.000440        0       0       0      0
+## 10  134975     2      4       2 pTN   0               0       0       0      0
+## # … with 614,150 more rows</code></pre>
+<pre class="r"><code># Check for NA and basic summary
+tblPlayStrategy %&gt;% summary</code></pre>
+<pre><code>##     handNum             type           numDup          betPlay      
+##  Min.   :      1   Min.   : 1.00   Min.   :  1.00   Min.   :0.0000  
+##  1st Qu.: 272008   1st Qu.:11.00   1st Qu.: 12.00   1st Qu.:0.0000  
+##  Median : 759806   Median :11.00   Median : 24.00   Median :1.0000  
+##  Mean   : 777885   Mean   :44.33   Mean   : 28.04   Mean   :0.9689  
+##  3rd Qu.:1213237   3rd Qu.:99.00   3rd Qu.: 24.00   3rd Qu.:2.0000  
+##  Max.   :2025880   Max.   :99.00   Max.   :240.00   Max.   :2.0000  
+##      name               value              resBlind         resAnte      
+##  Length:614160      Min.   :0.0000000   Min.   :  -1.0   Min.   :-1.000  
+##  Class :character   1st Qu.:0.0000000   1st Qu.:  -1.0   1st Qu.:-1.000  
+##  Mode  :character   Median :0.0006821   Median :  -1.0   Median :-1.000  
+##                     Mean   :0.1666667   Mean   :  -0.5   Mean   :-0.463  
+##                     3rd Qu.:0.2613321   3rd Qu.:   0.0   3rd Qu.: 0.000  
+##                     Max.   :0.7571705   Max.   :2000.0   Max.   : 1.000  
+##     resPlay       resAll        
+##  Min.   :-2   Min.   :  -4.000  
+##  1st Qu.: 0   1st Qu.:  -2.000  
+##  Median : 0   Median :  -2.000  
+##  Mean   : 0   Mean   :  -0.963  
+##  3rd Qu.: 0   3rd Qu.:   0.000  
+##  Max.   : 2   Max.   :2003.000</code></pre>
+<pre class="r"><code>tblPlayStrategy %&gt;% is.na %&gt;% colSums</code></pre>
+<pre><code>##  handNum     type   numDup  betPlay     name    value resBlind  resAnte 
+##        0        0        0        0        0        0        0        0 
+##  resPlay   resAll 
+##        0        0</code></pre>
+<pre class="r"><code># Check for hand-weighted EV
+tblPlayStrategy %&gt;%
+    summarize(across(starts_with(&quot;res&quot;), .fns=function(x) sum(x*numDup*value)/sum(numDup*value)))</code></pre>
+<pre><code>## # A tibble: 1 × 4
+##   resBlind resAnte resPlay  resAll
+##      &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;
+## 1   -0.259  -0.274   0.458 -0.0746</code></pre>
+<pre class="r"><code>tblPlayStrategy %&gt;%
+    group_by(betPlay) %&gt;%
+    summarize(across(starts_with(&quot;res&quot;), .fns=function(x) sum(x*numDup*value)/sum(numDup*value)), 
+              nHands=sum(ifelse(name==&quot;pWQ&quot;, numDup, 0))
+              )</code></pre>
+<pre><code>## # A tibble: 3 × 6
+##   betPlay resBlind resAnte resPlay resAll  nHands
+##     &lt;dbl&gt;    &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;  &lt;dbl&gt;   &lt;dbl&gt;
+## 1       0   -1      -1       0      -2     742620
+## 2       1   -0.641  -0.547  -0.282  -1.47  684480
+## 3       2    0.304   0.230   1.04    1.58 1442585</code></pre>
+<pre class="r"><code>tblPlayStrategy %&gt;%
+    group_by(type) %&gt;%
+    summarize(across(starts_with(&quot;res&quot;), .fns=function(x) sum(x*numDup*value)/sum(numDup*value)), 
+              nHands=sum(ifelse(name==&quot;pWQ&quot;, numDup, 0))
+              )</code></pre>
+<pre><code>## # A tibble: 12 × 6
+##     type resBlind resAnte resPlay   resAll  nHands
+##    &lt;dbl&gt;    &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;    &lt;dbl&gt;   &lt;dbl&gt;
+##  1     1 2000       0.533  2      2003.          1
+##  2     2  100.      0.646  2.00    103.       1004
+##  3     3   40.0     0.646  2.00     42.6      1400
+##  4     4   25.0     0.658  2.00     27.6      3648
+##  5     5    4.97    0.662  1.98      7.61    51688
+##  6     6    3.90    0.677  1.92      6.49    15048
+##  7     7    2.91    0.650  1.91      5.47    18956
+##  8     8    1.89    0.620  1.86      4.37    84000
+##  9     9   -0.122   0.457  1.51      1.85   458040
+## 10    10   -0.261   0.220  0.956     0.915   95040
+## 11    11   -0.489  -0.256  0.166    -0.579 1341180
+## 12    99   -0.982  -0.982 -0.0346   -2.00   799680</code></pre>
+<p>The EV for each bet and each hand type is also calculated:</p>
+<pre class="r"><code># Get the EV per hand
+tblPerHandEV &lt;- tblPlayStrategy %&gt;%
+    group_by(handNum, type, numDup, betPlay) %&gt;%
+    summarize(across(starts_with(&quot;res&quot;), .fns=function(x) sum(x*value)), .groups=&quot;drop&quot;)
+tblPerHandEV</code></pre>
+<pre><code>## # A tibble: 102,360 × 8
+##    handNum  type numDup betPlay resBlind resAnte resPlay resAll
+##      &lt;int&gt; &lt;dbl&gt;  &lt;int&gt;   &lt;dbl&gt;    &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;  &lt;dbl&gt;
+##  1       1     4     20       2  25.0      0.700    1.99  27.7 
+##  2       2     7     20       2   2.90     0.655    1.90   5.46
+##  3       3     7     20       2   2.90     0.655    1.90   5.46
+##  4       4     7     20       2   2.90     0.655    1.90   5.46
+##  5       5     7     20       2   2.90     0.655    1.90   5.46
+##  6       6     7     20       2   2.91     0.656    1.91   5.47
+##  7       7     7     20       2   2.91     0.657    1.91   5.47
+##  8       8     7     20       2   2.91     0.659    1.91   5.48
+##  9       9     7     20       2   2.91     0.659    1.91   5.48
+## 10      10     9     60       2  -0.0639   0.579    1.74   2.26
+## # … with 102,350 more rows</code></pre>
+<pre class="r"><code># Summarize by overall
+tblPerHandEV %&gt;% 
+    pivot_longer(-c(handNum, type, numDup, betPlay)) %&gt;% 
+    group_by(name) %&gt;% 
+    summarize(across(value, .fns=list(mean=mean, median=median, max=max, min=min), .names=&quot;ev_{.fn}&quot;))</code></pre>
+<pre><code>## # A tibble: 4 × 5
+##   name     ev_mean ev_median   ev_max ev_min
+##   &lt;chr&gt;      &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;  &lt;dbl&gt;
+## 1 resAll    -0.693    -1.61  2003.    -2    
+## 2 resAnte   -0.468    -0.601    0.754 -1    
+## 3 resBlind  -0.439    -0.670 2000     -1    
+## 4 resPlay    0.215     0        2     -0.500</code></pre>
+<pre class="r"><code># Summarize by betplay
+tblPerHandEV %&gt;% 
+    pivot_longer(-c(handNum, type, numDup, betPlay)) %&gt;% 
+    group_by(betPlay, name) %&gt;% 
+    summarize(across(value, .fns=list(mean=mean, median=median, max=max, min=min), .names=&quot;ev_{.fn}&quot;), 
+              .groups=&quot;drop&quot;
+              )</code></pre>
+<pre><code>## # A tibble: 12 × 6
+##    betPlay name     ev_mean ev_median    ev_max   ev_min
+##      &lt;dbl&gt; &lt;chr&gt;      &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;
+##  1       0 resAll    -2        -2       -2      -2      
+##  2       0 resAnte   -1        -1       -1      -1      
+##  3       0 resBlind  -1        -1       -1      -1      
+##  4       0 resPlay    0         0        0       0      
+##  5       1 resAll    -1.50     -1.55    -0.796  -2.00   
+##  6       1 resAnte   -0.558    -0.577   -0.275  -0.750  
+##  7       1 resBlind  -0.648    -0.658   -0.507  -0.750  
+##  8       1 resPlay   -0.296    -0.315   -0.0137 -0.500  
+##  9       2 resAll     1.54      0.868 2003.     -0.795  
+## 10       2 resAnte    0.202     0.201    0.754  -0.297  
+## 11       2 resBlind   0.381    -0.267 2000      -0.500  
+## 12       2 resPlay    0.954     0.932    2       0.00118</code></pre>
+<p>As expected, the lowest overall EV for single-betting is -2, since
+folding can guarantee a result of -2. All of the play bet EV for
+single-betting are negative and all of the play bet EV for
+double-betting are positive, in line with the bet-sizing criteria</p>
 </div>
 </div>
 
