@@ -3368,3 +3368,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v002 includes outcomes for each type of hand result  
 * InitialCardGameAnalysis_202301_v002 includes EV by bet type  
   
+### Expansions week of 29-MAY-2023  
+* InitialCardGameAnalysis_202301_v002 simulates main bet  
+  
