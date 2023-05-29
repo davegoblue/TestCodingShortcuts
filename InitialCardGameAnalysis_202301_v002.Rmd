@@ -1115,3 +1115,50 @@ tblPerHandEV %>%
 ```
   
 As expected, the lowest overall EV for single-betting is -2, since folding can guarantee a result of -2. All of the play bet EV for single-betting are negative and all of the play bet EV for double-betting are positive, in line with the bet-sizing criteria
+
+Main bet results are simulated:  
+```{r, fig.height=9, fig.width=9}
+
+# Simulations over 100 hands
+set.seed(2023052812)
+
+# Function for running simulation
+simulateMainBet <- function(tbl=tblPlayStrategy, nHandsPerSim, nSims, groupBySim=TRUE) {
+    # Sample requested number of hands
+    tbl <- tbl %>% 
+        sample_n(size=nHandsPerSim*nSims, replace=TRUE, weight=numDup*value)
+    # If grouping requested, group the hands by simulation
+    if(isTRUE(groupBySim)) {
+        # Add the simulation number
+        tbl <- tbl %>%
+            mutate(rn=row_number(), simNumber=1 + (rn-1) %/% nHandsPerSim) 
+        # Create the result types
+        tblCounts <- tbl %>%
+            mutate(name=ifelse(betPlay==0, "pFold", name)) %>%
+            count(simNumber, name) %>%
+            pivot_wider(id_cols="simNumber", names_from="name", values_from="n", values_fill=0)
+        tbl <- tbl %>%
+            group_by(simNumber) %>%
+            summarize(across(starts_with("res"), .fns=sum), nHands=n(), .groups="drop") %>%
+            full_join(tblCounts, by="simNumber")
+    }
+    # Return the file
+    tbl
+}
+
+# Simulate 100 hands 100,000 times
+simMain100k100 <- simulateMainBet(nHandsPerSim=100, nSims=100000)
+
+# 1. Overall summary statistics
+summary(simMain100k100)
+# 2. Summary of percentiles for overall results
+quantile(simMain100k100$resAll, c(0, 0.005, 0.01, 0.025, 0.05, 0.25, 0.5, 0.75, 0.95, 0.975, 0.99, 0.995, 1))
+# 3. Likelihood of win, lose, tie
+simMain100k100 %>%
+    mutate(resultType=case_when(resAll>0 ~ "win", resAll<0~"lose", TRUE~"tie")) %>%
+    group_by(resultType) %>%
+    summarize(n=n(), evResAll=mean(resAll), .groups="drop") %>%
+    mutate(pctSims=n/sum(n))
+
+```
+  
