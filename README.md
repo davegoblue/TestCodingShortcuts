@@ -3371,4 +3371,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 29-MAY-2023  
 * InitialCardGameAnalysis_202301_v002 simulates main bet  
 * InitialCardGameAnalysis_202301_v002 includes bonus distribution by unique mapped hand  
+* InitialCardGameAnalysis_202301_v002 simulates main bet and bonus at same time  
   
