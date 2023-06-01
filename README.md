@@ -3372,4 +3372,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v002 simulates main bet  
 * InitialCardGameAnalysis_202301_v002 includes bonus distribution by unique mapped hand  
 * InitialCardGameAnalysis_202301_v002 simulates main bet and bonus at same time  
+* InitialCardGameAnalysis_202301_v002 simulates EV for bet progression  
   
