@@ -1281,3 +1281,61 @@ simAll100k100 %>%
 
 ```
   
+An additional simulation is run with data returned:  
+```{r, fig.height=9, fig.width=9}
+
+# Simulations over 100 hands
+set.seed(2023053115)
+
+# Simulate 100 hands 10,000 times
+simAll10k100 <- simulateAllBets(nHandsPerSim=100, nSims=10000, groupBySim = FALSE)
+
+# Simulate betting progression
+simAll10kRes <- simAll10k100 %>%
+    mutate(sim=1 + (row_number()-1) %/% 100, 
+           hn=row_number()-100*(sim-1), 
+           resMain=case_when(resAll>0~"win", resAll==0~"tie", resAll<0~"loss", TRUE~"error"), 
+           txtBonus=case_when(resBonus>0~"win", resBonus==0~"tie", resBonus<0~"loss", TRUE~"error")
+           ) %>%
+    group_by(sim) %>%
+    mutate(betMain=ifelse(row_number()<=2 | lag(resMain)=="loss" | lag(resMain, 2)=="loss", 10, 20), 
+           betBonus=ifelse(row_number()<=2 | lag(txtBonus)=="loss" | lag(txtBonus, 2)=="loss", 5, 10), 
+           wlMain=betMain*resAll, 
+           wlBonus=betBonus*resBonus
+           ) %>%
+    select(sim, resBlind, resAnte, resPlay, resAll, resBonus, wlMain, wlBonus, betMain, betBonus) %>%
+    summarize(across(where(is.numeric), sum))
+    
+# 1. Overall summary statistics
+summary(simAll10kRes)
+# 2. Summary of percentiles for main bet and bonus bet
+quantile(simAll10kRes$wlMain, c(0, 0.005, 0.01, 0.025, 0.05, 0.25, 0.5, 0.75, 0.95, 0.975, 0.99, 0.995, 1))
+quantile(simAll10kRes$wlBonus, c(0, 0.005, 0.01, 0.025, 0.05, 0.25, 0.5, 0.75, 0.95, 0.975, 0.99, 0.995, 1))
+quantile(simAll10kRes$wlMain+simAll10kRes$wlBonus, 
+         c(0, 0.005, 0.01, 0.025, 0.05, 0.25, 0.5, 0.75, 0.95, 0.975, 0.99, 0.995, 1)
+         )
+# 3. Likelihood of win, lose, tie
+simAll10kRes %>%
+    mutate(resultType=case_when(wlMain+wlBonus>0 ~ "win", wlMain+wlBonus<0~"lose", TRUE~"tie")) %>%
+    group_by(resultType) %>%
+    summarize(n=n(), evMain=mean(wlMain), evBonus=mean(wlBonus), .groups="drop") %>%
+    mutate(pctSims=n/sum(n))
+# 4. Correlation of bonus and main bet outcomes
+cor(simAll10kRes$wlMain, simAll10kRes$wlBonus)
+cor(simAll10kRes$wlMain, simAll10kRes$wlBonus, method="kendall")
+simAll10kRes %>%
+    filter(wlBonus <= 2500) %>%
+    mutate(resAllRound=round(wlMain, -2), resBonusRound=round(wlBonus, -2)) %>%
+    count(resAllRound, resBonusRound) %>%
+    ggplot(aes(x=resBonusRound, y=resAllRound)) + 
+    geom_point(aes(size=n)) + 
+    geom_smooth(method="lm", aes(weight=n)) +
+    labs(title="Results of 10,000 simulation of 100 hands", 
+         subtitle="(excludes simulations with bonus outcome > 2500)", 
+         x="Result of 100 bonus (rounded to nearest 100)", 
+         y="Result of 100 main (rounded to nearest 100)"
+         ) + 
+    scale_size_continuous("Number\nof sims")
+
+```
+  
