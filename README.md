@@ -3375,4 +3375,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * InitialCardGameAnalysis_202301_v002 simulates EV for bet progression  
 * InitialCardGameAnalysis_202301_v002 explores EV by bet type  
 * Coronavirus_CDC_Daily_v006 downloads and processes latest case, death, and vaccine data  
+* Coronavirus_CDC_Daily_v006 downloads and processes latest hospital data  
   
