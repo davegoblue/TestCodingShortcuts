@@ -3377,3 +3377,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_CDC_Daily_v006 downloads and processes latest case, death, and vaccine data  
 * Coronavirus_CDC_Daily_v006 downloads and processes latest hospital data  
   
+### Expansions week of 05-JUN-2023  
+* Coronavirus_CDC_Daily_v006 runs postProcessCDCDaily()  
+  
