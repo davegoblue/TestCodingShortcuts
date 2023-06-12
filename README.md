@@ -3386,3 +3386,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * Coronavirus_Statistics_CDC_v006 plotCDCRestatement() run  
 * InitialCardGameAnalysis_202301_v002 explores cumulative max and min  
   
+### Expansions week of 12-JUN-2023  
+* InitialCardGameAnalysis_202301_v002 explores cumulative min vs final  
+  
