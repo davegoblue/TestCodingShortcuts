@@ -3389,4 +3389,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 12-JUN-2023  
 * InitialCardGameAnalysis_202301_v002 explores cumulative min vs final  
 * OpenMeteoEDA_202306_v001 created to explore historical open-source weather data  
+* OpenMeteoEDA_202306_v001 partialCSVRead() written to read multiple CSV tables stored in a single flat file  
   
