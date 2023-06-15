@@ -53,7 +53,7 @@ summary(omDailyProcess)
 ```
   
 A function is written to read a portion of a CSV file:  
-```{r}
+```{r, fig.height=9, fig.width=9}
 
 partialCSVRead <- function(loc, firstRow=1L, lastRow=+Inf, col_names=TRUE, ...) {
     
@@ -82,6 +82,56 @@ partialCSVRead <- function(loc, firstRow=1L, lastRow=+Inf, col_names=TRUE, ...) 
 partialCSVRead(omFileLoc, firstRow=1L, lastRow=2L) %>% all.equal(omLocation)
 partialCSVRead(omFileLoc, firstRow=4L, lastRow=8764L) %>% all.equal(omHourlyRaw)
 partialCSVRead(omFileLoc, firstRow=8766L, lastRow=+Inf) %>% all.equal(omDailyRaw)
+
+```
+  
+The blank lines are assessed, allowing for all tables to be read at the same time:  
+```{r, fig.height=9, fig.width=9}
+
+# Get the break points for gaps in a vector (e.g., 0, 3, 5:8, 20 has break points 0, 3, 5, 20 and 0, 3, 8, 30)
+vecGaps <- function(x, addElements=c(), sortUnique=TRUE) {
+    
+    if(length(addElements)>0) x <- c(addElements, x)
+    if(isTRUE(sortUnique)) x <- unique(sort(x))
+    list("starts"=c(x[is.na(lag(x)) | x-lag(x)>1], +Inf), 
+         "ends"=x[is.na(lead(x)) | lead(x)-x>1]
+         )
+    
+}
+
+vecGaps(c(3, 5:8, 20), addElements=0)
+
+# Find the break points in a single file
+flatFileGaps <- function(loc) {
+
+    which(stringr::str_length(readLines(loc))==0) %>% vecGaps(addElements=0)
+    
+}
+
+flatFileGaps(omFileLoc)
+
+
+# Read all relevant data as CSV with header
+readMultiCSV <- function(loc, col_names=TRUE, ...) {
+
+    gaps <- flatFileGaps(loc)
+    
+    lapply(seq_along(gaps$ends), 
+           FUN=function(x) partialCSVRead(loc, 
+                                          firstRow=gaps$ends[x]+1, 
+                                          lastRow=gaps$starts[x+1]-1, 
+                                          col_names=col_names, 
+                                          ...
+                                          )
+           )
+    
+}
+
+tstMultiCSV <- readMultiCSV(omFileLoc)
+
+all.equal(tstMultiCSV[[1]], omLocation)
+all.equal(tstMultiCSV[[2]], omHourlyRaw)
+all.equal(tstMultiCSV[[3]], omDailyRaw)
 
 ```
   

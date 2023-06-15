@@ -550,6 +550,85 @@ partialCSVRead(omFileLoc, firstRow=1L, lastRow=2L) %&gt;% all.equal(omLocation)<
 ## ℹ Use `spec()` to retrieve the full column specification for this data.
 ## ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.</code></pre>
 <pre><code>## [1] TRUE</code></pre>
+<p>The blank lines are assessed, allowing for all tables to be read at
+the same time:</p>
+<pre class="r"><code># Get the break points for gaps in a vector (e.g., 0, 3, 5:8, 20 has break points 0, 3, 5, 20 and 0, 3, 8, 30)
+vecGaps &lt;- function(x, addElements=c(), sortUnique=TRUE) {
+    
+    if(length(addElements)&gt;0) x &lt;- c(addElements, x)
+    if(isTRUE(sortUnique)) x &lt;- unique(sort(x))
+    list(&quot;starts&quot;=c(x[is.na(lag(x)) | x-lag(x)&gt;1], +Inf), 
+         &quot;ends&quot;=x[is.na(lead(x)) | lead(x)-x&gt;1]
+         )
+    
+}
+
+vecGaps(c(3, 5:8, 20), addElements=0)</code></pre>
+<pre><code>## $starts
+## [1]   0   3   5  20 Inf
+## 
+## $ends
+## [1]  0  3  8 20</code></pre>
+<pre class="r"><code># Find the break points in a single file
+flatFileGaps &lt;- function(loc) {
+
+    which(stringr::str_length(readLines(loc))==0) %&gt;% vecGaps(addElements=0)
+    
+}
+
+flatFileGaps(omFileLoc)</code></pre>
+<pre><code>## $starts
+## [1]    0    3 8765  Inf
+## 
+## $ends
+## [1]    0    3 8765</code></pre>
+<pre class="r"><code># Read all relevant data as CSV with header
+readMultiCSV &lt;- function(loc, col_names=TRUE, ...) {
+
+    gaps &lt;- flatFileGaps(loc)
+    
+    lapply(seq_along(gaps$ends), 
+           FUN=function(x) partialCSVRead(loc, 
+                                          firstRow=gaps$ends[x]+1, 
+                                          lastRow=gaps$starts[x+1]-1, 
+                                          col_names=col_names, 
+                                          ...
+                                          )
+           )
+    
+}
+
+tstMultiCSV &lt;- readMultiCSV(omFileLoc)</code></pre>
+<pre><code>## Rows: 1 Columns: 6
+## ── Column specification ────────────────────────────────────────────────────────
+## Delimiter: &quot;,&quot;
+## chr (2): timezone, timezone_abbreviation
+## dbl (4): latitude, longitude, elevation, utc_offset_seconds
+## 
+## ℹ Use `spec()` to retrieve the full column specification for this data.
+## ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+## Rows: 8760 Columns: 7
+## ── Column specification ────────────────────────────────────────────────────────
+## Delimiter: &quot;,&quot;
+## dbl  (6): temperature_2m (°C), relativehumidity_2m (%), dewpoint_2m (°C), pr...
+## dttm (1): time
+## 
+## ℹ Use `spec()` to retrieve the full column specification for this data.
+## ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+## Rows: 365 Columns: 4
+## ── Column specification ────────────────────────────────────────────────────────
+## Delimiter: &quot;,&quot;
+## dbl  (3): precipitation_sum (mm), rain_sum (mm), snowfall_sum (cm)
+## date (1): time
+## 
+## ℹ Use `spec()` to retrieve the full column specification for this data.
+## ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.</code></pre>
+<pre class="r"><code>all.equal(tstMultiCSV[[1]], omLocation)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>all.equal(tstMultiCSV[[2]], omHourlyRaw)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>all.equal(tstMultiCSV[[3]], omDailyRaw)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
 </div>
 
 
