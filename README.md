@@ -3391,4 +3391,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 created to explore historical open-source weather data  
 * OpenMeteoEDA_202306_v001 partialCSVRead() written to read multiple CSV tables stored in a single flat file  
 * OpenMeteoEDA_202306_v001 vecGaps(), flatFileGaps(), and readMultiCSV() written  
+* OpenMeteoEDA_202306_v001 reads JSON returned from API  
   
