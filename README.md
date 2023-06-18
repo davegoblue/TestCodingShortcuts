@@ -3393,4 +3393,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 vecGaps(), flatFileGaps(), and readMultiCSV() written  
 * OpenMeteoEDA_202306_v001 reads JSON returned from API  
 * OpenMeteoEDA_202306_v001 confirms similarity of JSON and CSV for daily data  
+* OpenMeteoEDA_202306_v001 confirms similarity of JSON and CSV for hourly data  
   
