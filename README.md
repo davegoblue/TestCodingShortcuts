@@ -3395,3 +3395,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 confirms similarity of JSON and CSV for daily data  
 * OpenMeteoEDA_202306_v001 confirms similarity of JSON and CSV for hourly data  
   
+### Expansions week of 19-JUN-2023  
+* OpenMeteoEDA_202306_v001 openMeteoURLCreate() creates URL formatted for API  
+  
