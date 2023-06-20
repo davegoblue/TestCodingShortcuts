@@ -3397,4 +3397,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 19-JUN-2023  
 * OpenMeteoEDA_202306_v001 openMeteoURLCreate() creates URL formatted for API  
+* OpenMeteoEDA_202306_v001 helperOpenMeteoURL() allows for using city name and metric indices  
   
