@@ -383,3 +383,61 @@ if(!file.exists("notuse_testOM.json")) {
 
 ```
   
+Code is created to read the JSON return object:  
+```{r}
+
+readOpenMeteoJSON <- function(js) {
+    
+    # FUNCTION arguments: 
+    # js: JSON list returned by download from Open-Meteo
+    
+    # Get the object and names
+    jsObj <- jsonlite::read_json(js, simplifyVector = TRUE)
+    nms <- jsObj %>% names()
+    cat("\nObjects in JSON include:", paste(nms, collapse=", "), "\n\n")
+    
+    # Set default objects as NULL
+    tblDaily <- NULL
+    tblHourly <- NULL
+    tblUnitsDaily <- NULL
+    tblUnitsHourly <- NULL
+    
+    # Get daily and hourly as tibble if relevant
+    if("daily" %in% nms) tblDaily <- jsObj$daily %>% tibble::as_tibble()
+    if("hourly" %in% nms) tblHourly <- jsObj$hourly %>% tibble::as_tibble()
+    
+    # Helper function for unit conversions
+    helperMetricUnit <- function(x, mapper, desc) {
+        x %>% 
+            tibble::as_tibble() %>% 
+            pivot_longer(cols=everything()) %>% 
+            left_join(mapper, by=c("name"="metric")) %>% 
+            mutate(value=stringr::str_replace(value, "\u00b0", "deg ")) %>% 
+            mutate(metricType=desc) %>% 
+            select(metricType, everything())
+    }
+    
+    # Get the unit descriptions
+    if("daily_units" %in% nms) 
+        tblUnitsDaily <- helperMetricUnit(jsObj$daily_units, tblMetricsDaily, desc="daily_units")
+    if("hourly_units" %in% nms) 
+        tblUnitsHourly <- helperMetricUnit(jsObj$hourly_units, tblMetricsHourly, desc="hourly_units")
+    if(is.null(tblUnitsDaily) & !is.null(tblUnitsHourly)) tblUnits <- tblUnitsHourly
+    else if(!is.null(tblUnitsDaily) & is.null(tblUnitsHourly)) tblUnits <- tblUnitsDaily
+    else if(!is.null(tblUnitsDaily) & !is.null(tblUnitsHourly)) 
+        tblUnits <- bind_rows(tblUnitsHourly, tblUnitsDaily)
+    else tblUnits <- NULL
+    
+    # Put everything else together
+    tblDescription <- jsObj[setdiff(nms, c("hourly", "hourly_units", "daily", "daily_units"))] %>%
+        tibble::as_tibble()
+    
+    # Return the list objects
+    list(tblDaily=tblDaily, tblHourly=tblHourly, tblUnits=tblUnits, tblDescription=tblDescription)
+    
+}
+
+readOpenMeteoJSON("notuse_testOM.json")
+
+```
+  
