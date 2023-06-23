@@ -1191,6 +1191,141 @@ omProcessDaily(tmpOM)</code></pre>
 ## # … with 8,942 more rows, 2 more variables: snowfall &lt;dbl&gt;, origTime &lt;chr&gt;, and
 ## #   abbreviated variable names ¹​temperature_2m, ²​relativehumidity_2m,
 ## #   ³​dewpoint_2m, ⁴​precipitation</code></pre>
+<p>Function readOpenMeteoJSON() is updated to automatically incorporate
+date conversions:</p>
+<pre class="r"><code>readOpenMeteoJSON &lt;- function(js, mapDaily=tblMetricsDaily, mapHourly=tblMetricsHourly) {
+    
+    # FUNCTION arguments: 
+    # js: JSON list returned by download from Open-Meteo
+    # mapDaily: mapping file for daily metrics
+    # mapHourly: mapping file for hourly metrics
+    
+    # Get the object and names
+    jsObj &lt;- jsonlite::read_json(js, simplifyVector = TRUE)
+    nms &lt;- jsObj %&gt;% names()
+    cat(&quot;\nObjects in JSON include:&quot;, paste(nms, collapse=&quot;, &quot;), &quot;\n\n&quot;)
+    
+    # Set default objects as NULL
+    tblDaily &lt;- NULL
+    tblHourly &lt;- NULL
+    tblUnitsDaily &lt;- NULL
+    tblUnitsHourly &lt;- NULL
+    
+    # Get daily and hourly as tibble if relevant
+    if(&quot;daily&quot; %in% nms) tblDaily &lt;- jsObj$daily %&gt;% tibble::as_tibble() %&gt;% omProcessDaily()
+    if(&quot;hourly&quot; %in% nms) tblHourly &lt;- jsObj$hourly %&gt;% tibble::as_tibble() %&gt;% omProcessHourly()
+    
+    # Helper function for unit conversions
+    helperMetricUnit &lt;- function(x, mapper, desc=NULL) {
+        if(is.null(desc)) 
+            desc &lt;- as.list(match.call())$x %&gt;% 
+                deparse() %&gt;% 
+                stringr::str_replace_all(pattern=&quot;.*\\$&quot;, replacement=&quot;&quot;)
+        x %&gt;% 
+            tibble::as_tibble() %&gt;% 
+            pivot_longer(cols=everything()) %&gt;% 
+            left_join(mapper, by=c(&quot;name&quot;=&quot;metric&quot;)) %&gt;% 
+            mutate(value=stringr::str_replace(value, &quot;\u00b0&quot;, &quot;deg &quot;)) %&gt;% 
+            mutate(metricType=desc) %&gt;% 
+            select(metricType, everything())
+    }
+    
+    # Get the unit descriptions
+    if(&quot;daily_units&quot; %in% nms) tblUnitsDaily &lt;- helperMetricUnit(jsObj$daily_units, mapDaily)
+    if(&quot;hourly_units&quot; %in% nms) tblUnitsHourly &lt;- helperMetricUnit(jsObj$hourly_units, mapHourly)
+    if(is.null(tblUnitsDaily) &amp; !is.null(tblUnitsHourly)) tblUnits &lt;- tblUnitsHourly
+    else if(!is.null(tblUnitsDaily) &amp; is.null(tblUnitsHourly)) tblUnits &lt;- tblUnitsDaily
+    else if(!is.null(tblUnitsDaily) &amp; !is.null(tblUnitsHourly)) 
+        tblUnits &lt;- bind_rows(tblUnitsHourly, tblUnitsDaily)
+    else tblUnits &lt;- NULL
+    
+    # Put everything else together
+    tblDescription &lt;- jsObj[setdiff(nms, c(&quot;hourly&quot;, &quot;hourly_units&quot;, &quot;daily&quot;, &quot;daily_units&quot;))] %&gt;%
+        tibble::as_tibble()
+    
+    # Return the list objects
+    list(tblDaily=tblDaily, tblHourly=tblHourly, tblUnits=tblUnits, tblDescription=tblDescription)
+    
+}
+
+tmpOM2 &lt;- readOpenMeteoJSON(&quot;notuse_testOM.json&quot;)</code></pre>
+<pre><code>## 
+## Objects in JSON include: latitude, longitude, generationtime_ms, utc_offset_seconds, timezone, timezone_abbreviation, elevation, hourly_units, hourly, daily_units, daily</code></pre>
+<pre class="r"><code>tmpOM2</code></pre>
+<pre><code>## $tblDaily
+## # A tibble: 373 × 5
+##    date       time       precipitation_sum rain_sum snowfall_sum
+##    &lt;date&gt;     &lt;chr&gt;                  &lt;dbl&gt;    &lt;dbl&gt;        &lt;dbl&gt;
+##  1 2022-06-01 2022-06-01               3.8      3.8            0
+##  2 2022-06-02 2022-06-02               0        0              0
+##  3 2022-06-03 2022-06-03               0        0              0
+##  4 2022-06-04 2022-06-04               1.3      1.3            0
+##  5 2022-06-05 2022-06-05               0.3      0.3            0
+##  6 2022-06-06 2022-06-06              12.5     12.5            0
+##  7 2022-06-07 2022-06-07               2        2              0
+##  8 2022-06-08 2022-06-08              16       16              0
+##  9 2022-06-09 2022-06-09               0        0              0
+## 10 2022-06-10 2022-06-10               0.6      0.6            0
+## # … with 363 more rows
+## 
+## $tblHourly
+## # A tibble: 8,952 × 10
+##    time                date        hour temperat…¹ relat…² dewpo…³ preci…⁴  rain
+##    &lt;dttm&gt;              &lt;date&gt;     &lt;int&gt;      &lt;dbl&gt;   &lt;int&gt;   &lt;dbl&gt;   &lt;dbl&gt; &lt;dbl&gt;
+##  1 2022-06-01 00:00:00 2022-06-01     0       21        92    19.7     0.1   0.1
+##  2 2022-06-01 01:00:00 2022-06-01     1       20.6      94    19.6     0.3   0.3
+##  3 2022-06-01 02:00:00 2022-06-01     2       21.1      93    19.9     0     0  
+##  4 2022-06-01 03:00:00 2022-06-01     3       20.8      93    19.7     0     0  
+##  5 2022-06-01 04:00:00 2022-06-01     4       20.5      93    19.3     0     0  
+##  6 2022-06-01 05:00:00 2022-06-01     5       19.7      95    19       0.7   0.7
+##  7 2022-06-01 06:00:00 2022-06-01     6       19.4      96    18.8     1.6   1.6
+##  8 2022-06-01 07:00:00 2022-06-01     7       19.2      96    18.5     1     1  
+##  9 2022-06-01 08:00:00 2022-06-01     8       18.6      90    17       0.1   0.1
+## 10 2022-06-01 09:00:00 2022-06-01     9       17.7      84    14.9     0     0  
+## # … with 8,942 more rows, 2 more variables: snowfall &lt;dbl&gt;, origTime &lt;chr&gt;, and
+## #   abbreviated variable names ¹​temperature_2m, ²​relativehumidity_2m,
+## #   ³​dewpoint_2m, ⁴​precipitation
+## 
+## $tblUnits
+## # A tibble: 11 × 4
+##    metricType   name                value   description                         
+##    &lt;chr&gt;        &lt;chr&gt;               &lt;chr&gt;   &lt;chr&gt;                               
+##  1 hourly_units time                iso8601 &lt;NA&gt;                                
+##  2 hourly_units temperature_2m      deg C   Air temperature at 2 meters above g…
+##  3 hourly_units relativehumidity_2m %       Relative humidity at 2 meters above…
+##  4 hourly_units dewpoint_2m         deg C   Dew point temperature at 2 meters a…
+##  5 hourly_units precipitation       mm      Total precipitation (rain, showers,…
+##  6 hourly_units rain                mm      Only liquid precipitation of the pr…
+##  7 hourly_units snowfall            cm      Snowfall amount of the preceding ho…
+##  8 daily_units  time                iso8601 &lt;NA&gt;                                
+##  9 daily_units  precipitation_sum   mm      Sum of daily precipitation (includi…
+## 10 daily_units  rain_sum            mm      Sum of daily rain                   
+## 11 daily_units  snowfall_sum        cm      Sum of daily snowfall               
+## 
+## $tblDescription
+## # A tibble: 1 × 7
+##   latitude longitude generationtime_ms utc_offset_seco…¹ timez…² timez…³ eleva…⁴
+##      &lt;dbl&gt;     &lt;dbl&gt;             &lt;dbl&gt;             &lt;int&gt; &lt;chr&gt;   &lt;chr&gt;     &lt;dbl&gt;
+## 1     41.8     -87.7              2.66            -18000 Americ… CDT         180
+## # … with abbreviated variable names ¹​utc_offset_seconds, ²​timezone,
+## #   ³​timezone_abbreviation, ⁴​elevation</code></pre>
+<pre class="r"><code>prettyOpenMeteoMeta(tmpOM2)</code></pre>
+<pre><code>## 
+## latitude: 41.8
+## longitude: -87.7
+## generationtime_ms: 2.658963
+## utc_offset_seconds: -18000
+## timezone: America/Chicago
+## timezone_abbreviation: CDT
+## elevation: 180</code></pre>
+<pre class="r"><code>identical(tmpOM$tblUnits, tmpOM2$tblUnits)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>identical(tmpOM$tblDescription, tmpOM2$tblDescription)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>identical(tmpOM$tblDaily %&gt;% omProcessDaily(), tmpOM2$tblDaily)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>identical(tmpOM$tblHourly %&gt;% omProcessHourly(), tmpOM2$tblHourly)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
 </div>
 
 

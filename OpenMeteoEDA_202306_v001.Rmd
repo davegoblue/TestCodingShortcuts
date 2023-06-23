@@ -475,3 +475,72 @@ omProcessHourly(tmpOM)
 
 ```
   
+Function readOpenMeteoJSON() is updated to automatically incorporate date conversions:  
+```{r}
+
+readOpenMeteoJSON <- function(js, mapDaily=tblMetricsDaily, mapHourly=tblMetricsHourly) {
+    
+    # FUNCTION arguments: 
+    # js: JSON list returned by download from Open-Meteo
+    # mapDaily: mapping file for daily metrics
+    # mapHourly: mapping file for hourly metrics
+    
+    # Get the object and names
+    jsObj <- jsonlite::read_json(js, simplifyVector = TRUE)
+    nms <- jsObj %>% names()
+    cat("\nObjects in JSON include:", paste(nms, collapse=", "), "\n\n")
+    
+    # Set default objects as NULL
+    tblDaily <- NULL
+    tblHourly <- NULL
+    tblUnitsDaily <- NULL
+    tblUnitsHourly <- NULL
+    
+    # Get daily and hourly as tibble if relevant
+    if("daily" %in% nms) tblDaily <- jsObj$daily %>% tibble::as_tibble() %>% omProcessDaily()
+    if("hourly" %in% nms) tblHourly <- jsObj$hourly %>% tibble::as_tibble() %>% omProcessHourly()
+    
+    # Helper function for unit conversions
+    helperMetricUnit <- function(x, mapper, desc=NULL) {
+        if(is.null(desc)) 
+            desc <- as.list(match.call())$x %>% 
+                deparse() %>% 
+                stringr::str_replace_all(pattern=".*\\$", replacement="")
+        x %>% 
+            tibble::as_tibble() %>% 
+            pivot_longer(cols=everything()) %>% 
+            left_join(mapper, by=c("name"="metric")) %>% 
+            mutate(value=stringr::str_replace(value, "\u00b0", "deg ")) %>% 
+            mutate(metricType=desc) %>% 
+            select(metricType, everything())
+    }
+    
+    # Get the unit descriptions
+    if("daily_units" %in% nms) tblUnitsDaily <- helperMetricUnit(jsObj$daily_units, mapDaily)
+    if("hourly_units" %in% nms) tblUnitsHourly <- helperMetricUnit(jsObj$hourly_units, mapHourly)
+    if(is.null(tblUnitsDaily) & !is.null(tblUnitsHourly)) tblUnits <- tblUnitsHourly
+    else if(!is.null(tblUnitsDaily) & is.null(tblUnitsHourly)) tblUnits <- tblUnitsDaily
+    else if(!is.null(tblUnitsDaily) & !is.null(tblUnitsHourly)) 
+        tblUnits <- bind_rows(tblUnitsHourly, tblUnitsDaily)
+    else tblUnits <- NULL
+    
+    # Put everything else together
+    tblDescription <- jsObj[setdiff(nms, c("hourly", "hourly_units", "daily", "daily_units"))] %>%
+        tibble::as_tibble()
+    
+    # Return the list objects
+    list(tblDaily=tblDaily, tblHourly=tblHourly, tblUnits=tblUnits, tblDescription=tblDescription)
+    
+}
+
+tmpOM2 <- readOpenMeteoJSON("notuse_testOM.json")
+tmpOM2
+prettyOpenMeteoMeta(tmpOM2)
+
+identical(tmpOM$tblUnits, tmpOM2$tblUnits)
+identical(tmpOM$tblDescription, tmpOM2$tblDescription)
+identical(tmpOM$tblDaily %>% omProcessDaily(), tmpOM2$tblDaily)
+identical(tmpOM$tblHourly %>% omProcessHourly(), tmpOM2$tblHourly)
+
+```
+  
