@@ -3401,5 +3401,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 readOpenMeteoJSON() reads JSON returned by Open-Meteo  
 * OpenMeteoEDA_202306_v001 omProcessHourly() and omProcessDaily() for converting to date and time  
 * OpenMeteoEDA_202306_v001 readOpenMeteoJSON() updated to process date and time
-* OpenMeteoEDA_202306_v001 downloads a decade of data for one location  
+* OpenMeteoEDA_202306_v001 downloads a decade of data for one location
+* OpenMeteoEDA_202306_v001 daily data read as a list  
   
