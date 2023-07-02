@@ -3410,5 +3410,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores sunrise and sunset  
 * OpenMeteoEDA_202306_v001 explores wind  
 * OpenMeteoEDA_202306_v001 explores radiation and evapotranspiration
-* OpenMeteoEDA_202306_v001 downloads a decade of hourly data for one location  
+* OpenMeteoEDA_202306_v001 downloads a decade of hourly data for one location
+* OpenMeteoEDA_202306_v001 reads hourly data  
   
