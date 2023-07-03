@@ -891,3 +891,80 @@ prettyOpenMeteoMeta(tmpOMHourly)
 
 ```
   
+Consistency of data between daily and hourly is explored:  
+```{r}
+
+# Variables where maximum of hourly should be created
+vrblMax <- c("weathercode", "temperature_2m", "apparent_temperature", "windspeed_10m", "windgusts_10m")
+
+# Variables where minimum of hourly should be created
+vrblMin <- c("temperature_2m", "apparent_temperature")
+
+# Variables where sum of hourly should be created
+vrblSum <- c("precipitation", "rain", "snowfall", "shortwave_radiation", "et0_fao_evapotranspiration")
+
+# Variables in daily not to explore
+# date, time, sunrise, sunset
+
+# Variables that require a different approach
+# winddirection_10m_dominant, precipitation_hours
+
+# Check that all variables are included in hourly data
+c(vrblMax, vrblMin, vrblSum) %in% (tmpOMHourly$tblHourly %>% names)
+
+# Create daily data from hourly
+dfDailyFromHourly <- tmpOMHourly$tblHourly %>%
+    group_by(date) %>%
+    summarize(across(.cols=all_of(vrblMax), .fns=max, .names="{.col}_max"),
+              across(.cols=all_of(vrblMin), .fns=min, .names="{.col}_min"), 
+              across(.cols=all_of(vrblSum), .fns=sum, .names="{.col}_sum"), 
+              precipitation_hours=sum(precipitation>0)
+              ) %>%
+    rename(weathercode=weathercode_max, et0_fao_evapotranspiration=et0_fao_evapotranspiration_sum)
+dfDailyFromHourly
+names(dfDailyFromHourly)
+names(dfDailyFromHourly) %in% names(tmpOMDaily$tblDaily)
+
+# Check data consistency
+for (colName in names(dfDailyFromHourly)) {
+    cat("\n", 
+        colName, 
+        ":", 
+        all.equal(dfDailyFromHourly %>% pull(colName), tmpOMDaily$tblDaily %>% pull(colName))
+        )
+}
+
+# Plot for differences in radiation
+dfRadiation <- dfDailyFromHourly %>%
+    select(date, shortwave_radiation_sum) %>%
+    bind_rows(select(tmpOMDaily$tblDaily, date, shortwave_radiation_sum), .id="src") %>%
+    mutate(src=c("1"="Daily from Hourly", "2"="Daily as Reported")[src])
+dfRadiation %>%
+    ggplot(aes(x=date, y=shortwave_radiation_sum)) + 
+    geom_line(aes(group=src, color=src)) + 
+    labs(x=NULL, y="Sum of radiation", title="Comparison of shortwave radiation by day by source")
+
+# Exploration of units
+tmpOMDaily$tblUnits %>% filter(name=="shortwave_radiation_sum")
+tmpOMHourly$tblUnits %>% filter(name=="shortwave_radiation")
+
+# Conversion of Watts per hour to MegaJoules
+# 0.0036 megajoules/watt-hour
+dfRadiation %>%
+    ggplot(aes(x=date, y=ifelse(src=="Daily from Hourly", 0.0036, 1)*shortwave_radiation_sum)) + 
+    geom_line(aes(group=src, color=src)) + 
+    labs(x=NULL, 
+         y="Sum of radiation", 
+         title="Comparison of shortwave radiation by day by source", 
+         subtitle="Summed from hourly multiplied by 0.0036 to convert Watt-hours to MegaJoules"
+         )
+dfRadiation %>%
+    pivot_wider(id_cols="date", names_from="src", values_from="shortwave_radiation_sum") %>%
+    mutate(rat=`Daily as Reported`/`Daily from Hourly`) %>%
+    summary()
+
+```
+  
+With the exception of radiation (reported in different units causing slight rounding differences), the reported daily data matches the expected aggregate of the reported hourly data
+  
+
