@@ -3414,5 +3414,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 reads hourly data  
   
 ### Expansions week of 03-JUL-2023  
+* OpenMeteoEDA_202306_v001 compares daily and sum of hourly
 * OpenMeteoEDA_202306_v001 compares daily and sum of hourly  
   
