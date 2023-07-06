@@ -1062,3 +1062,62 @@ dfHourlyTemp %>%
 
 ```
   
+Hours with maximum/minimum temperature and precipitation are explored:  
+```{r, fig.height=9, fig.width=9}
+
+# Create temperature and precipitation data
+dfHourlyTempPrecip <- dfHourlyTemp %>%
+    bind_rows(dfHourlyPrecip) %>%
+    mutate(date=lubridate::date(time)) %>% 
+    arrange(time, name) 
+dfHourlyTempPrecip
+
+# Limit to temperature, dewpoint, and precipitation
+# Limit precipitation to only days with precipitation > 0
+tmpDF <- dfHourlyTempPrecip %>%
+    filter(name %in% c("dewpoint_2m", "precipitation", "temperature_2m")) %>%
+    group_by(date, name) %>% 
+    filter(name!="precipitation" | sum(value)>0) %>%
+    mutate(isMax=ifelse(value==max(value), 1, 0), isMin=ifelse(value==min(value), 1, 0)) %>% 
+    group_by(name, month, hour) %>% 
+    summarize(across(c(isMax, isMin), mean), .groups="drop") %>% 
+    pivot_longer(-c(name, month, hour), names_to="metric")
+tmpDF
+
+# Plot max/min for metric
+for(keyMetric in unique(tmpDF$name)) {
+
+    p1 <- tmpDF %>% 
+        filter(name==keyMetric) %>% 
+        ggplot(aes(x=hour, y=value)) + 
+        geom_line(aes(color=metric, group=metric)) + 
+        facet_wrap(~month) + 
+        labs(x="Hour of day", 
+             y="% of time as max/min", 
+             title=paste0(keyMetric, ": maximum and minimum by hour"), 
+             subtitle=paste0("Ties included as full value", 
+                             ifelse(keyMetric=="precipitation", " (days with no precipitation excluded)", "")
+                             )
+             ) + 
+        scale_color_discrete("Metric:")
+    print(p1)
+}
+
+# Plot percent of hours with precipitation
+dfHourlyTempPrecip %>% 
+    filter(name=="precipitation") %>% 
+    group_by(month, hour) %>%
+    summarize(pct0=mean(value>0), pct05=mean(value>=0.5), .groups="drop") %>%
+    pivot_longer(-c(month, hour)) %>%
+    mutate(name=ifelse(name=="pct0", ">=0.1 mm", ">=0.5 mm")) %>%
+    ggplot(aes(x=hour, y=value)) + 
+    geom_line(aes(group=name, color=name)) + 
+    facet_wrap(~month) + 
+    labs(x="Hour of day", 
+         y="% at/above precipitation hurdle", 
+         title=paste0("% of observations with precipitation in past hour")
+         ) + 
+    lims(y=c(0, NA))
+
+```
+  
