@@ -3416,5 +3416,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 03-JUL-2023  
 * OpenMeteoEDA_202306_v001 compares daily and sum of hourly  
 * OpenMeteoEDA_202306_v001 explores precipitation  
-* OpenMeteoEDA_202306_v001 explores temperature  
+* OpenMeteoEDA_202306_v001 explores temperature
+* OpenMeteoEDA_202306_v001 explores hour of day for max/min temperature and precipitation  
   
