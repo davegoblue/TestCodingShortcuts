@@ -1233,3 +1233,92 @@ tmpWindDir %>%
 
 ```
   
+Hourly wind directions are averaged using arctan. The formula is arctan2(y=sum-of-sin, x=sum-of-cos):  
+```{r, fig.height=9, fig.width=9}
+
+# Unweighted by wind speed
+tmpWindatan_uw <- tmpWindDir %>%
+    mutate(date=lubridate::date(time), cosine=cos(2*pi*value/360), sine=sin(2*pi*value/360)) %>%
+    group_by(date) %>%
+    summarize(across(c(cosine, sine), sum), .groups="drop") %>%
+    mutate(arctangent=atan(sine/cosine), 
+           arctangent2=atan2(y=sine, x=cosine), 
+           avgdir=((arctangent2/2)*(360/pi)), 
+           avgdir=ifelse(avgdir<0, 360+avgdir, avgdir)
+           ) %>%
+    left_join(select(tmpOMDaily$tblDaily, date, wdd=winddirection_10m_dominant), by="date")
+tmpWindatan_uw
+
+tmpWindatan_uw %>%
+    mutate(delta=avgdir-wdd) %>%
+    summary()
+
+tmpWindatan_uw %>%
+    count(wdd, awdd=round(avgdir)) %>%
+    ggplot(aes(x=wdd, y=awdd)) + 
+    geom_point(aes(size=n)) + 
+    labs(x="Reported dominant wind direction (daily data)", 
+         y="Calculated dominant wind direction (hourly data)", 
+         title="Relationship between reported and calculated dominant wind direction", 
+         subtitle="Unweighted by wind speed"
+         ) + 
+    scale_size_continuous("# days")
+
+# Weighted by wind speed
+tmpWindatan_wtd <- tmpOMHourly$tblHourly %>%
+    select(date, time, wd=winddirection_10m, ws=windspeed_10m) %>%
+    mutate(cosine=cos(2*pi*wd/360), sine=sin(2*pi*wd/360)) %>%
+    group_by(date) %>%
+    summarize(across(c(cosine, sine), .fns=function(x) sum(x*ws)/sum(ws)), sws=sum(ws), .groups="drop") %>%
+    mutate(arctangent=atan(sine/cosine), 
+           arctangent2=atan2(y=sine, x=cosine), 
+           avgdir=((arctangent2/2)*(360/pi)), 
+           avgdir=ifelse(avgdir<0, 360+avgdir, avgdir), 
+           avgspd=sws/24, 
+           dist=sws*sqrt(cosine**2+sine**2)
+           ) %>%
+    left_join(select(tmpOMDaily$tblDaily, date, wdd=winddirection_10m_dominant), by="date")
+tmpWindatan_wtd
+
+tmpWindatan_wtd %>%
+    mutate(delta=avgdir-wdd) %>%
+    summary()
+
+tmpWindatan_wtd %>%
+    count(wdd, awdd=round(avgdir)) %>%
+    ggplot(aes(x=wdd, y=awdd)) + 
+    geom_point(aes(size=n)) + 
+    labs(x="Reported dominant wind direction (daily data)", 
+         y="Calculated dominant wind direction (hourly data)", 
+         title="Relationship between reported and calculated dominant wind direction", 
+         subtitle="Weighted by wind speed"
+         ) + 
+    scale_size_continuous("# days")
+
+tmpWindatan_wtd %>%
+    count(rdist=round(dist), rspd=round(avgspd)) %>%
+    ggplot(aes(x=rspd, y=rdist/24)) + 
+    geom_point(aes(size=n)) + 
+    labs(title="Average wind speed (total and weighted by direction) by day", 
+         x="Average wind speed per day", 
+         y="Weighted average wind speed\n(total distance on average angle, divided by 24)"
+         ) + 
+    geom_abline(slope=1, intercept=0, lty=2) +
+    scale_size_continuous("# days")
+
+tmpWindatan_wtd %>%
+    mutate(rdist=round(dist), rspd=round(avgspd)) %>%
+    ggplot(aes(x=rspd)) + 
+    geom_boxplot(aes(y=dist/24/rspd, group=rspd), fill="lightblue") + 
+    labs(title="Average wind speed (total and weighted by direction) by day", 
+         x="Average wind speed per day", 
+         y="Average weighted wind speed\n(as ratio of gross average)"
+         )
+
+tmpWindatan_wtd %>%
+    filter(abs(avgdir-wdd)>1)
+
+```
+  
+The wind direction averaging of hourly data, weighted by wind speed, is consistent with the reported dominant wind direction in the daily data.
+  
