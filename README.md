@@ -3419,5 +3419,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores temperature
 * OpenMeteoEDA_202306_v001 explores hour of day for max/min temperature and precipitation
 * OpenMeteoEDA_202306_v001 explores wind
-* OpenMeteoEDA_202306_v001 explores E/W and N/S wind frequency  
+* OpenMeteoEDA_202306_v001 explores E/W and N/S wind frequency
+* OpenMeteoEDA_202306_v001 explores dominant wind direction  
   
