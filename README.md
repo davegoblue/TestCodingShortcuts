@@ -3423,5 +3423,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores dominant wind direction  
   
 ### Expansions week of 03-JUL-2023  
-* OpenMeteoEDA_202306_v001 explores WMO weather codes  
+* OpenMeteoEDA_202306_v001 explores WMO weather codes
+* OpenMeteoEDA_202306_v001 explores shortwave radiation  
   
