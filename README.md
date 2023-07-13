@@ -3425,5 +3425,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 03-JUL-2023  
 * OpenMeteoEDA_202306_v001 explores WMO weather codes
 * OpenMeteoEDA_202306_v001 explores shortwave radiation
-* OpenMeteoEDA_202306_v001 explores evapotranspiration  
+* OpenMeteoEDA_202306_v001 explores evapotranspiration
+* OpenMeteoEDA_202306_v001 explores cloud cover  
   
