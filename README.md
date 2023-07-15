@@ -3427,5 +3427,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores shortwave radiation  
 * OpenMeteoEDA_202306_v001 explores evapotranspiration  
 * OpenMeteoEDA_202306_v001 explores cloud cover  
-* OpenMeteoEDA_202306_v001 explores cloud cover max/min  
+* OpenMeteoEDA_202306_v001 explores cloud cover max/min
+* OpenMeteoEDA_202306_v001 explores MSL and surface pressure  
   
