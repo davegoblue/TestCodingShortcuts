@@ -3433,5 +3433,6 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 10-JUL-2023  
 * OpenMeteoEDA_202306_v001 explores soil temperature
-* OpenMeteoEDA_202306_v001 explores soil temperature max/min  
+* OpenMeteoEDA_202306_v001 explores soil temperature max/min
+* OpenMeteoEDA_202306_v001 explores soil moisture  
   
