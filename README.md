@@ -3435,5 +3435,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores soil temperature
 * OpenMeteoEDA_202306_v001 explores soil temperature max/min
 * OpenMeteoEDA_202306_v001 explores soil moisture  
-* OpenMeteoEDA_202306_v001 explores soil moisture max/min  
+* OpenMeteoEDA_202306_v001 explores soil moisture max/min
+* OpenMeteoEDA_202306_v001 explores predictive power of hourly temperature on month  
   
