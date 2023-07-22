@@ -1772,7 +1772,7 @@ for(keyMetric in unique(tmpDFSoilMoist$name)) {
 ```
   
 Metrics are explored for their variation over months and over hours of day:  
-```{r}
+```{r, fig.height=9, fig.width=9}
 
 # Sample database
 tmpTemp <- tmpOMHourly$tblHourly %>%
@@ -1813,6 +1813,86 @@ prdTemp %>%
     labs(x="Actual month", y="Predicted month", title="Actual vs. predicted month using temperature") + 
     geom_text(aes(label=n)) + 
     geom_tile(aes(fill=corr), alpha=0.25)
+
+```
+  
+The simple predictive model is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+simpleOneVarPredict <- function(df, 
+                                tgt, 
+                                prd, 
+                                nPrint=30, 
+                                showPlot=TRUE, 
+                                returnData=TRUE
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble with key elements
+    # tgt: target variable
+    # prd: predictor variable
+    # nPrint: maximum number of lines of confusion matrix to print
+    #         0 means do not print any summary statistics
+    # showPlot: boolean, should overlap plot be created and shown?
+    
+    # Counts of predictor to target variable
+    dfPred <- df %>%
+        group_by(across(all_of(c(prd, tgt)))) %>%
+        summarize(n=n(), .groups="drop") %>%
+        arrange(across(all_of(prd)), desc(n)) %>%
+        group_by(across(all_of(prd))) %>%
+        mutate(correct=row_number()==1, predicted=first(get(tgt))) %>%
+        ungroup()
+
+    # Confusion matrix and accuracy
+    dfConf <- dfPred %>%
+        group_by(across(all_of(c(tgt, "correct")))) %>%
+        summarize(n=sum(n), .groups="drop") %>%
+        pivot_wider(id_cols=tgt, names_from=correct, values_from=n, values_fill=0) %>%
+        mutate(n=`TRUE`+`FALSE`, 
+               pctCorrect=`TRUE`/n, 
+               pctNaive=1/(nrow(.)), 
+               lift=pctCorrect/pctNaive-1
+               )
+    
+    # Overall confusion matrix
+    dfConfAll <- dfConf %>%
+        summarize(nMax=max(n), across(c(`FALSE`, `TRUE`, "n"), sum)) %>%
+        mutate(pctCorrect=`TRUE`/n, 
+               pctNaive=nMax/n, 
+               lift=pctCorrect/pctNaive-1, 
+               nBucket=length(unique(dfPred[[prd]]))
+               )
+    
+    # Print confusion matrices
+    if(nPrint > 0) {
+        cat("\nAccuracy by target subgroup:\n")
+        dfConf %>% print(n=nPrint)
+        cat("\nOverall Accuracy:\n")
+        dfConfAll %>% print(n=nPrint)
+    }
+    
+    # Plot of overlaps
+    if(isTRUE(showPlot)) {
+        p1 <- dfPred %>%
+            group_by(across(c(all_of(tgt), "predicted", "correct"))) %>%
+            summarize(n=sum(n), .groups="drop") %>%
+            ggplot(aes(x=get(tgt), y=predicted)) + 
+            labs(x="Actual", y="Predicted", title="Actual vs. predicted XXX using YYY") + 
+            geom_text(aes(label=n)) + 
+            geom_tile(aes(fill=correct), alpha=0.25)
+        print(p1)
+    }
+    
+    # Return data if requested
+    if(isTRUE(returnData)) list(dfPred=dfPred, dfConf=dfConf, dfConfAll=dfConfAll)
+    
+}
+
+tstFunc <- simpleOneVarPredict(tmpTemp, tgt="month", prd="rndTemp")
+tstFunc
+
+all.equal(tstFunc$dfPred, rename(prdTemp, correct=corr, predicted=pred))
 
 ```
   
