@@ -1878,7 +1878,11 @@ simpleOneVarPredict <- function(df,
             group_by(across(c(all_of(tgt), "predicted", "correct"))) %>%
             summarize(n=sum(n), .groups="drop") %>%
             ggplot(aes(x=get(tgt), y=predicted)) + 
-            labs(x="Actual", y="Predicted", title="Actual vs. predicted XXX using YYY") + 
+            labs(x="Actual", 
+                 y="Predicted", 
+                 title=paste0("Actual vs. predicted ", tgt), 
+                 subtitle=paste0("(using ", prd, ")")
+                 ) + 
             geom_text(aes(label=n)) + 
             geom_tile(aes(fill=correct), alpha=0.25)
         print(p1)
@@ -1893,6 +1897,46 @@ tstFunc <- simpleOneVarPredict(tmpTemp, tgt="month", prd="rndTemp")
 tstFunc
 
 all.equal(tstFunc$dfPred, rename(prdTemp, correct=corr, predicted=pred))
+
+```
+  
+The function is tested for predictive power of numeric variables, bucketed in to percentiles, on month:  
+```{r, fig.height=9, fig.width=9}
+
+# Create percentiles for numeric variables
+tmpTemp <- tmpOMHourly$tblHourly %>%
+    mutate(month=factor(month.abb[lubridate::month(date)], levels=month.abb), 
+           hour=lubridate::hour(time), 
+           fct_hour=factor(hour), 
+           across(where(is.numeric), .fns=function(x) round(100*percent_rank(x)), .names="pct_{.col}")
+           )
+tmpTemp
+
+# Get key variable names
+tmpNames <- tmpTemp %>% 
+    select(starts_with("pct")) %>% 
+    names()
+tmpNames
+
+# Get the key predictive metrics
+tmpDFR <- map_dfr(.x=tmpNames, 
+                  .f=function(x) simpleOneVarPredict(tmpTemp, tgt="month", prd=x, nPrint=0, showPlot=FALSE)$dfConfAll
+                  ) %>% 
+    mutate(vrbl=tmpNames) %>% 
+    arrange(desc(lift))
+
+# Print and plot lift by variable
+tmpDFR %>% 
+    print(n=50)
+tmpDFR %>% 
+    ggplot(aes(x=fct_reorder(stringr::str_replace_all(vrbl, "pct_", ""), lift), y=lift)) + 
+    geom_col(fill="lightblue") + 
+    coord_flip() + 
+    labs(x=NULL, y="lift", title="Lift by hourly variable percentile in predicting month")
+
+# Example for soil temperature and high clouds
+simpleOneVarPredict(tmpTemp, tgt="month", prd="pct_soil_temperature_100_to_255cm", returnData=FALSE)
+simpleOneVarPredict(tmpTemp, tgt="month", prd="pct_cloudcover_high", returnData=FALSE)
 
 ```
   
