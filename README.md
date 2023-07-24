@@ -3422,7 +3422,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores E/W and N/S wind frequency
 * OpenMeteoEDA_202306_v001 explores dominant wind direction  
   
-### Expansions week of 03-JUL-2023  
+### Expansions week of 10-JUL-2023  
 * OpenMeteoEDA_202306_v001 explores WMO weather codes
 * OpenMeteoEDA_202306_v001 explores shortwave radiation  
 * OpenMeteoEDA_202306_v001 explores evapotranspiration  
@@ -3431,7 +3431,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores MSL and surface pressure
 * OpenMeteoEDA_202306_v001 explores MSL and surface pressure max/min  
   
-### Expansions week of 10-JUL-2023  
+### Expansions week of 17-JUL-2023  
 * OpenMeteoEDA_202306_v001 explores soil temperature
 * OpenMeteoEDA_202306_v001 explores soil temperature max/min
 * OpenMeteoEDA_202306_v001 explores soil moisture  
@@ -3439,4 +3439,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores predictive power of hourly temperature on month  
 * OpenMeteoEDA_202306_v001 function simpleOneVarPredict() written
 * OpenMeteoEDA_202306_v001 metrics scored by lift in predicting month  
+  
+### Expansions week of 24-JUL-2023  
+* OpenMeteoEDA_202306_v001 metrics scored by lift in predicting hour of day  
   
