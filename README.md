@@ -3441,5 +3441,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 metrics scored by lift in predicting month  
   
 ### Expansions week of 24-JUL-2023  
-* OpenMeteoEDA_202306_v001 metrics scored by lift in predicting hour of day  
+* OpenMeteoEDA_202306_v001 metrics scored by lift in predicting hour of day
+* OpenMeteoEDA_202306_v001 explores predictive power of random variable  
   
