@@ -2029,3 +2029,151 @@ tmpDFRHour_v2 %>%
 
 ```
   
+Function simpleOneVarPredict() is updated to allow for test-train:  
+```{r, fig.height=9, fig.width=9}
+
+simpleOneVarPredict <- function(df, 
+                                tgt, 
+                                prd, 
+                                dfTest=NULL,
+                                nPrint=30, 
+                                showPlot=TRUE, 
+                                returnData=TRUE
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble with key elements (training data set)
+    # tgt: target variable
+    # prd: predictor variable
+    # dfTest: test dataset for applying predictions
+    # nPrint: maximum number of lines of confusion matrix to print
+    #         0 means do not print any summary statistics
+    # showPlot: boolean, should overlap plot be created and shown?
+    
+    # Counts of predictor to target variable
+    dfPred <- df %>%
+        group_by(across(all_of(c(prd, tgt)))) %>%
+        summarize(n=n(), .groups="drop") %>%
+        arrange(across(all_of(prd)), desc(n)) %>%
+        group_by(across(all_of(prd))) %>%
+        mutate(correct=row_number()==1, predicted=first(get(tgt))) %>%
+        ungroup()
+
+    # Confusion matrix and accuracy
+    dfConf <- dfPred %>%
+        group_by(across(all_of(c(tgt, "correct")))) %>%
+        summarize(n=sum(n), .groups="drop") %>%
+        pivot_wider(id_cols=tgt, names_from=correct, values_from=n, values_fill=0) %>%
+        mutate(n=`TRUE`+`FALSE`, 
+               pctCorrect=`TRUE`/n, 
+               pctNaive=1/(nrow(.)), 
+               lift=pctCorrect/pctNaive-1
+               )
+    
+    # Overall confusion matrix
+    dfConfAll <- dfConf %>%
+        summarize(nMax=max(n), across(c(`FALSE`, `TRUE`, "n"), sum)) %>%
+        mutate(pctCorrect=`TRUE`/n, 
+               pctNaive=nMax/n, 
+               lift=pctCorrect/pctNaive-1, 
+               nBucket=length(unique(dfPred[[prd]]))
+               )
+    
+    # Print confusion matrices
+    if(nPrint > 0) {
+        cat("\nAccuracy by target subgroup (training data):\n")
+        dfConf %>% print(n=nPrint)
+        cat("\nOverall Accuracy (training data):\n")
+        dfConfAll %>% print(n=nPrint)
+    }
+    
+    # Plot of overlaps
+    if(isTRUE(showPlot)) {
+        p1 <- dfPred %>%
+            group_by(across(c(all_of(tgt), "predicted", "correct"))) %>%
+            summarize(n=sum(n), .groups="drop") %>%
+            ggplot(aes(x=get(tgt), y=predicted)) + 
+            labs(x="Actual", 
+                 y="Predicted", 
+                 title=paste0("Training data - Actual vs. predicted ", tgt), 
+                 subtitle=paste0("(using ", prd, ")")
+                 ) + 
+            geom_text(aes(label=n)) + 
+            geom_tile(aes(fill=correct), alpha=0.25)
+        print(p1)
+    }
+    
+    # Create metrics for test dataset if requested
+    if(!is.null(dfTest)) {
+        # Get maximum category from training data
+        mostPredicted <- count(dfPred, predicted, wt=n) %>% slice(1) %>% pull(predicted)
+        # Get mapping of metric to prediction
+        dfPredict <- dfPred %>% 
+            group_by(across(all_of(c(prd, "predicted")))) %>% 
+            summarize(n=sum(n), .groups="drop")
+        # Create predictions for test data
+        dfPredTest <- dfTest %>%
+            select(all_of(c(prd, tgt))) %>%
+            left_join(select(dfPredict, -n)) %>%
+            replace_na(list(predicted=mostPredicted)) %>%
+            group_by(across(all_of(c(prd, tgt, "predicted")))) %>%
+            summarize(n=n(), .groups="drop") %>%
+            mutate(correct=(get(tgt)==predicted))
+        # Create confusion statistics for test data
+        dfConfTest <- dfPredTest %>%
+            group_by(across(all_of(c(tgt, "correct")))) %>%
+            summarize(n=sum(n), .groups="drop") %>%
+            pivot_wider(id_cols=tgt, names_from=correct, values_from=n, values_fill=0) %>%
+            mutate(n=`TRUE`+`FALSE`, 
+                   pctCorrect=`TRUE`/n, 
+                   pctNaive=1/(nrow(.)), 
+                   lift=pctCorrect/pctNaive-1
+                   )
+        # Overall confusion matrix for test data
+        dfConfAllTest <- dfConfTest %>%
+            summarize(nMax=max(n), across(c(`FALSE`, `TRUE`, "n"), sum)) %>%
+            mutate(pctCorrect=`TRUE`/n, 
+                   pctNaive=nMax/n, 
+                   lift=pctCorrect/pctNaive-1, 
+                   nBucket=length(unique(dfConfTest[[prd]]))
+               )
+        # Print confusion matrices
+        if(nPrint > 0) {
+            cat("\nAccuracy by target subgroup (testing data):\n")
+            dfConfTest %>% print(n=nPrint)
+            cat("\nOverall Accuracy (testing data):\n")
+            dfConfAllTest %>% print(n=nPrint)
+            }
+    } else {
+        dfPredTest <- NULL
+        dfConfTest <- NULL
+        dfConfAllTest <- NULL
+        
+    }
+    
+    # Return data if requested
+    if(isTRUE(returnData)) list(dfPred=dfPred, 
+                                dfConf=dfConf, 
+                                dfConfAll=dfConfAll, 
+                                dfPredTest=dfPredTest, 
+                                dfConfTest=dfConfTest, 
+                                dfConfAllTest=dfConfAllTest
+                                )
+    
+}
+
+# Original format
+simpleOneVarPredict(tmpTemp, tgt="month", prd="pct_soil_temperature_100_to_255cm", showPlot=FALSE)
+
+# Train-test format
+set.seed(23072514)
+idxTrain <- sample(1:nrow(tmpTemp), size=round(.8*nrow(tmpTemp)), replace=FALSE)
+simpleOneVarPredict(tmpTemp[idxTrain,], 
+                    tgt="month", 
+                    prd="pct_soil_temperature_100_to_255cm", 
+                    showPlot=FALSE, 
+                    dfTest=tmpTemp[-idxTrain,]
+                    )
+
+```
+  
