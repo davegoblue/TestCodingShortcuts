@@ -2203,7 +2203,6 @@ simpleOneVarFit <- function(df,
         group_by(across(all_of(prd))) %>%
         mutate(rankN=n()+1-rank(n, ties.method=rankType, na.last=naMethod)) %>%
         arrange(across(all_of(prd)), rankN) %>%
-        mutate(predicted=first(get(tgt))) %>%
         ungroup()
 
 }
@@ -2211,7 +2210,7 @@ simpleOneVarFit <- function(df,
 # Test that results are the same for a variable with many ties, and a variable with fewer ties
 tstFit <- simpleOneVarFit(tmpTemp, tgt="month", prd="pct_snowfall")
 tstOrig <- simpleOneVarPredict(tmpTemp, tgt="month", prd="pct_snowfall", nPrint=0, showPlot=FALSE)$dfPred
-all.equal(tstOrig %>% select(-correct), tstFit %>% select(-rankN))
+all.equal(tstOrig %>% select(-correct, -predicted), tstFit %>% select(-rankN))
 
 tstFit <- simpleOneVarFit(tmpTemp, tgt="month", prd="pct_soil_temperature_100_to_255cm")
 tstOrig <- simpleOneVarPredict(tmpTemp, 
@@ -2220,14 +2219,14 @@ tstOrig <- simpleOneVarPredict(tmpTemp,
                                nPrint=0, 
                                showPlot=FALSE
                                )$dfPred
-all.equal(tstOrig %>% select(-correct), tstFit %>% select(-rankN))
+all.equal(tstOrig %>% select(-correct, -predicted), tstFit %>% select(-rankN))
 
 ```
   
 A prediction mapper is created, along with the mapping for anything not in the data:  
 ```{r, fig.height=9, fig.width=9}
 
-simpleOneVarMapper <- function(df, prd, tgt) {
+simpleOneVarMapper <- function(df, tgt, prd) {
     
     # FUNCTION ARGUMENTS:
     # df: data frame or tibble from SimpleOneVarFit()
@@ -2250,6 +2249,63 @@ simpleOneVarMapper <- function(df, prd, tgt) {
 
 tstMapper <- simpleOneVarMapper(tstFit, tgt="month", prd="pct_soil_temperature_100_to_255cm")
 tstMapper
+
+```
+  
+A function to apply the prediction mapper is created:  
+```{r, fig.height=9, fig.width=9}
+
+simpleOneVarApplyMapper <- function(df, 
+                                    tgt,
+                                    prd, 
+                                    mapper, 
+                                    mapperDF="dfPredictor", 
+                                    mapperDefault="dfCommon",
+                                    prdName="predicted"
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame containing prd for predicting tgt
+    # tgt: target variable in df
+    # prd: predictor variable in df
+    # mapper: mapping list from sinpleOneVarMapper()
+    # mapperDF: element that can be used to merge mappings
+    # mapperDefault: element that can be used for NA resulting from merging mapperDF
+    # prdName: name for the prediction variable
+    
+    # Extract the mapper and default value
+    vecRename <- c(prdName) %>% purrr::set_names(tgt)
+    dfMap <- mapper[[mapperDF]] %>% select(all_of(c(prd, tgt))) %>% colRenamer(vecRename=vecRename)
+    chrDefault <- mapper[[mapperDefault]] %>% slice(1) %>% pull(tgt)
+    
+    # Merge mappings to df
+    df %>%
+        left_join(dfMap, by=prd) %>%
+        replace_na(list("predicted"=chrDefault))
+    
+}
+
+# Example with mutated variable
+tmpMutated <- tmpTemp %>% 
+    select(date, hour, month, pct_soil_temperature_100_to_255cm) %>%
+    mutate(pct_soil_temperature_100_to_255cm=ifelse(hour==0, -10, pct_soil_temperature_100_to_255cm))
+tstApplied <- simpleOneVarApplyMapper(tmpMutated,
+                                      tgt="month", 
+                                      prd="pct_soil_temperature_100_to_255cm", 
+                                      mapper=tstMapper
+                                      )
+tstApplied
+
+# Example using tstFit to confirm same outputs
+tstApplied <- simpleOneVarApplyMapper(tstFit,
+                                      tgt="month", 
+                                      prd="pct_soil_temperature_100_to_255cm", 
+                                      mapper=tstMapper
+                                      )
+tstApplied
+all.equal(tstOrig %>% select(-correct, correct), 
+          tstApplied %>% select(-rankN) %>% mutate(correct=month==predicted)
+          )
 
 ```
   
