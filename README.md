@@ -3446,5 +3446,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 function simpleOneVarPredict() includes test-train
 * OpenMeteoEDA_202306_v001 function simpleOneVarFit() written
 * OpenMeteoEDA_202306_v001 function simpleOneVarMapper() written
-* OpenMeteoEDA_202306_v001 function simpleOneVarApplyMapper() written  
+* OpenMeteoEDA_202306_v001 function simpleOneVarApplyMapper() written
+* OpenMeteoEDA_202306_v001 function simpleOneVarConfusionData() written  
   
