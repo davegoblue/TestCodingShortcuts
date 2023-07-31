@@ -3449,3 +3449,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 function simpleOneVarApplyMapper() written
 * OpenMeteoEDA_202306_v001 function simpleOneVarConfusionData() written  
   
+### Expansions week of 31-JUL-2023  
+* OpenMeteoEDA_202306_v001 function simpleOneVarConfusionReport() written  
+  
