@@ -2340,3 +2340,103 @@ simpleOneVarConfusionData(tstApplied, tgtOrig="month", tgtPred="predicted")
 
 ```
   
+A function to report the confusion matrix data is written:  
+```{r, fig.height=9, fig.width=9}
+
+simpleOneVarConfusionReport <- function(df, 
+                                        tgtOrig,
+                                        tgtPred, 
+                                        otherVars=c(), 
+                                        printConf=TRUE,
+                                        printConfOrig=printConf, 
+                                        printConfPred=printConf,
+                                        printConfOverall=printConf, 
+                                        plotConf=TRUE, 
+                                        nBucket=NA, 
+                                        predictorVarName=""
+                                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame from simpleOneVarConfusionData()
+    # tgtOrig: original target variable name in df
+    # tgtPred: predicted target variable name in df
+    # otherVars: other variables to be kept (will be grouping variables) - NOT IMPLEMENTED
+    # printConf: boolean, should confusion matrix data be printed? Applies to all three
+    # printConfOrig: boolean, should confusion data be printed based on original target variable?
+    # printConfPred: boolean, should confusion data be printed based on predicted target variable?
+    # printConfOverall: boolean, should overall confusion data be printed?
+    # plotConf: boolean, should confusion overlap data be plotted?
+    # nBucket: number of buckets used for prediction (pass from previous data)
+    
+    # Confusion report based on original target variable
+    if(isTRUE(printConfOrig)) {
+        cat("\nConfusion data based on original target variable:", tgtOrig, "\n")
+        df %>%
+            group_by(across(all_of(c(tgtOrig)))) %>%
+            summarize(right=sum(n*correct), wrong=sum(n)-right, n=sum(n), .groups="drop") %>%
+            mutate(pctRight=right/n, 
+                   pctNaive=n/(sum(n)), 
+                   lift=pctRight/pctNaive-1
+                   ) %>%
+            print(n=50)
+    }
+
+    # Confusion report based on predicted target variable
+    if(isTRUE(printConfPred)) {
+        cat("\nConfusion data based on predicted target variable:", tgtPred, "\n")
+        df %>%
+            group_by(across(all_of(c(tgtPred)))) %>%
+            summarize(right=sum(n*correct), wrong=sum(n)-right, n=sum(n), .groups="drop") %>%
+            mutate(pctRight=right/n) %>%
+            print(n=50)
+    }
+    
+    # Overall confusion matrix
+    if(isTRUE(printConfOverall)) {
+        maxNaive <- df %>%
+            group_by(across(all_of(tgtOrig))) %>%
+            summarize(n=sum(n), .groups="drop") %>%
+            arrange(desc(n)) %>%
+            slice(1) %>%
+            pull(n)
+        
+        cat("\nOverall confusion matrix\n")
+        df %>%
+            summarize(right=sum(n*correct), wrong=sum(n)-right, n=sum(n), .groups="drop") %>%
+            mutate(maxN=maxNaive, 
+                   pctRight=right/n, 
+                   pctNaive=maxN/n, 
+                   lift=pctRight/pctNaive-1, 
+                   nBucket=nBucket
+                   ) %>%
+            print(n=50)
+    }
+    
+    # Plot of overlaps
+    if(isTRUE(plotConf)) {
+        p1 <- df %>%
+            group_by(across(all_of(c(tgtOrig, tgtPred, "correct")))) %>%
+            summarize(n=sum(n), .groups="drop") %>%
+            ggplot(aes(x=get(tgtOrig), y=get(tgtPred))) + 
+            labs(x="Actual", 
+                 y="Predicted", 
+                 title=paste0("Training data - Actual vs. predicted ", tgtOrig), 
+                 subtitle=paste0("(using ", predictorVarName, ")")
+                 ) + 
+            geom_text(aes(label=n)) + 
+            geom_tile(aes(fill=correct), alpha=0.25)
+        print(p1)
+    }
+    
+}
+
+# Example with weighting
+simpleOneVarConfusionData(tstApplied, tgtOrig="month", tgtPred="predicted") %>%
+    simpleOneVarConfusionReport(tgtOrig="month", 
+                                tgtPred="predicted", 
+                                nBucket=length(unique(tstApplied$pct_soil_temperature_100_to_255cm)), 
+                                predictorVarName=names(tstApplied)[1]
+                                )
+
+```
+  
