@@ -3455,5 +3455,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 function simpleOneVarChain() written
 * OpenMeteoEDA_202306_v001 simpleOneVarConfusionReport() updated to optionally return data
 * OpenMeteoEDA_202306_v001 simpleOneVarChain() updated to optionally return data
-* OpenMeteoEDA_202306_v001 simpleOneVarChain() run with train-test data  
+* OpenMeteoEDA_202306_v001 simpleOneVarChain() run with train-test data
+* OpenMeteoEDA_202306_v001 function simpleOneVarTrainTest() written  
   
