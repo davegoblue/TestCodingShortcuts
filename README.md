@@ -3459,5 +3459,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 function simpleOneVarTrainTest() written  
   
 ### Expansions week of 07-AUG-2023  
-* OpenMeteoEDA_202306_v001 runs simpleOneVarTrainTest() on each predictor vs. month  
+* OpenMeteoEDA_202306_v001 runs simpleOneVarTrainTest() on each predictor vs. month
+* OpenMeteoEDA_202306_v001 plots lift of each predictor vs. month  
   
