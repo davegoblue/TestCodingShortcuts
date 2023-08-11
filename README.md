@@ -3462,5 +3462,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 runs simpleOneVarTrainTest() on each predictor vs. month
 * OpenMeteoEDA_202306_v001 plots lift of each predictor vs. month
 * OpenMeteoEDA_202306_v001 runs simpleOneVarTrainTest() on each predictor vs. hour  
-* OpenMeteoEDA_202306_v001 plots lift of each predictor vs. hour  
+* OpenMeteoEDA_202306_v001 plots lift of each predictor vs. hour
+* OpenMeteoEDA_202306_v001 plots creates variables for season and night-day  
   
