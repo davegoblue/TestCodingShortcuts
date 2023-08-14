@@ -3467,3 +3467,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 runs simpleOneVarTrainTest() on each predictor vs. season
 * OpenMeteoEDA_202306_v001 plots lift of each predictor vs. season  
   
+### Expansions week of 14-AUG-2023  
+* OpenMeteoEDA_202306_v001 runs simpleOneVarTrainTest() on each predictor vs. night-day  
+  
