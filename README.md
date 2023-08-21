@@ -3476,3 +3476,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 assesses best predictor vs. night-day-season
 * OpenMeteoEDA_202306_v001 runs k-means with 2 clusters  
   
+### Expansions week of 21-AUG-2023  
+* OpenMeteoEDA_202306_v001 assesses k-means with 2 clusters  
+  
