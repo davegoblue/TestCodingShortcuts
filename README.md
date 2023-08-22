@@ -3477,5 +3477,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 runs k-means with 2 clusters  
   
 ### Expansions week of 21-AUG-2023  
-* OpenMeteoEDA_202306_v001 assesses k-means with 2 clusters  
+* OpenMeteoEDA_202306_v001 assesses k-means with 2 clusters
+* OpenMeteoEDA_202306_v001 function runKMeans() written  
   
