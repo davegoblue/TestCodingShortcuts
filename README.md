@@ -3482,4 +3482,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 function plotClusterMeans() written
 * OpenMeteoEDA_202306_v001 function plotClusterPct() written
 * OpenMeteoEDA_202306_v001 runKMeans() updated to optionally run cluster plots
+* OpenMeteoEDA_202306_v001 explores k-means with 2 clusters
   
