@@ -3485,3 +3485,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores k-means with 2 clusters
 * OpenMeteoEDA_202306_v001 explores sum-squares for 1-3 clusters  
   
+### Expansions week of 28-AUG-2023  
+* OpenMeteoEDA_202306_v001 saves k-means data for 1-15 clusters
+
