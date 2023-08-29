@@ -3487,4 +3487,5 @@ All simple things to do, but knowing these will advance my capabilities in R
   
 ### Expansions week of 28-AUG-2023  
 * OpenMeteoEDA_202306_v001 saves k-means data for 1-15 clusters
-
+* OpenMeteoEDA_202306_v001 plots sum-squares for 1-15 clusters
+  
