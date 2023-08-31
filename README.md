@@ -3489,4 +3489,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 saves k-means data for 1-15 clusters
 * OpenMeteoEDA_202306_v001 plots sum-squares for 1-15 clusters
 * OpenMeteoEDA_202306_v001 runKMeans() updated to plot existing cluster objects
+* OpenMeteoEDA_202306_v001 assignKMeans() writtem to assign points to nearest centroid
   
