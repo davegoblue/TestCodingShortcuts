@@ -3494,3 +3494,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores k-means with 5 clusters
 * OpenMeteoEDA_202306_v001 explores PCA and variance explained
   
+### Expansions week of 04-SEP-2023  
+* OpenMeteoEDA_202306_v001 explores simple random forest
+
