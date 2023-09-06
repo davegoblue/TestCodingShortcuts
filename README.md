@@ -3497,4 +3497,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 04-SEP-2023  
 * OpenMeteoEDA_202306_v001 explores simple random forest
 * OpenMeteoEDA_202306_v001 uses holdout year with random forest
+* OpenMeteoEDA_202306_v001 explores random forest with 4 highest-importance variables
 
