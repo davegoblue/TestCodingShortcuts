@@ -3716,3 +3716,43 @@ tmpPred %>%
 ```
   
 Predictions near mid-month tend to be more accurate than predictions near the borders between months, consistent with soil temperatures gradually increasing or decreasing as seasons progress
+  
+A simple random forest is explored, for prediction of year:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Simple random forest model
+rfTempTrainYear <- ranger::ranger(fct_year ~ ., 
+                                  data=tmpTempTrain %>%
+                                      mutate(fct_year=factor(year(date))) %>%
+                                      select(all_of(c("fct_year", 'month', varsTrain))),
+                                  importance = "impurity"
+                                  )
+rfTempTrainYear
+
+# Variable importance
+rfTempTrainYear$variable.importance %>% 
+    as.data.frame() %>% 
+    purrr::set_names("imp") %>% 
+    rownames_to_column("metric") %>% 
+    tibble::as_tibble() %>%
+    ggplot(aes(x=fct_reorder(metric, imp), y=imp/1000)) + 
+    geom_col(fill="lightblue") + 
+    labs(x=NULL, y="Variable Importance (000)", title="Simple random forest to predict year") +
+    coord_flip()
+
+# Performance on test data (confirm >99% accuracy)
+rfTempTest <- tmpTempTest %>%
+    mutate(fct_year=factor(year(date)), pred=predict(rfTempTrainYear, data=.)$predictions)
+cat("\nAccuracy on test dataset is: ", round(100*mean(rfTempTest$pred==rfTempTest$fct_year), 2), "%\n", sep="")
+rfTempTest %>%
+    count(fct_year, pred) %>%
+    ggplot(aes(x=pred, y=fct_year)) + 
+    geom_tile(aes(fill=n)) + 
+    geom_text(aes(label=n), size=2.5) +
+    scale_fill_continuous("", low="white", high="green") + 
+    labs(x="Predicted year", y="Actual year", title="Predicting year on test data")
+
+```
+  
+The years are sufficiently distinct that the random forest is able to separate them perfectly, with soil moisture being a primary explanatory variable
+  
