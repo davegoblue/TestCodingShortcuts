@@ -3500,4 +3500,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores random forest with 4 highest-importance variables
 * OpenMeteoEDA_202306_v001 explores prediction accuracy for month by day of month
 * OpenMeteoEDA_202306_v001 explores simple random forest for predicting year
+* OpenMeteoEDA_202306_v001 explores random forest with only top-4 variables for predicting year
 
