@@ -3756,3 +3756,50 @@ rfTempTest %>%
   
 The years are sufficiently distinct that the random forest is able to separate them perfectly, with soil moisture being a primary explanatory variable
   
+The random forest is re-run using only the four most important variables:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Simple random forest model, with only the four most important variables, holding out 2022 data
+varsTop4 <- sort(rfTempTrainYear$variable.importance, decreasing=TRUE)[1:4] %>% names
+rfTempYearTop4 <- ranger::ranger(fct_year ~ ., 
+                                 data=tmpTempTrain %>%
+                                     mutate(fct_year=factor(year(date))) %>%
+                                     select(all_of(c("fct_year", varsTop4))),
+                                  importance = "impurity"
+                                 )
+rfTempYearTop4
+
+# Variable importance
+rfTempYearTop4$variable.importance %>% 
+    as.data.frame() %>% 
+    purrr::set_names("imp") %>% 
+    rownames_to_column("metric") %>% 
+    tibble::as_tibble() %>%
+    ggplot(aes(x=fct_reorder(metric, imp), y=imp/1000)) + 
+    geom_col(fill="lightblue") + 
+    labs(x=NULL, 
+         y="Variable Importance (000)", 
+         title="Simple random forest to predict year", 
+         subtitle="Restricted to top-4 importance variables from previous forest") +
+    coord_flip()
+
+# Performance on test data (confirm >99% accuracy)
+rfTempTest <- tmpTempTest %>%
+    mutate(fct_year=factor(year(date)), pred=predict(rfTempYearTop4, data=.)$predictions)
+cat("\nAccuracy on test dataset is: ", round(100*mean(rfTempTest$pred==rfTempTest$fct_year), 2), "%\n", sep="")
+rfTempTest %>%
+    count(fct_year, pred) %>%
+    ggplot(aes(x=pred, y=fct_year)) + 
+    geom_tile(aes(fill=n)) + 
+    geom_text(aes(label=n), size=2.5) +
+    scale_fill_continuous("", low="white", high="green") + 
+    labs(x="Predicted year", 
+         y="Actual year", 
+         title="Predicting year on test data", 
+         subtitle="Top-4 predictors by importance only"
+         )
+
+```
+  
+Over the course of the 13.5-year training data, there is sufficient variation in soil temperature and moisture for the model to be assess year almost perfectly. Further exploration is needed for how the model is able to make clean distinctions between, for example, very late on December 31 and very early on January 1
+  
