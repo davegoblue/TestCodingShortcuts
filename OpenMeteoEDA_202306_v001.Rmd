@@ -3842,7 +3842,7 @@ tmpTempFull %>%
   
 Of the 117,936 observations, there are 13,279 combinations of percentile for the top-4 variables. Only a very few combinations span across different years (21) or even months (160), explaining the very high explanatory power of the model. Forward-looking predictive power is likely to be very poor, as the model needs to be trained on the specific patterns of soil moisture and temperature that evolved in a given year. But, specific patterns of observed soil moisture appear to be a characteristic signature of a specific year in the training data
 
-The model is re-run with all variables except for the top-4:  
+The model is re-run predicting year with all variables except for the top-4:  
 ```{r, fig.height=9, fig.width=9, cache=TRUE}
 
 # Simple random forest model, excluding the four most important variables
@@ -3888,4 +3888,51 @@ rfTempTest %>%
 ```
   
 There is still sufficient annual difference in the data to effectively determine year based on explanatory variables excluding the top-4 in importance
+  
+The model is re-run for predicting month with all variables except for the top-4:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Simple random forest model, excluding the four most important variables
+varsNonTop4 <- sort(rfTempTrainMonth$variable.importance, decreasing=TRUE)[-c(1:4)] %>% names
+rfTempMonthNonTop4 <- ranger::ranger(month ~ ., 
+                                     data=tmpTempTrain %>%
+                                         mutate(fct_year=factor(year(date))) %>%
+                                         select(all_of(c("month", varsNonTop4))),
+                                     importance = "impurity"
+                                     )
+rfTempMonthNonTop4
+
+# Variable importance
+rfTempMonthNonTop4$variable.importance %>% 
+    as.data.frame() %>% 
+    purrr::set_names("imp") %>% 
+    rownames_to_column("metric") %>% 
+    tibble::as_tibble() %>%
+    ggplot(aes(x=fct_reorder(metric, imp), y=imp/1000)) + 
+    geom_col(fill="lightblue") + 
+    labs(x=NULL, 
+         y="Variable Importance (000)", 
+         title="Simple random forest to predict month", 
+         subtitle="Excludes top-4 importance variables from full forest") +
+    coord_flip()
+
+# Performance on test data (confirm >95% accuracy)
+rfTempTest <- tmpTempTest %>%
+    mutate(fct_year=factor(year(date)), pred=predict(rfTempMonthNonTop4, data=.)$predictions)
+cat("\nAccuracy on test dataset is: ", round(100*mean(rfTempTest$pred==rfTempTest$month), 2), "%\n", sep="")
+rfTempTest %>%
+    count(month, pred) %>%
+    ggplot(aes(x=pred, y=month)) + 
+    geom_tile(aes(fill=n)) + 
+    geom_text(aes(label=n), size=2.5) +
+    scale_fill_continuous("", low="white", high="green") + 
+    labs(x="Predicted month", 
+         y="Actual month", 
+         title="Predicting month on test data", 
+         subtitle="Excludes top-4 predictors by importance"
+         )
+
+```
+  
+There is still sufficient annual difference in the data to effectively determine month based on explanatory variables excluding the top-4 in importance
   
