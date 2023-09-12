@@ -3505,4 +3505,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 11-SEP-2023  
 * OpenMeteoEDA_202306_v001 explores random forest excluding top-4 variables for predicting year
+* OpenMeteoEDA_202306_v001 explores random forest excluding top-4 variables for predicting month
   
