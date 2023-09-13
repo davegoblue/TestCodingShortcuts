@@ -3936,3 +3936,52 @@ rfTempTest %>%
   
 There is still sufficient annual difference in the data to effectively determine month based on explanatory variables excluding the top-4 in importance
   
+The random forest is re-run excluding the four most important variables, with a holdout year:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Simple random forest model, excluding the four most important variables, holding out 2022 data
+varsNonTop4 <- sort(rfTempTrainMonth$variable.importance, decreasing=TRUE)[-c(1:4)] %>% names
+rfTempHoldNonTop4 <- ranger::ranger(month ~ ., 
+                                    data=tmpTempTrain %>%
+                                        mutate(fct_year=factor(year(date))) %>%
+                                        filter(year(date)<2022) %>%
+                                        select(all_of(c("month", varsNonTop4))),
+                                 importance = "impurity"
+                                 )
+rfTempHoldNonTop4
+
+# Performance on holdout data
+tmpPred <- tmpTempTrain %>%
+    bind_rows(tmpTempTest) %>%
+    filter(year(date)==2022) %>%
+    mutate(pred=predict(rfTempHoldNonTop4, data=.)$predictions)
+cat("\nAccuracy on holdout 2022 data is: ", 
+    round(100*mean(tmpPred$pred==tmpPred$month), 2), 
+    "%\n", 
+    sep=""
+    )
+tmpPred %>%
+    count(month, pred) %>%
+    ggplot(aes(x=pred, y=month)) + 
+    geom_tile(aes(fill=n)) + 
+    geom_text(aes(label=n), size=2.5) +
+    scale_fill_continuous("", low="white", high="green") + 
+    labs(x="Predicted month (2022)", 
+         y="Actual month (2022)", 
+         title="Applying random forest fit without 2022 data to 2022", 
+         subtitle="Most important 4 variables only"
+         )
+tmpPred %>% 
+    select(month, pred) %>% 
+    mutate(across(.cols=everything(), as.integer), delta=((month-pred+6)%%12)-6) %>% 
+    ggplot(aes(x=delta)) + 
+    geom_bar(fill="lightblue") + 
+    labs(title="Difference in months (predicted vs. actual)", 
+         x="Difference in months", 
+         y="Number"
+         )
+
+```
+  
+Excluding top-4 variables, the model successfully memorizes patterns, but is less successful in generalizing for forward-looking predictions. Predictions on a future year are ~50% accurate, compared with ~95% accuracy for predictions on unseen data in modeled years. This suggests high autocorrelation among data elements, such that an unseen data point at 12h00 is very similar to seen data points at 11h00 and 13h00, and similar (though less so) to seen data points at 12h00 exactly 1 year ago and/or 1 year in the future. Predictions on an unseen year are usually within +/- 1 month of actual, so the model is learning generalized trends about seasons
+
