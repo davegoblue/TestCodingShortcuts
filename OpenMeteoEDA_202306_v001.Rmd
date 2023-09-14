@@ -3985,3 +3985,55 @@ tmpPred %>%
   
 Excluding top-4 variables, the model successfully memorizes patterns, but is less successful in generalizing for forward-looking predictions. Predictions on a future year are ~50% accurate, compared with ~95% accuracy for predictions on unseen data in modeled years. This suggests high autocorrelation among data elements, such that an unseen data point at 12h00 is very similar to seen data points at 11h00 and 13h00, and similar (though less so) to seen data points at 12h00 exactly 1 year ago and/or 1 year in the future. Predictions on an unseen year are usually within +/- 1 month of actual, so the model is learning generalized trends about seasons
 
+The random forest regression is run for predicting temperature:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Variables to include for modeling
+varsTemp <- tmpTempTrain %>% 
+    select(-matches("pct_\\d{4}$"), -pct_temperature_2m, -pct_weathercode) %>% 
+    select(starts_with("pct_")) %>%
+    names
+varsTemp
+
+# Simple random forest model, excluding the four most important variables, holding out 2022 data
+rfTempTemp <- ranger::ranger(temperature_2m ~ ., 
+                             data=tmpTempTrain %>%
+                                 select(all_of(c("temperature_2m", varsTemp))),
+                             importance = "impurity"
+                             )
+rfTempTemp
+
+# Variable importance
+rfTempTemp$variable.importance %>% 
+    as.data.frame() %>% 
+    purrr::set_names("imp") %>% 
+    rownames_to_column("metric") %>% 
+    tibble::as_tibble() %>%
+    ggplot(aes(x=fct_reorder(metric, imp), y=imp/1000)) + 
+    geom_col(fill="lightblue") + 
+    labs(x=NULL, 
+         y="Variable Importance (000)", 
+         title="Simple random forest to predict temperature"
+         ) +
+    coord_flip()
+
+# Performance on test data (confirm very low error)
+rfTempTest <- tmpTempTest %>%
+    mutate(pred=predict(rfTempTemp, data=.)$predictions)
+cat("\nMSE on test dataset is: ", round(mean((rfTempTest$pred-rfTempTest$temperature_2m)**2), 3), "\n", sep="")
+
+rfTempTest %>%
+    count(ractual=round(temperature_2m, 1), rpred=round(pred, 1)) %>%
+    ggplot(aes(x=ractual, y=rpred)) + 
+    geom_point(aes(size=n)) + 
+    geom_smooth(aes(weight=n), method="lm") +
+    scale_size_continuous("") + 
+    labs(x="Actual temperature", 
+         y="Predicted temperature", 
+         title="Applying random forest regression for temperature"
+         )
+
+```
+  
+Many variables are strongly correlated, making temperature a simple prediction. Apparent temperature in particular is derived from dewpoint and temperature
+  
