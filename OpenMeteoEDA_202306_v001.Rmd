@@ -4037,3 +4037,57 @@ rfTempTest %>%
   
 Many variables are strongly correlated, making temperature a simple prediction. Apparent temperature in particular is derived from dewpoint and temperature
   
+The random forest regression is re-run for predicting temperature, with 2022-2023 as holdout years:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Variables to include for modeling
+varsTemp <- tmpTempTrain %>% 
+    select(-matches("pct_\\d{4}$"), -pct_temperature_2m, -pct_weathercode) %>% 
+    select(starts_with("pct_")) %>%
+    names
+varsTemp
+
+# Simple random forest model, excluding the four most important variables, holding out 2022 data
+rfTempTempHoldout <- ranger::ranger(temperature_2m ~ ., 
+                                    data=tmpTempTrain %>%
+                                        filter(year(date)<2022) %>%
+                                        select(all_of(c("temperature_2m", varsTemp))),
+                                    importance = "impurity"
+                                    )
+rfTempTempHoldout
+
+# Performance on test data (confirm very low error)
+rfTempTest <- tmpTempTest %>%
+    mutate(pred=predict(rfTempTempHoldout, data=.)$predictions, year=year(date), delta=temperature_2m-pred)
+cat("\nMSE on test dataset for 2022-2023 (holdout years) is: ", 
+    round(mean(rfTempTest[rfTempTest$year>=2022,]$delta**2), 3), 
+    "\n", 
+    sep=""
+    )
+
+# Plot of MSE by year
+rfTempTest %>%
+    group_by(year) %>%
+    summarize(mse=mean(delta**2)) %>%
+    ggplot(aes(x=factor(year))) + 
+    geom_col(aes(y=mse), fill="lightblue") + 
+    geom_text(aes(y=mse/2, label=round(mse,2))) +
+    labs(x=NULL, y="MSE", title="MSE of temperature predictions (modeled using 2021 and prior data)")
+
+# Plot of predicted vs. actual temperature in holdout years
+rfTempTest %>%
+    filter(year>=2022) %>%
+    count(ractual=round(temperature_2m, 1), rpred=round(pred, 1)) %>%
+    ggplot(aes(x=ractual, y=rpred)) + 
+    geom_point(aes(size=n)) + 
+    geom_smooth(aes(weight=n), method="lm") +
+    scale_size_continuous("") + 
+    labs(x="Actual temperature", 
+         y="Predicted temperature", 
+         title="Applying random forest regression for temperature", 
+         subtitle="Holdout years 2022-2023 plotted (modeled on 2021 and prior)"
+         )
+
+```
+  
+Given correlations among the variables, predictions remain very accurate in the holdout years, though less accurate than in years where the model has been able to see nearby data
