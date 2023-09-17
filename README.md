@@ -3510,4 +3510,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores random forest regression for temperature
 * OpenMeteoEDA_202306_v001 explores random forest regression for temperature with holdout year
 * OpenMeteoEDA_202306_v001 explores random forest regression for temperature with top-4 variables and holdout year
+* OpenMeteoEDA_202306_v001 explores random forest regression for temperature excluding top-4 variables and with holdout year
   
