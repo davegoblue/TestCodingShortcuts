@@ -4281,3 +4281,55 @@ rfTempTest %>%
 ```
   
 Even excluding "apparent temperature", the model learns generalized trends that are meaningfully applicable in the holdout years. Predictions are generally within 2 degrees of actual
+
+The random forest regression is run for predicting surface windspeed:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Variables to include for modeling
+varsWind <- tmpTempTrain %>% 
+    select(-matches("pct_\\d{4}$"), -pct_windspeed_10m, -pct_weathercode) %>% 
+    select(starts_with("pct_")) %>%
+    names
+varsWind
+
+# Simple random forest model with all features and no holdout year
+rfTempWind <- ranger::ranger(windspeed_10m ~ ., 
+                             data=tmpTempTrain %>%
+                                 select(all_of(c("windspeed_10m", varsWind))),
+                             importance = "impurity"
+                             )
+rfTempWind
+
+# Variable importance
+rfTempWind$variable.importance %>% 
+    as.data.frame() %>% 
+    purrr::set_names("imp") %>% 
+    rownames_to_column("metric") %>% 
+    tibble::as_tibble() %>%
+    ggplot(aes(x=fct_reorder(metric, imp), y=imp/1000)) + 
+    geom_col(fill="lightblue") + 
+    labs(x=NULL, 
+         y="Variable Importance (000)", 
+         title="Simple random forest to predict surface (10m) windspeed"
+         ) +
+    coord_flip()
+
+# Performance on test data (confirm very low error)
+rfTempTest <- tmpTempTest %>%
+    mutate(pred=predict(rfTempWind, data=.)$predictions)
+cat("\nMSE on test dataset is: ", round(mean((rfTempTest$pred-rfTempTest$windspeed_10m)**2), 3), "\n", sep="")
+
+rfTempTest %>%
+    count(ractual=round(windspeed_10m, 0), rpred=round(pred, 1)) %>%
+    ggplot(aes(x=ractual, y=rpred)) + 
+    geom_point(aes(size=n)) + 
+    geom_smooth(aes(weight=n), method="lm") +
+    scale_size_continuous("") + 
+    labs(x="Actual windspeed (10m)", 
+         y="Predicted windspeed (10m)", 
+         title="Applying random forest regression for surface windspeed"
+         )
+
+```
+  
+Surface wind gusts and high-level windspeeds appear to accurately predict surface windspeeds
