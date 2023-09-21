@@ -4400,3 +4400,64 @@ rfTempTest %>%
   
 The model struggles with a few months of the holdout data, making inaccurate predictions for Jan/Feb/May 2022
 
+The random forest regression is re-run for predicting surface wind speed, with 2022-2023 as holdout years, and with only the top-4 importance variables:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Variables to include for modeling
+varsWindTop4 <- 
+    sort(rfTempWindHoldout$variable.importance, decreasing=TRUE)[c(1:4)] %>% names
+varsWindTop4
+
+# Simple random forest model, with only the four most important variables, holding out 2022-2023 data
+rfTempWindTop4Holdout <- ranger::ranger(windspeed_10m ~ ., 
+                                        data=tmpTempTrain %>%
+                                            filter(year(date)<2022) %>%
+                                            select(all_of(c("windspeed_10m", varsWindTop4))),
+                                        importance = "impurity"
+                                        )
+rfTempWindTop4Holdout
+
+# Performance on holdout data
+rfTempTest <- tmpTempTest %>%
+    mutate(pred=predict(rfTempWindTop4Holdout, data=.)$predictions, 
+           year=year(date), 
+           delta=windspeed_10m-pred
+           )
+cat("\nMSE on test dataset for 2022-2023 (holdout years) is: ", 
+    round(mean(rfTempTest[rfTempTest$year>=2022,]$delta**2), 3), 
+    "\n", 
+    sep=""
+    )
+
+# Plot of MSE by year
+rfTempTest %>%
+    group_by(year) %>%
+    summarize(mse=mean(delta**2)) %>%
+    ggplot(aes(x=factor(year))) + 
+    geom_col(aes(y=mse), fill="lightblue") + 
+    geom_text(aes(y=mse/2, label=round(mse,2))) +
+    labs(x=NULL, 
+         y="MSE", 
+         title="MSE of surface wind speed predictions (modeled using 2021 and prior data)", 
+         subtitle="Top-4 importance variables only"
+         )
+
+# Plot of MSE by month (2022-2023)
+rfTempTest %>%
+    filter(year(date)>=2022) %>%
+    mutate(yyyymm=customYYYYMM(date)) %>%
+    group_by(yyyymm) %>%
+    summarize(mse=mean(delta**2)) %>%
+    ggplot(aes(x=factor(yyyymm))) + 
+    geom_col(aes(y=mse), fill="lightblue") + 
+    geom_text(aes(y=mse/2, label=round(mse,2))) +
+    labs(x=NULL, 
+         y="MSE", 
+         title="MSE of surface wind speed predictions (modeled using 2021 and prior data)", 
+         subtitle="Top-4 importance variables only"
+         )
+
+```
+  
+The model struggles with a few months of the holdout data, making inaccurate predictions for Jan/Feb/May 2022. Predictions using only the top-4 importance variables are broadly similar to predictions using all variables
+
