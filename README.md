@@ -3516,5 +3516,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores random forest regression for temperature with variables of importance 2-5 and holdout year
 * OpenMeteoEDA_202306_v001 explores random forest regression for surface (10m) wind speed
 * OpenMeteoEDA_202306_v001 explores random forest regression for surface (10m) wind speed with holdout year
-* OpenMeteoEDA_202306_v001 explores random forest regression for surface (10m) wind speed with only top-4 importance variables and holdout year  
+* OpenMeteoEDA_202306_v001 explores random forest regression for surface (10m) wind speed excluding top-4 importance variables and with holdout year  
 
