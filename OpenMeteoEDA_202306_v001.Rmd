@@ -4545,3 +4545,54 @@ rfTempTest %>%
 ```
   
 The model struggles predicting surface windspeed when the top-4 importance variables are excluded. Predictions are especially tricky in holdout years, with under 50% of variance in surface windspeed explained by the model
+
+Model predictions are explored across the test and training data, and for modeled and holdout years:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+library(ranger) # Namespace needed for predict
+
+# Performance on all data
+rfTempAll <- tmpTempTest %>%
+    bind_rows(tmpTempTrain, .id="src") %>%
+    mutate(pred=predict(rfTempWindNonTop4Holdout, data=.)$predictions, 
+           year=year(date), 
+           delta=windspeed_10m-pred, 
+           src=c("1"="Test data", "2"="Training data")[src]
+           )
+rfTempAll
+
+# Plot of predicted vs. actual wind speed by holdout years vs. non-holdout years
+rfTempAll %>%
+    mutate(hoy=ifelse(year(date)>=2022, "2. Holdout", "1. Non-Holdout")) %>%
+    count(hoy, src, ractual=round(windspeed_10m, 0), rpred=round(pred, 0)) %>%
+    ggplot(aes(x=ractual, y=rpred)) + 
+    geom_point(aes(size=n), alpha=0.1) + 
+    geom_smooth(aes(weight=n), method="lm") +
+    scale_size_continuous("") + 
+    labs(x="Actual wind speed (10m)", 
+         y="Predicted wind speed (10m)", 
+         title="Applying random forest regression for surface wind speed", 
+         subtitle="Holdout years are 2022-2023 (non-holdout years modeled are 2021 and prior)"
+         ) + 
+    facet_grid(src~hoy) + 
+    geom_abline(slope=1, intercept=0, color="red", lty=2) + 
+    geom_text(data=~group_by(., hoy, src) %>% 
+                  summarize(mu=weighted.mean(ractual, n), 
+                            e2tot=sum(n*(ractual-mu)**2)/sum(n), 
+                            e2mod=sum(n*(ractual-rpred)**2/sum(n)), 
+                            r2=1-e2mod/e2tot, 
+                            .groups="drop"
+                            ), 
+              aes(x=5, y=40, label=paste0("R2: ", round(r2, 3)))
+              )
+
+# Linear regressions for delta (actual minus prediction)
+rfTempAll %>%
+    mutate(hoy=ifelse(year(date)>=2022, "2. Holdout", "1. Non-Holdout")) %>%
+    lm(windspeed_10m ~ pred:src:hoy + src:hoy + 0, data=.) %>%
+    summary()
+
+```
+
+As expected, fit is best for data the model has seen (non-holdout, training), and the model accurately assesses that OOB R-squared (non-holdout, test) is much lower. There are patterns that allow for much stronger predictions in non-holdout years (model has seen very similar and temporally related data points) than in holdout years (only truly generalized learning is applicable, as there are no temporally related data points). Even among the modeled data in non-holdout years, predictions have a small bias where low predictions are slightly too high and high predictions are slightly too low
+
