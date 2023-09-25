@@ -3520,3 +3520,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores random forest regression R-squared for surface (10m) wind speed across test/train data and modeled/holdout years
 * OpenMeteoEDA_202306_v001 explores box plots for random forest regression for surface (10m) wind speed across test/train data and modeled/holdout years
 
+### Expansions week of 25-SEP-2023  
+* OpenMeteoEDA_202306_v001 explores random forest regression for shortwave radiation
+
