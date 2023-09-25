@@ -4615,3 +4615,60 @@ rfTempAll %>%
 
 ```
 
+The random forest regression is run for predicting shortwave radiation:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Variables to include for modeling
+varsSWRad <- tmpTempTrain %>% 
+    select(-matches("pct_\\d{4}$"), -pct_shortwave_radiation, -pct_weathercode, -pct_hour) %>% 
+    select(starts_with("pct_")) %>%
+    names
+varsSWRad
+
+# Simple random forest model with all features and no holdout year
+rfTempSWRad <- ranger::ranger(shortwave_radiation ~ ., 
+                              data=tmpTempTrain %>%
+                                  select(all_of(c("shortwave_radiation", varsSWRad, "month", "fct_hour"))),
+                             importance = "impurity"
+                             )
+rfTempSWRad
+
+# Variable importance
+rfTempSWRad$variable.importance %>% 
+    as.data.frame() %>% 
+    purrr::set_names("imp") %>% 
+    rownames_to_column("metric") %>% 
+    tibble::as_tibble() %>%
+    ggplot(aes(x=fct_reorder(metric, imp), y=imp/1000)) + 
+    geom_col(fill="lightblue") + 
+    labs(x=NULL, 
+         y="Variable Importance (000)", 
+         title="Simple random forest to predict shortwave radiation"
+         ) +
+    coord_flip()
+
+# Performance on test data (confirm very low error)
+rfTempTest <- tmpTempTest %>%
+    mutate(pred=predict(rfTempSWRad, data=.)$predictions)
+cat("\nMSE on test dataset is: ", 
+    round(mean((rfTempTest$pred-rfTempTest$shortwave_radiation)**2), 3), 
+    "\n", 
+    sep=""
+    )
+
+rfTempTest %>%
+    count(ractual=round(shortwave_radiation, -1), rpred=round(pred, 0)) %>%
+    ggplot(aes(x=ractual, y=rpred)) + 
+    geom_point(aes(size=n), alpha=0.1) + 
+    geom_smooth(aes(weight=n), method="lm") +
+    geom_abline(intercept=0, slope=1, color="red", lty=1) +
+    scale_size_continuous("") + 
+    labs(x="Actual shortwave radiation", 
+         y="Predicted shortwave radiation", 
+         title="Applying random forest regression for shortwave radiation"
+         )
+
+```
+  
+Types of radiation are strongly correlated, allowing for strong predictive power for the one "missing" component
+
