@@ -3522,4 +3522,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 25-SEP-2023  
 * OpenMeteoEDA_202306_v001 explores random forest regression for shortwave radiation
+* OpenMeteoEDA_202306_v001 explores random forest regression for shortwave radiation with holdout year
 
