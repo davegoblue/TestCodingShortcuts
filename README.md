@@ -3525,4 +3525,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores random forest regression for shortwave radiation with holdout year
 * OpenMeteoEDA_202306_v001 explores random forest regression for shortwave radiation excluding top-4 importance variables and with holdout year
 * OpenMeteoEDA_202306_v001 explores random forest regression R-squared for shortwave radiation across test/train data and modeled/holdout years
+* OpenMeteoEDA_202306_v001 explores box plots for random forest regression for shortwave radiation across test/train data and modeled/holdout years
 
