@@ -3527,4 +3527,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v001 explores random forest regression R-squared for shortwave radiation across test/train data and modeled/holdout years
 * OpenMeteoEDA_202306_v001 explores box plots for random forest regression for shortwave radiation across test/train data and modeled/holdout years
 * OpenMeteoEDA_202306_v002 created from _v001
+* OpenMeteoEDA_202306_v002 includes key functions and mapping files
 
