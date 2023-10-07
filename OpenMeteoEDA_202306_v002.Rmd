@@ -1061,7 +1061,7 @@ varsTrain <- nycTempTrain %>%
     names()
 varsTrain
 
-# Create k-means for 1-15 clusters
+# Create k-means for 1-15 clusters (need to fix function for returning km object defaults)
 t <- proc.time()
 nycKMList <- lapply(1:15, FUN=function(x) runKMeans(nycTempTrain, 
                                                     vars=varsTrain, 
@@ -1070,10 +1070,56 @@ nycKMList <- lapply(1:15, FUN=function(x) runKMeans(nycTempTrain,
                                                     seed=23100515, 
                                                     iter.max=50L,
                                                     plotMeans=FALSE, 
-                                                    plotPct=NULL
+                                                    plotPct=NULL, 
+                                                    returnKM=TRUE
                                                     )
                  )
 proc.time()-t
 
 ```
+  
+Change in SS-between is explored based on number of clusters:  
+```{r, fig.height=9, fig.width=9}
+
+dfSS <- sapply(nycKMList, FUN=function(x) c("nCluster"=length(x$size), 
+                                            "totss"=x$totss, 
+                                            "betweenss"=x$betweenss, 
+                                            "tot.withinss"=x$tot.withinss, 
+                                            "iter"=x$iter, 
+                                            "ifault"=unclass(ifelse(is.null(x$ifault), 0, x$ifault))
+                                            )
+               ) %>% 
+    t() %>% 
+    tibble::as_tibble() %>% 
+    mutate(pct=tot.withinss/totss, dpct=pct-lag(pct)) 
+dfSS
+
+dfSS %>% 
+    ggplot(aes(x=nCluster, y=pmin(1, pct))) + 
+    geom_point() + 
+    geom_line() + 
+    lims(y=c(0, 1)) + 
+    labs(x="# Clusters", 
+         y="Within SS / Total SS", 
+         title="Sum-squares ratio by number of clusters (k=means)"
+         ) + 
+    geom_text(aes(y=pct-0.05, label=round(pct, 3)), size=2.5)
+
+dfSS %>% 
+    filter(!is.na(dpct)) %>% 
+    ggplot(aes(x=factor(nCluster), y=dpct)) + 
+    geom_col(fill="lightblue") + 
+    labs(x="When adding this cluster", 
+         y="Change in (Within SS / Total SS)", 
+         title="Sum-squares ratio by number of clusters (k=means)"
+         ) + 
+    geom_text(aes(y=dpct/2, label=round(dpct, 3)), size=2.5)
+
+```
+  
+* The first cluster added (k=2) causes ~20% drop in SS-within  
+* The next three clusters added (k=3, 4, 5) each cause 5%-10% drop in SS-within  
+* Clusters after k=5 have consistent, modest drops in SS-within  
+  
+This is suggestive that exploring evolution of data splits at k = 1, 2, 3, 4, 5 may be informative  
   
