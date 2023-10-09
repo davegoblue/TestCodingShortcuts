@@ -3538,3 +3538,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v002 plots sum-squares for 1-15 clusters
 * OpenMeteoEDA_202306_v002 tests assignKMeans()
 
+### Expansions week of 09-OCT-2023  
+* OpenMeteoEDA_202306_v002 explores k-means with 4 clusters
+
