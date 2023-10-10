@@ -3540,4 +3540,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 09-OCT-2023  
 * OpenMeteoEDA_202306_v002 explores k-means with 4 clusters
+* OpenMeteoEDA_202306_v002 explores k-means with 5 clusters
 
