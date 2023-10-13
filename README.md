@@ -3543,3 +3543,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v002 explores k-means with 5 clusters
 * OpenMeteoEDA_202306_v002 explores PCA and variance explained
 * OpenMeteoEDA_202306_v002 explores random forest classification for month
+* OpenMeteoEDA_202306_v002 explores random forest classification for month with holdout year
