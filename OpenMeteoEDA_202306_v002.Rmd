@@ -1281,3 +1281,56 @@ rfTempTest %>%
   
 Without access to training data including 2022, the model still makes good predictions for 2022 month. But, predictions are commonly off by +/- 1 month leading to overall accuracy of ~80% (vs. 99%+ when able to train on soil heating patterns in the given year)
 
+The process for running random forest is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+runSimpleRF <- function(df, yVar, xVars=NULL, ...) {
+
+    # FUNCTION ARGUMENTS:
+    # df: data frame containing observations
+    # yVar: variable to be predicted (numeric for regression, categorical for classification)
+    # xVars: predictor variables (NULL means everything in df except for yVar)
+    # ...: other arguments passed to ranger::ranger
+    
+    # Create xVars if passed as NULL
+    if(is.null(xVars)) xVars <- setdiff(names(df), yVar)
+    
+    # Simple random forest model
+    ranger::ranger(as.formula(paste0(yVar, "~", paste0(xVars, collapse="+"))), 
+                   data=df[, c(yVar, xVars)], 
+                   ...
+                   )
+    
+}
+
+```
+
+The function is checked for consistency:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+tstRF <- runSimpleRF(df=nycTempTrain, yVar="month", xVars=varsTrain, importance="impurity")
+tstRF
+
+# Comparison of variable importance
+rfTempTrainMonth$variable.importance %>% 
+    as.data.frame() %>% 
+    purrr::set_names("imp") %>% 
+    rownames_to_column("metric") %>% 
+    tibble::as_tibble() %>%
+    mutate(type="original") %>%
+    bind_rows(tstRF$variable.importance %>% 
+                  as.data.frame() %>% 
+                  purrr::set_names("imp") %>% 
+                  rownames_to_column("metric") %>% 
+                  tibble::as_tibble() %>%
+                  mutate(type="formula")
+              ) %>%
+    ggplot(aes(x=fct_reorder(metric, imp), y=imp/1000)) + 
+    geom_point(aes(color=type)) + 
+    labs(x=NULL, y="Variable Importance (000)", title="Simple random forest to predict month") +
+    coord_flip()
+
+```
+
+Aside from minor differences due to different random conditions (no seed was set prior to either run), the function and original call produce substantially the same outputs
+
