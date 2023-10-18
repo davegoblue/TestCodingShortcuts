@@ -3550,4 +3550,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 16-OCT-2023  
 * OpenMeteoEDA_202306_v002 function predictRF() written
 * OpenMeteoEDA_202306_v002 function reportAccuracy() written
+* OpenMeteoEDA_202306_v002 function plotConfusion() written
 
