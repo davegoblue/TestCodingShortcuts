@@ -58,3 +58,100 @@ table(aRanks)
 
 ```
   
+The combinations of suits (and therefore flushes) are explored:  
+```{r}
+
+tblSuits <- as.data.frame(sapply(1:4, 
+                                 FUN=function(x) apply(aSuits[,], 
+                                                       1, 
+                                                       FUN=function(y) sum(y==x)
+                                                       )
+                                 )
+                          ) %>% 
+    tibble::as_tibble() %>%
+    mutate(nMax=apply(., 1, FUN=function(x) max(x)), 
+           isFlush=(nMax==3), 
+           handNum=row_number()
+           ) %>%
+    select(handNum, everything())
+
+# Sample of tibble
+tblSuits
+
+# Counts of suit distributions
+tblSuits %>% 
+    count(nMax, isFlush, V1, V2, V3, V4)
+
+```
+
+The combinations of ranks (and therefore trips and straights and pairs) is explored, and combined with the suits data to create overall hand types:  
+```{r}
+
+tblRanks <- as.data.frame(sapply(1:13, 
+                                 FUN=function(x) apply(aRanks[,], 
+                                                       1, 
+                                                       FUN=function(y) sum(y==x)
+                                                       )
+                                 )
+                          ) %>% 
+    tibble::as_tibble() %>%
+    mutate(nMax=apply(., 1, FUN=function(x) max(x)), 
+           isTrips=(nMax==3),
+           isPair=(nMax==2),
+           handNum=row_number()
+           ) %>%
+    select(handNum, everything())
+
+# Matrix of ranks that constitute a straight
+mtxStrRanks <- matrix(data=0L, nrow=13, ncol=12)
+for(idx in 1:11) mtxStrRanks[idx:(idx+2), idx] <- 1L
+mtxStrRanks[c(1, 12, 13), 12] <- 1L
+mtxStrRanks
+
+# tblRanks converted to matrix of yes/no by rank
+mtxBoolRanks <- tblRanks %>%
+    select(V1:V13) %>%
+    mutate(across(.cols=everything(), .fns=function(x) pmin(1L, x))) %>%
+    as.matrix()
+str(mtxBoolRanks)
+
+# Check for each type of straight
+tblRanks <- tblRanks %>%
+    mutate(maxStr=mtxBoolRanks %*% mtxStrRanks %>% apply(., 1, FUN=max), 
+           isStraight=(maxStr==3)
+           )
+
+# Example of tibble
+tblRanks
+
+# Counts of hand types based on rank
+tblRanks %>% 
+    count(nMax, isTrips, isPair, maxStr, isStraight)
+
+# Counts by straight
+tblRanks %>%
+    filter(isStraight) %>%
+    group_by(across(starts_with("V"))) %>%
+    summarize(n=n(), .groups="drop")
+
+# Create handTypes
+tblHandTypes <- tblRanks %>%
+    select(handNum, isTrips, isPair, isStraight) %>%
+    full_join(select(tblSuits, handNum, isFlush), by="handNum") %>%
+    mutate(handType=case_when(isStraight & isFlush ~ "01. SF", 
+                              isTrips ~ "02. Trips", 
+                              isStraight ~ "03. Straight", 
+                              isFlush ~ "04. Flush", 
+                              isPair ~ "05. Pair", 
+                              TRUE ~ "06. High Card"
+                              )
+           )
+tblHandTypes
+
+tblHandTypes %>%
+    count(handType, isTrips, isStraight, isFlush, isPair) %>%
+    arrange(n) %>%
+    mutate(pct=n/sum(n))
+
+```
+
