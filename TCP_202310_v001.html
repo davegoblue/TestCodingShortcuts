@@ -635,6 +635,183 @@ tblHandTypes</code></pre>
 ## 4 04. Flush     FALSE   FALSE      TRUE    FALSE   1096 0.0496 
 ## 5 05. Pair      FALSE   FALSE      FALSE   TRUE    3744 0.169  
 ## 6 06. High Card FALSE   FALSE      FALSE   FALSE  16440 0.744</code></pre>
+<p>Hands by type are given a ranking:</p>
+<pre class="r"><code># Ranks database
+tblHandRanks &lt;- tblHandTypes %&gt;%
+    select(handNum, handType) %&gt;%
+    full_join(select(tblRanks, handNum, V1:V13)) %&gt;%
+    pivot_longer(cols=-c(handNum, handType)) %&gt;%
+    filter(value&gt;0) %&gt;%
+    mutate(card=as.integer(str_replace(name, &quot;V&quot;, &quot;&quot;)), 
+           card=ifelse(card==1, 14, card)
+           ) %&gt;%
+    arrange(handNum, desc(value), desc(card))</code></pre>
+<pre><code>## Joining with `by = join_by(handNum)`</code></pre>
+<pre class="r"><code>tblHandRanks</code></pre>
+<pre><code>## # A tibble: 62,452 × 5
+##    handNum handType  name  value  card
+##      &lt;int&gt; &lt;chr&gt;     &lt;chr&gt; &lt;int&gt; &lt;dbl&gt;
+##  1       1 01. SF    V1        1    14
+##  2       1 01. SF    V3        1     3
+##  3       1 01. SF    V2        1     2
+##  4       2 04. Flush V1        1    14
+##  5       2 04. Flush V4        1     4
+##  6       2 04. Flush V2        1     2
+##  7       3 04. Flush V1        1    14
+##  8       3 04. Flush V5        1     5
+##  9       3 04. Flush V2        1     2
+## 10       4 04. Flush V1        1    14
+## # ℹ 62,442 more rows</code></pre>
+<pre class="r"><code># Hands without straights can be ranked directly
+rnkNonStraight &lt;- tblHandRanks %&gt;%
+    group_by(handNum) %&gt;%
+    mutate(rn=paste0(&quot;C&quot;, row_number())) %&gt;%
+    filter(!(handType %in% c(&quot;01. SF&quot;, &quot;03. Straight&quot;))) %&gt;%
+    pivot_wider(id_cols=c(handNum, handType), 
+                names_from=&quot;rn&quot;, 
+                values_from=&quot;card&quot;, 
+                values_fill=0
+                ) %&gt;%
+    ungroup()
+rnkNonStraight</code></pre>
+<pre><code>## # A tibble: 21,332 × 5
+##    handNum handType     C1    C2    C3
+##      &lt;int&gt; &lt;chr&gt;     &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;
+##  1       2 04. Flush    14     4     2
+##  2       3 04. Flush    14     5     2
+##  3       4 04. Flush    14     6     2
+##  4       5 04. Flush    14     7     2
+##  5       6 04. Flush    14     8     2
+##  6       7 04. Flush    14     9     2
+##  7       8 04. Flush    14    10     2
+##  8       9 04. Flush    14    11     2
+##  9      10 04. Flush    14    12     2
+## 10      11 04. Flush    14    13     2
+## # ℹ 21,322 more rows</code></pre>
+<pre class="r"><code># Ranks within type for non-straights
+rnkNonStraight &lt;- rnkNonStraight %&gt;%
+    count(handType, C1, C2, C3, name=&quot;nSameRank&quot;) %&gt;%
+    arrange(handType, desc(C1), desc(C2), desc(C3)) %&gt;%
+    group_by(handType) %&gt;%
+    mutate(rankOfType=row_number()) %&gt;%
+    ungroup() %&gt;%
+    inner_join(rnkNonStraight, by=c(&quot;handType&quot;, &quot;C1&quot;, &quot;C2&quot;, &quot;C3&quot;))
+rnkNonStraight</code></pre>
+<pre><code>## # A tibble: 21,332 × 7
+##    handType     C1    C2    C3 nSameRank rankOfType handNum
+##    &lt;chr&gt;     &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;     &lt;int&gt;      &lt;int&gt;   &lt;int&gt;
+##  1 02. Trips    14     0     0         4          1     547
+##  2 02. Trips    14     0     0         4          1     560
+##  3 02. Trips    14     0     0         4          1     963
+##  4 02. Trips    14     0     0         4          1   13352
+##  5 02. Trips    13     0     0         4          2   12623
+##  6 02. Trips    13     0     0         4          2   12636
+##  7 02. Trips    13     0     0         4          2   12883
+##  8 02. Trips    13     0     0         4          2   19422
+##  9 02. Trips    12     0     0         4          3   11855
+## 10 02. Trips    12     0     0         4          3   11868
+## # ℹ 21,322 more rows</code></pre>
+<pre class="r"><code># Ranks for hands with straights
+rnkStraight &lt;- tblHandRanks %&gt;%
+    group_by(handNum) %&gt;%
+    mutate(rn=paste0(&quot;C&quot;, row_number())) %&gt;%
+    filter(handType %in% c(&quot;01. SF&quot;, &quot;03. Straight&quot;)) %&gt;%
+    pivot_wider(id_cols=c(handNum, handType), 
+                names_from=&quot;rn&quot;, 
+                values_from=&quot;card&quot;, 
+                values_fill=0
+                ) %&gt;%
+    ungroup() %&gt;%
+    mutate(C1=ifelse(C1==14 &amp; C2==3, 1, C1))
+rnkStraight</code></pre>
+<pre><code>## # A tibble: 768 × 5
+##    handNum handType        C1    C2    C3
+##      &lt;int&gt; &lt;chr&gt;        &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;
+##  1       1 01. SF           1     3     2
+##  2      14 03. Straight     1     3     2
+##  3      27 03. Straight     1     3     2
+##  4      40 03. Straight     1     3     2
+##  5      62 03. Straight     1     3     2
+##  6      75 03. Straight     1     3     2
+##  7      88 03. Straight     1     3     2
+##  8     456 01. SF          14    13    12
+##  9     469 03. Straight    14    13    12
+## 10     482 03. Straight    14    13    12
+## # ℹ 758 more rows</code></pre>
+<pre class="r"><code># Ranks within type for straights
+rnkStraight &lt;- rnkStraight %&gt;%
+    count(handType, C1, C2, C3, name=&quot;nSameRank&quot;) %&gt;%
+    arrange(handType, desc(C1), desc(C2), desc(C3)) %&gt;%
+    group_by(handType) %&gt;%
+    mutate(rankOfType=row_number()) %&gt;%
+    ungroup() %&gt;%
+    inner_join(rnkStraight, by=c(&quot;handType&quot;, &quot;C1&quot;, &quot;C2&quot;, &quot;C3&quot;))
+rnkStraight</code></pre>
+<pre><code>## # A tibble: 768 × 7
+##    handType    C1    C2    C3 nSameRank rankOfType handNum
+##    &lt;chr&gt;    &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;     &lt;int&gt;      &lt;int&gt;   &lt;int&gt;
+##  1 01. SF      14    13    12         4          1     456
+##  2 01. SF      14    13    12         4          1   13287
+##  3 01. SF      14    13    12         4          1   19696
+##  4 01. SF      14    13    12         4          1   21880
+##  5 01. SF      13    12    11         4          2   10621
+##  6 01. SF      13    12    11         4          2   18447
+##  7 01. SF      13    12    11         4          2   21541
+##  8 01. SF      13    12    11         4          2   22100
+##  9 01. SF      12    11    10         4          3    9760
+## 10 01. SF      12    11    10         4          3   18041
+## # ℹ 758 more rows</code></pre>
+<pre class="r"><code># Full hand ranks
+rnkAllHands &lt;- bind_rows(rnkStraight, rnkNonStraight) %&gt;%
+    arrange(handType, rankOfType) %&gt;%
+    mutate(chgType=handType!=lag(handType), 
+           chgRank=rankOfType!=lag(rankOfType), 
+           chgVal=ifelse(row_number()==1, 1, ifelse(chgType|chgRank, 1, 0)), 
+           rankOverall=cumsum(chgVal)
+           )
+rnkAllHands</code></pre>
+<pre><code>## # A tibble: 22,100 × 11
+##    handType    C1    C2    C3 nSameRank rankOfType handNum chgType chgRank
+##    &lt;chr&gt;    &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;     &lt;int&gt;      &lt;int&gt;   &lt;int&gt; &lt;lgl&gt;   &lt;lgl&gt;  
+##  1 01. SF      14    13    12         4          1     456 NA      NA     
+##  2 01. SF      14    13    12         4          1   13287 FALSE   FALSE  
+##  3 01. SF      14    13    12         4          1   19696 FALSE   FALSE  
+##  4 01. SF      14    13    12         4          1   21880 FALSE   FALSE  
+##  5 01. SF      13    12    11         4          2   10621 FALSE   TRUE   
+##  6 01. SF      13    12    11         4          2   18447 FALSE   FALSE  
+##  7 01. SF      13    12    11         4          2   21541 FALSE   FALSE  
+##  8 01. SF      13    12    11         4          2   22100 FALSE   FALSE  
+##  9 01. SF      12    11    10         4          3    9760 FALSE   TRUE   
+## 10 01. SF      12    11    10         4          3   18041 FALSE   FALSE  
+## # ℹ 22,090 more rows
+## # ℹ 2 more variables: chgVal &lt;dbl&gt;, rankOverall &lt;dbl&gt;</code></pre>
+<pre class="r"><code>rnkAllHands %&gt;% count(rankOverall, name=&quot;nRankOverall&quot;)</code></pre>
+<pre><code>## # A tibble: 741 × 2
+##    rankOverall nRankOverall
+##          &lt;dbl&gt;        &lt;int&gt;
+##  1           1            4
+##  2           2            4
+##  3           3            4
+##  4           4            4
+##  5           5            4
+##  6           6            4
+##  7           7            4
+##  8           8            4
+##  9           9            4
+## 10          10            4
+## # ℹ 731 more rows</code></pre>
+<pre class="r"><code>rnkAllHands %&gt;% 
+    count(rankOverall, handType, name=&quot;nRankOverall&quot;) %&gt;% 
+    count(handType, nRankOverall)</code></pre>
+<pre><code>## # A tibble: 6 × 3
+##   handType      nRankOverall     n
+##   &lt;chr&gt;                &lt;int&gt; &lt;int&gt;
+## 1 01. SF                   4    12
+## 2 02. Trips                4    13
+## 3 03. Straight            60    12
+## 4 04. Flush                4   274
+## 5 05. Pair                24   156
+## 6 06. High Card           60   274</code></pre>
 </div>
 
 

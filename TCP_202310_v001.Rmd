@@ -155,3 +155,82 @@ tblHandTypes %>%
 
 ```
 
+Hands by type are given a ranking:  
+```{r}
+
+# Ranks database
+tblHandRanks <- tblHandTypes %>%
+    select(handNum, handType) %>%
+    full_join(select(tblRanks, handNum, V1:V13)) %>%
+    pivot_longer(cols=-c(handNum, handType)) %>%
+    filter(value>0) %>%
+    mutate(card=as.integer(str_replace(name, "V", "")), 
+           card=ifelse(card==1, 14, card)
+           ) %>%
+    arrange(handNum, desc(value), desc(card))
+tblHandRanks
+
+# Hands without straights can be ranked directly
+rnkNonStraight <- tblHandRanks %>%
+    group_by(handNum) %>%
+    mutate(rn=paste0("C", row_number())) %>%
+    filter(!(handType %in% c("01. SF", "03. Straight"))) %>%
+    pivot_wider(id_cols=c(handNum, handType), 
+                names_from="rn", 
+                values_from="card", 
+                values_fill=0
+                ) %>%
+    ungroup()
+rnkNonStraight
+
+# Ranks within type for non-straights
+rnkNonStraight <- rnkNonStraight %>%
+    count(handType, C1, C2, C3, name="nSameRank") %>%
+    arrange(handType, desc(C1), desc(C2), desc(C3)) %>%
+    group_by(handType) %>%
+    mutate(rankOfType=row_number()) %>%
+    ungroup() %>%
+    inner_join(rnkNonStraight, by=c("handType", "C1", "C2", "C3"))
+rnkNonStraight
+
+# Ranks for hands with straights
+rnkStraight <- tblHandRanks %>%
+    group_by(handNum) %>%
+    mutate(rn=paste0("C", row_number())) %>%
+    filter(handType %in% c("01. SF", "03. Straight")) %>%
+    pivot_wider(id_cols=c(handNum, handType), 
+                names_from="rn", 
+                values_from="card", 
+                values_fill=0
+                ) %>%
+    ungroup() %>%
+    mutate(C1=ifelse(C1==14 & C2==3, 1, C1))
+rnkStraight
+
+# Ranks within type for straights
+rnkStraight <- rnkStraight %>%
+    count(handType, C1, C2, C3, name="nSameRank") %>%
+    arrange(handType, desc(C1), desc(C2), desc(C3)) %>%
+    group_by(handType) %>%
+    mutate(rankOfType=row_number()) %>%
+    ungroup() %>%
+    inner_join(rnkStraight, by=c("handType", "C1", "C2", "C3"))
+rnkStraight
+
+# Full hand ranks
+rnkAllHands <- bind_rows(rnkStraight, rnkNonStraight) %>%
+    arrange(handType, rankOfType) %>%
+    mutate(chgType=handType!=lag(handType), 
+           chgRank=rankOfType!=lag(rankOfType), 
+           chgVal=ifelse(row_number()==1, 1, ifelse(chgType|chgRank, 1, 0)), 
+           rankOverall=cumsum(chgVal)
+           )
+rnkAllHands
+
+rnkAllHands %>% count(rankOverall, name="nRankOverall")
+rnkAllHands %>% 
+    count(rankOverall, handType, name="nRankOverall") %>% 
+    count(handType, nRankOverall)
+
+```
+
