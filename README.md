@@ -3554,4 +3554,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v002 new functions run consecutively
 * TCP_202310_v001 created
 * TCP_202310_v001 explores suits and ranks
+* TCP_202310_v001 ranks hands
 
