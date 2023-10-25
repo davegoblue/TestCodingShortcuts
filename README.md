@@ -3559,4 +3559,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 23-OCT-2023  
 * TCP_202310_v001 exclHands() returns hands blocked by set of cards
 * TCP_202310_v001 runs EV for example hand
+* TCP_202310_v001 function assessHand() written
 
