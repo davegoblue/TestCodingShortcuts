@@ -3561,4 +3561,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TCP_202310_v001 runs EV for example hand
 * TCP_202310_v001 function assessHand() written
 * TCP_202310_v001 assessHand() run for all 52c3 hands
+* TCP_202310_v001 converts results to single row per hand
 
