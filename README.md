@@ -3563,4 +3563,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TCP_202310_v001 assessHand() run for all 52c3 hands
 * TCP_202310_v001 converts results to single row per hand
 * TCP_202310_v001 includes optimal decision
+* TCP_202310_v001 plots optimal decision by highest two cards
 
