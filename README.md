@@ -3565,3 +3565,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TCP_202310_v001 includes optimal decision
 * TCP_202310_v001 plots optimal decision by highest two cards
 
+### Expansions week of 30-OCT-2023  
+* TCP_202310_v001 plots EV by pair and kicker
+
