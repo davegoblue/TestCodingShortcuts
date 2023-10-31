@@ -3567,4 +3567,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 30-OCT-2023  
 * TCP_202310_v001 plots EV by pair and kicker
+* TCP_202310_v001 explores EV by suit distribution
 
