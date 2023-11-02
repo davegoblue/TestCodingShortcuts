@@ -3569,4 +3569,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TCP_202310_v001 plots EV by pair and kicker
 * TCP_202310_v001 explores EV by suit distribution
 * TCP_202310_v001 assessHand() updated for greater flexibility
+* TCP_202310_v001 explores impact of additional excluded card
 
