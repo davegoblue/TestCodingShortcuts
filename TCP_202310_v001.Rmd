@@ -552,3 +552,66 @@ assessHand(keyRank=531, exclCards=c(1, 4, 28, 38)) # exclude an extra offsuit Q
 
 ```
 
+The lowest playing hand is explored for the impact of each additional card excluded:  
+```{r, fig.height=9, fig.width=9}
+
+tmpHand <- allTCPHandAction %>% 
+    filter(action=="Play") %>%
+    arrange(evPlay) %>%
+    slice(1) %>%
+    pull(handNum)
+tmpRank <- tblHands %>%
+    filter(handNum==tmpHand) %>%
+    pull(rankOverall)
+tmpCards <- aHands[tmpHand,,drop=TRUE]
+
+cat("\nHand number:", 
+    tmpHand, 
+    "with cards [", 
+    paste0(tmpCards, sep=""), 
+    "] and rank", 
+    tmpRank, 
+    "will be explored\n"
+    )
+
+assessHand(hn=tmpHand)
+assessHand(keyRank=tmpRank, exclCards=tmpCards)
+
+tmpWL <- map_dfr(.x=setdiff(1:52, tmpCards), 
+                 .f=function(x) {
+                     assessHand(keyRank=tmpRank, exclCards=c(tmpCards, x)) %>%
+                         mutate(extraCard=x)
+                     }
+                 )
+tmpWL
+
+tmpWL %>%
+    mutate(outc=case_when(!qual ~ 1, res=="L" ~ -2, res=="W" ~ 2, res=="T" ~ 0)) %>%
+    group_by(extraCard) %>%
+    summarize(ev=sum(outc*n)/sum(n), pQual=sum(qual*n)/sum(n)) %>%
+    mutate(ecSuit=1+((extraCard-1) %/% 13), 
+           ecRank=1+((extraCard-1) %% 13), 
+           ecRank=ifelse(ecRank==1, 14, ecRank)
+           ) %>%
+    ggplot(aes(x=factor(ecRank, levels=14:2), y=ev)) +
+    geom_text(aes(y=ev+0.005*ifelse(ev>-1, -1, 1), 
+                  label=round(ev, 3), 
+                  hjust=ifelse(ev>-1, 1, 0)
+                  ), 
+              size=2.5
+              ) +
+    geom_point() + 
+    coord_flip() +
+    facet_wrap(~ecSuit, nrow=1) +
+    geom_hline(yintercept=-1, lty=2) +
+    labs(y="EV", 
+         x="Card Rank", 
+         title=paste0("EV of playing ", 
+                      paste0(tmpCards, collapse="-"), 
+                      " if one extra card excluded"
+                      ), 
+         subtitle="Facetted by suit"
+         )
+
+```
+
