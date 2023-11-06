@@ -3574,3 +3574,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TCP_202310_v001 simulates game
 * TCP_202310_v001 simulation results assessed
 
+### Expansions week of 06-NOV-2023  
+* TCP_202310_v001 explores theoretical means and standard errors
+
