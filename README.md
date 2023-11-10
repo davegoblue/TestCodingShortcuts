@@ -3579,4 +3579,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TCP_202310_v001 compares theoretical and simulated outcomes
 * TCP_202310_v001 explores associations in bet outcomes
 * TCP_202310_v001 explores correlation between pQ and main/bonus bet outcomes
-
+* TCP_202310_v001 explores predictive power of pQ and bonus on main
