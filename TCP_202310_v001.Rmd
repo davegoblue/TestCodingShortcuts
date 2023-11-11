@@ -891,6 +891,8 @@ tcpSimSummary %>%
 Predictive power is explored:  
 ```{r}
 
+library(ranger) # needs to be called for predict.ranger later
+
 rfTest <- ranger::ranger(sumMain ~ sumBonus + pQ, data=tcpSimSummary)
 rfTest
 
@@ -900,3 +902,52 @@ summary(lmTest)
 ```
 
 The simple linear model and the base random forest each explain ~25% of the variance in main bet outcomes, given bonus bet outcomes and percent dealer qualified
+
+Performance on holdout data is explored:  
+```{r, fig.height=9, fig.width=9}
+
+set.seed(23111015)
+idxTrain <- sample(1:nrow(tcpSimSummary), 
+                   size=round(0.7*nrow(tcpSimSummary)), 
+                   replace=FALSE
+                   )
+
+tcpSimTrain <- tcpSimSummary[idxTrain, ]
+tcpSimTest <- tcpSimSummary[-idxTrain, ]
+
+rfTest <- ranger::ranger(sumMain ~ sumBonus + pQ, data=tcpSimTrain)
+rfTest
+
+lmTest <- lm(sumMain ~ sumBonus + pQ, data=tcpSimTrain)
+summary(lmTest)
+
+# Apply to holdout data
+tcpSimPlotData <- tcpSimTest %>%
+    mutate(lmPred=predict(lmTest, newdata=.), 
+           rfPred=predict(rfTest, data=.)$predictions
+           ) %>%
+    select(simNumber, sumMain, lmPred, rfPred) %>%
+    pivot_longer(cols=-c(simNumber, sumMain)) %>%
+    mutate(err=value-sumMain)
+tcpSimPlotData
+
+# Get statistics
+tcpSimPlotData %>%
+    group_by(name) %>%
+    summarize(n=n(), 
+              err2Orig=mean((sumMain-mean(sumMain))**2), 
+              err2Pred=mean(err**2), 
+              r2=1-err2Pred/err2Orig
+              )
+
+tcpSimPlotData %>%
+    ggplot(aes(y=sumMain, x=value)) + 
+    geom_point(alpha=0.1) + 
+    facet_wrap(~name) + 
+    labs(title="Predictions on unseen data", x="Predicted Main", y="True Main") +
+    geom_smooth(method="lm") + 
+    geom_abline(intercept=0, slope=1, lty=2, color="red")
+
+```
+
+Both models perform as well on unseen data as on training data
