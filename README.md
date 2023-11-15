@@ -3586,3 +3586,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 13-NOV-2023  
 * TCP_202310_v001 explores ECDF of main bet minimum
 * TCP_202310_v001 explores ECDF of main bet final
+* TCP_202310_v001 getBestMatch() finds closest match in vector x for each element in vector y
+
