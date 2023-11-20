@@ -3591,3 +3591,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TCP_202310_v001 getSimECDF() run for bonus
 * TCP_202310_v001 getSimECDF() run for overall
 * TCP_202310_v001 explores final vs. minimum for overall
+
+### Expansions week of 20-NOV-2023  
+* TCP_202310_v001 finalVsMin() written
