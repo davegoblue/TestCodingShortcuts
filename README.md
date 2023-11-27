@@ -3600,3 +3600,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TCP_202310_v001 further explores overall vs. bonus
 * TCP_202310_v001 further explores overall vs. main
 * TCP_202310_v001 explores minima for overall vs. bonus
+
+### Expansions week of 27-NOV-2023  
+* TCP_202310_v001 calculates first time for hitting minimum and maximum by simulation
