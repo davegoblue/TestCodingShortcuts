@@ -3607,3 +3607,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TCP_202310_v001 plots first time for hitting minimum by simulation
 * TCP_202310_v001 explores first time for hitting minimum vs. maximum (overall)
 * TCP_202310_v001 explores first time for hitting minimum vs. maximum (facetted)
+* TCP_202310_v001 creates data for all-time maximum and minimum
