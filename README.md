@@ -3613,3 +3613,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 04-DEC-2023  
 * TCP_202310_v001 plots frequency of all-time minimum by hand number
 * TCP_202310_v001 plots frequency of all-time maximum by hand number (faceted)
+* TCP_202310_v001 improves plot labels
