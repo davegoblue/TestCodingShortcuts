@@ -3614,3 +3614,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * TCP_202310_v001 plots frequency of all-time minimum by hand number
 * TCP_202310_v001 plots frequency of all-time maximum by hand number (faceted)
 * TCP_202310_v001 improves plot labels
+* TCP_202310_v001 plots frequency of all-time minimum by hand number (faceted)
