@@ -3622,3 +3622,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 11-DEC-2023  
 * OpenMeteoEDA_202306_v002 reportAccuracy() updated for MSE/R-squared
 * OpenMeteoEDA_202306_v002 plotConfusion() updated for continuous variables
+* OpenMeteoEDA_202306_v002 runFullRF() updated for continuous variables
