@@ -3627,3 +3627,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v002 runFullRF() tested for continuous variables
 * OpenMeteoEDA_202306_v002 runFullRF() run for temperature
 * OpenMeteoEDA_202306_v002 plotConfusion() includes optional rounding
+
+### Expansions week of 18-DEC-2023  
+* OpenMeteoEDA_202306_v002 runFullRF() includes optional rounding
