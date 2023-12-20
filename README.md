@@ -3631,3 +3631,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 18-DEC-2023  
 * OpenMeteoEDA_202306_v002 runFullRF() includes optional rounding
 * OpenMeteoEDA_202306_v002 runFullRF() run for temperature
+* OpenMeteoEDA_202306_v002 runFullRF() run for temperature using 1-3 predictors
