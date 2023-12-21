@@ -1892,7 +1892,7 @@ runFullRF(dfTrain=dfTrain,
 
 ```
 
-Function plotConfusion() is updated to aggrgate (round) continuous variables:  
+Function plotConfusion() is updated to aggregate (round) continuous variables:  
 ```{r, fig.height=9, fig.width=9}
 
 # Update for continuous variables
@@ -2065,4 +2065,72 @@ runFullRF(dfTrain=dfTrain,
 ```
 
 Access to either 1) both month and hour, or 2) dewpoint reduces RMSE from ~10 in the null model to between 4-5. Including all 3 further reduces RMSE to ~2.5
+
+Function plotConfusion() is updated to optionally add a y=x reference line:  
+```{r, fig.height=9, fig.width=9}
+
+# Update for continuous variables
+plotConfusion <- function(df, 
+                          trueCol, 
+                          predCol="pred", 
+                          useTitle=NULL,
+                          useSub=NULL, 
+                          plotCont=FALSE, 
+                          rndTo=NULL,
+                          refXY=FALSE
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame containing actual and predictions
+    # trueCol: column containing true value
+    # predCol: column containing predicted value
+    # useTitle: title to be used for chart (NULL means create from trueCol)
+    # useSub: subtitle to be used for chart (NULL means none)
+    # plotCont: boolean, should plotting assume continuous variables?
+    #           (default FALSE assumes confusion plot for categorical variables)
+    # rndTo: number for rounding continuous variables (NULL means no rounding)
+    # refXY: boolean, should a reference line for y=x be included? (relevant only for continuous)
+    
+    # Create title if not supplied
+    if(is.null(useTitle)) useTitle <- paste0("Predicting ", trueCol)
+
+    # Round data if requested
+    if(!is.null(rndTo)) {
+        df <- df %>%
+            mutate(across(all_of(c(trueCol, predCol)), .fns=function(x) round(x/rndTo)*rndTo))
+    }
+    
+    # Create base plot (applicable to categorical or continuous variables)
+    # Use x as true and y as predicted, for more meaningful geom_smooth() if continuous
+    # Flip coordinates if categorical
+    p1 <- df %>%
+        group_by(across(all_of(c(trueCol, predCol)))) %>%
+        summarize(n=n(), .groups="drop") %>%
+        ggplot(aes(y=get(predCol), x=get(trueCol))) + 
+        labs(y="Predicted", x="Actual", title=useTitle, subtitle=useSub)
+        
+    # Update plot as appropriate
+    if(isTRUE(plotCont)) {
+        p1 <- p1 +
+            geom_point(aes(size=n), alpha=0.5) + 
+            scale_size_continuous("# Obs") +
+            geom_smooth(aes(weight=n), method="lm")
+        if(isTRUE(refXY)) p1 <- p1 + geom_abline(slope=1, intercept=0, lty=2, color="red")
+    } else {
+        p1 <- p1 + 
+            geom_tile(aes(fill=n)) + 
+            geom_text(aes(label=n), size=2.5) +
+            coord_flip() +
+            scale_fill_continuous("", low="white", high="green")
+    }
+    
+    # Output plot
+    print(p1)
+    
+}
+
+# Add reference line
+plotConfusion(dfTestCont, trueCol="trueVal", predCol="predVal", plotCont=TRUE, rndTo=0.05, refXY=TRUE)
+
+```
 
