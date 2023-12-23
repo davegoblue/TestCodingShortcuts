@@ -3634,3 +3634,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v002 runFullRF() run for temperature using 1-3 predictors
 * OpenMeteoEDA_202306_v002 plotConfusion() includes optional y=x reference line
 * OpenMeteoEDA_202306_v002 runFullRF() includes optional y=x reference line
+* OpenMeteoEDA_202306_v002 updated runFullRF() run for temperature
