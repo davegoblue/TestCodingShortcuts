@@ -3641,3 +3641,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v002 updated runFullRF() run for rainfall
 * OpenMeteoEDA_202306_v002 updated runFullRF() run for month
 * OpenMeteoEDA_202306_v002 runFullRF() run for deep soil temperature vs. month
+* OpenMeteoEDA_202306_v002 runFullRF() run for deep soil temperature vs. day of year
