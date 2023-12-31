@@ -3644,3 +3644,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v002 runFullRF() run for deep soil temperature vs. day of year
 * OpenMeteoEDA_202306_v002 runFullRF() run for deep soil temperature vs. all but month and day of year
 * OpenMeteoEDA_202306_v002 explores predictions for deep soil temperature by month
+* OpenMeteoEDA_202306_v002 explores predicted vs. actual for daily mean and sd for deep soil temperature by month
