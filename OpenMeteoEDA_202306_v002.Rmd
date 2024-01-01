@@ -2420,3 +2420,75 @@ rfSoilTemp100255$tstPred %>%
 ```
 
 Predictions have a similar annual pattern as actual, with monthly means broadly aligned. Predictions are often variable over the course of a single day, while actual values change little (if at all) during a single day
+
+The model including only day-of-year and month is explored for comparison:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+rfSoilTemp255doy <- runFullRF(dfTrain=dfTrain %>% mutate(doy=yday(date)), 
+                              yVar="soil_temperature_100_to_255cm", 
+                              xVars=c("doy"), 
+                              dfTest=dfTest %>% mutate(doy=yday(date)), 
+                              useLabel=keyLabel, 
+                              useSub=stringr::str_to_sentence(keyLabel), 
+                              isContVar = TRUE, 
+                              rndTo=.25, 
+                              refXY=TRUE, 
+                              returnData=TRUE
+                              )
+
+rfSoilTemp255doy$tstPred %>%
+    mutate(across(.cols=c(soil_temperature_100_to_255cm, pred), .fns=function(x) round(x*2)/2)) %>% 
+    count(month, soil_temperature_100_to_255cm, pred) %>% 
+    ggplot(aes(y=soil_temperature_100_to_255cm, x=pred)) + 
+    geom_point(aes(size=n)) + 
+    geom_smooth(aes(weight=n), method="lm") + 
+    geom_abline(slope=1, intercept=0, lty=2, color="red") + 
+    facet_wrap(~month) + 
+    labs(title="Prediction vs. Actual for Deep Soil Temperature (100 cm to 255 cm)", 
+         x="Predicted", 
+         y="Actual"
+         )
+
+rfSoilTemp255doy$tstPred %>%
+    mutate(across(.cols=c(soil_temperature_100_to_255cm, pred), .fns=function(x) round(x*1)/1)) %>% 
+    count(month, soil_temperature_100_to_255cm, pred) %>% 
+    ggplot(aes(x=pred, y=n)) + 
+    geom_col(aes(fill=month), position="fill") + 
+    coord_flip() +
+    labs(title="Predicted Deep Soil Temperature (100 cm to 255 cm) vs. Actual Month", 
+         x="Predicted Deep Soil Temperature", 
+         y="% Observations in Month"
+         ) + 
+    scale_fill_discrete("Month")
+
+rfSoilTemp255doy$tstPred %>% 
+    select(time, actual=soil_temperature_100_to_255cm, pred) %>% 
+    pivot_longer(cols=-c(time)) %>% 
+    ggplot(aes(x=time, y=value)) + 
+    geom_line(aes(group=name, color=name)) + 
+    labs(x=NULL, 
+         y="Soil Temperature", 
+         title="Predicted vs. Actual for Deep Soil Temperature (100 cm - 255 cm)"
+         ) + 
+    scale_color_discrete("Metric")
+
+rfSoilTemp255doy$tstPred %>% 
+    select(date, month, actual=soil_temperature_100_to_255cm, pred) %>% 
+    pivot_longer(cols=-c(date, month), names_to="metric") %>% 
+    group_by(date, month, metric) %>%
+    filter(n()>1) %>%
+    summarize(mean=mean(value), sd=sd(value), .groups="drop") %>%
+    pivot_longer(cols=-c(date, month, metric)) %>%
+    ggplot(aes(x=month, y=value)) + 
+    geom_boxplot(aes(fill=metric)) + 
+    labs(x=NULL, 
+         y=NULL, 
+         title="Daily Metrics for Deep Soil Temperature (100 cm - 255 cm)"
+         ) + 
+    scale_fill_discrete("Metric") + 
+    facet_wrap(~c("mean"="Daily Mean", "sd"="Daily Std. Deviation")[name], scales="free_y")
+
+```
+
+Predictions using day-of-year have a much closer match to the seasonal pattern of the actual 2022 holdout data
+
