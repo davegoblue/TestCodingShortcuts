@@ -3649,4 +3649,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 01-JAN-2024  
 * OpenMeteoEDA_202306_v002 further explores predicted vs. actual for daily mean and sd for deep soil temperature by month
 * OpenMeteoEDA_202306_v002 runFullRF() run for deep soil moisture vs. month
+* OpenMeteoEDA_202306_v002 runFullRF() run for deep soil moisture vs. day of year
 
