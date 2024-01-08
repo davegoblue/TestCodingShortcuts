@@ -2711,3 +2711,104 @@ rfSoilMois255doy$tstPred %>%
 ```
 
 Both predictions generally match the seasonal pattern, but fail to capture unique elements of the holdout data
+
+Function runFullRF() is updated to omit plots for variables importance and/or confusion matrix:  
+```{r}
+
+runFullRF <- function(dfTrain, 
+                      yVar, 
+                      xVars, 
+                      dfTest=dfTrain,
+                      useLabel="test data",
+                      useSub=NULL, 
+                      isContVar=FALSE,
+                      rndTo=NULL,
+                      refXY=FALSE,
+                      makePlots=TRUE,
+                      plotImp=makePlots,
+                      plotConf=makePlots,
+                      returnData=FALSE, 
+                      ...
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfTrain: training data
+    # yVar: dependent variable
+    # xVars: column(s) containing independent variables
+    # dfTest: test dataset for applying predictions
+    # useLabel: label to be used for reporting accuracy
+    # useSub: subtitle to be used for confusion chart (NULL means none)
+    # isContVar: boolean, is the variable continuous? (default FALSE means categorical)
+    # rndTo: round x and y to the nearest rndTo prior to counting examples and plotting accuracy 
+    #        (NULL means categorical data or requests no rounding of continuous data)
+    # refXY: boolean, should a reference line for y=x be included? (relevant only for continuous)
+    # makePlots: boolean, should plots be created for variable importance and confusion matrix?
+    # plotImp: boolean, should variable importance be plotted? (default is makePlots)
+    # plotConf: boolean, should confusion matrix be plotted? (default is makePlots)
+    # returnData: boolean, should data be returned?
+    # ...: additional parameters to pass to runSimpleRF(), which are then passed to ranger::ranger()
+
+    # 1. Run random forest using impurity for importance
+    rf <- runSimpleRF(df=dfTrain, yVar=yVar, xVars=xVars, importance="impurity", ...)
+
+    # 2. Create, and optionally plot, variable importance
+    rfImp <- plotRFImportance(rf, plotData=plotImp, returnData=TRUE)
+
+    # 3. Predict on test dataset
+    tstPred <- predictRF(rf=rf, df=dfTest)
+
+    # 4. Report on accuracy (updated for continuous or categorical)
+    rfAcc <- reportAccuracy(tstPred, 
+                            trueCol=yVar, 
+                            rndReport=3, 
+                            useLabel=useLabel, 
+                            reportR2=isTRUE(isContVar),
+                            returnAcc=TRUE
+                            )
+
+    # 5. Plot confusion data (updated for continuous vs. categorical) if requested
+    if(isTRUE(plotConf)) {
+        plotConfusion(tstPred, 
+                      trueCol=yVar, 
+                      useSub=useSub, 
+                      plotCont=isTRUE(isContVar), 
+                      rndTo=rndTo, 
+                      refXY=refXY
+                      )
+    }
+    
+    #6. Return data if requested
+    if(isTRUE(returnData)) return(list(rf=rf, rfImp=rfImp, tstPred=tstPred, rfAcc=rfAcc))
+    
+}
+
+# Test function with and without plotting
+runFullRF(dfTrain=dfTrain %>% mutate(doy=yday(date)), 
+          yVar="soil_moisture_100_to_255cm", 
+          xVars=c("doy", "month"), 
+          dfTest=dfTest %>% mutate(doy=yday(date)), 
+          useLabel=keyLabel, 
+          useSub=stringr::str_to_sentence(keyLabel), 
+          isContVar = TRUE, 
+          rndTo=.0025, 
+          refXY=TRUE, 
+          returnData=TRUE
+          )
+
+
+# Test function with and without plotting
+runFullRF(dfTrain=dfTrain %>% mutate(doy=yday(date)), 
+          yVar="soil_moisture_100_to_255cm", 
+          xVars=c("doy", "month"), 
+          dfTest=dfTest %>% mutate(doy=yday(date)), 
+          useLabel=keyLabel, 
+          useSub=stringr::str_to_sentence(keyLabel), 
+          isContVar = TRUE, 
+          rndTo=.0025, 
+          refXY=TRUE, 
+          makePlots=FALSE,
+          returnData=TRUE
+          )
+
+```
+
