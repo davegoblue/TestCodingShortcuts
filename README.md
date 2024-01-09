@@ -3657,3 +3657,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 08-JAN-2024  
 * OpenMeteoEDA_202306_v002 runFullRF() includes option for not plotting
+* OpenMeteoEDA_202306_v002 runFullRF() run for each continuous variable vs. month
