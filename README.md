@@ -3663,3 +3663,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v002 R-squared on holdout for each continuous variable vs. day of year
 * OpenMeteoEDA_202306_v002 runFullRF() run for each continuous variable vs. hour of day
 * OpenMeteoEDA_202306_v002 R-squared on holdout for each continuous variable vs. hour of day
+
+### Expansions week of 15-JAN-2024  
+* OpenMeteoEDA_202306_v002 runFullRF() run for each continuous variable vs. month, day of year, and hour of day
+
