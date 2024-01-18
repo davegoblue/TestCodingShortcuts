@@ -3668,4 +3668,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v002 runFullRF() run for each continuous variable vs. month, day of year, and hour of day
 * OpenMeteoEDA_202306_v002 R-squared on holdout for each continuous variable vs. month, day of year, hour of day
 * OpenMeteoEDA_202306_v002 R-squared on holdout vs. OOB training for each continuous variable
-
+* OpenMeteoEDA_202306_v002 R-squared on holdout vs. OOB training for best variable vs. all three variables
