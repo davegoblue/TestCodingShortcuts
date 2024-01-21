@@ -3671,4 +3671,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v002 R-squared on holdout vs. OOB training for best variable vs. all three variables
 * OpenMeteoEDA_202306_v002 runFullRF() run for each continuous variable vs. all variables other than self
 * OpenMeteoEDA_202306_v002 R-squared on holdout for each continuous variable vs. all variables other than self
+* OpenMeteoEDA_202306_v002 cumulative variable importance for top 4 predictors for each continuous variable
 
