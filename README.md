@@ -3673,3 +3673,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v002 R-squared on holdout for each continuous variable vs. all variables other than self
 * OpenMeteoEDA_202306_v002 cumulative variable importance for top 4 predictors for each continuous variable
 
+### Expansions week of 22-JAN-2024  
+* OpenMeteoEDA_202306_v002 plots top 4 predictors for each continuous variable
+
