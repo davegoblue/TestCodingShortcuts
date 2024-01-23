@@ -3675,4 +3675,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 22-JAN-2024  
 * OpenMeteoEDA_202306_v002 plots top 4 predictors for each continuous variable
+* OpenMeteoEDA_202306_v002 runFullRF() run for temperature vs. top 4 importance variables
 
