@@ -3681,3 +3681,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v002 runPartialImportanceRF() updated for rounding and reference line
 * OpenMeteoEDA_202306_v002 runPartialImportanceRF() run for temperature
 * OpenMeteoEDA_202306_v002 runPartialImportanceRF() updated for automated rounding
+
+### Expansions week of 29-JAN-2024  
+* OpenMeteoEDA_202306_v002 runPartialImportanceRF() run for temperature
+
