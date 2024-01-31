@@ -3685,4 +3685,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 29-JAN-2024  
 * OpenMeteoEDA_202306_v002 runPartialImportanceRF() run for temperature
 * OpenMeteoEDA_202306_v002 autoRound() written
+* OpenMeteoEDA_202306_v002 plotConfusion() updated for auto-rounding
 
