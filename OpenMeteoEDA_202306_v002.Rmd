@@ -3564,3 +3564,97 @@ plotConfusion(dfTestCont,
 
 ```
 
+Function runFullRF() is updated for auto-rounding:  
+```{r, fig.height=9, fig.width=9}
+
+runFullRF <- function(dfTrain, 
+                      yVar, 
+                      xVars, 
+                      dfTest=dfTrain,
+                      useLabel="test data",
+                      useSub=NULL, 
+                      isContVar=FALSE,
+                      rndTo=NULL,
+                      rndBucketsAuto=100,
+                      nSig=NULL,
+                      refXY=FALSE,
+                      makePlots=TRUE,
+                      plotImp=makePlots,
+                      plotConf=makePlots,
+                      returnData=FALSE, 
+                      ...
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfTrain: training data
+    # yVar: dependent variable
+    # xVars: column(s) containing independent variables
+    # dfTest: test dataset for applying predictions
+    # useLabel: label to be used for reporting accuracy
+    # useSub: subtitle to be used for confusion chart (NULL means none)
+    # isContVar: boolean, is the variable continuous? (default FALSE means categorical)
+    # rndTo: every number in x should be rounded to the nearest rndTo
+    #        NULL means no rounding (default)
+    #        -1L means make an estimate based on data
+    # rndBucketsAuto: integer, if rndTo is -1L, about how many buckets are desired for predictions?
+    # nSig: number of significant digits for automatically calculated rounding parameter
+    #       (NULL means calculate exactly)    
+    # refXY: boolean, should a reference line for y=x be included? (relevant only for continuous)
+    # makePlots: boolean, should plots be created for variable importance and confusion matrix?
+    # plotImp: boolean, should variable importance be plotted? (default is makePlots)
+    # plotConf: boolean, should confusion matrix be plotted? (default is makePlots)
+    # returnData: boolean, should data be returned?
+    # ...: additional parameters to pass to runSimpleRF(), which are then passed to ranger::ranger()
+
+    # 1. Run random forest using impurity for importance
+    rf <- runSimpleRF(df=dfTrain, yVar=yVar, xVars=xVars, importance="impurity", ...)
+
+    # 2. Create, and optionally plot, variable importance
+    rfImp <- plotRFImportance(rf, plotData=plotImp, returnData=TRUE)
+
+    # 3. Predict on test dataset
+    tstPred <- predictRF(rf=rf, df=dfTest)
+
+    # 4. Report on accuracy (updated for continuous or categorical)
+    rfAcc <- reportAccuracy(tstPred, 
+                            trueCol=yVar, 
+                            rndReport=3, 
+                            useLabel=useLabel, 
+                            reportR2=isTRUE(isContVar),
+                            returnAcc=TRUE
+                            )
+
+    # 5. Plot confusion data (updated for continuous vs. categorical) if requested
+    if(isTRUE(plotConf)) {
+        plotConfusion(tstPred, 
+                      trueCol=yVar, 
+                      useSub=useSub, 
+                      plotCont=isTRUE(isContVar), 
+                      rndTo=rndTo, 
+                      rndBucketsAuto=rndBucketsAuto,
+                      nSig=nSig,
+                      refXY=refXY
+                      )
+    }
+    
+    #6. Return data if requested
+    if(isTRUE(returnData)) return(list(rf=rf, rfImp=rfImp, tstPred=tstPred, rfAcc=rfAcc))
+    
+}
+
+# Test updated function with auto-rounding
+runFullRF(dfTrain=dfTrain %>% mutate(doy=yday(date)), 
+          yVar="soil_temperature_100_to_255cm", 
+          xVars=c("doy", "month"), 
+          dfTest=dfTest %>% mutate(doy=yday(date)), 
+          useLabel=keyLabel, 
+          useSub=stringr::str_to_sentence(keyLabel), 
+          isContVar = TRUE, 
+          rndTo=-1L, 
+          rndBucketsAuto=50,
+          refXY=TRUE, 
+          returnData=TRUE
+          )
+
+```
+
