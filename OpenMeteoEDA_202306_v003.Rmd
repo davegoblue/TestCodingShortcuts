@@ -1288,3 +1288,77 @@ tblMetricsDaily
 
 ```
 
+Core datasets (previously downloaded) are loaded, with explanatory variables added for future processing:  
+```{r cache=TRUE}
+
+# Read daily JSON file
+nycOMDaily <- readOpenMeteoJSON("testOM_daily_nyc.json")
+nycOMDaily
+prettyOpenMeteoMeta(nycOMDaily)
+
+# Read hourly JSON file
+nycOMHourly <- readOpenMeteoJSON("testOM_hourly_nyc.json")
+nycOMHourly
+prettyOpenMeteoMeta(nycOMHourly)
+
+# Create percentiles for numeric variables
+nycTemp <- nycOMHourly$tblHourly %>%
+    mutate(year=year(date), 
+           month=factor(month.abb[lubridate::month(date)], levels=month.abb), 
+           hour=lubridate::hour(time), 
+           fct_hour=factor(hour), 
+           tod=ifelse(hour>=7 & hour<=18, "Day", "Night"), 
+           season=case_when(month %in% c("Mar", "Apr", "May") ~ "Spring", 
+                            month %in% c("Jun", "Jul", "Aug") ~ "Summer", 
+                            month %in% c("Sep", "Oct", "Nov") ~ "Fall", 
+                            month %in% c("Dec", "Jan", "Feb") ~ "Winter", 
+                            TRUE~"typo"
+                            ), 
+           todSeason=paste0(season, "-", tod), 
+           tod=factor(tod, levels=c("Day", "Night")), 
+           season=factor(season, levels=c("Spring", "Summer", "Fall", "Winter")), 
+           todSeason=factor(todSeason, 
+                            levels=paste0(rep(c("Spring", "Summer", "Fall", "Winter"), each=2), 
+                                          "-", 
+                                          c("Day", "Night")
+                                          )
+                            ),
+           across(where(is.numeric), .fns=function(x) round(100*percent_rank(x)), .names="pct_{.col}")
+           )
+
+glimpse(nycTemp)
+nycTemp %>% 
+    count(year, month) %>% 
+    ggplot(aes(y=factor(year), x=month)) + 
+    geom_tile(aes(fill=n)) + 
+    geom_text(aes(label=n), size=3) + 
+    scale_fill_continuous("# Records", low="white", high="green") + 
+    labs(title="Records by year and month", x=NULL, y=NULL)
+nycTemp %>% count(todSeason, season, tod)
+nycTemp %>% count(hour, fct_hour, tod) %>% print(n=30)
+nycTemp %>% count(month, season)
+
+```
+  
+```{r eval=FALSE, echo=FALSE}
+
+# Add random variables to dataset, then split in to test and train
+set.seed(24020316)
+nycTempRand <- nycTemp %>%
+    mutate(pct_0005=sample(0:5, size=nrow(.), replace=TRUE),
+           pct_0025=sample(0:25, size=nrow(.), replace=TRUE), 
+           pct_0100=sample(0:100, size=nrow(.), replace=TRUE), 
+           pct_0250=sample(0:250, size=nrow(.), replace=TRUE),
+           pct_0500=sample(0:500, size=nrow(.), replace=TRUE), 
+           pct_1000=sample(0:1000, size=nrow(.), replace=TRUE), 
+           pct_2500=sample(0:2500, size=nrow(.), replace=TRUE), 
+           pct_5000=sample(0:5000, size=nrow(.), replace=TRUE)
+           )
+
+# Split in to test and train data (3:1 split in favor of test)
+idxTrain <- sort(sample(1:nrow(nycTempRand), size=round(0.75*nrow(nycTempRand)), replace=FALSE))
+nycTempTrain <- nycTempRand[idxTrain, ]
+nycTempTest <- nycTempRand[-idxTrain, ]
+
+```
+
