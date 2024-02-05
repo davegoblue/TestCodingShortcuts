@@ -3691,3 +3691,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 created from _v002
 * OpenMeteoEDA_202306_v003 recreates core datasets
 
+### Expansions week of 05-FEB-2024  
+* OpenMeteoEDA_202306_v003 splits into test and train
