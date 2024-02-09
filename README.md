@@ -3696,3 +3696,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 runFullRF() run for month
 * OpenMeteoEDA_202306_v003 runFullRF() run for temperature
 * OpenMeteoEDA_202306_v003 runFullRF() run for soil temperature
+* OpenMeteoEDA_202306_v003 runFullRF() extracts variable importance
