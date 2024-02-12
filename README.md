@@ -3701,5 +3701,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 runPartialImportanceRF() run for month with varying number of predictors
 
 ### Expansions week of 12-FEB-2024  
-* OpenMeteoEDA_202306_v003 runFullRF() run for temperature
+* OpenMeteoEDA_202306_v003 runPartialImportanceRF() run for temperature with 4 predictors
 
