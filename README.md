@@ -3703,4 +3703,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 12-FEB-2024  
 * OpenMeteoEDA_202306_v003 runPartialImportanceRF() run for temperature with 4 predictors
 * OpenMeteoEDA_202306_v003 runPartialImportanceRF() run for temperature with varying number of predictors
+* OpenMeteoEDA_202306_v003 runPartialImportanceRF() run for soil temperature with 4 predictors
 
