@@ -1,4 +1,4 @@
-  # TestCodingShortcuts
+# TestCodingShortcuts
 Testing some coding shortcuts that I will want to use later in R
 
 A few things that I want to learn how to implement in R based on what I have seen on the internet
@@ -3705,4 +3705,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 runPartialImportanceRF() run for temperature with varying number of predictors
 * OpenMeteoEDA_202306_v003 runPartialImportanceRF() run for soil temperature with 4 predictors
 * OpenMeteoEDA_202306_v003 runPartialImportanceRF() run for soil temperature with varying number of predictors
-
+* OpenMeteoEDA_202306_v003 runFullRF() run for day of year as integer
