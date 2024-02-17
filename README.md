@@ -3706,3 +3706,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 runPartialImportanceRF() run for soil temperature with 4 predictors
 * OpenMeteoEDA_202306_v003 runPartialImportanceRF() run for soil temperature with varying number of predictors
 * OpenMeteoEDA_202306_v003 runFullRF() run for day of year as integer
+* OpenMeteoEDA_202306_v003 runFullRF() run for day of year, rounded to nearest 10, as factor
