@@ -3711,3 +3711,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 19-FEB-2024  
 * OpenMeteoEDA_202306_v003 runFullRF() run for day of year, rounded to nearest 10, as factor, with varying number of predictors
+* OpenMeteoEDA_202306_v003 runFullRF() explores deep soil temperature
