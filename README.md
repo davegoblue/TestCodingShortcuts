@@ -3713,3 +3713,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 runFullRF() run for day of year, rounded to nearest 10, as factor, with varying number of predictors
 * OpenMeteoEDA_202306_v003 runFullRF() explores deep soil temperature
 * OpenMeteoEDA_202306_v003 runFullRF() explores air temperature and dewpoint
+* OpenMeteoEDA_202306_v003 runFullRF() explores deep soil moisture
