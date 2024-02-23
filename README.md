@@ -3714,3 +3714,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 runFullRF() explores deep soil temperature
 * OpenMeteoEDA_202306_v003 runFullRF() explores air temperature and dewpoint
 * OpenMeteoEDA_202306_v003 runFullRF() explores deep soil moisture
+* OpenMeteoEDA_202306_v003 runFullRF() run for year as factor
