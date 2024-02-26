@@ -3717,3 +3717,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 runFullRF() run for year as factor
 * OpenMeteoEDA_202306_v003 runPartialImportanceRF() run for year as factor with varying number of predictors
 * OpenMeteoEDA_202306_v003 runFullRF() run for hour as factor
+
+### Expansions week of 26-FEB-2024  
+* OpenMeteoEDA_202306_v003 runFullRF() run for hour as factor with 4 predictors
+
