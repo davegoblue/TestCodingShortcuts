@@ -2044,3 +2044,60 @@ runPartialImportanceRF(dfTrain=dfTrain_v3,
 ```
 
 Prediction accuracy is decreased by ~5% as predictors are limited to 4, with some of the nighttime hours never predicted. A series of models are run, using a variable number of predictors:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Variable importance number of variables to explore
+impNums <- c(1:10, 16, 25, nrow(filter(dfImp, src=="fct_hour")))
+
+# Accuracy on holdout data
+rpiHour <- tibble::tibble(nImp=impNums, 
+                          rfAcc=sapply(impNums, 
+                                       FUN=function(x) runPartialImportanceRF(dfTrain=dfTrain_v3, 
+                                                                              yVar="fct_hour", 
+                                                                              dfTest=dfTest_v3, 
+                                                                              isContVar=FALSE, 
+                                                                              impDB=dfImp, 
+                                                                              nImp=x, 
+                                                                              makePlots=FALSE)[["rfAcc"]]
+                                       )
+                          )
+rpiHour
+
+```
+  
+```{r, fig.height=9, fig.width=9}
+
+# Plot of holdout accuracy vs. number of variables
+rpiHour %>%
+    bind_rows(tibble::tibble(nImp=0, rfAcc=0)) %>%
+    ggplot(aes(x=nImp, y=rfAcc)) + 
+    geom_line() + 
+    geom_point() + 
+    labs(title="Accuracy on holdout data vs. number of predictors", 
+         subtitle="Predicting hour",
+         y="Accuracy on holdout data", 
+         x="# Predictors (selected in order of variable importance in full model)"
+         ) + 
+    lims(y=c(0, 1)) + 
+    geom_hline(data=~filter(., rfAcc==max(rfAcc)), aes(yintercept=rfAcc), lty=2)
+
+# Correlations
+dfTrain %>% 
+    select(all_of(varsTrain)) %>% 
+    cor() %>% 
+    as.data.frame() %>% 
+    rownames_to_column("V1") %>% 
+    tibble::tibble() %>% 
+    pivot_longer(cols=-c(V1), names_to="V2") %>% 
+    filter(V1 %in% pull(filter(dfImp, src=="fct_hour", n<=8), "metric"), 
+           V2 %in% pull(filter(dfImp, src=="fct_hour", n<=8), "metric")
+           ) %>% 
+    ggplot(aes(x=fct_rev(V1), y=V2)) + 
+    geom_tile(aes(fill=value)) + 
+    geom_text(aes(label=round(value, 2))) + 
+    scale_fill_gradient2(high="green") + 
+    labs(title="Correlations of select predictors in training data", x=NULL, y=NULL)
+
+```
+
+Accuracy generally increases with number of predictors, plateauing around 40% with 4+ predictors
