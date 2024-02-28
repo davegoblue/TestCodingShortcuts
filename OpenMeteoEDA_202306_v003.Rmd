@@ -2101,3 +2101,65 @@ dfTrain %>%
 ```
 
 Accuracy generally increases with number of predictors, plateauing around 40% with 4+ predictors
+
+The process for running partial importance is converted to functional form:  
+```{r, fig.height=9, fig.width=9}
+
+autoPartialImportance <- function(dfTrain, 
+                                  dfTest, 
+                                  yVar, 
+                                  isContVar,
+                                  impDB=dfImp,
+                                  impNums=c(1:10, 16, 25, nrow(filter(dfImp, src=="fct_hour")))
+                                  ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfTrain: training data
+    # dfTest: test (holdout) data
+    # yVar: dependent variable
+    # isContVar: boolean, is this a contnuous variable (R-2) or categorical variable (accuracy)?
+    # impDB: tibble containing sorted variable importances by predictor
+    # impNums: vector of number of variables to run (each element in vector run)
+    
+    # Accuracy on holdout data
+    tblRPI <- tibble::tibble(nImp=impNums, 
+                             rfAcc=sapply(impNums, 
+                                          FUN=function(x) {y <- runPartialImportanceRF(dfTrain=dfTrain, 
+                                                                                       yVar=yVar, 
+                                                                                       dfTest=dfTest, 
+                                                                                       isContVar=isContVar, 
+                                                                                       impDB=impDB, 
+                                                                                       nImp=x, 
+                                                                                       makePlots=FALSE
+                                                                                       )[["rfAcc"]]
+                                                           if(isTRUE(isContVar)) y <- y["r2"]
+                                                           y
+                                                           }
+                                          )
+                             )
+    print(tblRPI)
+
+    # Plot of holdout accuracy/r-squared vs. number of variables
+    # if(isTRUE(isContVar)) tblRPI <- tblRPI %>% mutate(rfAcc=r2)
+    if(isTRUE(isContVar)) prtDesc <- "R-squared" else prtDesc <- "Accuracy"
+    p1 <- tblRPI %>%
+        select(nImp, rfAcc) %>%
+        bind_rows(tibble::tibble(nImp=0, rfAcc=0)) %>%
+        ggplot(aes(x=nImp, y=rfAcc)) + 
+        geom_line() + 
+        geom_point() + 
+        labs(title=paste0(prtDesc, " on holdout data vs. number of predictors"), 
+             subtitle=paste0("Predicting ", yVar),
+             y=paste0(prtDesc, " on holdout data"), 
+             x="# Predictors (selected in order of variable importance in full model)"
+             ) + 
+        lims(y=c(0, 1)) + 
+        geom_hline(data=~filter(., rfAcc==max(rfAcc)), aes(yintercept=rfAcc), lty=2)
+    print(p1)
+    
+    return(tblRPI)
+    
+}
+
+```
+
