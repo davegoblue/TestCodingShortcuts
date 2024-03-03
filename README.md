@@ -3725,3 +3725,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 autoPartialImportance() tested on hour as factor
 * OpenMeteoEDA_202306_v003 autoPartialImportance() tested on temperature
 * OpenMeteoEDA_202306_v003 runFullRF() run for day-night/season
+* OpenMeteoEDA_202306_v003 runFullRF() run for day-night/season with 4 predictors
