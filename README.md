@@ -3733,3 +3733,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 runFullRF() run for best predictor plus each other predictor for day-night/season
 * OpenMeteoEDA_202306_v003 runFullRF() run for best two predictors plus each other predictor for day-night/season
 * OpenMeteoEDA_202306_v003 runFullRF() run for best three predictors plus each other predictor for day-night/season
+* OpenMeteoEDA_202306_v003 plots evolution of accuracy by number of next-best predictors
