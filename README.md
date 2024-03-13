@@ -3739,3 +3739,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 11-MAR-2024  
 * OpenMeteoEDA_202306_v003 runNextBestPredictor() tested on categorical variable
 * OpenMeteoEDA_202306_v003 runNextBestPredictor() results compared to previous
+* OpenMeteoEDA_202306_v003 runNextBestPredictor() tested on continuous variable
