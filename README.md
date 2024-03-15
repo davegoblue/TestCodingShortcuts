@@ -3741,3 +3741,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 runNextBestPredictor() results compared to previous
 * OpenMeteoEDA_202306_v003 runNextBestPredictor() tested on continuous variable
 * OpenMeteoEDA_202306_v003 getNextBestVar() written
+* OpenMeteoEDA_202306_v003 getNextBestVar() run iteratively for 1-3 predictor for temperature
+
