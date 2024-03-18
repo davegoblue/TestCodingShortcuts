@@ -3744,3 +3744,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 getNextBestVar() run iteratively for 1-3 predictor for temperature
 * OpenMeteoEDA_202306_v003 plots R2 for iteratively adding predictors for temperature
 * OpenMeteoEDA_202306_v003 example 2 predictors for temperature
+
+### Expansions week of 18-MAR-2024  
+* OpenMeteoEDA_202306_v003 explores relationship between temperature, relative humidity, and depoint
+
