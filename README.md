@@ -3746,5 +3746,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 example 2 predictors for temperature
 
 ### Expansions week of 18-MAR-2024  
-* OpenMeteoEDA_202306_v003 explores relationship between temperature, relative humidity, and depoint
+* OpenMeteoEDA_202306_v003 explores relationship between temperature, relative humidity, and dewpoint
+* OpenMeteoEDA_202306_v003 runs every combination of 2 predictors on temperature, using a smaller training subset
 
