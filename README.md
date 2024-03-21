@@ -3749,4 +3749,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 explores relationship between temperature, relative humidity, and dewpoint
 * OpenMeteoEDA_202306_v003 runs every combination of 2 predictors on temperature, using a smaller training subset
 * OpenMeteoEDA_202306_v003 explores R2 for each combination of 2 predictors on temperature, using a smaller training subset
+* OpenMeteoEDA_202306_v003 explores R2 for select combinations of 2 predictors on temperature, using the full training subset
 
