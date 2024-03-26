@@ -3756,3 +3756,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 25-MAR-2024  
 * OpenMeteoEDA_202306_v003 runs every combination of 2 predictors on fct_hour, using a smaller training subset
+* OpenMeteoEDA_202306_v003 explores R2 for each combination of 2 predictors on fct_hour, using a smaller training subset
