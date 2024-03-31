@@ -3761,3 +3761,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 explores relationship among hour, month, and shortwave radiation
 * OpenMeteoEDA_202306_v003 further explores relationship among hour, month, and shortwave radiation
 * OpenMeteoEDA_202306_v003 downloads data for a new city
+* OpenMeteoEDA_202306_v003 processes data for a new city
