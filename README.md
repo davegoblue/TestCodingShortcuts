@@ -3762,3 +3762,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 further explores relationship among hour, month, and shortwave radiation
 * OpenMeteoEDA_202306_v003 downloads data for a new city
 * OpenMeteoEDA_202306_v003 processes data for a new city
+
+### Expansions week of 01-APR-2024  
+* OpenMeteoEDA_202306_v003 uses existing model to predict new city temperature_2m
