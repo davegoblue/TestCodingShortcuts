@@ -3765,3 +3765,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 01-APR-2024  
 * OpenMeteoEDA_202306_v003 uses existing model to predict new city temperature_2m
+* OpenMeteoEDA_202306_v003 creates temperature_2m model using original city data with 3 exact predictors
