@@ -3767,3 +3767,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 uses existing model to predict new city temperature_2m
 * OpenMeteoEDA_202306_v003 creates temperature_2m model using original city data with 3 exact predictors
 * OpenMeteoEDA_202306_v003 newCityPredict() written
+* OpenMeteoEDA_202306_v003 newCityPredict() original city temperature_2m model predicts new city
