@@ -3771,3 +3771,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 linear model on original city temperature_2m predicts new city
 * OpenMeteoEDA_202306_v003 recreates temperature_2m model using original city data with 3 exact predictors as raw values rather than percentiles
 * OpenMeteoEDA_202306_v003 newCityPredict() original city temperature_2m model (raw values) predicts new city
+
+### Expansions week of 08-APR-2024  
+* OpenMeteoEDA_202306_v003 compares error for temperature_2m predictions for new city
