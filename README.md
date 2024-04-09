@@ -3774,3 +3774,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 08-APR-2024  
 * OpenMeteoEDA_202306_v003 compares error for temperature_2m predictions for new city
+* OpenMeteoEDA_202306_v003 newCityPredict() original city month model predicts new city
