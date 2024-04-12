@@ -3777,3 +3777,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 newCityPredict() original city month model predicts new city
 * OpenMeteoEDA_202306_v003 explores accuracy of new city month predictions
 * OpenMeteoEDA_202306_v003 further explores accuracy of new city month predictions
+* OpenMeteoEDA_202306_v003 explores accuracy of new city month predictions using new city data for training
