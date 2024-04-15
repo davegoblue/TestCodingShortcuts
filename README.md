@@ -3780,3 +3780,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 explores accuracy of new city month predictions using new city data for training
 * OpenMeteoEDA_202306_v003 runFullRF() and newCityPredict() run to predict todSeason for new city
 * OpenMeteoEDA_202306_v003 explores accuracy of new city todSeason predictions
+
+### Expansions week of 15-APR-2024  
+* OpenMeteoEDA_202306_v003 explores accuracy of new city todSeason predictions using new city data for modeling
+
