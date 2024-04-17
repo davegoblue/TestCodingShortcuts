@@ -3784,3 +3784,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 15-APR-2024  
 * OpenMeteoEDA_202306_v003 explores accuracy of new city todSeason predictions using new city data for modeling
 * OpenMeteoEDA_202306_v003 runFullRF() and newCityPredict() run to predict deep soil temperature for new city
+* OpenMeteoEDA_202306_v003 explores accuracy of new city deep soil temperature predictions
