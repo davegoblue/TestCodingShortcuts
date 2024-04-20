@@ -3787,4 +3787,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 explores accuracy of new city deep soil temperature predictions
 * OpenMeteoEDA_202306_v003 explores accuracy of new city deep soil temperature predictions using new city data for modeling
 * OpenMeteoEDA_202306_v003 runFullRF() run for deep soil temperature for old city, without day-of-year and month
+* OpenMeteoEDA_202306_v003 explores accuracy of new city deep soil temperature predictions using updated previous city model
 
