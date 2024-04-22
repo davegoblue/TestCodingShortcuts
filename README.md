@@ -3790,3 +3790,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 explores accuracy of new city deep soil temperature predictions using updated previous city model
 * OpenMeteoEDA_202306_v003 further explores accuracy of new city deep soil temperature predictions using updated previous city model
 
+### Expansions week of 22-APR-2024  
+* OpenMeteoEDA_202306_v003 compares error for deep soil temperature predictions for new city
+
