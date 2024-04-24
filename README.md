@@ -3793,4 +3793,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 22-APR-2024  
 * OpenMeteoEDA_202306_v003 compares error for deep soil temperature predictions for new city
 * OpenMeteoEDA_202306_v003 downloads data for a third city
+* OpenMeteoEDA_202306_v003 processes data for a third city
 
