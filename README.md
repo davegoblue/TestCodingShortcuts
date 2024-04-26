@@ -3795,4 +3795,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 downloads data for a third city
 * OpenMeteoEDA_202306_v003 processes data for a third city
 * OpenMeteoEDA_202306_v003 explores key metric distributions for a third city
+* OpenMeteoEDA_202306_v003 explores temperature vs. dewpoint for a third city
 
