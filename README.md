@@ -3801,3 +3801,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 29-APR-2024  
 * OpenMeteoEDA_202306_v003 plots slope and intercept for temperature_2m ~ dewpoint_2m for each value of relative humidity
+* OpenMeteoEDA_202306_v003 explores accuracy of third city month predictions
