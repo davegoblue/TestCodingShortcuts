@@ -3804,3 +3804,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 explores accuracy of third city month predictions
 * OpenMeteoEDA_202306_v003 further explores accuracy of third city month predictions
 * OpenMeteoEDA_202306_v003 explores accuracy of third city month predictions using third city data for training
+* OpenMeteoEDA_202306_v003 explores accuracy of third city todSeason predictions
