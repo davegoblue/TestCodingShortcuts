@@ -3806,3 +3806,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 explores accuracy of third city month predictions using third city data for training
 * OpenMeteoEDA_202306_v003 runFullRF() and newCityPredict() run to predict todSeason for third city
 * OpenMeteoEDA_202306_v003 explores accuracy of third city todSeason predictions
+* OpenMeteoEDA_202306_v003 explores accuracy of third city todSeason predictions using third city data for modeling
+
