@@ -3810,3 +3810,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 06-MAY-2024  
 * OpenMeteoEDA_202306_v003 integrates three city data to one train and one test file
+* OpenMeteoEDA_202306_v003 predicts city based on numeric features
