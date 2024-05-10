@@ -3813,4 +3813,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 predicts city based on numeric features
 * OpenMeteoEDA_202306_v003 plots deep soil moisture and surface pressure by city
 * OpenMeteoEDA_202306_v003 runFullRF() to predict city using only deep soil moisture
+* OpenMeteoEDA_202306_v003 runFullRF() to predict city without soil moisture
 
