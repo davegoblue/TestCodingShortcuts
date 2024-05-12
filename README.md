@@ -3815,4 +3815,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 runFullRF() to predict city using only deep soil moisture
 * OpenMeteoEDA_202306_v003 runFullRF() to predict city without soil moisture
 * OpenMeteoEDA_202306_v003 explores surface pressure vs. MSL pressure by city
+* OpenMeteoEDA_202306_v003 runs every combination of 2 predictors on city, using a smaller training subset
 
