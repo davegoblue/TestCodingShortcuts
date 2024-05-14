@@ -3819,4 +3819,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 13-MAY-2024  
 * OpenMeteoEDA_202306_v003 explores accuracy for each combination of 2 predictors on city, using a smaller training subset
-
+* OpenMeteoEDA_202306_v003 explores accuracy for select combinations of 2 predictors on city, using the full training subset
