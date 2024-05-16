@@ -4544,3 +4544,61 @@ if(!file.exists("testOM_daily_hou.json")) {
 
 ```
 
+Core datasets for Houston are loaded, with explanatory variables added for future processing:  
+```{r cache=TRUE}
+
+# Read daily JSON file
+houOMDaily <- readOpenMeteoJSON("testOM_daily_hou.json")
+houOMDaily
+prettyOpenMeteoMeta(houOMDaily)
+
+# Read hourly JSON file
+houOMHourly <- readOpenMeteoJSON("testOM_hourly_hou.json")
+houOMHourly
+prettyOpenMeteoMeta(houOMHourly)
+
+# Create percentiles for numeric variables
+houTemp <- houOMHourly$tblHourly %>%
+    mutate(year=year(date), 
+           month=factor(month.abb[lubridate::month(date)], levels=month.abb), 
+           hour=lubridate::hour(time), 
+           fct_hour=factor(hour), 
+           tod=ifelse(hour>=7 & hour<=18, "Day", "Night"), 
+           doy=yday(date),
+           season=case_when(month %in% c("Mar", "Apr", "May") ~ "Spring", 
+                            month %in% c("Jun", "Jul", "Aug") ~ "Summer", 
+                            month %in% c("Sep", "Oct", "Nov") ~ "Fall", 
+                            month %in% c("Dec", "Jan", "Feb") ~ "Winter", 
+                            TRUE~"typo"
+           ), 
+           todSeason=paste0(season, "-", tod), 
+           tod=factor(tod, levels=c("Day", "Night")), 
+           season=factor(season, levels=c("Spring", "Summer", "Fall", "Winter")), 
+           todSeason=factor(todSeason, 
+                            levels=paste0(rep(c("Spring", "Summer", "Fall", "Winter"), each=2), 
+                                          "-", 
+                                          c("Day", "Night")
+                            )
+           ),
+           across(where(is.numeric), .fns=function(x) round(100*percent_rank(x)), .names="pct_{.col}")
+    )
+
+glimpse(houTemp)
+houTemp %>% 
+    count(doy, month) %>% 
+    ggplot(aes(y=doy, x=month)) + 
+    geom_boxplot(aes(weight=n), fill="lightblue") + 
+    labs(title="Observations by day-of-year and month", x=NULL, y="Day of Year")
+houTemp %>% 
+    count(year, month) %>% 
+    ggplot(aes(y=factor(year), x=month)) + 
+    geom_tile(aes(fill=n)) + 
+    geom_text(aes(label=n), size=3) + 
+    scale_fill_continuous("# Records", low="white", high="green") + 
+    labs(title="Records by year and month", x=NULL, y=NULL)
+houTemp %>% count(todSeason, season, tod)
+houTemp %>% count(hour, fct_hour, tod) %>% print(n=30)
+houTemp %>% count(month, season)
+
+```
+  
