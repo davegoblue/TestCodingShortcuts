@@ -3822,3 +3822,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 explores accuracy for select combinations of 2 predictors on city, using the full training subset
 * OpenMeteoEDA_202306_v003 downloads data for a fourth city
 * OpenMeteoEDA_202306_v003 processes data for a fourth city
+* OpenMeteoEDA_202306_v003 explores key metric distributions for a fourth city
