@@ -4633,3 +4633,57 @@ laxTemp %>%
 
 ```
 
+The scatter of temperature and dewpoint is also explored:  
+```{r, fig.height=9, fig.width=9}
+
+cVec <- c("1"="LA", "2"="NYC", "3"="Chicago", "4"="Houston")
+
+laxTemp %>% 
+    bind_rows(nycTemp, chiTemp, houTemp, .id="src") %>% 
+    select(t=temperature_2m, d=dewpoint_2m, src) %>% 
+    mutate(across(.cols=where(is.numeric), .fns=function(x) round(x))) %>% 
+    count(src, t, d) %>% 
+    ggplot(aes(x=t, y=d)) + 
+    geom_point(aes(size=n, color=cVec[src]), alpha=0.5) + 
+    geom_smooth(aes(color=cVec[src], weight=n), method="lm") +
+    labs(x="Temperature (C)", y="Dewpoint (C)", title="Temperature vs. Dewpoint", subtitle="Hourly") + 
+    scale_color_discrete(NULL) + 
+    scale_size_continuous("# Obs")
+
+laxTemp %>% 
+    bind_rows(nycTemp, chiTemp, houTemp, .id="src") %>%
+    mutate(src=cVec[src]) %>%
+    group_by(src) %>%
+    summarize(cor_td=cor(temperature_2m, dewpoint_2m))
+
+```
+
+Houston is similar to NYC and Chicago in having a largely linear relationship between temperature and dewpoint.
+
+The previous models for predicting city (one with soil temperature, one without) are saved, for application to the new Houston data:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Run with all variables
+rfCityFull <- runFullRF(allCityTrain %>% mutate(fct_src=factor(src)) %>% filter(year<2022), 
+                        yVar="fct_src", 
+                        xVars=varsTrain %>% str_replace(pattern="pct_", replacement=""), 
+                        dfTest=allCityTest %>% mutate(fct_src=factor(src)) %>% filter(year==2022), 
+                        isContVar=FALSE, 
+                        returnData=TRUE
+                        )
+predictRF(rfCityFull$rf, df=houTemp) %>% count(pred)
+
+# Run without moisture variables
+rfCityNoMoisture <- runFullRF(allCityTrain %>% mutate(fct_src=factor(src)) %>% filter(year<2022), 
+                              yVar="fct_src", 
+                              xVars=varsTrain[!grepl(pattern="moist", x=varsTrain)] %>% 
+                                  str_remove(., pattern="pct_"), 
+                              dfTest=allCityTest %>% mutate(fct_src=factor(src)) %>% filter(year==2022), 
+                              isContVar=FALSE, 
+                              returnData=TRUE
+                              )
+predictRF(rfCityNoMoisture$rf, df=houTemp) %>% count(pred)
+
+```
+
+The previously trained random forest models overwhelmingly predict Houston as NYC rather than Chicago or LA
