@@ -3829,3 +3829,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 20-MAY-2024  
 * OpenMeteoEDA_202306_v003 existing linear model for temperature_2m predicts fourth city
 * OpenMeteoEDA_202306_v003 existing random forest model for temperature_2m predicts fourth city
+* OpenMeteoEDA_202306_v003 explores accuracy of fourth city month predictions
