@@ -3831,5 +3831,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 existing random forest model for temperature_2m predicts fourth city
 * OpenMeteoEDA_202306_v003 explores accuracy of fourth city month predictions
 * OpenMeteoEDA_202306_v003 further explores accuracy of fourth city month predictions
-* OpenMeteoEDA_202306_v003 runFullRF() and newCityPredict() run to predict todSeason for third city
+* OpenMeteoEDA_202306_v003 runFullRF() and newCityPredict() run to predict todSeason for fourth city
 
