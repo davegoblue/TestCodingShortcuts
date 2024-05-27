@@ -3835,3 +3835,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 explores accuracy of fourth city todSeason predictions
 * OpenMeteoEDA_202306_v003 explores accuracy of fourth city todSeason predictions using fourth city data for modeling
 
+### Expansions week of 27-MAY-2024  
+* OpenMeteoEDA_202306_v003 integrates four city data to one train and one test file
