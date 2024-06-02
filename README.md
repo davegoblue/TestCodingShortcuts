@@ -3842,4 +3842,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 predicts two most similar cities based on numeric features
 * OpenMeteoEDA_202306_v003 plots deep soil moisture and deep soil temperature by city
 * OpenMeteoEDA_202306_v003 runFullRF() to predict city using only deep soil moisture
+* OpenMeteoEDA_202306_v003 runFullRF() to predict city using deep soil moisture and deep soil temperature
 
