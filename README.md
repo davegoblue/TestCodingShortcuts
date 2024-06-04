@@ -3846,3 +3846,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 03-JUN-2024  
 * OpenMeteoEDA_202306_v003 runFullRF() to predict city excluding soil moisture and soil temperature
+* OpenMeteoEDA_202306_v003 explores surface pressure by city
