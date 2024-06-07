@@ -3849,4 +3849,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v003 explores surface pressure by city
 * OpenMeteoEDA_202306_v003 runs every combination of 2 predictors on city, using a smaller training subset
 * OpenMeteoEDA_202306_v003 explores accuracy for each combination of 2 predictors on city, using a smaller training subset
+* OpenMeteoEDA_202306_v003 runs every combination of 2 predictors on city, using a smaller training subset with only the 2 most similar cities
 
