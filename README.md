@@ -3855,4 +3855,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 10-JUN-2024  
 * OpenMeteoEDA_202306_v004 created from _v003
+* OpenMeteoEDA_202306_v004 copies mapping tables from _v003
 
