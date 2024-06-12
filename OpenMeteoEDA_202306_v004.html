@@ -1896,6 +1896,89 @@ tblMetricsDaily</code></pre>
 ## 14 winddirection_10m_dominant Dominant wind direction                           
 ## 15 shortwave_radiation_sum    The sum of solar radiaion on a given day in Megaj…
 ## 16 et0_fao_evapotranspiration Daily sum of ET0 Reference Evapotranspiration of …</code></pre>
+<p>A function is written to process saved data for later use:</p>
+<pre class="r"><code>formatOpenMeteoJSON &lt;- function(x, 
+                                glimpseData=TRUE, 
+                                addVars=FALSE, 
+                                addExtract=&quot;tblHourly&quot;, 
+                                showStats=addVars
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # x: Saved json file for passage to readOpenMeteoJSON
+    # glimpseData: boolean, should a glimpse of the file and metadata be shown?
+    # addVars: boolean, should variables be added for later processing?
+    # addExtract: list elemented to be extracted (relevant only for addVars=TRUE)
+    # showStats: boolean, should counts of key elements be shown (relevant only for addVars=TRUE)
+
+    # Read file
+    lst &lt;- readOpenMeteoJSON(x)
+    
+    # Show a glimpse if requested
+    if(isTRUE(glimpseData)) {
+        print(lst)
+        prettyOpenMeteoMeta(lst)
+    }
+    
+    # If no variables to be added, return the file
+    if(!isTRUE(addVars)) return(lst)
+    
+    # Add statistics
+    df &lt;- lst[[addExtract]] %&gt;%
+        mutate(year=year(date), 
+               month=factor(month.abb[lubridate::month(date)], levels=month.abb), 
+               hour=lubridate::hour(time), 
+               fct_hour=factor(hour), 
+               tod=ifelse(hour&gt;=7 &amp; hour&lt;=18, &quot;Day&quot;, &quot;Night&quot;), 
+               doy=yday(date),
+               season=case_when(month %in% c(&quot;Mar&quot;, &quot;Apr&quot;, &quot;May&quot;) ~ &quot;Spring&quot;, 
+                                month %in% c(&quot;Jun&quot;, &quot;Jul&quot;, &quot;Aug&quot;) ~ &quot;Summer&quot;, 
+                                month %in% c(&quot;Sep&quot;, &quot;Oct&quot;, &quot;Nov&quot;) ~ &quot;Fall&quot;, 
+                                month %in% c(&quot;Dec&quot;, &quot;Jan&quot;, &quot;Feb&quot;) ~ &quot;Winter&quot;, 
+                                TRUE~&quot;typo&quot;
+                                ), 
+               todSeason=paste0(season, &quot;-&quot;, tod), 
+               tod=factor(tod, levels=c(&quot;Day&quot;, &quot;Night&quot;)), 
+               season=factor(season, levels=c(&quot;Spring&quot;, &quot;Summer&quot;, &quot;Fall&quot;, &quot;Winter&quot;)), 
+               todSeason=factor(todSeason, 
+                                levels=paste0(rep(c(&quot;Spring&quot;, &quot;Summer&quot;, &quot;Fall&quot;, &quot;Winter&quot;), each=2), 
+                                              &quot;-&quot;, 
+                                              c(&quot;Day&quot;, &quot;Night&quot;)
+                                              )
+                                ),
+               across(where(is.numeric), .fns=function(x) round(100*percent_rank(x)), .names=&quot;pct_{.col}&quot;)
+               )
+    
+    # Show counts if requested
+    if(isTRUE(showStats)) {
+        # Glimpse file
+        glimpse(df)
+        # Counts of day-of-year/month
+        p1 &lt;- df %&gt;% 
+            count(doy, month) %&gt;% 
+            ggplot(aes(y=doy, x=month)) + 
+            geom_boxplot(aes(weight=n), fill=&quot;lightblue&quot;) + 
+            labs(title=&quot;Observations by day-of-year and month&quot;, x=NULL, y=&quot;Day of Year&quot;)
+        print(p1)
+        # Counts of year/month
+        p2 &lt;- df %&gt;% 
+            count(year, month) %&gt;% 
+            ggplot(aes(y=factor(year), x=month)) + 
+            geom_tile(aes(fill=n)) + 
+            geom_text(aes(label=n), size=3) + 
+            scale_fill_continuous(&quot;# Records&quot;, low=&quot;white&quot;, high=&quot;green&quot;) + 
+            labs(title=&quot;Records by year and month&quot;, x=NULL, y=NULL)
+        print(p2)
+        # Counts of todSeason-season-tod, hour-fct_hour-tod, and month-season
+        df %&gt;% count(todSeason, season, tod) %&gt;% print()
+        df %&gt;% count(hour, fct_hour, tod) %&gt;% print(n=30)
+        df %&gt;% count(month, season) %&gt;% print()
+    }
+    
+    # Return the file
+    df
+    
+}</code></pre>
 </div>
 
 

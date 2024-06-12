@@ -1493,3 +1493,92 @@ tblMetricsDaily
 
 ```
 
+A function is written to process saved data for later use:  
+```{r}
+
+formatOpenMeteoJSON <- function(x, 
+                                glimpseData=TRUE, 
+                                addVars=FALSE, 
+                                addExtract="tblHourly", 
+                                showStats=addVars
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # x: Saved json file for passage to readOpenMeteoJSON
+    # glimpseData: boolean, should a glimpse of the file and metadata be shown?
+    # addVars: boolean, should variables be added for later processing?
+    # addExtract: list elemented to be extracted (relevant only for addVars=TRUE)
+    # showStats: boolean, should counts of key elements be shown (relevant only for addVars=TRUE)
+
+    # Read file
+    lst <- readOpenMeteoJSON(x)
+    
+    # Show a glimpse if requested
+    if(isTRUE(glimpseData)) {
+        print(lst)
+        prettyOpenMeteoMeta(lst)
+    }
+    
+    # If no variables to be added, return the file
+    if(!isTRUE(addVars)) return(lst)
+    
+    # Add statistics
+    df <- lst[[addExtract]] %>%
+        mutate(year=year(date), 
+               month=factor(month.abb[lubridate::month(date)], levels=month.abb), 
+               hour=lubridate::hour(time), 
+               fct_hour=factor(hour), 
+               tod=ifelse(hour>=7 & hour<=18, "Day", "Night"), 
+               doy=yday(date),
+               season=case_when(month %in% c("Mar", "Apr", "May") ~ "Spring", 
+                                month %in% c("Jun", "Jul", "Aug") ~ "Summer", 
+                                month %in% c("Sep", "Oct", "Nov") ~ "Fall", 
+                                month %in% c("Dec", "Jan", "Feb") ~ "Winter", 
+                                TRUE~"typo"
+                                ), 
+               todSeason=paste0(season, "-", tod), 
+               tod=factor(tod, levels=c("Day", "Night")), 
+               season=factor(season, levels=c("Spring", "Summer", "Fall", "Winter")), 
+               todSeason=factor(todSeason, 
+                                levels=paste0(rep(c("Spring", "Summer", "Fall", "Winter"), each=2), 
+                                              "-", 
+                                              c("Day", "Night")
+                                              )
+                                ),
+               across(where(is.numeric), .fns=function(x) round(100*percent_rank(x)), .names="pct_{.col}")
+               )
+    
+    # Show counts if requested
+    if(isTRUE(showStats)) {
+        # Glimpse file
+        glimpse(df)
+        # Counts of day-of-year/month
+        p1 <- df %>% 
+            count(doy, month) %>% 
+            ggplot(aes(y=doy, x=month)) + 
+            geom_boxplot(aes(weight=n), fill="lightblue") + 
+            labs(title="Observations by day-of-year and month", x=NULL, y="Day of Year")
+        print(p1)
+        # Counts of year/month
+        p2 <- df %>% 
+            count(year, month) %>% 
+            ggplot(aes(y=factor(year), x=month)) + 
+            geom_tile(aes(fill=n)) + 
+            geom_text(aes(label=n), size=3) + 
+            scale_fill_continuous("# Records", low="white", high="green") + 
+            labs(title="Records by year and month", x=NULL, y=NULL)
+        print(p2)
+        # Counts of todSeason-season-tod, hour-fct_hour-tod, and month-season
+        df %>% count(todSeason, season, tod) %>% print()
+        df %>% count(hour, fct_hour, tod) %>% print(n=30)
+        df %>% count(month, season) %>% print()
+    }
+    
+    # Return the file
+    df
+    
+}
+
+
+```
+
