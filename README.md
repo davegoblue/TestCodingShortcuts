@@ -3858,4 +3858,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 copies mapping tables from _v003
 * OpenMeteoEDA_202306_v004 formatOpenMeteoJSON() written to load and process saved files
 * OpenMeteoEDA_202306_v004 formatOpenMeteoJSON() loads previous daily data
+* OpenMeteoEDA_202306_v004 formatOpenMeteoJSON() loads previous hourly data for NYC and LA
 
