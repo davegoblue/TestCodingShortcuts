@@ -3860,4 +3860,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 formatOpenMeteoJSON() loads previous daily data
 * OpenMeteoEDA_202306_v004 formatOpenMeteoJSON() loads previous hourly data for NYC and LA
 * OpenMeteoEDA_202306_v004 formatOpenMeteoJSON() loads previous hourly data for Chicago and Houston
+* OpenMeteoEDA_202306_v004 creates integrated all-city test and train data
 
