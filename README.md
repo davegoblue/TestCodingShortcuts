@@ -3867,3 +3867,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 plots bivariate distributions by city of key variables
 * OpenMeteoEDA_202306_v004 predicts city based on numeric features
 * OpenMeteoEDA_202306_v004 applies city predictions to new city
+* OpenMeteoEDA_202306_v004 predicts four cities based on numeric features
