@@ -3870,3 +3870,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runFullRF() to predict four cities based on numeric features
 * OpenMeteoEDA_202306_v004 runFullRF() to predict temperature based on two cities
 * OpenMeteoEDA_202306_v004 model applied to two holdout cities
+
+### Expansions week of 24-JUN-2024  
+* OpenMeteoEDA_202306_v004 runFullRF() updated for option to use existing RF
