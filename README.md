@@ -3874,3 +3874,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 24-JUN-2024  
 * OpenMeteoEDA_202306_v004 runFullRF() updated for option to use existing RF
 * OpenMeteoEDA_202306_v004 runFullRF() update tested on existing city data
+* OpenMeteoEDA_202306_v004 basic linear model for temperature based on two cities
+
