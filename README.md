@@ -3875,4 +3875,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runFullRF() updated for option to use existing RF
 * OpenMeteoEDA_202306_v004 runFullRF() update tested on existing city data
 * OpenMeteoEDA_202306_v004 basic linear model for temperature based on two cities
+* OpenMeteoEDA_202306_v004 applies basic linear model for temperature to new city
 
