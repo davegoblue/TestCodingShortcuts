@@ -3877,4 +3877,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 basic linear model for temperature based on two cities
 * OpenMeteoEDA_202306_v004 applies basic linear model for temperature to new city
 * OpenMeteoEDA_202306_v004 applies basic linear model for temperature to second new city
+* OpenMeteoEDA_202306_v004 explores key linear model predictors by city
 
