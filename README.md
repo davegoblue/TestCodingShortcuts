@@ -3882,3 +3882,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 01-JUL-2024  
 * OpenMeteoEDA_202306_v004 processes data for fifth city
+* OpenMeteoEDA_202306_v004 updates integrated all-city test and train data
+
