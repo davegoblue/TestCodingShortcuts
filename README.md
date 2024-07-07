@@ -3886,5 +3886,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores distributions of key variables by city
 * OpenMeteoEDA_202306_v004 explores temperature vs. dewpoint by city
 * OpenMeteoEDA_202306_v004 applies previous four city models to predict "most similar" for fifth city
-* OpenMeteoEDA_202306_v004 applies basic linear model for temperature to fifith city
+* OpenMeteoEDA_202306_v004 applies basic linear model for temperature to fifth city
+* OpenMeteoEDA_202306_v004 explores key linear model predictors by city
 
