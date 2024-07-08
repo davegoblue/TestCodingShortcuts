@@ -3889,3 +3889,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 applies basic linear model for temperature to fifth city
 * OpenMeteoEDA_202306_v004 explores key linear model predictors by city
 
+### Expansions week of 08-JUL-2024  
+* OpenMeteoEDA_202306_v004 applies random forest model for temperature to fifth city
+
