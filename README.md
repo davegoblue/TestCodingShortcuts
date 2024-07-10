@@ -3892,4 +3892,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 08-JUL-2024  
 * OpenMeteoEDA_202306_v004 applies random forest model for temperature to fifth city
 * OpenMeteoEDA_202306_v004 runs every combination of 2 predictors on temperature, using a smaller training subset
+* OpenMeteoEDA_202306_v004 explores R-squared for every combination of 2 predictors on temperature, using a smaller training subset
 
