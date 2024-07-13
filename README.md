@@ -3895,4 +3895,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores R-squared for every combination of 2 predictors on temperature, using a smaller training subset
 * OpenMeteoEDA_202306_v004 runs select combination of 2 predictors on temperature, using the full training data
 * OpenMeteoEDA_202306_v004 runs best 2 predictors on temperature using NYC, tests on non-NYC
+* OpenMeteoEDA_202306_v004 explores dewpoint vs. vapor pressure deficit by city
 
