@@ -3898,3 +3898,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores dewpoint vs. vapor pressure deficit by city
 * OpenMeteoEDA_202306_v004 explores relationships among temperature, dewpoint, relative humidity, and vapor pressure deficit
 
+### Expansions week of 15-JUL-2024  
+* OpenMeteoEDA_202306_v004 runs best 2 predictors on temperature using NYC and Las Vegas, tests on all cities
