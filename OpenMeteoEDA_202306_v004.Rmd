@@ -2554,3 +2554,77 @@ dfTestTemp_v2 %>%
 ```
 
 Modeling using NYC and Las Vegas data may not fully cover the coldest and driest portions of the Chicago space
+
+The model using only NYC and Las Vegas is applied to Chicago, with accuracy explored by temperature:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Train and test data
+dfTrainTemp_v3 <- allCity %>% 
+    filter(src %in% c("NYC", "Vegas"), tt=="train", year<2022) %>% 
+    mutate(fct_src=factor(src))
+dfTestTemp_v3 <- allCity %>% 
+    filter(tt=="test", year==2022) %>% 
+    mutate(fct_src=factor(src))
+
+# Random forest for temperature using dewpoint and vapor pressure deficit
+keyLabel <- "predictions based on NYC/Vegas pre-2022 training data applied to each city in 2022 holdout dataset"
+tmpPred_v3_df <- runFullRF(dfTrain=dfTrainTemp_v3, 
+                           yVar="temperature_2m", 
+                           xVars=c("dewpoint_2m", "vapor_pressure_deficit"), 
+                           dfTest=dfTestTemp_v3, 
+                           useLabel=keyLabel, 
+                           useSub=stringr::str_to_sentence(keyLabel), 
+                           isContVar=TRUE,
+                           makePlots=FALSE,
+                           returnData=TRUE
+                           )[["tstPred"]] 
+
+tmpPred_v3_df %>%
+    select(src, temperature_2m, pred) %>%
+    group_by(src) %>%
+    summarize(n=n(), 
+              tss=sum((temperature_2m-mean(temperature_2m))**2), 
+              rss=sum((temperature_2m-pred)**2), 
+              r2=1-rss/tss, 
+              rmse=sqrt(rss/n),
+              berr=sqrt(tss/n)
+              )
+
+```
+  
+```{r, fig.height=9, fig.width=9}
+
+ggMiniTempCHI <- tmpPred_v3_df %>% 
+    select(src, temperature_2m, pred) %>%
+    filter(src=="Chicago") %>%
+    mutate(err=pred-temperature_2m, 
+           err2=err**2, 
+           rnd5=round(temperature_2m/5)*5
+    ) %>% 
+    group_by(rnd5) %>% 
+    summarize(n=n(), across(.cols=where(is.numeric), .fns=mean)) %>%
+    mutate(pcterr2=n*err2/sum(n*err2))
+ggMiniTempCHI
+
+ggMiniTempCHI %>% 
+    summarize(mse=sum(n*err2)/sum(n)) %>% 
+    mutate(rmse=sqrt(mse))
+
+ggMiniTempCHI %>% 
+    select(rnd5, temperature_2m, pred) %>%
+    pivot_longer(cols=-c(rnd5)) %>%
+    ggplot(aes(x=rnd5, y=value)) + 
+    geom_line(aes(group=name, 
+                  color=c("pred"="Predicted Mean", "temperature_2m"="Actual Mean")[name]
+                  )
+              ) + 
+    labs(title="Actual vs. Predicted Temperature Using NYC/Vegas Random Forest Model on Chicago Data", 
+         x="Chicago actual temperature (rounded to nearest 5)", 
+         y="Average temperature for metric"
+         ) + 
+    scale_color_discrete("Metric") + 
+    geom_abline(slope=1, intercept=0, lty=2)
+
+```
+
+As expected, predictions are excellent in the space covered by the training data and poor for the small number of very cold observations never seen in training. Around 60% of MSE in Chicago temperature predictions occurs in the 23 test data observations where temperature (rounded to nearest 5 degrees C) is -20C or colder
