@@ -3903,4 +3903,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores temperature vs. dewpoint density by city
 * OpenMeteoEDA_202306_v004 explores accuracy of predictions by actual temperature in first non-training city
 * OpenMeteoEDA_202306_v004 explores accuracy of predictions by actual temperature in second non-training city
+* OpenMeteoEDA_202306_v004 explores accuracy of predictions by actual temperature in third non-training city
 
