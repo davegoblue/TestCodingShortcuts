@@ -2731,3 +2731,49 @@ dfTestTemp_v3 %>%
 ```
 
 The formula is an exact match to the reported data, allowing the random forest to find the correct third value when given two of T, D, RH, provided that the training space also includes that combination
+
+Example training data is created for all temperatures and dew points between -50 and 50 (rounded to the nearest 1), with RH calculated based on formula:  
+```{r, fig.height=9, fig.width=9}
+
+# Sample dataset
+rhTrain <- expand.grid(t=seq(-30, 50, by=1), d=seq(-30, 50, by=1)) %>% 
+    tibble::as_tibble() %>% 
+    filter(d<=t) %>% 
+    mutate(rh=calcRH(t, d))
+rhTrain
+
+# Training and testing (mtry=1)
+rhOut <- rhTrain %>%
+    bind_rows(.,.,.,.,.,.,.,.,.,.) %>% 
+    runFullRF(dfTrain=., 
+              yVar=c("t"), 
+              xVars=c("rh", "d"), 
+              isContVar=TRUE, 
+              refXY=TRUE, 
+              mtry=1, 
+              dfTest=allCity %>%
+                  filter(tt=="test") %>%
+                  select(src, t=temperature_2m, d=dewpoint_2m, rh=relativehumidity_2m), 
+              rndTo=1, 
+              returnData=TRUE
+              )
+rhOut <- rhOut$tstPred
+rhOut
+
+# Errors by city
+rhOut %>%
+    group_by(src) %>%
+    summarize(e2=mean((t-pred)**2), mu=mean(t-pred), n=n(), e2Base=mean((t-mean(t))**2)) %>%
+    mutate(rmse=sqrt(e2), r2=1-e2/e2Base)
+
+# Errors by RH
+rhOut %>%
+    mutate(rh5=round(rh/5)*5) %>%
+    group_by(rh5) %>%
+    summarize(e2=mean((t-pred)**2), mu=mean(t-pred), n=n(), e2Base=mean((t-mean(t))**2)) %>%
+    mutate(rmse=sqrt(e2), r2=1-e2/e2Base, e2pct=n*e2/sum(n*e2)) %>%
+    print(n=25)
+
+```
+
+Training data rounds temperature to the nearest degree and RH always rounds to the nearest percent, making temperature predictions commonly off by a fraction of a degree. The model is generally accurate, with the exception of very low relative humidities (rounding is much more impactful) and very high relative humidities (mtry=1 creates challenges since grid-based training data overweights some T/D combinations). 
