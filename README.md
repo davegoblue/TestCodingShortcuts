@@ -3905,4 +3905,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores accuracy of predictions by actual temperature in second non-training city
 * OpenMeteoEDA_202306_v004 explores accuracy of predictions by actual temperature in third non-training city
 * OpenMeteoEDA_202306_v004 explores formula for RH ~ f(T, D)
+* OpenMeteoEDA_202306_v004 explores simulated training data using RH ~ f(T, D) and mtry=1
 
