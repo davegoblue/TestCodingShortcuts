@@ -2777,3 +2777,59 @@ rhOut %>%
 ```
 
 Training data rounds temperature to the nearest degree and RH always rounds to the nearest percent, making temperature predictions commonly off by a fraction of a degree. The model is generally accurate, with the exception of very low relative humidities (rounding is much more impactful) and very high relative humidities (mtry=1 creates challenges since grid-based training data overweights some T/D combinations). 
+
+The example training data is modified to be more consistent with T/D typically observed:  
+```{r, fig.height=9, fig.width=9}
+
+# Sample of T/D in cities
+set.seed(24072114)
+tdAll <- allCity %>%
+    select(t=temperature_2m, d=dewpoint_2m) %>%
+    slice(sample(1:nrow(.), round(nrow(.)/10), replace=TRUE)) %>%
+    mutate(across(where(is.numeric), .fns=round)) %>%
+    count(t, d)
+tdAll
+
+# Examples of real-world occurence
+tdAll %>%
+    ggplot(aes(x=d, y=t)) + 
+    geom_point(aes(size=n), alpha=0.25) + 
+    labs(title="Sample (10%) of 5-city temperature and dew points")
+
+# Training and testing (mtry=1) weighted by real-world occurence
+rhOut_wtd <- rhTrain %>%
+    left_join(tdAll, by=c("t", "d")) %>%
+    mutate(n=ifelse(is.na(n), 5, n+5)) %>%
+    runFullRF(dfTrain=., 
+              yVar=c("t"), 
+              xVars=c("rh", "d"), 
+              isContVar=TRUE, 
+              refXY=TRUE, 
+              mtry=1, 
+              case.weights="n",
+              dfTest=allCity %>%
+                  filter(tt=="test") %>%
+                  select(src, t=temperature_2m, d=dewpoint_2m, rh=relativehumidity_2m), 
+              rndTo=1, 
+              returnData=TRUE
+              )
+rhOut_wtd <- rhOut_wtd$tstPred
+rhOut_wtd
+
+# Errors by city
+rhOut_wtd %>%
+    group_by(src) %>%
+    summarize(e2=mean((t-pred)**2), mu=mean(t-pred), n=n(), e2Base=mean((t-mean(t))**2)) %>%
+    mutate(rmse=sqrt(e2), r2=1-e2/e2Base)
+
+# Errors by RH
+rhOut_wtd %>%
+    mutate(rh5=round(rh/5)*5) %>%
+    group_by(rh5) %>%
+    summarize(e2=mean((t-pred)**2), mu=mean(t-pred), n=n(), e2Base=mean((t-mean(t))**2)) %>%
+    mutate(rmse=sqrt(e2), r2=1-e2/e2Base, e2pct=n*e2/sum(n*e2)) %>%
+    print(n=25)
+
+```
+
+The weighted training data performs slightly better for data points with high density, at the offset of somewhat worse performance for less commonly observed relative humidities. Adding mtry=2 may address this:  
