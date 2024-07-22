@@ -3907,3 +3907,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores formula for RH ~ f(T, D)
 * OpenMeteoEDA_202306_v004 explores simulated training data using RH ~ f(T, D) and mtry=1
 
+### Expansions week of 22-JUL-2024  
+* OpenMeteoEDA_202306_v004 explores weighted simulated training data using RH ~ f(T, D) and mtry=1
+
