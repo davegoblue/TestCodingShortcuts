@@ -2899,3 +2899,78 @@ rhOut_wtd_ex %>%
 ```
 
 The expanded training data improves prediction quality at very low temperatures. Predictions continue to be less accurate at very low, and very high, relative humidities
+
+Rounding is a meaningful challenge for some temperature predictions given training data that rounds temperature and dewpoint to the nearest 1:  
+```{r, fig.height=9, fig.width=9}
+
+# Prediction error summaries (most of the significant errors occur when RH is 90+)
+rhOut_wtd_ex %>% mutate(delta=abs(pred-t)) %>% summary()
+rhOut_wtd_ex %>% mutate(delta=abs(pred-t)) %>% filter(delta>1.5) %>% summary()
+
+# Sample dataset
+rhTrain_hl <- expand.grid(t=seq(-25, 50, by=0.1), d=seq(-20, 20, by=10)) %>% 
+    tibble::as_tibble() %>% 
+    filter(d<=t) %>% 
+    mutate(rh=calcRH(t, d), rndt=round(t), rndrh=round(rh))
+rhTrain_hl
+
+# Examples for rndt==d
+rhTrain_hl %>%
+    filter(rndt==d) %>%
+    print(n=40)
+
+# Examples for rndrh==1
+rhTrain_hl %>%
+    filter(rndrh<=5) %>%
+    group_by(d, rndrh) %>%
+    summarize(maxt=max(t), meant=mean(t), mint=min(t), n=n(), .groups="drop")
+
+```
+
+As temperature and dewpoint converge (high relative humidity), the same rounded value of temperature can occur with RH that spans as much as ~4%. Greater granularity in the training data may help address this. As relative humidity gets very low, a given dewpoint can be associated with over 5 degrees of temperature variation for the same rounded value of RH. Since the raw data has rounded RH, this may be a harder constraint, though extremely low relative humidity is uncommon so this may not be a major driver of overall RMSE
+
+Training data is updated to include 0.2 degree granularity for temperature and dewpoint:  
+Example training data is created for all temperatures and dew points between -30 and 50 (rounded to the nearest 1), with RH calculated based on formula:  
+```{r, fig.height=9, fig.width=9}
+
+# Sample dataset
+rhTrain_02 <- expand.grid(t=seq(-50, 50, by=0.2), d=seq(-50, 50, by=0.2)) %>% 
+    tibble::as_tibble() %>% 
+    filter(d<=t) %>% 
+    mutate(rh=calcRH(t, d))
+rhTrain_02
+
+# Training and testing (mtry=1) - NOT weighted by real-world occurence
+rhOut_02 <- rhTrain_02 %>%
+    runFullRF(dfTrain=., 
+              yVar=c("t"), 
+              xVars=c("rh", "d"), 
+              isContVar=TRUE, 
+              refXY=TRUE, 
+              mtry=1, 
+              dfTest=allCity %>%
+                  filter(tt=="test") %>%
+                  select(src, t=temperature_2m, d=dewpoint_2m, rh=relativehumidity_2m), 
+              rndTo=1, 
+              returnData=TRUE
+              )
+rhOut_02 <- rhOut_02$tstPred
+rhOut_02
+
+# Errors by city
+rhOut_02 %>%
+    group_by(src) %>%
+    summarize(e2=mean((t-pred)**2), mu=mean(t-pred), n=n(), e2Base=mean((t-mean(t))**2)) %>%
+    mutate(rmse=sqrt(e2), r2=1-e2/e2Base)
+
+# Errors by RH
+rhOut_02 %>%
+    mutate(rh5=round(rh/5)*5) %>%
+    group_by(rh5) %>%
+    summarize(e2=mean((t-pred)**2), mu=mean(t-pred), n=n(), e2Base=mean((t-mean(t))**2)) %>%
+    mutate(rmse=sqrt(e2), r2=1-e2/e2Base, e2pct=n*e2/sum(n*e2)) %>%
+    print(n=25)
+
+```
+
+The model performs very well, with the exception of some remaining RMSE for very high and very low RH
