@@ -3913,4 +3913,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores underlying data behind very high and very low RH observations
 * OpenMeteoEDA_202306_v004 uses 0.2 degree precision for T, D training data with mtry=1
 * OpenMeteoEDA_202306_v004 uses 0.2 degree precision for T, D training data with mtry=2
+* OpenMeteoEDA_202306_v004 predicts RH using f(T, D) with mtry=1
 
