@@ -2977,7 +2977,7 @@ rhOut_02 %>%
 ```
 
 The model performs very well, with the exception of some remaining RMSE mainly for very high RH. Allowing both predictors (RH, D) to be used at the same time is forced using mtry=2:  
-```{r, fig.height=9, fig.width=9}
+```{r, fig.height=9, fig.width=9, cache=TRUE}
 
 rhOut_02_mt2 <- rhTrain_02 %>%
     runFullRF(dfTrain=., 
@@ -3054,3 +3054,72 @@ predRH_02_mt1 %>%
 ```
 
 The model is inaccurate at high relative humidities but otherwise predicts accurately RH consistent with the known formula
+
+The process is updated to predict RH based on temperature and dewpoint with mtry=2:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+predRH_02_mt2 <- rhTrain_02 %>%
+    runFullRF(dfTrain=., 
+              yVar=c("rh"), 
+              xVars=c("t", "d"), 
+              isContVar=TRUE, 
+              refXY=TRUE, 
+              mtry=2, 
+              dfTest=allCity %>%
+                  filter(tt=="test") %>%
+                  select(src, t=temperature_2m, d=dewpoint_2m, rh=relativehumidity_2m), 
+              rndTo=1, 
+              returnData=TRUE
+    )
+predRH_02_mt2 <- predRH_02_mt2$tstPred
+predRH_02_mt2
+
+
+# Errors by city
+predRH_02_mt2 %>%
+    group_by(src) %>%
+    summarize(e2=mean((rh-pred)**2), mu=mean(rh-pred), n=n(), e2Base=mean((rh-mean(rh))**2)) %>%
+    mutate(rmse=sqrt(e2), r2=1-e2/e2Base)
+
+# Errors by RH
+predRH_02_mt2 %>%
+    mutate(rh5=round(rh/5)*5) %>%
+    group_by(rh5) %>%
+    summarize(e2=mean((rh-pred)**2), mu=mean(rh-pred), n=n(), e2Base=mean((rh-mean(rh))**2)) %>%
+    mutate(rmse=sqrt(e2), r2=1-e2/e2Base, e2pct=n*e2/sum(n*e2)) %>%
+    print(n=25)
+
+```
+
+The model is now accurate even at high relative humidities
+
+An approximate formula for vapor pressure deficit is assessed for resonance with the data:  
+```{r, fig.height=9, fig.width=9}
+
+# Approximate formula for vapor pressure deficit
+# Source https://pulsegrow.com/blogs/learn/vpd
+calcVPD <- function(t, d, c1=610.78, c2=17.2694, c3=237.3) {
+    # SVP (saturation vapor pressure) = 610.78 * exp(T * 17.2694 / (T + 237.3))
+    # VPD = (1 - RH/100) * SVP
+    # Formula produces VPD in Pa, divide by 1000 to convert to kPa
+    (1 - calcRH(t, d)/100) * c1 * exp(t * c2 / (t + c3)) / 1000
+}
+
+# Applied to sample data
+dfTestTemp_v3 %>%
+    select(src, t=temperature_2m, d=dewpoint_2m, v=vapor_pressure_deficit) %>%
+    mutate(cvpd=calcVPD(t, d)) %>%
+    ggplot(aes(x=v, y=cvpd)) + 
+    geom_point(aes(color=src)) + 
+    facet_wrap(~src) + 
+    geom_smooth(method="lm") + 
+    geom_abline(intercept=0, slope=1, lty=2) + 
+    labs(x="Reported vapor pressure deficit (kPa)", 
+         y="Formula vapor pressure deficit (kPa)", 
+         title="Vapor pressure deficit by formula from temperature and dewpoint vs. reported in raw data") + 
+    scale_color_discrete(NULL)
+
+```
+
+The formula is a strong match to the reported data, which should allow the random forest to find the correct third value when given two of T, D, VPD (provided that training space also includes that combination)
+
