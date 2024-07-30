@@ -3918,5 +3918,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 29-JUL-2024  
 * OpenMeteoEDA_202306_v004 explores formula for VPD ~ f(T, D)
+* OpenMeteoEDA_202306_v004 explores simulated training data using VPD ~ f(T, D) and mtry=1
 
 
