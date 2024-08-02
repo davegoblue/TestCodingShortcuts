@@ -3921,4 +3921,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores simulated training data using VPD ~ f(T, D) and mtry=1
 * OpenMeteoEDA_202306_v004 explores simulated training data using VPD ~ f(T, D) and mtry=2
 * OpenMeteoEDA_202306_v004 uses 0.2 degree precision for T, D training data for VPD ~ f(T, D) and mtry=2
+* OpenMeteoEDA_202306_v004 predicts VPD using f(T, D) with mtry=2
 
