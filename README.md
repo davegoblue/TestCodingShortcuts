@@ -3925,3 +3925,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runFullRF() to predict cloud cover based on all predictors
 * OpenMeteoEDA_202306_v004 explores cloud clover and weather code
 
+### Expansions week of 05-AUG-2024  
+* OpenMeteoEDA_202306_v004 runFullRF() to predict cloud cover based on weather code
