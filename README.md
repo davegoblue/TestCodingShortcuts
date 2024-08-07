@@ -3928,3 +3928,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 05-AUG-2024  
 * OpenMeteoEDA_202306_v004 runFullRF() to predict cloud cover based on weather code
 * OpenMeteoEDA_202306_v004 runFullRF() to predict cloud cover based on three cloud cover sub-type predictors
+* OpenMeteoEDA_202306_v004 explores R-squared for every combination of 2 predictors on cloud cover, using a smaller training subset
+
