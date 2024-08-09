@@ -3930,4 +3930,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runFullRF() to predict cloud cover based on three cloud cover sub-type predictors
 * OpenMeteoEDA_202306_v004 runs every combination of 2 predictors on cloud cover, using a smaller training subset
 * OpenMeteoEDA_202306_v004 explores R-squared for every combination of 2 predictors on cloud cover, using a smaller training subset
+* OpenMeteoEDA_202306_v004 runs select combinations of 3 predictors on cloud cover, using the full training data
 
