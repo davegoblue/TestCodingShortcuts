@@ -3931,4 +3931,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runs every combination of 2 predictors on cloud cover, using a smaller training subset
 * OpenMeteoEDA_202306_v004 explores R-squared for every combination of 2 predictors on cloud cover, using a smaller training subset
 * OpenMeteoEDA_202306_v004 runs select combinations of 3 predictors on cloud cover, using the full training data
+* OpenMeteoEDA_202306_v004 runs linear model using 3 cloud cover subtypes as predictors for cloud cover
 
