@@ -3934,3 +3934,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runs linear model using 3 cloud cover subtypes as predictors for cloud cover
 * OpenMeteoEDA_202306_v004 plots histograms of cloud cover errors by cloudiness of observation
 
+### Expansions week of 12-AUG-2024  
+* OpenMeteoEDA_202306_v004 runs random forest model using 3 cloud cover subtypes as predictors for cloud cover
+
