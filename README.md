@@ -3943,3 +3943,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runs linear model using best two predictors for rain
 * OpenMeteoEDA_202306_v004 runs random forest model using best two predictors for rain
 
+### Expansions week of 19-AUG-2024  
+* OpenMeteoEDA_202306_v004 runs random forest model using best two predictors for rain
+* OpenMeteoEDA_202306_v004 explores R-squared for every combination of 2 predictors on rain, using a smaller training subset
+
