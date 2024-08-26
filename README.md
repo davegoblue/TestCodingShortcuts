@@ -3952,3 +3952,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runs linear model using best 2 predictors for snowfall
 * OpenMeteoEDA_202306_v004 runs linear model using precipitation and weathercode for snowfall
 
+### Expansions week of 26-AUG-2024  
+* OpenMeteoEDA_202306_v004 explores relationships among weathercode, precipitation, and snowfall
+
