@@ -3955,4 +3955,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 26-AUG-2024  
 * OpenMeteoEDA_202306_v004 explores relationships among weathercode, precipitation, and snowfall
 * OpenMeteoEDA_202306_v004 runs random forest model using all predictors for weathercode
+* OpenMeteoEDA_202306_v004 explores relationships among cloud cover, rain, snowfall, and weathercode
 
