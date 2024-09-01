@@ -3958,5 +3958,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores relationships among cloud cover, rain, snowfall, and weathercode
 * OpenMeteoEDA_202306_v004 runs random forest using cloud cover, rain, snowfall, and precipitation as predictors for weathercode
 * OpenMeteoEDA_202306_v004 runs random forest using four predictors for weathercode, with mtry=1 and mtry=4
+* OpenMeteoEDA_202306_v004 runs every combination of 2 predictors on weathercode, using a smaller training subset
 * OpenMeteoEDA_202306_v004 explores accuracy for every combination of 2 predictors on weathercode, using a smaller training subset
 
