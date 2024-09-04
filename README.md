@@ -3964,4 +3964,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 02-SEP-2024  
 * OpenMeteoEDA_202306_v004 runs select combinations of 2 predictors on weathercode, using the full training data
 * OpenMeteoEDA_202306_v004 explores accuracy by precipitation type for predictions of weathercode using cloud cover and rain
+* OpenMeteoEDA_202306_v004 explores accuracy by precipitation type for predictions of weathercode using cloud cover and snow
 
