@@ -3967,4 +3967,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores accuracy by precipitation type for predictions of weathercode using cloud cover and snow
 * OpenMeteoEDA_202306_v004 explores accuracy by precipitation type for predictions of weathercode using rain and snow
 * OpenMeteoEDA_202306_v004 explores accuracy by precipitation type for predictions of weathercode using cloud cover, rain, and snow (mtry=1)
+* OpenMeteoEDA_202306_v004 explores accuracy by precipitation type for predictions of weathercode using cloud cover, rain, and snow (mtry=2)
 
