@@ -3976,4 +3976,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runs linear model using all predictors for ground level wind speed
 * OpenMeteoEDA_202306_v004 runs linear model using best four predictors for ground level wind speed
 * OpenMeteoEDA_202306_v004 runs linear model using each of best four predictors standalone for ground level wind speed
+* OpenMeteoEDA_202306_v004 runs random forest model using each predictor standalone for ground level wind speed
 
