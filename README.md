@@ -3981,4 +3981,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 16-SEP-2024  
 * OpenMeteoEDA_202306_v004 runs linear model using only city, month, and day/night for ground level wind speed
+* OpenMeteoEDA_202306_v004 runs random forest model excluding wind gusts and high-level wind speed for ground wind speed
 
