@@ -4823,3 +4823,55 @@ dfSmallR2WS %>%
 ```
 
 The best predictor is high-level wind speed, and the next best predictor is ground-level wind gusts. Every other pair of predictors has R-squared on unseen data of at most ~40% (sometimes even negative)
+
+Select combinations are explored using the full training dataset:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+possLargeWS <- c("windspeed_100m", "windgusts_10m", "temperature_2m", "apparent_temperature")
+possLargeWS
+mtxLargeWS <- matrix(nrow=0, ncol=3)
+
+for(idx1 in 1:(length(possLargeWS)-1)) {
+    for(idx2 in (idx1+1):length(possLargeWS)) {
+        r2LargeWS <- runFullRF(dfTrain=dfTrainCloud[,] %>% mutate(weathercode=factor(weathercode)), 
+                               yVar="windspeed_10m", 
+                               xVars=possLargeWS[c(idx1, idx2)], 
+                               dfTest=dfTestCloud %>% mutate(weathercode=factor(weathercode)),
+                               useLabel=keyLabel, 
+                               useSub=stringr::str_to_sentence(keyLabel), 
+                               isContVar=TRUE,
+                               mtry=2,
+                               makePlots=FALSE,
+                               returnData=TRUE
+                               )[["rfAcc"]][["r2"]]
+        mtxLargeWS <- rbind(mtxLargeWS, c(idx1, idx2, r2LargeWS))
+    }
+}
+
+dfLargeR2WS <- as.data.frame(mtxLargeWS) %>% 
+    purrr::set_names(c("idx1", "idx2", "r2")) %>% 
+    tibble::as_tibble() %>% 
+    mutate(var1=possLargeWS[idx1], var2=possLargeWS[idx2], rn=row_number()) 
+dfLargeR2WS %>% arrange(desc(r2)) %>% select(var1, var2, r2) %>% print(n=20)
+
+```
+
+A model is run to predict evapotranspiration, at first allowing all predictors:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+keyLabel <- "predictions based on pre-2022 training data applied to 2022 holdout dataset"
+rfET0Full <- runFullRF(dfTrain=allCity %>% filter(tt=="train", year<2022), 
+                       yVar="et0_fao_evapotranspiration", 
+                       xVars=c(varsTrain[!str_detect(varsTrain, "evapo")], "src", "month", "tod"), 
+                       dfTest=allCity %>% filter(tt=="test", year==2022), 
+                       useLabel=keyLabel, 
+                       useSub=stringr::str_to_sentence(keyLabel), 
+                       isContVar=TRUE,
+                       rndTo=-1L,
+                       refXY=TRUE,
+                       returnData=TRUE
+                       )
+
+```
+
+The model is highly effective at predicting evapotranspiration, primarily by using radiation variables
