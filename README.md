@@ -3988,3 +3988,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runs random forest model using all predictors for evapotranspiration
 * OpenMeteoEDA_202306_v004 runs linear model using all predictors for evapotranspiration
 
+### Expansions week of 23-SEP-2024  
+* OpenMeteoEDA_202306_v004 explores correlation between select variables and evapotranspiration
+
