@@ -3991,4 +3991,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 23-SEP-2024  
 * OpenMeteoEDA_202306_v004 explores correlation between select variables and evapotranspiration
 * OpenMeteoEDA_202306_v004 creates correlation heatmap
+* OpenMeteoEDA_202306_v004 creates function makeHeatMap()
 
