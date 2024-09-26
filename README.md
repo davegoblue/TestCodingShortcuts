@@ -3992,4 +3992,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores correlation between select variables and evapotranspiration
 * OpenMeteoEDA_202306_v004 creates correlation heatmap
 * OpenMeteoEDA_202306_v004 creates function makeHeatMap()
+* OpenMeteoEDA_202306_v004 tests makeHeatMap()
 
