@@ -3993,4 +3993,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 creates correlation heatmap
 * OpenMeteoEDA_202306_v004 creates function makeHeatMap()
 * OpenMeteoEDA_202306_v004 tests makeHeatMap()
-
+* OpenMeteoEDA_202306_v004 runs random forest model using each predictor standalone for evapotranspiration
