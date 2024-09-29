@@ -3995,4 +3995,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 tests makeHeatMap()
 * OpenMeteoEDA_202306_v004 runs random forest model using each predictor standalone for evapotranspiration
 * OpenMeteoEDA_202306_v004 runs every combination of 2 predictors on evapotranspiration, using a smaller training subset
+* OpenMeteoEDA_202306_v004 explores R2 for every combination of 2 predictors on evapotranspiration, using a smaller training subset
 
