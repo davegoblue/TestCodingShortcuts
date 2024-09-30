@@ -3997,3 +3997,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runs every combination of 2 predictors on evapotranspiration, using a smaller training subset
 * OpenMeteoEDA_202306_v004 explores R2 for every combination of 2 predictors on evapotranspiration, using a smaller training subset
 
+### Expansions week of 30-SEP-2024  
+* OpenMeteoEDA_202306_v004 runs select combinations of 2 predictors on evapotranspiration, using the full training data
+
