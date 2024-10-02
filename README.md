@@ -4000,4 +4000,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 30-SEP-2024  
 * OpenMeteoEDA_202306_v004 runs select combinations of 2 predictors on evapotranspiration, using the full training data
 * OpenMeteoEDA_202306_v004 runs random forest model using all predictors for relative humidity
+* OpenMeteoEDA_202306_v004 runs linear model using all predictors for relative humidity
 
