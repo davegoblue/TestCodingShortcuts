@@ -4004,4 +4004,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores correlation between select variables and relative humidity
 * OpenMeteoEDA_202306_v004 explores correlation between select variables and relative humidity, grouped by city
 * OpenMeteoEDA_202306_v004 runs random forest model using surface pressure and city for relative humidity
+* OpenMeteoEDA_202306_v004 runs linear model using surface pressure and city for relative humidity
 
