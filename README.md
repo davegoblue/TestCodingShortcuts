@@ -4006,3 +4006,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runs random forest model using surface pressure and city for relative humidity
 * OpenMeteoEDA_202306_v004 runs linear model using surface pressure and city for relative humidity
 
+### Expansions week of 07-OCT-2024  
+* OpenMeteoEDA_202306_v004 runs every combination of 2 predictors on relative humidity, using a smaller training subset
+
