@@ -4009,4 +4009,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 07-OCT-2024  
 * OpenMeteoEDA_202306_v004 runs every combination of 2 predictors on relative humidity, using a smaller training subset
 * OpenMeteoEDA_202306_v004 explores R2 for every combination of 2 predictors on relative humidity, using a smaller training subset
+* OpenMeteoEDA_202306_v004 runs select combinations of 2 predictors on relative humidity, using full training data
 
