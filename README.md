@@ -4011,4 +4011,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores R2 for every combination of 2 predictors on relative humidity, using a smaller training subset
 * OpenMeteoEDA_202306_v004 runs select combinations of 2 predictors on relative humidity, using full training data
 * OpenMeteoEDA_202306_v004 downloads data for sixth city
+* OpenMeteoEDA_202306_v004 processes data for sixth city
 
