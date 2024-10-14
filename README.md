@@ -4015,3 +4015,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 updates integrated all-city test and train data
 * OpenMeteoEDA_202306_v004 explores distributions of key variables by city
 
+### Expansions week of 14-OCT-2024  
+* OpenMeteoEDA_202306_v004 explores temperature vs. dewpoint by city
+
