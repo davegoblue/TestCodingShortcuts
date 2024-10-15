@@ -4017,4 +4017,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 14-OCT-2024  
 * OpenMeteoEDA_202306_v004 explores temperature vs. dewpoint by city
+* OpenMeteoEDA_202306_v004 explores city predictions using rpart
 
