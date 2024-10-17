@@ -5712,3 +5712,64 @@ allCity %>%
 ```
 
 The GLM performs well in differentiating NYC from Vegas, LA, Chicago, and Houston. The GLM (not trained on Miami data) almost always classifies Miami as being NYC
+
+The process is converted to functional form:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+singleCityGLM <- function(dfTrain, 
+                          dfTest=dfTrain, 
+                          srcKey="NYC", 
+                          plotPred=TRUE, 
+                          printAcc=TRUE, 
+                          returnGLM=TRUE
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # dfTrain: training data
+    # dfTest: test data
+    # srcKey: cities that will be considered "positive" for GLM
+    # plotPred: boolean, should boxplot of probability by actual city be plotted?
+    # printAcc: boolean, should report of accuracy by test/train and actual city be reported?
+    # returnGLM: boolean, should the GLM model be returned?
+    
+    tst <- dfTrain %>% 
+        mutate(isKey=ifelse(src %in% srcKey, 1, 0)) %>%
+        select(isKey, all_of(varsTrain)) %>% 
+        select(-diffuse_radiation) %>% # perfectly correlated with other radiation variables
+        glm(isKey ~ ., data=., family="binomial")
+
+    if(isTRUE(plotPred)) {
+        p1 <- dfTest %>% 
+            mutate(pred=predict(tst, newdata=., type="response")) %>% 
+            ggplot(aes(x=src, y=pred)) + 
+            geom_boxplot(fill="lightblue", outlier.shape=NA) + 
+            facet_wrap(~tt) + 
+            labs(x=NULL, 
+                 y=paste0("Predicted probability of ", paste(srcKey, collapse=", ")), 
+                 title=paste0("Boxplot for predicted probability of ", paste(srcKey, collapse=", ")), 
+                 subtitle="Outliers not plotted"
+                 )
+        print(p1)
+    }
+    
+    if(isTRUE(printAcc)) {
+    
+        # Accuracy on holdout using 0.5 as threshold
+        dfTest %>% 
+            mutate(pred=predict(tst, newdata=., type="response")) %>% 
+            group_by(tt, src) %>%
+            summarize(acc=mean(ifelse(src %in% srcKey, pred>0.5, pred<0.5)), .groups="drop") %>%
+            pivot_wider(id_cols="src", names_from="tt", values_from="acc") %>%
+            print()
+        
+    }
+    
+    if(isTRUE(returnGLM)) return(tst)
+    
+}
+
+singleCityGLM(dfTrain=allCity %>% filter(tt=="train"), dfTest=allCity, srcKey=c("LA", "Vegas"))
+
+```
+
+LA and Vegas are sufficiently different from the other cities in the full dataset that the GLM has perfect discriminating power
