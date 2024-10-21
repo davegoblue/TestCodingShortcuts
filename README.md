@@ -4024,3 +4024,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 singleCityGLM() deviance calculated for each of six cities
 * OpenMeteoEDA_202306_v004 singleCityGLM() accuracy by city assessed using 0.5 threshold
 
+### Expansions week of 21-OCT-2024  
+* OpenMeteoEDA_202306_v004 singleCityGLM() overall accuracy assessed using maximum predicted probability
+
