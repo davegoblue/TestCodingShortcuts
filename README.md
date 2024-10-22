@@ -4026,4 +4026,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 21-OCT-2024  
 * OpenMeteoEDA_202306_v004 singleCityGLM() overall accuracy assessed using maximum predicted probability
+* OpenMeteoEDA_202306_v004 singleCityGLM() models for five cities run to predict sixth city
 
