@@ -5904,4 +5904,39 @@ allCity %>%
 
 ```
 
-A basic tree model works well to predict todSeason, partly by using leaks of "doy" and "hour"
+A basic tree model works well to predict todSeason, partly by using leaks of "doy" and "hour". The model is updated to use only the leaks:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+tstTSRP_v2 <- allCity %>% 
+    filter(tt=="train") %>% 
+    select(todSeason, doy, hour) %>% 
+    rpart::rpart(todSeason ~ ., data=., method="class")
+
+# Variable importances
+tstTSRP_v2$variable.importance %>% 
+    as.data.frame() %>% 
+    purrr::set_names("varImp") %>% 
+    rownames_to_column("predictor")
+
+# Predictions
+allCity %>% 
+    mutate(pred=predict(tstTSRP_v2, newdata=., type="class"), 
+           leapyear=ifelse(year%%4==0, "leap", "not leap")
+           ) %>% 
+    count(tt, leapyear, todSeason, pred) %>% 
+    ggplot(aes(x=todSeason, y=pred)) + 
+    geom_tile(aes(fill=n)) + 
+    scale_fill_continuous(low="white", high="green") + 
+    facet_grid(leapyear~tt) + 
+    geom_text(aes(label=n), size=2.5)
+
+# Accuracy on holdout
+allCity %>% 
+    mutate(pred=predict(tstTSRP_v2, newdata=., type="class")) %>% 
+    group_by(tt, todSeason) %>%
+    summarize(acc=mean(todSeason==pred), .groups="drop") %>%
+    pivot_wider(id_cols="todSeason", names_from="tt", values_from="acc")
+
+```
+
+Allowing for the two leaks, the model has perfect explanatory and predictive power outside of leap years, and is off by a day during leap years
