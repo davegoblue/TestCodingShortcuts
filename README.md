@@ -4028,4 +4028,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 singleCityGLM() overall accuracy assessed using maximum predicted probability
 * OpenMeteoEDA_202306_v004 singleCityGLM() models for five cities run to predict sixth city
 * OpenMeteoEDA_202306_v004 explores todSeason predictions using rpart
+* OpenMeteoEDA_202306_v004 explores todSeason predictions using rpart with only 'hour' and 'doy'
 
