@@ -4030,9 +4030,10 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores todSeason predictions using rpart
 * OpenMeteoEDA_202306_v004 explores todSeason predictions using rpart with only 'hour' and 'doy'
 * OpenMeteoEDA_202306_v004 explores todSeason predictions using rpart excluding 'hour' and 'doy'
-* OpenMeteoEDA_202306_v004 explores todSeason predictions using rpart excluding 'hour' and 'doy' and 'src'
+* OpenMeteoEDA_202306_v004 explores todSeason predictions using rpart excluding 'hour' and 'doy', but with 'src'
 * OpenMeteoEDA_202306_v004 explores todSeason predictions using random forest
 
 ### Expansions week of 28-OCT-2024  
 * OpenMeteoEDA_202306_v004 explores todSeason predictions using random forest with only 'hour' and 'doy'
+* OpenMeteoEDA_202306_v004 explores todSeason predictions using random forest excluding 'hour' and 'doy'
 
