@@ -4040,4 +4040,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runs every combination of 2 predictors on todSeason, using a smaller training subset
 * OpenMeteoEDA_202306_v004 explores accuracy for every combination of 2 predictors on todSeason, using a smaller training subset
 * OpenMeteoEDA_202306_v004 runs select combinations of 2 predictors on todSeason, using full training data
+* OpenMeteoEDA_202306_v004 comboVarRF() written
 
