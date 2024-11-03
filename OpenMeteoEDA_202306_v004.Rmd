@@ -6220,3 +6220,65 @@ dfLargeR2TODS %>% arrange(desc(r2)) %>% select(var1, var2, r2) %>% print(n=20)
 
 ```
 
+A function is written for running select variables on the full training data:  
+```{r}
+
+comboVarRF <- function(possXVars, 
+                       yVar,
+                       isContVar,
+                       dfTrain=dfTrainCloud[,] %>% mutate(weathercode=factor(weathercode)), 
+                       dfTest=dfTestCloud %>% mutate(weathercode=factor(weathercode)), 
+                       mtry=2, 
+                       keyLabel="predictions based on pre-2022 training data applied to 2022 holdout dataset"
+                       ) {
+
+    # FUNCTION ARGUMENTS:
+    # possXVars: vector of x-variables (each combination of 2 variables will be explored)
+    # yVar: dependent variable
+    # isContVar: boolean, is yVar continuous (regression) or discrete (classification)?
+    # dfTrain: training dataset
+    # dfTest: test dataset
+    # mtry: parameter passed to ranger::ranger() - mtry=2 means use both variables in every tree
+    # keyLabel: descriptive text for reporting accuracy
+
+    # Create matrix for storing data
+    mtxLarge <- matrix(nrow=0, ncol=3)
+    
+    # Run select combinations
+    for(idx1 in 1:(length(possXVars)-1)) {
+        for(idx2 in (idx1+1):length(possXVars)) {
+            r2Large <- runFullRF(dfTrain=dfTrain, 
+                                 yVar=yVar, 
+                                 xVars=possXVars[c(idx1, idx2)], 
+                                 dfTest=dfTest,
+                                 useLabel=keyLabel, 
+                                 useSub=stringr::str_to_sentence(keyLabel), 
+                                 isContVar=isContVar,
+                                 mtry=mtry,
+                                 makePlots=FALSE,
+                                 returnData=TRUE
+                                 )[["rfAcc"]]
+            if(isTRUE(isContVar)) r2Large <- r2Large[["r2"]]
+        mtxLarge <- rbind(mtxLarge, c(idx1, idx2, r2Large))
+        }
+    }
+
+    # Create tibble of accuracy/R2 by combination
+    dfLargeR2 <- as.data.frame(mtxLarge) %>% 
+        purrr::set_names(c("idx1", "idx2", "r2")) %>% 
+        tibble::as_tibble() %>% 
+        mutate(var1=possXVars[idx1], var2=possXVars[idx2], rn=row_number()) 
+    
+    # Print top 20
+    dfLargeR2 %>% 
+        arrange(desc(r2)) %>% 
+        select(var1, var2, r2) %>% 
+        print(n=20)
+    
+    # Return the data
+    dfLargeR2
+    
+}
+
+```
+
