@@ -4042,3 +4042,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 runs select combinations of 2 predictors on todSeason, using full training data
 * OpenMeteoEDA_202306_v004 comboVarRF() written
 
+### Expansions week of 04-NOV-2024  
+* OpenMeteoEDA_202306_v004 comboVarRF() tested on categorical data
+
