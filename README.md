@@ -4044,4 +4044,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 04-NOV-2024  
 * OpenMeteoEDA_202306_v004 comboVarRF() tested on categorical data
+* OpenMeteoEDA_202306_v004 comboVarRF() tested on continuous data
 
