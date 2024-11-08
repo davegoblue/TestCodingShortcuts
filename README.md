@@ -4047,4 +4047,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 comboVarRF() tested on continuous data
 * OpenMeteoEDA_202306_v004 comboVarRF() tested on categorical data using smaller training data
 * OpenMeteoEDA_202306_v004 comboVarRF() tested on continuous data using smaller training data
+* OpenMeteoEDA_202306_v004 mtxToDFComboVar() written
 
