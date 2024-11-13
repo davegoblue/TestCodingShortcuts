@@ -4054,4 +4054,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 11-NOV-2024  
 * OpenMeteoEDA_202306_v004 accComboVarRF() updated for variable exclusions
 * OpenMeteoEDA_202306_v004 accComboVarRF() tested
+* OpenMeteoEDA_202306_v004 comboVarRF() full process tested for all 2-variable combinations on smaller training data
 
