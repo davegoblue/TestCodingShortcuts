@@ -4060,3 +4060,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 processes data for seventh city
 * OpenMeteoEDA_202306_v004 updates integrated all-city test and train data
 
+### Expansions week of 18-NOV-2024  
+* OpenMeteoEDA_202306_v004 explores distributions of key variables by city
+
