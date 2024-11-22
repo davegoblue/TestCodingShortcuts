@@ -4065,4 +4065,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 explores temperature vs. dewpoint by city
 * OpenMeteoEDA_202306_v004 explores city predictions using rpart
 * OpenMeteoEDA_202306_v004 singleCityGLM() run for each of seven cities
+* OpenMeteoEDA_202306_v004 singleCityGLM() deviance calculated for each of seven cities
 
