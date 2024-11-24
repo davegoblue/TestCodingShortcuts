@@ -4067,4 +4067,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 singleCityGLM() run for each of seven cities
 * OpenMeteoEDA_202306_v004 singleCityGLM() deviance calculated for each of seven cities
 * OpenMeteoEDA_202306_v004 singleCityGLM() accuracy by city assessed using 0.5 threshold
+* OpenMeteoEDA_202306_v004 singleCityGLM() accuracy by city assessed using maximum predicted probability
 
