@@ -4069,3 +4069,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 singleCityGLM() accuracy by city assessed using 0.5 threshold
 * OpenMeteoEDA_202306_v004 singleCityGLM() accuracy by city assessed using maximum predicted probability
 
+### Expansions week of 25-NOV-2024  
+* OpenMeteoEDA_202306_v004 singleCityGLM() models for six cities used to predict seventh city
