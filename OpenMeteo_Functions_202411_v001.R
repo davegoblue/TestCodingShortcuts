@@ -1,0 +1,1841 @@
+# File for functions used in OpenMeteoEDA_xxxxxx_vxxx.Rmd
+
+
+# A. Generic functions that could potentially be moved
+
+# Helper function for reading a partial CSV file
+partialCSVRead <- function(loc, firstRow=1L, lastRow=+Inf, col_names=TRUE, ...) {
+    
+    # FUNCTION arguments
+    # loc: file location
+    # firstRow: first row that is relevant to the partial file read (whether header line or data line)
+    # last Row: last row that is relevant to the partial file read (+Inf means read until last line of file)
+    # col_names: the col_names parameter passed to readr::read_csv
+    #            TRUE means header=TRUE (get column names from file, read data starting on next line)
+    #            FALSE means header=FALSE (auto-generate column names, read data starting on first line)
+    #            character vector means use these as column names (read data starting on first line)
+    # ...: additional arguments passed to read_csv
+    
+    # Read the file and return
+    # skip: rows to be skipped are all those prior to firstRow
+    # n_max: maximum rows read are lastRow-firstRow, with an additional data row when col_names is not TRUE
+    readr::read_csv(loc, 
+                    col_names=col_names,
+                    skip=firstRow-1, 
+                    n_max=lastRow-firstRow+ifelse(isTRUE(col_names), 0, 1), 
+                    ...
+    )
+    
+}
+
+
+# Get the break points for gaps in a vector (e.g., 0, 3, 5:8, 20 has break points 0, 3, 5, 20 and 0, 3, 8, 30)
+vecGaps <- function(x, addElements=c(), sortUnique=TRUE) {
+    
+    if(length(addElements)>0) x <- c(addElements, x)
+    if(isTRUE(sortUnique)) x <- unique(sort(x))
+    list("starts"=c(x[is.na(lag(x)) | x-lag(x)>1], +Inf), 
+         "ends"=x[is.na(lead(x)) | lead(x)-x>1]
+    )
+    
+}
+
+
+# Find the break points in a single file
+flatFileGaps <- function(loc) {
+    
+    which(stringr::str_length(readLines(loc))==0) %>% vecGaps(addElements=0)
+    
+}
+
+
+# Read all relevant data as CSV with header
+readMultiCSV <- function(loc, col_names=TRUE, ...) {
+    
+    gaps <- flatFileGaps(loc)
+    
+    lapply(seq_along(gaps$ends), 
+           FUN=function(x) partialCSVRead(loc, 
+                                          firstRow=gaps$ends[x]+1, 
+                                          lastRow=gaps$starts[x+1]-1, 
+                                          col_names=col_names, 
+                                          ...
+           )
+    )
+    
+}
+
+
+# Simple predictive model for categorical variable
+simpleOneVarPredict <- function(df, 
+                                tgt, 
+                                prd, 
+                                dfTest=NULL,
+                                nPrint=30, 
+                                showPlot=TRUE, 
+                                returnData=TRUE
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble with key elements (training data set)
+    # tgt: target variable
+    # prd: predictor variable
+    # dfTest: test dataset for applying predictions
+    # nPrint: maximum number of lines of confusion matrix to print
+    #         0 means do not print any summary statistics
+    # showPlot: boolean, should overlap plot be created and shown?
+    
+    # Counts of predictor to target variable
+    dfPred <- df %>%
+        group_by(across(all_of(c(prd, tgt)))) %>%
+        summarize(n=n(), .groups="drop") %>%
+        arrange(across(all_of(prd)), desc(n)) %>%
+        group_by(across(all_of(prd))) %>%
+        mutate(correct=row_number()==1, predicted=first(get(tgt))) %>%
+        ungroup()
+    
+    # Confusion matrix and accuracy
+    dfConf <- dfPred %>%
+        group_by(across(all_of(c(tgt, "correct")))) %>%
+        summarize(n=sum(n), .groups="drop") %>%
+        pivot_wider(id_cols=tgt, names_from=correct, values_from=n, values_fill=0) %>%
+        mutate(n=`TRUE`+`FALSE`, 
+               pctCorrect=`TRUE`/n, 
+               pctNaive=1/(nrow(.)), 
+               lift=pctCorrect/pctNaive-1
+        )
+    
+    # Overall confusion matrix
+    dfConfAll <- dfConf %>%
+        summarize(nMax=max(n), across(c(`FALSE`, `TRUE`, "n"), sum)) %>%
+        mutate(pctCorrect=`TRUE`/n, 
+               pctNaive=nMax/n, 
+               lift=pctCorrect/pctNaive-1, 
+               nBucket=length(unique(dfPred[[prd]]))
+        )
+    
+    # Print confusion matrices
+    if(nPrint > 0) {
+        cat("\nAccuracy by target subgroup (training data):\n")
+        dfConf %>% print(n=nPrint)
+        cat("\nOverall Accuracy (training data):\n")
+        dfConfAll %>% print(n=nPrint)
+    }
+    
+    # Plot of overlaps
+    if(isTRUE(showPlot)) {
+        p1 <- dfPred %>%
+            group_by(across(c(all_of(tgt), "predicted", "correct"))) %>%
+            summarize(n=sum(n), .groups="drop") %>%
+            ggplot(aes(x=get(tgt), y=predicted)) + 
+            labs(x="Actual", 
+                 y="Predicted", 
+                 title=paste0("Training data - Actual vs. predicted ", tgt), 
+                 subtitle=paste0("(using ", prd, ")")
+            ) + 
+            geom_text(aes(label=n)) + 
+            geom_tile(aes(fill=correct), alpha=0.25)
+        print(p1)
+    }
+    
+    # Create metrics for test dataset if requested
+    if(!is.null(dfTest)) {
+        # Get maximum category from training data
+        mostPredicted <- count(dfPred, predicted, wt=n) %>% slice(1) %>% pull(predicted)
+        # Get mapping of metric to prediction
+        dfPredict <- dfPred %>% 
+            group_by(across(all_of(c(prd, "predicted")))) %>% 
+            summarize(n=sum(n), .groups="drop")
+        # Create predictions for test data
+        dfPredTest <- dfTest %>%
+            select(all_of(c(prd, tgt))) %>%
+            left_join(select(dfPredict, -n)) %>%
+            replace_na(list(predicted=mostPredicted)) %>%
+            group_by(across(all_of(c(prd, tgt, "predicted")))) %>%
+            summarize(n=n(), .groups="drop") %>%
+            mutate(correct=(get(tgt)==predicted))
+        # Create confusion statistics for test data
+        dfConfTest <- dfPredTest %>%
+            group_by(across(all_of(c(tgt, "correct")))) %>%
+            summarize(n=sum(n), .groups="drop") %>%
+            pivot_wider(id_cols=tgt, names_from=correct, values_from=n, values_fill=0) %>%
+            mutate(n=`TRUE`+`FALSE`, 
+                   pctCorrect=`TRUE`/n, 
+                   pctNaive=1/(nrow(.)), 
+                   lift=pctCorrect/pctNaive-1
+            )
+        # Overall confusion matrix for test data
+        dfConfAllTest <- dfConfTest %>%
+            summarize(nMax=max(n), across(c(`FALSE`, `TRUE`, "n"), sum)) %>%
+            mutate(pctCorrect=`TRUE`/n, 
+                   pctNaive=nMax/n, 
+                   lift=pctCorrect/pctNaive-1, 
+                   nBucket=length(unique(dfConfTest[[prd]]))
+            )
+        # Print confusion matrices
+        if(nPrint > 0) {
+            cat("\nAccuracy by target subgroup (testing data):\n")
+            dfConfTest %>% print(n=nPrint)
+            cat("\nOverall Accuracy (testing data):\n")
+            dfConfAllTest %>% print(n=nPrint)
+        }
+    } else {
+        dfPredTest <- NULL
+        dfConfTest <- NULL
+        dfConfAllTest <- NULL
+        
+    }
+    
+    # Return data if requested
+    if(isTRUE(returnData)) list(dfPred=dfPred, 
+                                dfConf=dfConf, 
+                                dfConfAll=dfConfAll, 
+                                dfPredTest=dfPredTest, 
+                                dfConfTest=dfConfTest, 
+                                dfConfAllTest=dfConfAllTest
+    )
+    
+}
+
+
+# Fit a single predictor to a single categorical variable
+simpleOneVarFit <- function(df, 
+                            tgt, 
+                            prd, 
+                            rankType="last", 
+                            naMethod=TRUE
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble with key elements (training data set)
+    # tgt: target variable
+    # prd: predictor variable
+    # rankType: method for breaking ties of same n, passed to base::rank as ties.method=
+    # naMethod: method for handling NA in ranks, passed to base::rank as na.last=
+    
+    # Counts of predictor to target variable, and associated predictions
+    df %>%
+        group_by(across(all_of(c(prd, tgt)))) %>%
+        summarize(n=n(), .groups="drop") %>%
+        arrange(across(all_of(prd)), desc(n), across(all_of(tgt))) %>%
+        group_by(across(all_of(prd))) %>%
+        mutate(rankN=n()+1-rank(n, ties.method=rankType, na.last=naMethod)) %>%
+        arrange(across(all_of(prd)), rankN) %>%
+        ungroup()
+    
+}
+
+
+# Create categorical predictions mapper
+simpleOneVarMapper <- function(df, tgt, prd) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble from SimpleOneVarFit()
+    # tgt: target variable
+    # prd: predictor variable
+    
+    # Get the most common actual results
+    dfCommon <- df %>% count(across(all_of(tgt)), wt=n, sort=TRUE)
+    
+    # Get the predictions
+    dfPredictor <- df %>%
+        group_by(across(all_of(prd))) %>%
+        filter(row_number()==1) %>%
+        select(all_of(c(prd, tgt))) %>%
+        ungroup()
+    
+    list(dfPredictor=dfPredictor, dfCommon=dfCommon)
+    
+}
+
+
+# Map the categorical predictions to unseen data
+simpleOneVarApplyMapper <- function(df, 
+                                    tgt,
+                                    prd, 
+                                    mapper, 
+                                    mapperDF="dfPredictor", 
+                                    mapperDefault="dfCommon",
+                                    prdName="predicted"
+                                    ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame containing prd for predicting tgt
+    # tgt: target variable in df
+    # prd: predictor variable in df
+    # mapper: mapping list from sinpleOneVarMapper()
+    # mapperDF: element that can be used to merge mappings
+    # mapperDefault: element that can be used for NA resulting from merging mapperDF
+    # prdName: name for the prediction variable
+    
+    # Extract the mapper and default value
+    vecRename <- c(prdName) %>% purrr::set_names(tgt)
+    dfMap <- mapper[[mapperDF]] %>% select(all_of(c(prd, tgt))) %>% colRenamer(vecRename=vecRename)
+    chrDefault <- mapper[[mapperDefault]] %>% slice(1) %>% pull(tgt)
+    
+    # Merge mappings to df
+    df %>%
+        left_join(dfMap, by=prd) %>%
+        replace_na(list("predicted"=chrDefault))
+    
+}
+
+
+# Create confusion matrix data for categorical predictions
+simpleOneVarConfusionData <- function(df, 
+                                      tgtOrig,
+                                      tgtPred, 
+                                      otherVars=c(),
+                                      weightBy="n"
+                                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame from simpleOneVarApplyMapper()
+    # tgtOrig: original target variable name in df
+    # tgtPred: predicted target variable name in df
+    # otherVars: other variables to be kept (will be grouping variables)
+    # weightBy: weighting variable for counts in df (NULL means count each row of df as 1)
+    
+    # Confusion matrix data creation
+    df %>%
+        group_by(across(all_of(c(tgtOrig, tgtPred, otherVars)))) %>%
+        summarize(n=if(!is.null(weightBy)) sum(get(weightBy)) else n(), .groups="drop") %>%
+        mutate(correct=get(tgtOrig)==get(tgtPred))
+    
+}
+
+
+# Print and plot confusion matrix for categorical predictions
+simpleOneVarConfusionReport <- function(df, 
+                                        tgtOrig,
+                                        tgtPred, 
+                                        otherVars=c(), 
+                                        printConf=TRUE,
+                                        printConfOrig=printConf, 
+                                        printConfPred=printConf,
+                                        printConfOverall=printConf, 
+                                        plotConf=TRUE, 
+                                        plotDesc="",
+                                        nBucket=NA, 
+                                        predictorVarName="", 
+                                        returnData=FALSE
+                                        ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame from simpleOneVarConfusionData()
+    # tgtOrig: original target variable name in df
+    # tgtPred: predicted target variable name in df
+    # otherVars: other variables to be kept (will be grouping variables) - NOT IMPLEMENTED
+    # printConf: boolean, should confusion matrix data be printed? Applies to all three
+    # printConfOrig: boolean, should confusion data be printed based on original target variable?
+    # printConfPred: boolean, should confusion data be printed based on predicted target variable?
+    # printConfOverall: boolean, should overall confusion data be printed?
+    # plotConf: boolean, should confusion overlap data be plotted?
+    # plotDesc: descriptive label to be included in front of plot title
+    # nBucket: number of buckets used for prediction (pass from previous data)
+    # predictorVarName: variable name to be included in chart description
+    # returnData: boolean, should the confusion matrices be returned?
+    
+    # Confusion data based on original target variable
+    if(isTRUE(printConfOrig) | isTRUE(returnData)) {
+        dfConfOrig <- df %>%
+            group_by(across(all_of(c(tgtOrig)))) %>%
+            summarize(right=sum(n*correct), wrong=sum(n)-right, n=sum(n), .groups="drop") %>%
+            mutate(pctRight=right/n, pctNaive=n/(sum(n)), lift=pctRight/pctNaive-1)
+    }
+    
+    # Confusion data based on predicted target variable
+    if(isTRUE(printConfPred) | isTRUE(returnData)) {
+        dfConfPred <- df %>%
+            group_by(across(all_of(c(tgtPred)))) %>%
+            summarize(right=sum(n*correct), wrong=sum(n)-right, n=sum(n), .groups="drop") %>%
+            mutate(pctRight=right/n)
+    }
+    
+    # Overall confusion data
+    if(isTRUE(printConfOverall) | isTRUE(returnData)) {
+        maxNaive <- df %>%
+            group_by(across(all_of(tgtOrig))) %>%
+            summarize(n=sum(n), .groups="drop") %>%
+            arrange(desc(n)) %>%
+            slice(1) %>%
+            pull(n)
+        dfConfOverall <- df %>%
+            summarize(right=sum(n*correct), wrong=sum(n)-right, n=sum(n), .groups="drop") %>%
+            mutate(maxN=maxNaive, pctRight=right/n, pctNaive=maxN/n, lift=pctRight/pctNaive-1, nBucket=nBucket)
+    }
+    
+    # Confusion report based on original target variable
+    if(isTRUE(printConfOrig)) {
+        cat("\nConfusion data based on original target variable:", tgtOrig, "\n")
+        dfConfOrig %>%
+            print(n=50)
+    }
+    
+    # Confusion report based on predicted target variable
+    if(isTRUE(printConfPred)) {
+        cat("\nConfusion data based on predicted target variable:", tgtPred, "\n")
+        dfConfPred %>%
+            print(n=50)
+    }
+    
+    # Overall confusion matrix
+    if(isTRUE(printConfOverall)) {
+        cat("\nOverall confusion matrix\n")
+        dfConfOverall %>%
+            print(n=50)
+    }
+    
+    # Plot of overlaps
+    if(isTRUE(plotConf)) {
+        p1 <- df %>%
+            group_by(across(all_of(c(tgtOrig, tgtPred, "correct")))) %>%
+            summarize(n=sum(n), .groups="drop") %>%
+            ggplot(aes(x=get(tgtOrig), y=get(tgtPred))) + 
+            labs(x="Actual", 
+                 y="Predicted", 
+                 title=paste0(plotDesc, "Actual vs. predicted ", tgtOrig), 
+                 subtitle=paste0("(using ", predictorVarName, ")")
+            ) + 
+            geom_text(aes(label=n)) + 
+            geom_tile(aes(fill=correct), alpha=0.25)
+        print(p1)
+    }
+    
+    # Return data if requested
+    if(isTRUE(returnData)) list(dfConfOrig=dfConfOrig, dfConfPred=dfConfPred, dfConfOverall=dfConfOverall)
+    
+}
+
+
+# Process for chaining predictor, applier, and confusion matrix for categorical variables
+simpleOneVarChain <- function(df,
+                              tgt,
+                              prd,
+                              mapper=NULL, 
+                              rankType="last", 
+                              naMethod=TRUE, 
+                              printReport=TRUE, 
+                              plotDesc="",
+                              returnData=TRUE, 
+                              includeConfData=FALSE
+                              ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame or tibble with key elements (training or testing data set)
+    # tgt: target variable
+    # prd: predictor variable
+    # mapper: mapping file to be applied for predictions (NULL means create from simpleOneVarApply())
+    # rankType: method for breaking ties of same n, passed to base::rank as ties.method=
+    # naMethod: method for handling NA in ranks, passed to base::rank as na.last=    
+    # printReport: boolean, should the confusion report data and plot be printed?
+    # plotDesc: descriptive label to be included in front of plot title
+    # returnData: boolean, should data elements be returned?
+    # includeConfData: boolean, should confusion data be returned?
+    
+    # Create the summary of predictor-target-n
+    dfFit <- simpleOneVarFit(df, tgt=tgt, prd=prd, rankType=rankType, naMethod=naMethod)     
+    
+    # Create the mapper if it does not already exist
+    if(is.null(mapper)) mapper <- simpleOneVarMapper(dfFit, tgt=tgt, prd=prd)
+    
+    # Apply mapper to data
+    dfApplied <- simpleOneVarApplyMapper(dfFit, tgt=tgt, prd=prd, mapper=mapper)
+    
+    # Create confusion data
+    dfConfusion <- simpleOneVarConfusionData(dfApplied, tgtOrig=tgt, tgtPred="predicted")
+    
+    # Create confusion report if requested
+    if(isTRUE(printReport) | isTRUE(includeConfData)) {
+        dfConfReport <- simpleOneVarConfusionReport(df=dfConfusion, 
+                                                    tgtOrig=tgt, 
+                                                    tgtPred="predicted", 
+                                                    nBucket=length(unique(dfApplied[[prd]])), 
+                                                    predictorVarName=prd, 
+                                                    printConf=printReport, 
+                                                    plotConf=printReport,
+                                                    plotDesc=plotDesc,
+                                                    returnData=includeConfData
+        )
+    }
+    
+    # Return data if requested
+    if(isTRUE(returnData)) {
+        ret <- list(dfFit=dfFit, mapper=mapper, dfApplied=dfApplied, dfConfusion=dfConfusion)
+        if(isTRUE(includeConfData)) ret<-c(ret, list(dfConfData=dfConfReport))
+        ret
+    }
+    
+}
+
+
+# Adds a train-test component for single variable predictions
+simpleOneVarTrainTest <- function(dfTrain,
+                                  dfTest,
+                                  tgt,
+                                  prd,
+                                  rankType="last", 
+                                  naMethod=TRUE, 
+                                  printReport=FALSE, 
+                                  includeConfData=TRUE, 
+                                  returnData=TRUE
+                                  ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfTrain: data frame or tibble with key elements (training data set)
+    # dfTest: data frame or tibble with key elements (testing data set)
+    # tgt: target variable
+    # prd: predictor variable
+    # rankType: method for breaking ties of same n, passed to base::rank as ties.method=
+    # naMethod: method for handling NA in ranks, passed to base::rank as na.last=    
+    # printReport: boolean, should the confusion report data and plot be printed?
+    # includeConfData: boolean, should confusion data be returned?
+    # returnData: boolean, should data elements be returned?
+    
+    # Fit the training data
+    tmpTrain <- simpleOneVarChain(df=dfTrain, 
+                                  tgt=tgt, 
+                                  prd=prd,
+                                  rankType=rankType,
+                                  naMethod=naMethod,
+                                  printReport=printReport,
+                                  plotDesc="Training data: ",
+                                  returnData=TRUE,
+                                  includeConfData=includeConfData
+    )
+    
+    # Fit the testing data
+    tmpTest <- simpleOneVarChain(df=dfTest, 
+                                 tgt=tgt, 
+                                 prd=prd,
+                                 mapper=tmpTrain$mapper,
+                                 rankType=rankType,
+                                 naMethod=naMethod,
+                                 printReport=printReport,
+                                 plotDesc="Testing data: ",
+                                 returnData=TRUE,
+                                 includeConfData=includeConfData
+    )
+    
+    # Return data if requested
+    if(isTRUE(returnData)) list(tmpTrain=tmpTrain, tmpTest=tmpTest)
+    
+}
+
+
+# Plot the means by cluster and variable for a k-means object
+plotClusterMeans <- function(km, nrow=NULL, ncol=NULL, scales="fixed") {
+    
+    # FUNCTION ARGUMENTS
+    # km: object returned by stats::kmeans(...)
+    # nrow: number of rows for faceting (NULL means default)
+    # ncol: number of columns for faceting (NULL means default)
+    # scales: passed to facet_wrap as scales=scales
+    
+    # Assess clustering by dimension
+    p1 <- km$centers %>%
+        tibble::as_tibble() %>%
+        mutate(cluster=row_number()) %>%
+        pivot_longer(cols=-c(cluster)) %>%
+        ggplot(aes(x=fct_reorder(name, 
+                                 value, 
+                                 .fun=function(a) ifelse(length(a)==2, a[2]-a[1], diff(range(a)))
+                                 ), 
+                   y=value
+                   )
+               ) + 
+        geom_point(aes(color=factor(cluster))) + 
+        scale_color_discrete("Cluster") + 
+        facet_wrap(~factor(cluster), nrow=nrow, ncol=ncol, scales=scales) +
+        labs(title=paste0("Cluster means (kmeans, centers=", nrow(km$centers), ")"), 
+             x="Metric", 
+             y="Cluster mean"
+             ) + 
+        geom_hline(yintercept=median(km$centers), lty=2) +
+        coord_flip()
+    print(p1)
+    
+}
+
+
+# Plot percentage by cluster
+plotClusterPct <- function(df, km, keyVars, nRowFacet=1, printPlot=TRUE) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame initially passed to stats::kmeans(...)
+    # km: object returned by stats::kmeans(...)
+    # keyVars: character vector of length 1 (y-only, x will be cl) or length 2 (x, y, cl will facet)
+    # nRowFacet: number of rows for facetting (only relevant if length(keyVars) is 2)
+    # printPlot: boolean, should plot be printed? (if not true, plot will be returned)
+    
+    # Check length of keyVars
+    if(!(length(keyVars) %in% c(1, 2))) stop("\nArgument keyVars must be length-1 or length-2\n")
+    
+    p1 <- df %>%
+        mutate(cl=factor(km$cluster)) %>%
+        group_by(across(c(all_of(keyVars), "cl"))) %>%
+        summarize(n=n(), .groups="drop") %>%
+        group_by(across(all_of(keyVars))) %>%
+        mutate(pct=n/sum(n)) %>%
+        ungroup() %>%
+        ggplot() + 
+        scale_fill_continuous(low="white", high="green") + 
+        labs(title=paste0("Percentage by cluster (kmeans with ", nrow(km$centers), " centers)"), 
+             x=ifelse(length(keyVars)==1, "Cluster", keyVars[1]), 
+             y=ifelse(length(keyVars)==1, keyVars[1], keyVars[2])
+        )
+    if(length(keyVars)==1) p1 <- p1 + geom_tile(aes(fill=pct, x=cl, y=get(keyVars[1])))
+    if(length(keyVars)==2) {
+        p1 <- p1 + 
+            geom_tile(aes(fill=pct, x=get(keyVars[1]), y=get(keyVars[2]))) + 
+            facet_wrap(~cl, nrow=nRowFacet)
+    }
+    
+    if(isTRUE(printPlot)) print(p1)
+    else return(p1)
+    
+}
+
+
+# Run k-means (or use passed k-means object) and plot centers and percentages of observations
+runKMeans <- function(df, 
+                      km=NULL,
+                      vars=NULL, 
+                      centers=2, 
+                      nStart=1L, 
+                      iter.max=10L, 
+                      seed=NULL, 
+                      plotMeans=FALSE,
+                      nrowMeans=NULL,
+                      plotPct=NULL, 
+                      nrowPct=1, 
+                      returnKM=is.null(km)
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame for clustering
+    # km: k-means object (will shut off k-means processing and run as plot-only)
+    # vars: variables to be used for clustering (NULL means everything in df)
+    # centers: number of centers
+    # nStart: passed to kmeans
+    # iter.max: passed to kmeans
+    # seed: seed to be set (if NULL, no seed is set)
+    # plotMeans: boolean, plot variable means by cluster?
+    # nrowMeans: argument passed as nrow for faceting rows in plotClusterMeans() - NULL is default ggplot2
+    # plotPct: list of character vectors to be passed sequentially as keyVars to plotClusterPct()
+    #          NULL means do not run
+    #          pctByCluster=list(c("var1"), c("var2", "var3")) will run plotting twice
+    # nrowPct: argument for faceting number of rows in plotClusterPct()
+    # returnKM: boolean, should the k-means object be returned?
+    
+    # Set seed if requested
+    if(!is.null(seed)) set.seed(seed)
+    
+    # Get the variable names if passed as NULL
+    if(is.null(vars)) vars <- names(df)
+    
+    # Run the k-means process if the object has not been passed
+    if(is.null(km)) {
+        km <- df %>%
+            select(all_of(vars)) %>% 
+            kmeans(centers=centers, iter.max=iter.max, nstart=nStart)
+    }
+    
+    # Assess clustering by dimension if requested
+    if(isTRUE(plotMeans)) plotClusterMeans(km, nrow=nrowMeans)
+    if(!is.null((plotPct))) 
+        for(ctr in 1:length(plotPct)) 
+            plotClusterPct(df=df, km=km, keyVars=plotPct[[ctr]], nRowFacet=nrowPct)
+    
+    # Return the k-means object
+    if(isTRUE(returnKM)) return(km)
+    
+}
+
+
+# Assign points to closest center of a passed k-means object
+assignKMeans <- function(km, df, returnAllDistanceData=FALSE) {
+    
+    # FUNCTION ARGUMENTS:
+    # km: a k-means object
+    # df: data frame or tibble
+    # returnAllDistanceData: boolean, should the distance data and clusters be returned?
+    #                        TRUE returns a data frame with distances as V1, V2, ..., and cluster as cl
+    #                        FALSE returns a vector of cluster assignments as integers
+    
+    # Select columns from df to match km
+    df <- df %>% select(all_of(colnames(km$centers)))
+    if(!all.equal(names(df), colnames(km$centers))) stop("\nName mismatch in clustering and frame\n")
+    
+    # Create the distances and find clusters
+    distClust <- sapply(seq_len(nrow(km$centers)), 
+                        FUN=function(x) sqrt(rowSums(sweep(as.matrix(df), 
+                                                           2, 
+                                                           t(as.matrix(km$centers[x,,drop=FALSE]))
+                                                           )**2
+                                                     )
+                                             )
+                        ) %>% 
+        as.data.frame() %>% 
+        tibble::as_tibble() %>% 
+        mutate(cl=apply(., 1, which.min))
+    
+    # Return the proper file
+    if(isTRUE(returnAllDistanceData)) return(distClust)
+    else return(distClust$cl)
+    
+}
+
+
+runSimpleRF <- function(df, yVar, xVars=NULL, ...) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame containing observations
+    # yVar: variable to be predicted (numeric for regression, categorical for classification)
+    # xVars: predictor variables (NULL means everything in df except for yVar)
+    # ...: other arguments passed to ranger::ranger
+    
+    # Create xVars if passed as NULL
+    if(is.null(xVars)) xVars <- setdiff(names(df), yVar)
+    
+    # Simple random forest model
+    ranger::ranger(as.formula(paste0(yVar, "~", paste0(xVars, collapse="+"))), 
+                   data=df[, c(yVar, xVars)], 
+                   ...
+    )
+    
+}
+
+plotRFImportance <- function(rf, 
+                             impName="variable.importance", 
+                             divBy=1000, 
+                             plotTitle=NULL, 
+                             plotData=TRUE, 
+                             returnData=!isTRUE(plotData)
+                             ) {
+    
+    # FUNCTION ARGUMENTS:
+    # rf: output list from random forest with an element for importance
+    # impName: name of the element to extract from rf
+    # divBy: divisor for the importance variable
+    # plotTitle: title for plot (NULL means use default)
+    # plotData: boolean, should the importance plot be created and printed?
+    # returnData: boolean, should the processed data be returned?
+    
+    # Create title if not provided
+    if(is.null(plotTitle)) plotTitle <- "Importance for simple random forest"
+    
+    # Create y-axis label
+    yAxisLabel="Variable Importance"
+    if(!isTRUE(all.equal(divBy, 1))) yAxisLabel <- paste0(yAxisLabel, " (", divBy, "s)")
+    
+    # Create variable importance
+    df <- rf[[impName]] %>% 
+        as.data.frame() %>% 
+        purrr::set_names("imp") %>% 
+        rownames_to_column("metric") %>% 
+        tibble::as_tibble() 
+    
+    # Create and print plot if requested
+    if(isTRUE(plotData)) {
+        p1 <- df %>%
+            ggplot(aes(x=fct_reorder(metric, imp), y=imp/divBy)) + 
+            geom_col(fill="lightblue") + 
+            labs(x=NULL, y=yAxisLabel, title=plotTitle) +
+            coord_flip()
+        print(p1)
+    }
+    
+    # Return data if requested
+    if(isTRUE(returnData)) return(df)
+    
+}
+
+predictRF <- function(rf, df, newCol="pred", predsOnly=FALSE) {
+    
+    # FUNCTION ARGUMENTS:
+    # rf: a trained random forest model
+    # df: data frame for adding predictions
+    # newCol: name for new column to be added to df
+    # predsOnly: boolean, should only the vector of predictions be returned?
+    #            if FALSE, a column named newCol is added to df, with df returned
+    
+    # Performance on holdout data
+    preds <- predict(rf, data=df)$predictions
+    
+    # Return just the predictions if requested otherwise add as final column to df
+    if(isTRUE(predsOnly)) return(preds)
+    else {
+        df[newCol] <- preds
+        return(df)
+    }
+    
+}
+
+# Update for continuous variables
+reportAccuracy <- function(df, 
+                           trueCol, 
+                           predCol="pred", 
+                           reportAcc=TRUE, 
+                           rndReport=2, 
+                           useLabel="requested data",
+                           returnAcc=!isTRUE(reportAcc), 
+                           reportR2=FALSE
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame containing actual and predictions
+    # trueCol: column containing true value
+    # predCol: column containing predicted value
+    # reportAcc: boolean, should accuracy be reported (printed to output)?
+    # rndReport: number of significant digits for reporting (will be converted to percentage first)
+    # useLabel: label for data to be used in reporting
+    # returnAcc: boolean, should the accuracy be returned 
+    #            return value is not converted to percentage, not rounded
+    # reportR2: boolean, should accuracy be calculated as R-squared?
+    #           (default FALSE measures as categorical)
+    
+    # Continuous or categorical reporting
+    if(isTRUE(reportR2)) {
+        tc <- df %>% pull(get(trueCol))
+        pc <- df %>% pull(get(predCol))
+        mseNull <- mean((tc-mean(tc))**2)
+        msePred <- mean((tc-pc)**2)
+        r2 <- 1 - msePred/mseNull
+        if(isTRUE(reportAcc)) 
+            cat("\nR-squared of ", 
+                useLabel, 
+                " is: ", 
+                round(100*r2, rndReport), 
+                "% (RMSE ",
+                round(sqrt(msePred), 2), 
+                " vs. ", 
+                round(sqrt(mseNull), 2),
+                " null)\n", 
+                sep=""
+            )
+        acc <- c("mseNull"=mseNull, "msePred"=msePred, "r2"=r2)
+    } else {
+        acc <- mean(df[trueCol]==df[predCol])
+        if(isTRUE(reportAcc)) 
+            cat("\nAccuracy of ", useLabel, " is: ", round(100*acc, rndReport), "%\n", sep="")    
+    }
+    
+    # Return accuracy statistic if requested
+    if(isTRUE(returnAcc)) return(acc)
+    
+}
+
+# Update for automated rounding
+plotConfusion <- function(df, 
+                          trueCol, 
+                          predCol="pred", 
+                          useTitle=NULL,
+                          useSub=NULL, 
+                          plotCont=FALSE, 
+                          rndTo=NULL,
+                          rndBucketsAuto=100,
+                          nSig=NULL,
+                          refXY=FALSE
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame containing actual and predictions
+    # trueCol: column containing true value
+    # predCol: column containing predicted value
+    # useTitle: title to be used for chart (NULL means create from trueCol)
+    # useSub: subtitle to be used for chart (NULL means none)
+    # plotCont: boolean, should plotting assume continuous variables?
+    #           (default FALSE assumes confusion plot for categorical variables)
+    # rndTo: every number in x should be rounded to the nearest rndTo
+    #        NULL means no rounding (default)
+    #        -1L means make an estimate based on data
+    # rndBucketsAuto: integer, if rndTo is -1L, about how many buckets are desired for predictions?
+    # nSig: number of significant digits for automatically calculated rounding parameter
+    #       (NULL means calculate exactly)
+    # refXY: boolean, should a reference line for y=x be included? (relevant only for continuous)
+    
+    # Create title if not supplied
+    if(is.null(useTitle)) useTitle <- paste0("Predicting ", trueCol)
+    
+    # Function auto-round returns vector as-is when rndTo is NULL and auto-rounds when rndTo is -1L
+    df <- df %>%
+        mutate(across(all_of(c(trueCol, predCol)), 
+                      .fns=function(x) autoRound(x, rndTo=rndTo, rndBucketsAuto=rndBucketsAuto, nSig=nSig)
+                      )
+               )
+    
+    # Create base plot (applicable to categorical or continuous variables)
+    # Use x as true and y as predicted, for more meaningful geom_smooth() if continuous
+    # Flip coordinates if categorical
+    p1 <- df %>%
+        group_by(across(all_of(c(trueCol, predCol)))) %>%
+        summarize(n=n(), .groups="drop") %>%
+        ggplot(aes(y=get(predCol), x=get(trueCol))) + 
+        labs(y="Predicted", x="Actual", title=useTitle, subtitle=useSub)
+    
+    # Update plot as appropriate
+    if(isTRUE(plotCont)) {
+        p1 <- p1 +
+            geom_point(aes(size=n), alpha=0.5) + 
+            scale_size_continuous("# Obs") +
+            geom_smooth(aes(weight=n), method="lm")
+        if(isTRUE(refXY)) p1 <- p1 + geom_abline(slope=1, intercept=0, lty=2, color="red")
+    } else {
+        p1 <- p1 + 
+            geom_tile(aes(fill=n)) + 
+            geom_text(aes(label=n), size=2.5) +
+            coord_flip() +
+            scale_fill_continuous("", low="white", high="green")
+    }
+    
+    # Output plot
+    print(p1)
+    
+}
+
+
+runFullRF <- function(dfTrain, 
+                      yVar, 
+                      xVars, 
+                      useExistingRF=NULL,
+                      dfTest=dfTrain,
+                      useLabel="test data",
+                      useSub=NULL, 
+                      isContVar=FALSE,
+                      rndTo=NULL,
+                      rndBucketsAuto=100,
+                      nSig=NULL,
+                      refXY=FALSE,
+                      makePlots=TRUE,
+                      plotImp=makePlots,
+                      plotConf=makePlots,
+                      returnData=FALSE, 
+                      ...
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfTrain: training data
+    # yVar: dependent variable
+    # xVars: column(s) containing independent variables
+    # useExistingRF: an existing RF model, meaning only steps 3-5 are run (default NULL means run all steps)
+    # dfTest: test dataset for applying predictions
+    # useLabel: label to be used for reporting accuracy
+    # useSub: subtitle to be used for confusion chart (NULL means none)
+    # isContVar: boolean, is the variable continuous? (default FALSE means categorical)
+    # rndTo: every number in x should be rounded to the nearest rndTo
+    #        NULL means no rounding (default)
+    #        -1L means make an estimate based on data
+    # rndBucketsAuto: integer, if rndTo is -1L, about how many buckets are desired for predictions?
+    # nSig: number of significant digits for automatically calculated rounding parameter
+    #       (NULL means calculate exactly)    
+    # refXY: boolean, should a reference line for y=x be included? (relevant only for continuous)
+    # makePlots: boolean, should plots be created for variable importance and confusion matrix?
+    # plotImp: boolean, should variable importance be plotted? (default is makePlots)
+    # plotConf: boolean, should confusion matrix be plotted? (default is makePlots)
+    # returnData: boolean, should data be returned?
+    # ...: additional parameters to pass to runSimpleRF(), which are then passed to ranger::ranger()
+    
+    # Create the RF and plot importances, unless an RF is passed
+    if(is.null(useExistingRF)) {
+        # 1. Run random forest using impurity for importance
+        rf <- runSimpleRF(df=dfTrain, yVar=yVar, xVars=xVars, importance="impurity", ...)
+        
+        # 2. Create, and optionally plot, variable importance
+        rfImp <- plotRFImportance(rf, plotData=plotImp, returnData=TRUE)
+    }
+    else {
+        rf <- useExistingRF
+        rfImp <- NA
+    }
+    
+    # 3. Predict on test dataset
+    tstPred <- predictRF(rf=rf, df=dfTest)
+    
+    # 4. Report on accuracy (updated for continuous or categorical)
+    rfAcc <- reportAccuracy(tstPred, 
+                            trueCol=yVar, 
+                            rndReport=3, 
+                            useLabel=useLabel, 
+                            reportR2=isTRUE(isContVar),
+                            returnAcc=TRUE
+    )
+    
+    # 5. Plot confusion data (updated for continuous vs. categorical) if requested
+    if(isTRUE(plotConf)) {
+        plotConfusion(tstPred, 
+                      trueCol=yVar, 
+                      useSub=useSub, 
+                      plotCont=isTRUE(isContVar), 
+                      rndTo=rndTo, 
+                      rndBucketsAuto=rndBucketsAuto,
+                      nSig=nSig,
+                      refXY=refXY
+                      )
+    }
+    
+    #6. Return data if requested
+    if(isTRUE(returnData)) return(list(rf=rf, rfImp=rfImp, tstPred=tstPred, rfAcc=rfAcc))
+    
+}
+
+
+runPartialImportanceRF <- function(dfTrain, 
+                                   yVar, 
+                                   dfTest,
+                                   impDB=dfImp,
+                                   nImp=+Inf,
+                                   otherX=c(),
+                                   isContVar=TRUE, 
+                                   useLabel=keyLabel, 
+                                   useSub=stringr::str_to_sentence(keyLabel), 
+                                   rndTo=NULL,
+                                   rndBucketsAuto=50,
+                                   nSig=NULL,
+                                   refXY=FALSE,
+                                   makePlots=FALSE, 
+                                   returnElem=c("rfImp", "rfAcc")
+                                   ) {
+    
+    # FUNCTION ARGUMENTS
+    # dfTrain: training data
+    # yVar: y variable in dfTrain
+    # dfTest: test data
+    # impDB: tibble containing variable importance by dependent variable
+    # nImp: use the top nImp variables by variable importance
+    # otherX: include these additional x variables
+    # isContVar: boolean, is this a continuous variable (regression)? FALSE means classification
+    # useLabel: label for description
+    # useSub: label for plot
+    # rndTo: controls the rounding parameter for plots, passed to runFullRF 
+    #        (NULL means no rounding)
+    #        -1L means make an estimate based on underlying data
+    # rndBucketsAuto: integer, if rndTo is -1L, about how many buckets are desired for predictions?
+    # nSig: number of significant digits for automatically calculated rounding parameter
+    #       (NULL means calculate exactly)    
+    # refXY: controls the reference line parameter for plots, passed to runFullRF
+    # makePlots: boolean, should plots be created?
+    # returnElem: character vector of list elements to be returned
+    
+    runFullRF(dfTrain=dfTrain, 
+              yVar=yVar, 
+              xVars=unique(c(impDB %>% filter(n<=nImp, src==yVar) %>% pull(metric), otherX)), 
+              dfTest=dfTest, 
+              isContVar = isContVar, 
+              useLabel=useLabel, 
+              useSub=useSub, 
+              rndTo=rndTo,
+              rndBucketsAuto=rndBucketsAuto,
+              nSig=nSig,
+              refXY=refXY,
+              makePlots=makePlots,
+              returnData=TRUE
+              )[returnElem]
+    
+}
+
+autoRound <- function(x, rndTo=-1L, rndBucketsAuto=100, nSig=NULL) {
+    
+    # FUNCTION ARGUMENTS
+    # x: vector to be rounded
+    # rndTo: every number in x should be rounded to the nearest rndTo
+    #        NULL means no rounding
+    #        -1L means make an estimate based on data (default)
+    # rndBucketsAuto: integer, if rndTo is -1L, about how many buckets are desired for predictions?
+    # nSig: number of significant digits for automatically calculated rounding parameter
+    #       (NULL means calculate exactly)
+    
+    # If rndTo is passed as NULL, return x as-is
+    if(is.null(rndTo)) return(x)
+    
+    # If rndTo is passed as -1L, make an estimate for rndTo
+    if(isTRUE(all.equal(-1L, rndTo))) {
+        # Get the number of unique values in x
+        nUq <- length(unique(x))
+        # If the number of unique values is no more than 150% of rndToBucketsAuto, return as-is
+        if(nUq <= 1.5*rndBucketsAuto) return(x)
+        # Otherwise, calculate a value for rndTo
+        rndTo <- diff(range(x)) / rndBucketsAuto
+        # Truncate to requested number of significant digits
+        if(!is.null(nSig)) rndTo <- signif(rndTo, digits=nSig)
+    }
+    
+    # Return the rounded vector if it was not already returned
+    return(round(x/rndTo)*rndTo)
+    
+}
+
+
+autoPartialImportance <- function(dfTrain, 
+                                  dfTest, 
+                                  yVar, 
+                                  isContVar,
+                                  impDB=dfImp,
+                                  impNums=c(1:10, 16, 25, nrow(filter(dfImp, src==yVar)))
+                                  ) {
+    
+    # FUNCTION ARGUMENTS:
+    # dfTrain: training data
+    # dfTest: test (holdout) data
+    # yVar: dependent variable
+    # isContVar: boolean, is this a contnuous variable (R-2) or categorical variable (accuracy)?
+    # impDB: tibble containing sorted variable importances by predictor
+    # impNums: vector of number of variables to run (each element in vector run)
+    
+    # Accuracy on holdout data
+    tblRPI <- tibble::tibble(nImp=impNums, 
+                             rfAcc=sapply(impNums, 
+                                          FUN=function(x) {y <- runPartialImportanceRF(dfTrain=dfTrain, 
+                                                                                       yVar=yVar, 
+                                                                                       dfTest=dfTest, 
+                                                                                       isContVar=isContVar, 
+                                                                                       impDB=impDB, 
+                                                                                       nImp=x, 
+                                                                                       makePlots=FALSE
+                                                                                       )[["rfAcc"]]
+                                          if(isTRUE(isContVar)) y <- y["r2"]
+                                          y
+                                          }
+                                          )
+                             )
+    print(tblRPI)
+    
+    # Plot of holdout accuracy/r-squared vs. number of variables
+    # if(isTRUE(isContVar)) tblRPI <- tblRPI %>% mutate(rfAcc=r2)
+    if(isTRUE(isContVar)) prtDesc <- "R-squared" else prtDesc <- "Accuracy"
+    p1 <- tblRPI %>%
+        select(nImp, rfAcc) %>%
+        bind_rows(tibble::tibble(nImp=0, rfAcc=0)) %>%
+        ggplot(aes(x=nImp, y=rfAcc)) + 
+        geom_line() + 
+        geom_point() + 
+        labs(title=paste0(prtDesc, " on holdout data vs. number of predictors"), 
+             subtitle=paste0("Predicting ", yVar),
+             y=paste0(prtDesc, " on holdout data"), 
+             x="# Predictors (selected in order of variable importance in full model)"
+        ) + 
+        lims(y=c(0, 1)) + 
+        geom_hline(data=~filter(., rfAcc==max(rfAcc)), aes(yintercept=rfAcc), lty=2)
+    print(p1)
+    
+    return(tblRPI)
+    
+}
+
+
+runNextBestPredictor <- function(varsRun, 
+                                 xFix, 
+                                 yVar, 
+                                 isContVar,
+                                 dfTrain,
+                                 dfTest=dfTrain, 
+                                 useLabel="predictions based on training data applied to holdout dataset",
+                                 useSub=stringr::str_to_sentence(keyLabel_v3), 
+                                 makePlots=FALSE
+                                 ) {
+    
+    # FUNCTION ARGUMENTS:
+    # varsRun: variables to be run as potential next-best predictors
+    # xFix: variables that are already included in every test of next-best
+    # yVar: dependent variable of interest
+    # isContVar: boolean, is yvar continuous?
+    # dfTrain: training data
+    # dfTest: test data
+    # useLabel: descriptive label
+    # useSub: subtitle description
+    # makePlots: boolean, should plots be created for each predictor run?
+    
+    vecAcc <- sapply(varsRun, FUN=function(x) {
+        y <- runFullRF(dfTrain=dfTrain, 
+                       yVar=yVar, 
+                       xVars=c(xFix, x),
+                       dfTest=dfTest, 
+                       useLabel=useLabel, 
+                       useSub=useSub,
+                       isContVar=isContVar,
+                       makePlots=makePlots,
+                       returnData=TRUE
+                       )[["rfAcc"]]
+        if(isTRUE(isContVar)) y[["r2"]] else y
+        }
+    )
+    
+    vecAcc %>% 
+        as.data.frame() %>% 
+        purrr::set_names("rfAcc") %>% 
+        rownames_to_column("pred") %>% 
+        tibble::tibble() %>%
+        arrange(desc(rfAcc)) %>%
+        print(n=40)
+    
+    vecAcc
+    
+}
+
+
+getNextBestVar <- function(x, returnTbl=FALSE, n=if(isTRUE(returnTbl)) +Inf else 1) {
+    
+    # FUNCTION ARGUMENTS:
+    # x: named vector of accuracy or r-squared
+    # returnTbl: boolean, if TRUE convert to tibble and return, if FALSE return vector of top-n predictors 
+    # n: number of predictrs to return (+Inf will return the full tibble or vector)
+    
+    tbl <- vecToTibble(x, colNameName="pred") %>%
+        arrange(-value) %>%
+        slice_head(n=n)
+    if(isTRUE(returnTbl)) return(tbl)
+    else return(tbl %>% pull(pred))
+    
+}
+
+
+# Function copied from STHDA
+reorder_cormat <- function(cormat){
+    # Use correlation between variables as distance
+    dd <- as.dist((1-cormat)/2)
+    hc <- hclust(dd)
+    cormat <-cormat[hc$order, hc$order]
+}
+
+
+makeHeatMap <- function(df, 
+                        vecSelect=NULL, 
+                        groupSimilar=TRUE, 
+                        upperTriOnly=TRUE, 
+                        plotMap=TRUE, 
+                        returnData=FALSE
+) {
+    
+    # FUNCTION ARGUMENTS:    
+    # df: the data frame or tibble
+    # vecSelect: vector for variables to keep c('keep1', "keep2", ...), NULL means keep all
+    # groupSimilar: boolean, should similar (highly correlated) variables be placed nearby each other?
+    # upperTriOnly: boolean, should only the upper triangle be kept?
+    # plotMap: boolean, should the heatmap be plotted?
+    # returnData: boolean, should the correlation data driving the heatmap be returned
+    
+    # Create correlations
+    df <- df %>%
+        colSelector(vecSelect=vecSelect) %>%
+        cor()
+    
+    # Reorder if requested
+    if(isTRUE(groupSimilar)) df <- df %>% reorder_cormat()
+    
+    # Use only the upper triangle if requested
+    if(isTRUE(upperTriOnly)) df[upper.tri(df)] <- NA
+    
+    # Convert to tidy tibble
+    df <- df %>%
+        reshape2::melt(na.rm=TRUE) %>%
+        tibble::as_tibble()
+    
+    # Plot map if requested
+    if(isTRUE(plotMap)) {
+        p1 <- df %>%
+            ggplot(aes(x=Var2, y=Var1)) + 
+            geom_tile(aes(fill=value)) +
+            scale_fill_gradient2(NULL, low="blue", high="red", mid="white", midpoint=0, limit=c(-1, 1)) + 
+            labs(x=NULL, y=NULL, title="Pearson correlation of key variables") + 
+            theme(axis.text.x=element_text(angle = 90, vjust = 1, hjust = 1))
+        print(p1)
+    }
+    
+    # Return data if requested
+    if(isTRUE(returnData)) return(df)
+    
+}
+
+
+
+# B. Weather-specific functions
+
+# Create URL with specified parameters for downloading data from Open Meteo
+openMeteoURLCreate <- function(mainURL="https://archive-api.open-meteo.com/v1/archive", 
+                               lat=45, 
+                               lon=-90, 
+                               startDate=paste(year(Sys.Date())-1, "01", "01", sep="-"), 
+                               endDate=paste(year(Sys.Date())-1, "12", "31", sep="-"), 
+                               hourlyMetrics=NULL, 
+                               dailyMetrics=NULL,
+                               tz="GMT", 
+                               ...
+                               ) {
+    
+    # Create formatted string
+    fString <- paste0(mainURL, 
+                      "?latitude=", 
+                      lat, 
+                      "&longitude=", 
+                      lon, 
+                      "&start_date=", 
+                      startDate, 
+                      "&end_date=", 
+                      endDate
+    )
+    if(!is.null(hourlyMetrics)) fString <- paste0(fString, "&hourly=", hourlyMetrics)
+    if(!is.null(dailyMetrics)) fString <- paste0(fString, "&daily=", dailyMetrics)
+    
+    # Return the formatted string
+    paste0(fString, "&timezone=", stringr::str_replace(tz, "/", "%2F"), ...)
+    
+}
+
+
+# Helper function to simplify entry of parameters for Open Meteo download requests
+helperOpenMeteoURL <- function(cityName=NULL,
+                               lat=NULL,
+                               lon=NULL,
+                               hourlyMetrics=NULL,
+                               hourlyIndices=NULL,
+                               hourlyDesc=tblMetricsHourly,
+                               dailyMetrics=NULL,
+                               dailyIndices=NULL,
+                               dailyDesc=tblMetricsDaily,
+                               startDate=NULL, 
+                               endDate=NULL, 
+                               tz=NULL,
+                               ...
+                               ) {
+    
+    # Convert city to lat/lon if lat/lon are NULL
+    if(is.null(lat) | is.null(lon)) {
+        if(is.null(cityName)) stop("\nMust provide lat/lon or city name available in maps::us.cities\n")
+        cityData <- maps::us.cities %>% tibble::as_tibble() %>% filter(name==cityName)
+        if(nrow(cityData)!=1) stop("\nMust provide city name that maps uniquely to maps::us.cities$name\n")
+        lat <- cityData$lat[1]
+        lon <- cityData$long[1]
+    }
+    
+    # Get hourly metrics by index if relevant
+    if(is.null(hourlyMetrics) & !is.null(hourlyIndices)) {
+        hourlyMetrics <- hourlyDesc %>% slice(hourlyIndices) %>% pull(metric)
+        hourlyMetrics <- paste0(hourlyMetrics, collapse=",")
+        cat("\nHourly metrics created from indices:", hourlyMetrics, "\n\n")
+    }
+    
+    # Get daily metrics by index if relevant
+    if(is.null(dailyMetrics) & !is.null(dailyIndices)) {
+        dailyMetrics <- dailyDesc %>% slice(dailyIndices) %>% pull(metric)
+        dailyMetrics <- paste0(dailyMetrics, collapse=",")
+        cat("\nDaily metrics created from indices:", dailyMetrics, "\n\n")
+    }
+    
+    # Use default values from OpenMeteoURLCreate() for startDate, endDate, and tz if passed as NULL
+    if(is.null(startDate)) startDate <- eval(formals(openMeteoURLCreate)$startDate)
+    if(is.null(endDate)) endDate <- eval(formals(openMeteoURLCreate)$endDate)
+    if(is.null(tz)) tz <- eval(formals(openMeteoURLCreate)$tz)
+    
+    # Create and return URL
+    openMeteoURLCreate(lat=lat,
+                       lon=lon, 
+                       startDate=startDate, 
+                       endDate=endDate, 
+                       hourlyMetrics=hourlyMetrics, 
+                       dailyMetrics=dailyMetrics, 
+                       tz=tz,
+                       ...
+    )
+    
+}
+
+
+# Read JSON data returned from Open Meteo
+readOpenMeteoJSON <- function(js, mapDaily=tblMetricsDaily, mapHourly=tblMetricsHourly) {
+    
+    # FUNCTION arguments: 
+    # js: JSON list returned by download from Open-Meteo
+    # mapDaily: mapping file for daily metrics
+    # mapHourly: mapping file for hourly metrics
+    
+    # Get the object and names
+    jsObj <- jsonlite::read_json(js, simplifyVector = TRUE)
+    nms <- jsObj %>% names()
+    cat("\nObjects in JSON include:", paste(nms, collapse=", "), "\n\n")
+    
+    # Set default objects as NULL
+    tblDaily <- NULL
+    tblHourly <- NULL
+    tblUnitsDaily <- NULL
+    tblUnitsHourly <- NULL
+    
+    # Get daily and hourly as tibble if relevant
+    if("daily" %in% nms) tblDaily <- jsObj$daily %>% tibble::as_tibble() %>% omProcessDaily()
+    if("hourly" %in% nms) tblHourly <- jsObj$hourly %>% tibble::as_tibble() %>% omProcessHourly()
+    
+    # Helper function for unit conversions
+    helperMetricUnit <- function(x, mapper, desc=NULL) {
+        if(is.null(desc)) 
+            desc <- as.list(match.call())$x %>% 
+                deparse() %>% 
+                stringr::str_replace_all(pattern=".*\\$", replacement="")
+        x %>% 
+            tibble::as_tibble() %>% 
+            pivot_longer(cols=everything()) %>% 
+            left_join(mapper, by=c("name"="metric")) %>% 
+            mutate(value=stringr::str_replace(value, "\u00b0", "deg ")) %>% 
+            mutate(metricType=desc) %>% 
+            select(metricType, everything())
+    }
+    
+    # Get the unit descriptions
+    if("daily_units" %in% nms) tblUnitsDaily <- helperMetricUnit(jsObj$daily_units, mapDaily)
+    if("hourly_units" %in% nms) tblUnitsHourly <- helperMetricUnit(jsObj$hourly_units, mapHourly)
+    if(is.null(tblUnitsDaily) & !is.null(tblUnitsHourly)) tblUnits <- tblUnitsHourly
+    else if(!is.null(tblUnitsDaily) & is.null(tblUnitsHourly)) tblUnits <- tblUnitsDaily
+    else if(!is.null(tblUnitsDaily) & !is.null(tblUnitsHourly)) 
+        tblUnits <- bind_rows(tblUnitsHourly, tblUnitsDaily)
+    else tblUnits <- NULL
+    
+    # Put everything else together
+    tblDescription <- jsObj[setdiff(nms, c("hourly", "hourly_units", "daily", "daily_units"))] %>%
+        tibble::as_tibble()
+    
+    # Return the list objects
+    list(tblDaily=tblDaily, tblHourly=tblHourly, tblUnits=tblUnits, tblDescription=tblDescription)
+    
+}
+
+
+# Return Open meteo metadata in prettified format
+prettyOpenMeteoMeta <- function(df, extr="tblDescription") {
+    if("list" %in% class(df)) df <- df[[extr]]
+    for(name in names(df)) {
+        cat("\n", name, ": ", df %>% pull(name), sep="")
+    }
+    cat("\n\n")
+}
+
+
+# Process Open Meteo daily data
+omProcessDaily <- function(tbl, extr="tblDaily") {
+    if("list" %in% class(tbl)) tbl <- tbl[[extr]]
+    tbl %>% mutate(date=lubridate::ymd(time)) %>% select(date, everything())
+}
+
+
+# Process Open meteo hourly data
+omProcessHourly <- function(tbl, extr="tblHourly") {
+    if("list" %in% class(tbl)) tbl <- tbl[[extr]]
+    tbl %>% 
+        mutate(origTime=time, 
+               time=lubridate::ymd_hm(time), 
+               date=lubridate::date(time), 
+               hour=lubridate::hour(time)
+        ) %>% 
+        select(time, date, hour, everything())
+}
+
+
+newCityPredict <- function(rf, 
+                           dfTest, 
+                           trueCol, 
+                           isContVar=FALSE,
+                           reportR2=isTRUE(isContVar), 
+                           plotCont=isTRUE(isContVar), 
+                           reportAcc=TRUE, 
+                           rndReport=2, 
+                           useLabel="requested data",
+                           useTitle=NULL,
+                           useSub=NULL, 
+                           rndTo=NULL,
+                           rndBucketsAuto=100,
+                           nSig=NULL,
+                           refXY=FALSE, 
+                           returnData=TRUE
+                           ) {
+    
+    # FUNCTION ARGUMENTS:
+    # rf: The existing "ranger" model OR a list containing element "rf" that has the existing "ranger" model
+    # dfTest: the new dataset for predictions
+    # trueCol: column containing true value
+    # isContVar: boolean, is the variable continuous? (default FALSE means categorical)
+    # reportR2: boolean, should accuracy be calculated as R-squared?
+    #           (FALSE measures as categorical)
+    # plotCont: boolean, should plotting assume continuous variables?
+    #           (FALSE assumes confusion plot for categorical variables)
+    # reportAcc: boolean, should accuracy be reported (printed to output)?
+    # rndReport: number of significant digits for reporting (will be converted to percentage first)
+    # useLabel: label for data to be used in reporting
+    # useTitle: title to be used for chart (NULL means create from trueCol)
+    # useSub: subtitle to be used for chart (NULL means none)
+    # rndTo: every number in x should be rounded to the nearest rndTo
+    #        NULL means no rounding (default)
+    #        -1L means make an estimate based on data
+    # rndBucketsAuto: integer, if rndTo is -1L, about how many buckets are desired for predictions?
+    # nSig: number of significant digits for automatically calculated rounding parameter
+    #       (NULL means calculate exactly)
+    # refXY: boolean, should a reference line for y=x be included? (relevant only for continuous)
+    # returnData: boolean, should a list be returned containing tstPred and rfAcc?
+    
+    # Get the ranger data
+    if(!("ranger" %in% class(rf))) {
+        if(!("rf" %in% names(rf))) {
+            stop("\nERROR: rf must be of class 'ranger' OR a list with element 'rf' that is of class 'ranger")
+        }
+        rf <- rf[["rf"]]
+    }
+    if(!("ranger" %in% class(rf)))
+        stop("\nERROR: rf must be of class 'ranger' OR a list with element 'rf' that is of class 'ranger")
+    
+    # Predict on new dataset
+    tstPred <- predictRF(rf=rf, df=dfTest)
+    
+    # Report on accuracy
+    rfAcc <- reportAccuracy(tstPred, 
+                            trueCol=trueCol, 
+                            reportAcc=reportAcc,
+                            rndReport=rndReport, 
+                            useLabel=useLabel, 
+                            reportR2=reportR2,
+                            returnAcc=TRUE
+    )
+    
+    # Plot confusion data
+    plotConfusion(tstPred, 
+                  trueCol=trueCol, 
+                  useTitle=useTitle,
+                  useSub=useSub, 
+                  plotCont=plotCont, 
+                  rndTo=rndTo,
+                  rndBucketsAuto=rndBucketsAuto,
+                  nSig=nSig,
+                  refXY=refXY
+    )
+    
+    # Return data if requested
+    if(isTRUE(returnData)) return(list(tstPred=tstPred, rfAcc=rfAcc))
+    
+}
+
+
+formatOpenMeteoJSON <- function(x, 
+                                glimpseData=TRUE, 
+                                addVars=FALSE, 
+                                addExtract="tblHourly", 
+                                showStats=addVars
+                                ) {
+    
+    # FUNCTION ARGUMENTS:
+    # x: Saved json file for passage to readOpenMeteoJSON
+    # glimpseData: boolean, should a glimpse of the file and metadata be shown?
+    # addVars: boolean, should variables be added for later processing?
+    # addExtract: list elemented to be extracted (relevant only for addVars=TRUE)
+    # showStats: boolean, should counts of key elements be shown (relevant only for addVars=TRUE)
+    
+    # Read file
+    lst <- readOpenMeteoJSON(x)
+    
+    # Show a glimpse if requested
+    if(isTRUE(glimpseData)) {
+        print(lst)
+        prettyOpenMeteoMeta(lst)
+    }
+    
+    # If no variables to be added, return the file
+    if(!isTRUE(addVars)) return(lst)
+    
+    # Add statistics
+    df <- lst[[addExtract]] %>%
+        mutate(year=year(date), 
+               month=factor(month.abb[lubridate::month(date)], levels=month.abb), 
+               hour=lubridate::hour(time), 
+               fct_hour=factor(hour), 
+               tod=ifelse(hour>=7 & hour<=18, "Day", "Night"), 
+               doy=yday(date),
+               season=case_when(month %in% c("Mar", "Apr", "May") ~ "Spring", 
+                                month %in% c("Jun", "Jul", "Aug") ~ "Summer", 
+                                month %in% c("Sep", "Oct", "Nov") ~ "Fall", 
+                                month %in% c("Dec", "Jan", "Feb") ~ "Winter", 
+                                TRUE~"typo"
+               ), 
+               todSeason=paste0(season, "-", tod), 
+               tod=factor(tod, levels=c("Day", "Night")), 
+               season=factor(season, levels=c("Spring", "Summer", "Fall", "Winter")), 
+               todSeason=factor(todSeason, 
+                                levels=paste0(rep(c("Spring", "Summer", "Fall", "Winter"), each=2), 
+                                              "-", 
+                                              c("Day", "Night")
+                                )
+               ),
+               across(where(is.numeric), .fns=function(x) round(100*percent_rank(x)), .names="pct_{.col}")
+        )
+    
+    # Show counts if requested
+    if(isTRUE(showStats)) {
+        # Glimpse file
+        glimpse(df)
+        # Counts of day-of-year/month
+        p1 <- df %>% 
+            count(doy, month) %>% 
+            ggplot(aes(y=doy, x=month)) + 
+            geom_boxplot(aes(weight=n), fill="lightblue") + 
+            labs(title="Observations by day-of-year and month", x=NULL, y="Day of Year")
+        print(p1)
+        # Counts of year/month
+        p2 <- df %>% 
+            count(year, month) %>% 
+            ggplot(aes(y=factor(year), x=month)) + 
+            geom_tile(aes(fill=n)) + 
+            geom_text(aes(label=n), size=3) + 
+            scale_fill_continuous("# Records", low="white", high="green") + 
+            labs(title="Records by year and month", x=NULL, y=NULL)
+        print(p2)
+        # Counts of todSeason-season-tod, hour-fct_hour-tod, and month-season
+        df %>% count(todSeason, season, tod) %>% print()
+        df %>% count(hour, fct_hour, tod) %>% print(n=30)
+        df %>% count(month, season) %>% print()
+    }
+    
+    # Return the file
+    df
+    
+}
+
+
+# Approximate formula for relative humidity
+# Source https://www.omnicalculator.com/physics/relative-humidity
+calcRH <- function(t, d, c1=17.63, c2=243) {
+    100 * exp((c1*d)/(c2+d)) / exp((c1*t)/(c2+t))
+}
+
+
+# Approximate formula for vapor pressure deficit
+# Source https://pulsegrow.com/blogs/learn/vpd
+calcVPD <- function(t, d, c1=610.78, c2=17.2694, c3=237.3) {
+    # SVP (saturation vapor pressure) = 610.78 * exp(T * 17.2694 / (T + 237.3))
+    # VPD = (1 - RH/100) * SVP
+    # Formula produces VPD in Pa, divide by 1000 to convert to kPa
+    (1 - calcRH(t, d)/100) * c1 * exp(t * c2 / (t + c3)) / 1000
+}
+
+
+singleCityGLM <- function(dfTrain, 
+                          dfTest=dfTrain, 
+                          srcKey="NYC", 
+                          plotPred=TRUE, 
+                          printAcc=TRUE, 
+                          returnGLM=TRUE
+                          ) {
+    
+    # FUNCTION ARGUMENTS
+    # dfTrain: training data
+    # dfTest: test data
+    # srcKey: cities that will be considered "positive" for GLM
+    # plotPred: boolean, should boxplot of probability by actual city be plotted?
+    # printAcc: boolean, should report of accuracy by test/train and actual city be reported?
+    # returnGLM: boolean, should the GLM model be returned?
+    
+    tst <- dfTrain %>% 
+        mutate(isKey=ifelse(src %in% srcKey, 1, 0)) %>%
+        select(isKey, all_of(varsTrain)) %>% 
+        select(-diffuse_radiation) %>% # perfectly correlated with other radiation variables
+        glm(isKey ~ ., data=., family="binomial")
+    
+    if(isTRUE(plotPred)) {
+        p1 <- dfTest %>% 
+            mutate(pred=predict(tst, newdata=., type="response")) %>% 
+            ggplot(aes(x=src, y=pred)) + 
+            geom_boxplot(fill="lightblue", outlier.shape=NA) + 
+            facet_wrap(~tt) + 
+            labs(x=NULL, 
+                 y=paste0("Predicted probability of ", paste(srcKey, collapse=", ")), 
+                 title=paste0("Boxplot for predicted probability of ", paste(srcKey, collapse=", ")), 
+                 subtitle="Outliers not plotted"
+            )
+        print(p1)
+    }
+    
+    if(isTRUE(printAcc)) {
+        
+        # Accuracy on holdout using 0.5 as threshold
+        dfTest %>% 
+            mutate(pred=predict(tst, newdata=., type="response")) %>% 
+            group_by(tt, src) %>%
+            summarize(acc=mean(ifelse(src %in% srcKey, pred>0.5, pred<0.5)), .groups="drop") %>%
+            pivot_wider(id_cols="src", names_from="tt", values_from="acc") %>%
+            print()
+        
+    }
+    
+    if(isTRUE(returnGLM)) return(tst)
+    
+}
+
+
+comboVarRF <- function(possXVars, 
+                       yVar,
+                       isContVar,
+                       dfTrain=dfTrainCloud[,] %>% mutate(weathercode=factor(weathercode)), 
+                       idxTrain=NULL,
+                       dfTest=dfTestCloud %>% mutate(weathercode=factor(weathercode)), 
+                       mtry=2, 
+                       keyLabel="predictions based on pre-2022 training data applied to 2022 holdout dataset"
+                       ) {
+    
+    # FUNCTION ARGUMENTS:
+    # possXVars: vector of x-variables (each combination of 2 variables will be explored)
+    # yVar: dependent variable
+    # isContVar: boolean, is yVar continuous (regression) or discrete (classification)?
+    # dfTrain: training dataset
+    # idxTrain: indices from the training data to use (NULL means use all)
+    # dfTest: test dataset
+    # mtry: parameter passed to ranger::ranger() - mtry=2 means use both variables in every tree
+    # keyLabel: descriptive text for reporting accuracy
+    
+    # Create matrix for storing data
+    mtxLarge <- matrix(nrow=0, ncol=3)
+    
+    # Update training data for indices (if provided)
+    if(!is.null(idxTrain)) dfTrain <- dfTrain[idxTrain, ]
+    
+    # Run select combinations
+    for(idx1 in 1:(length(possXVars)-1)) {
+        for(idx2 in (idx1+1):length(possXVars)) {
+            r2Large <- runFullRF(dfTrain=dfTrain, 
+                                 yVar=yVar, 
+                                 xVars=possXVars[c(idx1, idx2)], 
+                                 dfTest=dfTest,
+                                 useLabel=keyLabel, 
+                                 useSub=stringr::str_to_sentence(keyLabel), 
+                                 isContVar=isContVar,
+                                 mtry=mtry,
+                                 makePlots=FALSE,
+                                 returnData=TRUE
+            )[["rfAcc"]]
+            if(isTRUE(isContVar)) r2Large <- r2Large[["r2"]]
+            mtxLarge <- rbind(mtxLarge, c(idx1, idx2, r2Large))
+        }
+    }
+    
+    # Create tibble of accuracy/R2 by combination
+    dfLargeR2 <- as.data.frame(mtxLarge) %>% 
+        purrr::set_names(c("idx1", "idx2", "r2")) %>% 
+        tibble::as_tibble() %>% 
+        mutate(var1=possXVars[idx1], var2=possXVars[idx2], rn=row_number()) 
+    
+    # Print top 20
+    dfLargeR2 %>% 
+        arrange(desc(r2)) %>% 
+        select(var1, var2, r2) %>% 
+        print(n=20)
+    
+    # Return the data
+    dfLargeR2
+    
+}
+
+
+mtxToDFComboVar <- function(mtxVars, 
+                            vecVarNames,
+                            reportData=TRUE,
+                            returnData=TRUE
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # mtxVars: matrix containing variables and R2/accuracy data with columns idx1-idx2-r2/acc
+    # vecVarNames: vector containing (in order) the name associated with each index
+    # reportData: should a sorted sample of data be printed?
+    #             FALSE: do not print
+    #             integer or float: print round(reportData) items
+    #             TRUE or anything that is not boolean, integer, or float: print 20 items
+    # returnData: boolean, should data be returned?
+    
+    # Create tibble from existing file
+    df <- as.data.frame(mtxVars) %>% 
+        purrr::set_names(c("idx1", "idx2", "r2")) %>% 
+        tibble::as_tibble() %>% 
+        mutate(var1=vecVarNames[idx1], var2=vecVarNames[idx2], rn=row_number()) 
+    
+    # Print results of tibble if requested
+    if(!isFALSE(reportData)) {
+        if(class(reportData) %in% c("numeric", "integer")) nPrint=round(max(reportData, 1))
+        else nPrint=20
+        df %>% 
+            arrange(desc(r2)) %>% 
+            select(var1, var2, r2) %>% 
+            print(n=nPrint)
+    }
+    
+    # Return tibble if requested
+    if(isTRUE(returnData)) return(df)
+    
+}
+
+
+accComboVarRF <- function(df, 
+                          yVarName,
+                          exclVars=c(),
+                          plotData=TRUE,
+                          printData=!isTRUE(plotData), 
+                          nPrint=20,
+                          isR2=TRUE, 
+                          plotTitle=TRUE, 
+                          plotSub=TRUE, 
+                          plotYLab=TRUE, 
+                          plotXLab=NULL
+                          ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame (such as from mtxToDFComboVar()) containing idx1-idx2-r2-var1-var2-rn
+    # yVarName: name to be used for dependent variable
+    # exclVars: independent variables that are excluded from consideration
+    # plotData: boolean, should the data (post-exclusions) be plotted?
+    # printData: boolean, should the data (post-exclusions) be printed?
+    # nPrint: number of rows to print (relevant only for isTRUE(printData))
+    # isR2: boolean, are the data R-squared (FALSE means accuracy)?
+    # plotTitle: title to be used for plot (TRUE means use default)
+    # plotSub: subtitle to be used for plot (TRUE means use default)
+    # plotYLab: y-axis-label to be used for plot (TRUE means use default)
+    # plotXLab: x-axis-label to be used for plot (NULL is the default)
+    
+    # Update plot titles
+    if(isTRUE(isR2)) dsc <- "R-squared" else dsc <- "Accuracy"
+    if(isTRUE(plotTitle)) 
+        plotTitle <- paste0(dsc, " in every 2-predictor model including self and one other")
+    if(isTRUE(plotSub)) {
+        plotSub <- paste0("Predicting ", yVarName)
+        if(length(exclVars)>0) plotSub <- paste0(plotSub, 
+                                                 " (excluding predictors ", 
+                                                 paste0(exclVars, collapse=", "), 
+                                                 ")"
+        )
+    }
+    if(isTRUE(plotYLab)) 
+        plotYLab <- paste0("Range of ", dsc, " (min-mean-max)")
+    
+    # Update df to exclude exclVars, if passed
+    if(length(exclVars)>0) df <- df %>% filter(!(var1 %in% exclVars), !(var2 %in% exclVars))
+    
+    # Print data if requested
+    if(isTRUE(printData)) df %>% arrange(desc(r2)) %>% select(var1, var2, r2) %>% print(n=nPrint)
+    
+    # Create plot if requested
+    if(isTRUE(plotData)) {
+        p1 <- df %>% 
+            pivot_longer(cols=c(var1, var2)) %>% 
+            group_by(value) %>% 
+            summarize(across(r2, .fns=list("min"=min, "mu"=mean, "max"=max))) %>% 
+            ggplot(aes(x=fct_reorder(value, r2_mu))) + 
+            coord_flip() + 
+            geom_point(aes(y=r2_mu)) + 
+            geom_errorbar(aes(ymin=r2_min, ymax=r2_max)) + 
+            lims(y=c(NA, 1)) + 
+            geom_hline(yintercept=1, lty=2, color="red") +
+            labs(title=plotTitle, subtitle=plotSub, y=plotYLab, x=plotXLab)
+        print(p1)
+    }
+}
+
+
+getVarsTrain <- function(df) {
+    # Create set of relevant training variables
+    df %>%
+        select(starts_with("pct")) %>%
+        names() %>%
+        str_replace(pattern="pct_", replacement="")
+}
+
+
+genericKeyLabelOM <- function() 
+    "predictions based on pre-2022 training data applied to 2022 holdout dataset"
