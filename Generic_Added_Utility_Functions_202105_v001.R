@@ -47,6 +47,17 @@
 # 43. zeroNA() - convert NA data in a vector to 0
 # 44. findDeltaFromMax() - find declines in a series that should be monotonically non-decreasing
 # 45. cleanMem() - delete files and check memory impact
+# 46. partialCSVRead() - read part of a CSV file
+# 47. vecGaps() - Get break points for vector (e.g., c(0, 3, 5:8, 20) returns 0, 3, 5, 20 and 0, 3, 8, 20)
+# 48. flatFileGaps() - find break points in flat file
+# 49. readMultiCSV() - treat a single flat file with multiple gaps as a single CSV, and read it
+# 50. plotClusterMeans() - plot means by cluster/variable for a k-means object
+# 51. plotClusterPct() - variations in 1 or 2 key variables by k-means cluster
+# 52. runKMeans() - run k-means on specified data OR use an existing k-means object, and plot key data
+# 53. assignKMeans() - assign points to the nearest centroid of a provided k-means object
+# 54. autoRound() - round every number in a vector, using automated rules if new rndTo parameter is passed
+# 55. reorder_cormat() - Reorder output of correlation matrix for better heatmap plotting copied from STHDA)
+# 56, makeHeatMap() - create a correlation heatmap, reordering variables as requested
 
 # Function for saving an R object to RDS, including a check for whether the object already exists
 saveToRDS <- function(obj, 
@@ -1454,3 +1465,323 @@ cleanMem <- function(objs=c(), runGC=TRUE, delObjs=FALSE) {
     }
     
 }
+
+
+# Helper function for reading a partial CSV file
+partialCSVRead <- function(loc, firstRow=1L, lastRow=+Inf, col_names=TRUE, ...) {
+    
+    # FUNCTION arguments
+    # loc: file location
+    # firstRow: first row that is relevant to the partial file read (whether header line or data line)
+    # last Row: last row that is relevant to the partial file read (+Inf means read until last line of file)
+    # col_names: the col_names parameter passed to readr::read_csv
+    #            TRUE means header=TRUE (get column names from file, read data starting on next line)
+    #            FALSE means header=FALSE (auto-generate column names, read data starting on first line)
+    #            character vector means use these as column names (read data starting on first line)
+    # ...: additional arguments passed to read_csv
+    
+    # Read the file and return
+    # skip: rows to be skipped are all those prior to firstRow
+    # n_max: maximum rows read are lastRow-firstRow, with an additional data row when col_names is not TRUE
+    readr::read_csv(loc, 
+                    col_names=col_names,
+                    skip=firstRow-1, 
+                    n_max=lastRow-firstRow+ifelse(isTRUE(col_names), 0, 1), 
+                    ...
+    )
+    
+}
+
+
+# Get the break points for gaps in a vector (e.g., 0, 3, 5:8, 20 has break points 0, 3, 5, 20 and 0, 3, 8, 30)
+vecGaps <- function(x, addElements=c(), sortUnique=TRUE) {
+    
+    if(length(addElements)>0) x <- c(addElements, x)
+    if(isTRUE(sortUnique)) x <- unique(sort(x))
+    list("starts"=c(x[is.na(lag(x)) | x-lag(x)>1], +Inf), 
+         "ends"=x[is.na(lead(x)) | lead(x)-x>1]
+    )
+    
+}
+
+
+# Find the break points in a single file
+flatFileGaps <- function(loc) {
+    
+    which(stringr::str_length(readLines(loc))==0) %>% vecGaps(addElements=0)
+    
+}
+
+
+# Read all relevant data as CSV with header
+readMultiCSV <- function(loc, col_names=TRUE, ...) {
+    
+    gaps <- flatFileGaps(loc)
+    
+    lapply(seq_along(gaps$ends), 
+           FUN=function(x) partialCSVRead(loc, 
+                                          firstRow=gaps$ends[x]+1, 
+                                          lastRow=gaps$starts[x+1]-1, 
+                                          col_names=col_names, 
+                                          ...
+           )
+    )
+    
+}
+
+
+# Plot the means by cluster and variable for a k-means object
+plotClusterMeans <- function(km, nrow=NULL, ncol=NULL, scales="fixed") {
+    
+    # FUNCTION ARGUMENTS
+    # km: object returned by stats::kmeans(...)
+    # nrow: number of rows for faceting (NULL means default)
+    # ncol: number of columns for faceting (NULL means default)
+    # scales: passed to facet_wrap as scales=scales
+    
+    # Assess clustering by dimension
+    p1 <- km$centers %>%
+        tibble::as_tibble() %>%
+        mutate(cluster=row_number()) %>%
+        pivot_longer(cols=-c(cluster)) %>%
+        ggplot(aes(x=fct_reorder(name, 
+                                 value, 
+                                 .fun=function(a) ifelse(length(a)==2, a[2]-a[1], diff(range(a)))
+                                 ), 
+                   y=value
+                   )
+               ) + 
+        geom_point(aes(color=factor(cluster))) + 
+        scale_color_discrete("Cluster") + 
+        facet_wrap(~factor(cluster), nrow=nrow, ncol=ncol, scales=scales) +
+        labs(title=paste0("Cluster means (kmeans, centers=", nrow(km$centers), ")"), 
+             x="Metric", 
+             y="Cluster mean"
+        ) + 
+        geom_hline(yintercept=median(km$centers), lty=2) +
+        coord_flip()
+    print(p1)
+    
+}
+
+
+# Plot percentage by cluster
+plotClusterPct <- function(df, km, keyVars, nRowFacet=1, printPlot=TRUE) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame initially passed to stats::kmeans(...)
+    # km: object returned by stats::kmeans(...)
+    # keyVars: character vector of length 1 (y-only, x will be cl) or length 2 (x, y, cl will facet)
+    # nRowFacet: number of rows for facetting (only relevant if length(keyVars) is 2)
+    # printPlot: boolean, should plot be printed? (if not true, plot will be returned)
+    
+    # Check length of keyVars
+    if(!(length(keyVars) %in% c(1, 2))) stop("\nArgument keyVars must be length-1 or length-2\n")
+    
+    p1 <- df %>%
+        mutate(cl=factor(km$cluster)) %>%
+        group_by(across(c(all_of(keyVars), "cl"))) %>%
+        summarize(n=n(), .groups="drop") %>%
+        group_by(across(all_of(keyVars))) %>%
+        mutate(pct=n/sum(n)) %>%
+        ungroup() %>%
+        ggplot() + 
+        scale_fill_continuous(low="white", high="green") + 
+        labs(title=paste0("Percentage by cluster (kmeans with ", nrow(km$centers), " centers)"), 
+             x=ifelse(length(keyVars)==1, "Cluster", keyVars[1]), 
+             y=ifelse(length(keyVars)==1, keyVars[1], keyVars[2])
+             )
+    if(length(keyVars)==1) p1 <- p1 + geom_tile(aes(fill=pct, x=cl, y=get(keyVars[1])))
+    if(length(keyVars)==2) {
+        p1 <- p1 + 
+            geom_tile(aes(fill=pct, x=get(keyVars[1]), y=get(keyVars[2]))) + 
+            facet_wrap(~cl, nrow=nRowFacet)
+    }
+    
+    if(isTRUE(printPlot)) print(p1)
+    else return(p1)
+    
+}
+
+
+# Run k-means (or use passed k-means object) and plot centers and percentages of observations
+runKMeans <- function(df, 
+                      km=NULL,
+                      vars=NULL, 
+                      centers=2, 
+                      nStart=1L, 
+                      iter.max=10L, 
+                      seed=NULL, 
+                      plotMeans=FALSE,
+                      nrowMeans=NULL,
+                      plotPct=NULL, 
+                      nrowPct=1, 
+                      returnKM=is.null(km)
+                      ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: data frame for clustering
+    # km: k-means object (will shut off k-means processing and run as plot-only)
+    # vars: variables to be used for clustering (NULL means everything in df)
+    # centers: number of centers
+    # nStart: passed to kmeans
+    # iter.max: passed to kmeans
+    # seed: seed to be set (if NULL, no seed is set)
+    # plotMeans: boolean, plot variable means by cluster?
+    # nrowMeans: argument passed as nrow for faceting rows in plotClusterMeans() - NULL is default ggplot2
+    # plotPct: list of character vectors to be passed sequentially as keyVars to plotClusterPct()
+    #          NULL means do not run
+    #          pctByCluster=list(c("var1"), c("var2", "var3")) will run plotting twice
+    # nrowPct: argument for faceting number of rows in plotClusterPct()
+    # returnKM: boolean, should the k-means object be returned?
+    
+    # Set seed if requested
+    if(!is.null(seed)) set.seed(seed)
+    
+    # Get the variable names if passed as NULL
+    if(is.null(vars)) vars <- names(df)
+    
+    # Run the k-means process if the object has not been passed
+    if(is.null(km)) {
+        km <- df %>%
+            select(all_of(vars)) %>% 
+            kmeans(centers=centers, iter.max=iter.max, nstart=nStart)
+    }
+    
+    # Assess clustering by dimension if requested
+    if(isTRUE(plotMeans)) plotClusterMeans(km, nrow=nrowMeans)
+    if(!is.null((plotPct))) 
+        for(ctr in 1:length(plotPct)) 
+            plotClusterPct(df=df, km=km, keyVars=plotPct[[ctr]], nRowFacet=nrowPct)
+    
+    # Return the k-means object
+    if(isTRUE(returnKM)) return(km)
+    
+}
+
+
+# Assign points to closest center of a passed k-means object
+assignKMeans <- function(km, df, returnAllDistanceData=FALSE) {
+    
+    # FUNCTION ARGUMENTS:
+    # km: a k-means object
+    # df: data frame or tibble
+    # returnAllDistanceData: boolean, should the distance data and clusters be returned?
+    #                        TRUE returns a data frame with distances as V1, V2, ..., and cluster as cl
+    #                        FALSE returns a vector of cluster assignments as integers
+    
+    # Select columns from df to match km
+    df <- df %>% select(all_of(colnames(km$centers)))
+    if(!all.equal(names(df), colnames(km$centers))) stop("\nName mismatch in clustering and frame\n")
+    
+    # Create the distances and find clusters
+    distClust <- sapply(seq_len(nrow(km$centers)), 
+                        FUN=function(x) sqrt(rowSums(sweep(as.matrix(df), 
+                                                           2, 
+                                                           t(as.matrix(km$centers[x,,drop=FALSE]))
+                        )**2
+                        )
+                        )
+    ) %>% 
+        as.data.frame() %>% 
+        tibble::as_tibble() %>% 
+        mutate(cl=apply(., 1, which.min))
+    
+    # Return the proper file
+    if(isTRUE(returnAllDistanceData)) return(distClust)
+    else return(distClust$cl)
+    
+}
+
+
+# Round every number in a vector, using automated rules if new rndTo parameter is passed
+autoRound <- function(x, rndTo=-1L, rndBucketsAuto=100, nSig=NULL) {
+    
+    # FUNCTION ARGUMENTS
+    # x: vector to be rounded
+    # rndTo: every number in x should be rounded to the nearest rndTo
+    #        NULL means no rounding
+    #        -1L means make an estimate based on data (default)
+    # rndBucketsAuto: integer, if rndTo is -1L, about how many buckets are desired for predictions?
+    # nSig: number of significant digits for automatically calculated rounding parameter
+    #       (NULL means calculate exactly)
+    
+    # If rndTo is passed as NULL, return x as-is
+    if(is.null(rndTo)) return(x)
+    
+    # If rndTo is passed as -1L, make an estimate for rndTo
+    if(isTRUE(all.equal(-1L, rndTo))) {
+        # Get the number of unique values in x
+        nUq <- length(unique(x))
+        # If the number of unique values is no more than 150% of rndToBucketsAuto, return as-is
+        if(nUq <= 1.5*rndBucketsAuto) return(x)
+        # Otherwise, calculate a value for rndTo
+        rndTo <- diff(range(x)) / rndBucketsAuto
+        # Truncate to requested number of significant digits
+        if(!is.null(nSig)) rndTo <- signif(rndTo, digits=nSig)
+    }
+    
+    # Return the rounded vector if it was not already returned
+    return(round(x/rndTo)*rndTo)
+    
+}
+
+
+# Reorder the output of a correlation matrix for better heatmap plotting (Function copied from STHDA)
+reorder_cormat <- function(cormat){
+    # Use correlation between variables as distance
+    dd <- as.dist((1-cormat)/2)
+    hc <- hclust(dd)
+    cormat <-cormat[hc$order, hc$order]
+}
+
+
+# Create a correlation heatmap, reordering variables as requested
+makeHeatMap <- function(df, 
+                        vecSelect=NULL, 
+                        groupSimilar=TRUE, 
+                        upperTriOnly=TRUE, 
+                        plotMap=TRUE, 
+                        returnData=FALSE
+                        ) {
+    
+    # FUNCTION ARGUMENTS:    
+    # df: the data frame or tibble
+    # vecSelect: vector for variables to keep c('keep1', "keep2", ...), NULL means keep all
+    # groupSimilar: boolean, should similar (highly correlated) variables be placed nearby each other?
+    # upperTriOnly: boolean, should only the upper triangle be kept?
+    # plotMap: boolean, should the heatmap be plotted?
+    # returnData: boolean, should the correlation data driving the heatmap be returned
+    
+    # Create correlations
+    df <- df %>%
+        colSelector(vecSelect=vecSelect) %>%
+        cor()
+    
+    # Reorder if requested
+    if(isTRUE(groupSimilar)) df <- df %>% reorder_cormat()
+    
+    # Use only the upper triangle if requested
+    if(isTRUE(upperTriOnly)) df[upper.tri(df)] <- NA
+    
+    # Convert to tidy tibble
+    df <- df %>%
+        reshape2::melt(na.rm=TRUE) %>%
+        tibble::as_tibble()
+    
+    # Plot map if requested
+    if(isTRUE(plotMap)) {
+        p1 <- df %>%
+            ggplot(aes(x=Var2, y=Var1)) + 
+            geom_tile(aes(fill=value)) +
+            scale_fill_gradient2(NULL, low="blue", high="red", mid="white", midpoint=0, limit=c(-1, 1)) + 
+            labs(x=NULL, y=NULL, title="Pearson correlation of key variables") + 
+            theme(axis.text.x=element_text(angle = 90, vjust = 1, hjust = 1))
+        print(p1)
+    }
+    
+    # Return data if requested
+    if(isTRUE(returnData)) return(df)
+    
+}
+
