@@ -4074,4 +4074,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v004 singleCityGLM() models for six cities used to predict seventh city
 * OpenMeteo_Functions_202411_v001.R created
 * Generic_Added_Utility_Functions_202105_v001.R functions updated  
+* SimpleOneVar_Functions_202411_v001.R created
 
