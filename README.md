@@ -4071,10 +4071,10 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 25-NOV-2024  
 * OpenMeteoEDA_202306_v004 singleCityGLM() models for six cities used to predict seventh city
-* OpenMeteoEDA_202306_v004 singleCityGLM() models for six cities used to predict seventh city
 * OpenMeteo_Functions_202411_v001.R created
 * Generic_Added_Utility_Functions_202105_v001.R functions updated  
 * SimpleOneVar_Functions_202411_v001.R created
 * OpenMeteo_Functions_202411_v001.R updated
 * OpenMeteo_NextBest_202411_v001.R created
+* OpenMeteo_Functions_202411_v001.R updated
 
