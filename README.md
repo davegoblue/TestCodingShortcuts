@@ -4078,3 +4078,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteo_NextBest_202411_v001.R created
 * OpenMeteo_Functions_202411_v001.R updated
 
+### Expansions week of 01-DEC-2024  
+* OpenMeteoEDA_202306_v005 created from _v004
