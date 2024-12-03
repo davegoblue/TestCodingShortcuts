@@ -4080,3 +4080,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 01-DEC-2024  
 * OpenMeteoEDA_202306_v005 created from _v004
+* OpenMeteoEDA_202306_v005 sources key functions
