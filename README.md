@@ -4083,4 +4083,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 sources key functions
 * OpenMeteoEDA_202306_v005 copies mapping tables
 * OpenMeteoEDA_202306_v005 loads existing dataset
-* OpenMeteoEDA_202306_v005 creates correlation heatmap
+* OpenMeteoEDA_202306_v005 creates correlation heatmap with all cities combined
+* OpenMeteoEDA_202306_v005 creates correlation heatmap for a single city
