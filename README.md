@@ -4090,3 +4090,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 08-DEC-2024  
 * OpenMeteoEDA_202306_v005 runs correlations for each individual city
 * OpenMeteoEDA_202306_v005 compares correlations for all city vs. aggregate of individual cities
+* OpenMeteoEDA_202306_v005 creates boxplots of delta (all city vs. individual) by metric
