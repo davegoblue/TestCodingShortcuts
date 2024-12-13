@@ -4092,3 +4092,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 compares correlations for all city vs. aggregate of individual cities
 * OpenMeteoEDA_202306_v005 creates boxplots of delta (all city vs. individual) by metric
 * OpenMeteoEDA_202306_v005 explores example large difference in correlation
+* OpenMeteoEDA_202306_v005 tmpSmoothPlot() written
