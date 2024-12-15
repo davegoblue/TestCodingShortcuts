@@ -4094,3 +4094,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 explores example large difference in correlation
 * OpenMeteoEDA_202306_v005 tmpSmoothPlot() written
 * OpenMeteoEDA_202306_v005 tmpSmoothPlot() tested
+* OpenMeteoEDA_202306_v005 tmpSmoothPlot() updated for rounding
