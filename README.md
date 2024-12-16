@@ -4095,3 +4095,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 tmpSmoothPlot() written
 * OpenMeteoEDA_202306_v005 tmpSmoothPlot() tested
 * OpenMeteoEDA_202306_v005 tmpSmoothPlot() updated for rounding
+
+### Expansions week of 15-DEC-2024  
+* OpenMeteoEDA_202306_v005 tmpSmoothPlot() rounding tested
