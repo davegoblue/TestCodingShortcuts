@@ -4101,3 +4101,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 explores predictions for surface pressure ~ dewpoint
 * OpenMeteoEDA_202306_v005 explores predictions for surface pressure ~ dewpoint, controlling for city
 * OpenMeteoEDA_202306_v005 downloads daily data for a new city
+* OpenMeteoEDA_202306_v005 loads daily data for a new city
