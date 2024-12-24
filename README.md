@@ -4107,3 +4107,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 22-DEC-2024  
 * OpenMeteoEDA_202306_v005 plots select categorical variables by month
+* OpenMeteoEDA_202306_v005 plots select continuous variables by year
