@@ -4078,7 +4078,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteo_NextBest_202411_v001.R created
 * OpenMeteo_Functions_202411_v001.R updated
 
-### Expansions week of 01-DEC-2024  
+### Expansions week of 02-DEC-2024  
 * OpenMeteoEDA_202306_v005 created from _v004
 * OpenMeteoEDA_202306_v005 sources key functions
 * OpenMeteoEDA_202306_v005 copies mapping tables
@@ -4087,7 +4087,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 creates correlation heatmap for a single city
 * OpenMeteoEDA_202306_v005 compares a single city correlation to all cities combined correlation
 
-### Expansions week of 08-DEC-2024  
+### Expansions week of 09-DEC-2024  
 * OpenMeteoEDA_202306_v005 runs correlations for each individual city
 * OpenMeteoEDA_202306_v005 compares correlations for all city vs. aggregate of individual cities
 * OpenMeteoEDA_202306_v005 creates boxplots of delta (all city vs. individual) by metric
@@ -4096,7 +4096,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 tmpSmoothPlot() tested
 * OpenMeteoEDA_202306_v005 tmpSmoothPlot() updated for rounding
 
-### Expansions week of 15-DEC-2024  
+### Expansions week of 16-DEC-2024  
 * OpenMeteoEDA_202306_v005 tmpSmoothPlot() rounding tested
 * OpenMeteoEDA_202306_v005 explores predictions for surface pressure ~ dewpoint
 * OpenMeteoEDA_202306_v005 explores predictions for surface pressure ~ dewpoint, controlling for city
@@ -4105,7 +4105,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 converts variables to proper types
 * OpenMeteoEDA_202306_v005 plots select continuous variables by month
 
-### Expansions week of 22-DEC-2024  
+### Expansions week of 23-DEC-2024  
 * OpenMeteoEDA_202306_v005 plots select categorical variables by month
 * OpenMeteoEDA_202306_v005 plots select continuous variables by year
 * OpenMeteoEDA_202306_v005 plots select categorical variables by year
