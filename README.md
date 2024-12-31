@@ -4116,4 +4116,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 30-DEC-2024  
 * OpenMeteoEDA_202306_v005 ACF/PACF for precipitation
-
+* OpenMeteoEDA_202306_v005 ACF/PACF for wind speed
