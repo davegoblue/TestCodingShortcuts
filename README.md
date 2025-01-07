@@ -4125,3 +4125,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 06-JAN-2025  
 * OpenMeteoEDA_202306_v005 rolling 21-day means +/- 1 SD by metric and day of year
+* OpenMeteoEDA_202306_v005 rolling 21-day means +/- 1 SEM by metric and day of year
