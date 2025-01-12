@@ -4130,3 +4130,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 explores cumulative percent of total precipitation by daily precipitation amount by decade
 * OpenMeteoEDA_202306_v005 explores precipitation trend break in 2017
 * OpenMeteoEDA_202306_v005 explores pre-2017 precipitation by month
+* OpenMeteoEDA_202306_v005 explores post-2017 precipitation by month
