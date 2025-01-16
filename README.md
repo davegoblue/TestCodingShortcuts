@@ -4136,3 +4136,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 explores pre/post-2017 precipitation volume by month on same plot
 * OpenMeteoEDA_202306_v005 explores pre/post-2017 days of precipitation by month on same plot
 * OpenMeteoEDA_202306_v005 explores pre/post-2017 mean/median precipitation (on days with precipitation > 0) by month on same plot
+* OpenMeteoEDA_202306_v005 explores pre/post-2017 maximum 3-day precipitation by year on same plot
