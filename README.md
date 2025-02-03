@@ -4158,3 +4158,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 boxplot for daily temperature change by month
 * OpenMeteoEDA_202306_v005 boxplot for daily wind speed change by month
 * OpenMeteoEDA_202306_v005 boxplot for daily precipitation change by month
+
+### Expansions week of 03-FEB-2025  
+* OpenMeteoEDA_202306_v005 rolling 21-day means by metric and day of year
