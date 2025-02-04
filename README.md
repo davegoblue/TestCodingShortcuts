@@ -4161,3 +4161,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 03-FEB-2025  
 * OpenMeteoEDA_202306_v005 rolling 21-day means by metric and day of year
+* OpenMeteoEDA_202306_v005 rolling 21-day standard deviation by metric and day of year
