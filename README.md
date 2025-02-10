@@ -4167,3 +4167,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 explores cumulative percent of total precipitation by daily precipitation amount
 * OpenMeteoEDA_202306_v005 explores cumulative percent of total precipitation by daily precipitation amount by decade
 * OpenMeteoEDA_202306_v005 downloads daily data for a new city
+
+### Expansions week of 10-FEB-2025  
+* OpenMeteoEDA_202306_v005 loads daily data for a new city
+
