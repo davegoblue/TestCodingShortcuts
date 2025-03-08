@@ -4201,3 +4201,4 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 rolling 21-day standard deviation by metric and day of year, for three cities
 * OpenMeteoEDA_202306_v005 rolling 21-day means +/- 1 SEM by metric and day of year, for three cities
 * OpenMeteoEDA_202306_v005 explores cumulative percent of total precipitation by daily precipitation amount, for three cities
+* OpenMeteoEDA_202306_v005 explores frequency of precipitation by change in temperature
