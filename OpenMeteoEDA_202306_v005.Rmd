@@ -2363,3 +2363,35 @@ bind_rows(dfDailyATL, dfDailyORD, dfDailyDTW, .id="src") %>%
 ```
 
 Month is a possible confounder, since temperature change and precipitation both vary by season:  
+```{r, fig.height=9, fig.width=9}
+
+bind_rows(dfDailyATL, dfDailyORD, dfDailyDTW, .id="src") %>%
+    mutate(src=c("1"="Atlanta", "2"="Chicago", "3"="Detroit")[src]) %>%
+    select(src, date, precipitation_sum, temperature_2m_max) %>%
+    group_by(src) %>%
+    mutate(isPrecip=precipitation_sum>0, 
+           dTemp=temperature_2m_max-lag(temperature_2m_max), 
+           month=factor(month.abb[month(date)], levels=month.abb)
+           ) %>%
+    ungroup() %>%
+    filter(complete.cases(.)) %>%
+    mutate(dTempRound=autoRound(dTemp, rndTo=2.5), dTempRound=pmax(-10, pmin(10, dTempRound))) %>%
+    group_by(src, month, dTempRound) %>%
+    summarize(pctPrecip=mean(isPrecip), muPrecip=mean(precipitation_sum), n=n(), .groups="drop") %>%
+    mutate(sdpctPrecip=sqrt(pctPrecip*(1-pctPrecip)/n)) %>%
+    filter(n>=5) %>%
+    ggplot(aes(x=dTempRound)) + 
+    geom_line(aes(y=pctPrecip, color=src, group=src)) + 
+    geom_ribbon(aes(ymin=pctPrecip-sdpctPrecip, ymax=pctPrecip+sdpctPrecip, fill=src, group=src), alpha=0.5) +
+    facet_wrap(~month) +
+    labs(x="Temperature Change from Yesterday (C)\n(rounded to nearest 2.5, capped at +/- 10)", 
+         y="% Days with Precipitation > 0\n(mean +/- 1 SE)", 
+         title="Frequency of precipitation by change in temperature"
+         ) +
+    lims(y=c(0, 1)) + 
+    scale_fill_discrete(NULL) + 
+    scale_color_discrete(guide="none")
+
+```
+  
+At a glance, there appears to be some association between temperature change and frequency of precipitation, even after controlling for city and month
