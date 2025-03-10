@@ -4203,3 +4203,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 explores cumulative percent of total precipitation by daily precipitation amount, for three cities
 * OpenMeteoEDA_202306_v005 explores frequency of precipitation by change in temperature
 * OpenMeteoEDA_202306_v005 explores frequency of precipitation by change in temperature, facetted by month
+
+### Expansions week of 10-MAR-2025  
+* OpenMeteoEDA_202306_v005 downloads daily data for a new city
