@@ -4216,4 +4216,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 17-MAR-2025  
 * OpenMeteoEDA_202306_v005 boxplot for windspeed by month
 * OpenMeteoEDA_202306_v005 boxplot for precipitation by month
+* OpenMeteoEDA_202306_v005 boxplot for temperature by month
 
