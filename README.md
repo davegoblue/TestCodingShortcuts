@@ -4243,4 +4243,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 07-APR-2025  
 * OpenMeteoEDA_202306_v005 boxplot for precipitation by month
 * OpenMeteoEDA_202306_v005 boxplot for snowfall by month
+* OpenMeteoEDA_202306_v005 boxplot for temperature by month
 
