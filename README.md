@@ -4244,4 +4244,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 boxplot for precipitation by month
 * OpenMeteoEDA_202306_v005 boxplot for snowfall by month
 * OpenMeteoEDA_202306_v005 boxplot for temperature by month
+* OpenMeteoEDA_202306_v005 ACF/PACF for temperature
 
