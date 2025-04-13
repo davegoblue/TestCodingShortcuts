@@ -4247,4 +4247,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 ACF/PACF for temperature
 * OpenMeteoEDA_202306_v005 ACF/PACF for precipitation
 * OpenMeteoEDA_202306_v005 ACF/PACF for wind speed
+* OpenMeteoEDA_202306_v005 boxplot for daily temperature change by month
 
