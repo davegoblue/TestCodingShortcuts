@@ -4287,4 +4287,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 12-MAY-2025  
 * OpenMeteoEDA_202306_v005 createDailyDF() written
+* OpenMeteoEDA_202306_v005 createDailyDF() run for a new city
 
