@@ -4290,4 +4290,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 createDailyDF() run for a new city
 * OpenMeteoEDA_202306_v005 plotContVarMean() written
 * OpenMeteoEDA_202306_v005 plotContVarMean() run for a new city
+* OpenMeteoEDA_202306_v005 plotCatVarMean() written
 
