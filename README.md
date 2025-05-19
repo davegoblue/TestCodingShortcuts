@@ -4294,3 +4294,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 plotCatVarMean() run for a new city
 * OpenMeteoEDA_202306_v005 omCreateBoxPlot() written
 
+### Expansions week of 19-MAY-2025  
+* OpenMeteoEDA_202306_v005 omCreateBoxPlot() run for a new city
+
