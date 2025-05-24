@@ -4177,3 +4177,87 @@ omCreateBoxPlot(dfDaily, keyVar="precipitation_sum", chgLag=1, titleLoc="Kansas 
 
 ```
 
+A function is written to calculate means and standard deviations:  
+```{r, fig.height=9, fig.width=9}
+
+omDailyMeanSD <- function(df, 
+                          rollVars, 
+                          rollK,                             
+                          mapDesc=c("windspeed_10m_max"="windMax", 
+                                    "precipitation_hours"="precipHours", 
+                                    "precipitation_sum"="precipSum", 
+                                    "temperature_2m_max"="tempMax", 
+                                    "temperature_2m_min"="tempMin"
+                                    ), 
+                          addSuffix=TRUE, 
+                          makeSEM=FALSE, 
+                          printPlot=TRUE, 
+                          returnPlot=!isTRUE(printPlot)
+                          ) {
+    
+    if(isTRUE(addSuffix)) for(x in names(mapDesc)) mapDesc[x] <- paste0(mapDesc[x], "_r", rollK)
+    
+    # Calculate means
+    df_r21 <- df %>% mutate(doy=pmin(yday(date), 365))
+    
+    for(x in rollVars) {
+        df_r21 <- df_r21 %>% 
+            helperRollingAgg(origVar=x, newName=unname(mapDesc[x]), k=rollK)
+    }
+    
+    df_r21 <- df_r21 %>% select(all_of(c("date", "doy", unname(mapDesc[rollVars]))))
+
+    # Calculate standard deviations
+    df_r21_sd <- df %>%
+        mutate(doy=pmin(yday(date), 365)) %>% 
+        group_by(doy) %>%
+        mutate(across(.cols=all_of(rollVars), .fns=sd)) %>%
+        ungroup()
+    
+    for(x in rollVars) { 
+        df_r21_sd <- df_r21_sd %>% 
+            helperRollingAgg(origVar=x, newName=unname(mapDesc[x]), k=rollK)
+    }
+    
+    df_r21_sd <- df_r21_sd %>% select(all_of(c("date", "doy", unname(mapDesc[rollVars]))))
+    
+    
+    # Create plot of means and standard deviations or standard errors of the mean
+    if(isTRUE(makeSEM)) divBy <- sqrt(length(unique(year(df_r21$date)))-1)
+    else divBy <- 1
+    
+    p1 <- df_r21 %>%
+        bind_rows(df_r21_sd, .id="src") %>%
+        na.omit() %>%
+        mutate(musig=c("1"="Mean", "2"="SD")[src]) %>%
+        group_by(doy, musig) %>%
+        summarize(across(where(is.numeric), .fns=mean), .groups="drop") %>%
+        pivot_longer(cols=-c(doy, musig)) %>%
+        pivot_wider(id_cols=c(doy, name), names_from="musig") %>%
+        ggplot(aes(x=doy)) + 
+        geom_line(aes(y=Mean, group=name, color=name), lwd=2) + 
+        geom_ribbon(aes(ymin=Mean-SD/divBy, ymax=Mean+SD/divBy, fill=name), alpha=0.5) +
+        facet_wrap(~name, scales="free_y") +
+        labs(x="Day of Year", 
+             y=paste0("Rolling ", 
+                      rollK, 
+                      "-day mean +/- 1 ", 
+                      if(isTRUE(makeSEM)) "SEM (approx)" else "sd"
+                      ), 
+             title=paste0("Rolling ", 
+                          rollK, 
+                          "-day mean +/- 1 rolling ", 
+                          rollK, 
+                          "-day ", 
+                          if(isTRUE(makeSEM)) "SEM (approx)" else "sd"
+                          )
+             ) + 
+        theme(legend.position="none")
+    
+    if(isTRUE(printPlot)) print(p1)
+    if(isTRUE(returnPlot)) return(p1)
+
+}
+
+```
+  
