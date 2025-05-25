@@ -4301,4 +4301,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 omCreateBoxPlot() updated for lagged variable option
 * OpenMeteoEDA_202306_v005 omCreateBoxPlot() with one-day lag run for a new city
 * OpenMeteoEDA_202306_v005 omDailyMeanSD() written
+* OpenMeteoEDA_202306_v005 omDailyMeanSD() run for a new city
 
