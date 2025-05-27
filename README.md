@@ -4305,4 +4305,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 26-MAY-2025  
 * OpenMeteoEDA_202306_v005 functions run in combination for a new city
+* OpenMeteoEDA_202306_v005 omRunAllSteps() written
 
