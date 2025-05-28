@@ -4339,7 +4339,12 @@ omRunAllSteps <- function(dfDaily=NULL,
                           abbCity=NULL, 
                           tzCity=NULL, 
                           useNameCity="New city", 
-                          dbNameCity=useNameCity
+                          dbNameCity=useNameCity, 
+                          returnDF=FALSE,
+                          runStats=TRUE, 
+                          mainStatVars=c("temperature_2m_max", "windspeed_10m_max", "precipitation_sum"), 
+                          xtraStatVars=c("temperature_2m_min", "precipitation_hours"),
+                          minZeroVars=c("windspeed_10m_max", "precipitation_sum", "precipitation_hours")
                           ) {
     
     # 1. Download data (if requested)
@@ -4347,6 +4352,15 @@ omRunAllSteps <- function(dfDaily=NULL,
     
     # 2. Load and process data (if not passed)
     if(is.null(dfDaily)) dfDaily <- createDailyDF(abb=abbCity)
+    
+    # Stop processing if requested
+    if(!isTRUE(runStats)) {
+        if(isTRUE(returnDF)) {
+            return(dfDaily)
+        } else {
+            return(NULL)
+        }
+    }
     
     # 3. Plot means for continuous variables
     plotContVarMean(dfDaily, isMonthly=TRUE, titleLoc=useNameCity)
@@ -4357,29 +4371,30 @@ omRunAllSteps <- function(dfDaily=NULL,
     plotCatVarMean(dfDaily, isMonthly=FALSE, titleLoc=useNameCity)
 
     # 5. Create boxplots for select variables
-    omCreateBoxPlot(dfDaily, keyVar="windspeed_10m_max", ymin=0, titleLoc=useNameCity)
-    omCreateBoxPlot(dfDaily, keyVar="precipitation_hours", ymin=0, titleLoc=useNameCity)
-    omCreateBoxPlot(dfDaily, keyVar="precipitation_sum", ymin=0, titleLoc=useNameCity)
-    omCreateBoxPlot(dfDaily, keyVar="temperature_2m_max", titleLoc=useNameCity)
-    omCreateBoxPlot(dfDaily, keyVar="temperature_2m_min", titleLoc=useNameCity)
-
+    purrr::walk(.x=c(mainStatVars, xtraStatVars), 
+                .f=function(x) omCreateBoxPlot(dfDaily, 
+                                               keyVar=x, 
+                                               ymin=if(x %in% minZeroVars) 0 else NA, 
+                                               titleLoc=useNameCity
+                                               )
+                )
+    
     # 6. Analyze ACF/PACF for select variables
-    omACFPACF(dfDaily, keyVar="temperature_2m_max")
-    omACFPACF(dfDaily, keyVar="precipitation_sum", smallACF=TRUE)
-    omACFPACF(dfDaily, keyVar="windspeed_10m_max", smallACF=TRUE)
+    purrr::walk(.x=mainStatVars, 
+                .f=function(x) omACFPACF(dfDaily, keyVar=x, smallACF=TRUE)
+                )
 
     # 7. Create boxplots for select variables (with lag-1, daily difference)
-    omCreateBoxPlot(dfDaily, keyVar="temperature_2m_max", chgLag=1, titleLoc=useNameCity)
-    omCreateBoxPlot(dfDaily, keyVar="windspeed_10m_max", chgLag=1, titleLoc=useNameCity)
-    omCreateBoxPlot(dfDaily, keyVar="precipitation_sum", chgLag=1, titleLoc=useNameCity)
-
+    purrr::walk(.x=mainStatVars, 
+                .f=function(x) omCreateBoxPlot(dfDaily, keyVar=x, chgLag=1, titleLoc=useNameCity)
+                )
+        
     # 8. Create daily mean +/- 1 SD and/or SEM for select variables
-    omDailyMeanSD(dfDaily, rollK=21, rollVars=c("temperature_2m_max", "windspeed_10m_max", "precipitation_sum"))
-    omDailyMeanSD(dfDaily, 
-                  rollK=21, 
-                  rollVars=c("temperature_2m_max", "windspeed_10m_max", "precipitation_sum"), 
-                  makeSEM=TRUE
-                  )
+    omDailyMeanSD(dfDaily, rollK=21, rollVars=mainStatVars)
+    omDailyMeanSD(dfDaily, rollK=21, rollVars=mainStatVars, makeSEM=TRUE)
+    
+    # Return file if requested
+    if(isTRUE(returnDF)) return(dfDaily)
     
 }
 
