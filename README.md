@@ -4310,4 +4310,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 omRunAllSteps() tested for file loading only
 * OpenMeteoEDA_202306_v005 omRunAllSteps() tested for plots on existing file
 * OpenMeteoEDA_202306_v005 omRunAllSteps() tested for downloading new file only
+* OpenMeteoEDA_202306_v005 omRunAllSteps() tested for integrating data across cities
 
