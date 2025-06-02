@@ -4312,3 +4312,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 omRunAllSteps() tested for downloading new file only
 * OpenMeteoEDA_202306_v005 omRunAllSteps() tested for integrating data across cities
 
+### Expansions week of 02-JUN-2025  
+* OpenMeteoEDA_202306_v005 plots average max temperature by day of year by city
+
