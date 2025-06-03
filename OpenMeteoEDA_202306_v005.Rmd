@@ -4496,3 +4496,53 @@ dfMultiCity %>%
 
 ```
 
+Mean and SEM are plotted for precipitation for each city, as well as the total:  
+```{r, fig.height=9, fig.width=9}
+
+nYears <- length(unique(year(dfMultiCity$date)))
+divBy <- sqrt(nYears-1)
+
+dfMultiCity %>%
+    select(date, precipitation_sum, cityName) %>%
+    bind_rows(mutate(., cityName="Overall")) %>%
+    group_by(cityName, date) %>%
+    summarize(across(where(is.numeric), .fns=mean), .groups="drop") %>%
+    arrange(cityName, date) %>%
+    mutate(doy=pmin(yday(date), 365)) %>%
+    group_by(cityName) %>%
+    helperRollingAgg(origVar="precipitation_sum", newName="mu_r21", k=21) %>%
+    group_by(cityName, doy) %>%
+    mutate(sd=sd(precipitation_sum)) %>%
+    group_by(cityName) %>%
+    helperRollingAgg(origVar="sd", newName="sd_r21", k=21) %>%
+    ungroup() %>%
+    select(cityName, doy, mu_r21, sd_r21) %>%
+    pivot_longer(cols=-c(cityName, doy)) %>%
+    na.omit() %>%
+    group_by(cityName, doy, name) %>%
+    summarize(across(where(is.numeric), .fns=mean), .groups="drop") %>%
+    pivot_wider(id_cols=c(cityName, doy), names_from="name") %>%
+    ggplot(aes(x=doy)) + 
+    geom_line(data=~filter(., cityName!="Overall"), 
+              aes(y=mu_r21, group=cityName, color=cityName), 
+              lwd=2
+              ) + 
+    geom_ribbon(data=~filter(., cityName!="Overall"), 
+                aes(ymin=mu_r21-sd_r21/divBy, ymax=mu_r21+sd_r21/divBy, fill=cityName), 
+                alpha=0.5
+                ) +
+    labs(x="Day of Year", 
+         y=paste0("Rolling ", 21, "-day mean +/- 1 ", if(isTRUE(TRUE)) "SEM (approx)" else "sd"), 
+         title=paste0("Rolling ", 
+                      21, 
+                      "-day mean +/- 1 rolling ", 
+                      21, 
+                      "-day ", 
+                      if(isTRUE(TRUE)) "SEM (approx)" else "sd", "\nPrecipitation (mm)")
+         ) + 
+    scale_color_discrete(NULL) + 
+    scale_fill_discrete(NULL) + 
+    geom_line(data=~filter(., cityName=="Overall"), aes(y=mu_r21, group=cityName), lwd=1, lty=2)
+
+```
+
