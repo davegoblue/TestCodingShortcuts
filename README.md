@@ -4316,4 +4316,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 plots average max temperature by day of year by city
 * OpenMeteoEDA_202306_v005 plots average precipitation by day of year by city
 * OpenMeteoEDA_202306_v005 plots average wind speed by day of year by city
+* OpenMeteoEDA_202306_v005 omMultiCityCont() written
 
