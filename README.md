@@ -4317,4 +4317,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 plots average precipitation by day of year by city
 * OpenMeteoEDA_202306_v005 plots average wind speed by day of year by city
 * OpenMeteoEDA_202306_v005 omMultiCityCont() written
+* OpenMeteoEDA_202306_v005 omMultiCityCont() tested for solar radiation
 
