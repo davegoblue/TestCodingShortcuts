@@ -4321,3 +4321,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for evapotranspiration
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for snowfall
 
+### Expansions week of 02-JUN-2025  
+* OpenMeteoEDA_202306_v005 omMultiCityCont() tested for apparent temperature
+
