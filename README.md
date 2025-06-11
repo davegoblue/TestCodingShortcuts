@@ -4324,4 +4324,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 02-JUN-2025  
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for apparent temperature
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for daily max-min temperature spread
+* OpenMeteoEDA_202306_v005 omMultiCityCont() tested for delta daily mean temperature
 
