@@ -4327,4 +4327,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for delta daily mean temperature
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for wind gusts
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for sunrise
+* OpenMeteoEDA_202306_v005 omMultiCityCont() tested for sunset
 
