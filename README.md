@@ -4330,3 +4330,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for sunset
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for daylight length
 
+### Expansions week of 09-JUN-2025  
+* OpenMeteoEDA_202306_v005 omMultiCityCont() tested for delta daily daylight length
+
