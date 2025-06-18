@@ -4333,4 +4333,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 09-JUN-2025  
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for delta daily daylight length
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for delta daily sunrise
+* OpenMeteoEDA_202306_v005 omMultiCityCont() tested for delta daily sunset
 
