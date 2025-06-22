@@ -4337,4 +4337,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for solar noon
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for delta daily solar noon
 * OpenMeteoEDA_202306_v005 explores dominant wind direction by city
+* OpenMeteoEDA_202306_v005 explores dominant wind direction by month
 
