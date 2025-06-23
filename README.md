@@ -4321,7 +4321,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for evapotranspiration
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for snowfall
 
-### Expansions week of 02-JUN-2025  
+### Expansions week of 09-JUN-2025  
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for apparent temperature
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for daily max-min temperature spread
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for delta daily mean temperature
@@ -4330,7 +4330,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for sunset
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for daylight length
 
-### Expansions week of 09-JUN-2025  
+### Expansions week of 16-JUN-2025  
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for delta daily daylight length
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for delta daily sunrise
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for delta daily sunset
@@ -4338,4 +4338,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 omMultiCityCont() tested for delta daily solar noon
 * OpenMeteoEDA_202306_v005 explores dominant wind direction by city
 * OpenMeteoEDA_202306_v005 explores dominant wind direction by month
+
+### Expansions week of 23-JUN-2025  
+* OpenMeteoEDA_202306_v005 converts dominant wind exploration to ratios from absolute counts
 
