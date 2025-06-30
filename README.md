@@ -4348,3 +4348,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 calculates distance metric for dominant wind direction by month-city
 * OpenMeteoEDA_202306_v005 explores dominant wind direction for select city-month
 
+### Expansions week of 30-JUN-2025  
+* OpenMeteoEDA_202306_v005 further explores dominant wind direction for select city-month
+
