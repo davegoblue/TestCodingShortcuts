@@ -4357,3 +4357,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 further explores dominant WMO weather code for select city-month
 * OpenMeteoEDA_202306_v005 sources additional functions
 
+### Expansions week of 07-JUL-2025  
+* OpenMeteoEDA_202306_v005 runs random forest to predict month based on numeric variables
+
