@@ -4360,4 +4360,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 07-JUL-2025  
 * OpenMeteoEDA_202306_v005 runs random forest to predict month based on numeric variables
 * OpenMeteoEDA_202306_v005 runs random forest to predict month based on numeric and factorial variables
+* OpenMeteoEDA_202306_v005 runs random forest to predict city based on numeric variables
 
