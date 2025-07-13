@@ -4364,4 +4364,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 runs random forest to predict city based on numeric and factorial variables
 * OpenMeteoEDA_202306_v005 runs random forest to predict maximum temperature based on numeric variables
 * OpenMeteoEDA_202306_v005 runs random forest to predict maximum temperature based on numeric and factorial variables
+* OpenMeteoEDA_202306_v005 runs random forest to predict maximum temperature excluding temperature variables as predictors
 
