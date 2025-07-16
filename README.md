@@ -4369,4 +4369,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 14-JUL-2025  
 * OpenMeteoEDA_202306_v005 runs random forest to predict maximum temperature excluding temperature variables as predictors, but with city and month
 * OpenMeteoEDA_202306_v005 runs kmeans with 2 centers based on numeric variables
+* OpenMeteoEDA_202306_v005 runs kmeans with 3 centers based on numeric variables
 
