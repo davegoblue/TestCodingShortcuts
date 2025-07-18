@@ -4371,4 +4371,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 runs kmeans with 2 centers based on numeric variables
 * OpenMeteoEDA_202306_v005 runs kmeans with 3 centers based on numeric variables
 * OpenMeteoEDA_202306_v005 runs kmeans with 4 centers based on numeric variables
+* OpenMeteoEDA_202306_v005 runs kmeans with 5 centers based on numeric variables
 
