@@ -4375,3 +4375,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 runs kmeans with 6 centers based on numeric variables
 * OpenMeteoEDA_202306_v005 runs PCA based on numeric variables
 
+### Expansions week of 21-JUL-2025  
+* OpenMeteoEDA_202306_v005 assesses loadings of first three components
+
