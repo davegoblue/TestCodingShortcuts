@@ -4376,5 +4376,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 runs PCA based on numeric variables
 
 ### Expansions week of 21-JUL-2025  
-* OpenMeteoEDA_202306_v005 assesses loadings of first three components
+* OpenMeteoEDA_202306_v005 assesses loadings of first 3 components
+* OpenMeteoEDA_202306_v005 explores correlations among numeric variables
 
