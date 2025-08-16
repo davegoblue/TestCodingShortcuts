@@ -4408,4 +4408,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 runs random forest to predict temperature based on numeric and factorial variables
 * OpenMeteoEDA_202306_v005 loads previously downloaded daily data for a new city
 * OpenMeteoEDA_202306_v005 predicts city for new data based on existing RF model
+* OpenMeteoEDA_202306_v005 predicts temperature for new data based on existing RF model
 
