@@ -4411,3 +4411,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 predicts temperature for new data based on existing RF model
 * OpenMeteoEDA_202306_v005 predicts temperature for new data based on existing RF model, modified to use most similar city
 
+### Expansions week of 18-AUG-2025  
+* OpenMeteoEDA_202306_v005 predicts city for new data based on existing RF model
+
