@@ -589,3 +589,459 @@ getVarsTrain <- function(df) {
 
 genericKeyLabelOM <- function() 
     "predictions based on pre-2022 training data applied to 2022 holdout dataset"
+
+# Helper function to download daily data
+helperNewCityDailyDownload <- function(cityName, 
+                                       tz, 
+                                       abb,
+                                       fName=paste0("testOM_daily_", abb, ".json"),
+                                       idx=1:nrow(tblMetricsDaily), 
+                                       startDate="1960-01-01", 
+                                       endDate="2023-12-31"
+                                       ) {
+    
+    testURLDaily <- helperOpenMeteoURL(cityName=cityName, 
+                                       dailyIndices=idx,
+                                       startDate=startDate, 
+                                       endDate=endDate, 
+                                       tz=tz
+    )
+    cat("\nDownload URL:\n")
+    print(testURLDaily)
+    
+    # Download file
+    if(!file.exists(fName)) {
+        fileDownload(fileName=fName, url=testURLDaily)
+    } else {
+        cat("\nFile", fName, "already exists, skipping download\n")
+    }
+    
+}
+
+
+# Create the daily data frame from previously downloaded data
+createDailyDF <- function(fName=NULL, abb=NULL, glimpseFOMJ=FALSE, glimpseList=FALSE, glimpseDF=TRUE) {
+    
+    # Create fName from abb if fName not passed
+    if(is.null(fName)) {
+        if(is.null(abb)) stop("\nMust provide abb or fName to function createDailyDF()\n")
+        else fName <- paste0("testOM_daily_", abb, ".json")
+    }
+    
+    # Read daily JSON file
+    lstDaily <- formatOpenMeteoJSON(fName, glimpseData=glimpseFOMJ)
+    
+    # Sample records of tibble inside list
+    if(isTRUE(glimpseList)) lstDaily$tblDaily %>% glimpse()
+    
+    # Convert variables to proper type
+    dfDaily <- lstDaily$tblDaily %>%
+        mutate(weathercode=factor(weathercode), 
+               sunrise_chr=sunrise, 
+               sunset_chr=sunset,
+               sunrise=lubridate::ymd_hm(sunrise), 
+               sunset=lubridate::ymd_hm(sunset), 
+               fct_winddir=factor(winddirection_10m_dominant)
+        )
+    
+    # Sample records of final tibble
+    if(isTRUE(glimpseDF)) glimpse(dfDaily)
+    
+    # Return final tibble
+    dfDaily
+    
+}
+
+
+# Plot means for continuous variables
+plotContVarMean <- function(df, 
+                            tmpMapNames=c("precipitation_sum"="3. Precipitation (mm)", 
+                                          "windspeed_10m_max"="4. Windspeed (kph)", 
+                                          "temperature_2m_max"="1. High Temperature (C)",
+                                          "temperature_2m_min"="2. Low Temperature (C)"
+                            ), 
+                            idxMapSum=c(1),
+                            isMonthly=TRUE,
+                            titleStarter=if(isTRUE(isMonthly)) "Monthly" else "Annual",
+                            titleLoc="",
+                            titleEnder=paste0("(", titleLoc, if(str_length(titleLoc)>0) " ", "1960-2023)"),
+                            printPlot=TRUE, 
+                            returnPlot=!isTRUE(printPlot)
+                            ) {
+    
+    # FUNCTION ARGUMENTS:
+    # df: tibble or data frame from createDailyDF()
+    # tmpMapNames: variables to summarize in format c("variablename"="variable description")
+    # idxMapSum: indices of the variables in tmpMapNames thatshould be summed rather than averaged
+    # isMonthly: boolean with TRUE being monthly and FALSE being annual
+    # titleStarter: opening phrase for title
+    # titleLoc: location to be used in parentheses at end of title ("" means just show year range)
+    # titleEnder: ending phrase for title
+    # printPlot: boolean, should the plot be printed?
+    # returnPlot: boolean, should the plot be returned?
+    
+    p1 <- df %>%
+        mutate(month=factor(month(date), levels=1:12, labels=month.abb), year=year(date)) %>%
+        select(all_of(c("year", if(isTRUE(isMonthly)) "month", names(tmpMapNames)))) %>%
+        group_by(pick(if(isTRUE(isMonthly)) c("year", "month") else c("year"))) %>%
+        summarize(across(-all_of(names(tmpMapNames)[idxMapSum]), .fns=mean), 
+                  across(all_of(names(tmpMapNames)[idxMapSum]), .fns=sum), 
+                  .groups="drop"
+        ) 
+    
+    if(isTRUE(isMonthly)) {
+        p1 <- p1 %>%
+            group_by(month) %>%
+            summarize(across(-c(year), .fns=mean)) %>%
+            pivot_longer(-c(month))
+    } else {
+        p1 <- p1 %>%
+            pivot_longer(-c(year))
+    }
+    
+    p1 <- p1 %>%
+        ggplot(aes(x=.data[[if(isTRUE(isMonthly)) "month" else "year"]], y=value)) + 
+        geom_line(aes(group=1)) + 
+        facet_wrap(~tmpMapNames[name], scales="free_y") + 
+        labs(x=NULL, 
+             y=NULL, 
+             title=paste0(titleStarter, " averages for key metrics ", titleEnder)
+        )
+    
+    if(isTRUE(printPlot)) print(p1)
+    if(isTRUE(returnPlot)) p1
+    
+}
+
+
+# Plot means for categorical variables
+plotCatVarMean <- function(df, 
+                           tmpMapNames=c("wc"="1. Weather Type", 
+                                         "winddir"="2. Predominant Wind Direction"
+                           ), 
+                           idxMapSum=c(1),
+                           isMonthly=TRUE,
+                           titleStarter=if(isTRUE(isMonthly)) "Monthly" else "Annual",
+                           titleLoc="",
+                           titleEnder=paste0("(", titleLoc, if(str_length(titleLoc)>0) " ", "1960-2023)"),
+                           printPlot=TRUE, 
+                           returnPlot=!isTRUE(printPlot)
+                           ) {
+    
+    tmpDFPlot <- df %>%
+        mutate(month=factor(month(date), levels=1:12, labels=month.abb), 
+               year=year(date), 
+               winddir=case_when(winddirection_10m_dominant>360~"Invalid", 
+                                 winddirection_10m_dominant>=315~"1. N", 
+                                 winddirection_10m_dominant>=225~"2. W", 
+                                 winddirection_10m_dominant>=135~"3. S", 
+                                 winddirection_10m_dominant>=45~"4. E", 
+                                 winddirection_10m_dominant>=0~"1. N", 
+                                 TRUE~"Invalid"
+               ), 
+               wc=case_when(weathercode==0~"1. Clear", 
+                            weathercode %in% c(1, 2, 3)~"2. Dry", 
+                            weathercode %in% c(51, 53, 55)~"3. Drizzle", 
+                            weathercode %in% c(61, 63, 65)~"4. Rain", 
+                            weathercode %in% c(71, 73, 75)~"5. Snow", 
+                            TRUE~"Error"
+               )
+        ) %>%
+        select(all_of(c(if(isTRUE(isMonthly)) "month" else "year", names(tmpMapNames))))
+    
+    if(isTRUE(isMonthly)) {
+        tmpDFPlot <- tmpDFPlot %>%
+            pivot_longer(-c(month)) %>%
+            count(month, name, value)
+    } else {
+        tmpDFPlot <- tmpDFPlot %>%
+            pivot_longer(-c(year)) %>%
+            count(year, name, value)
+    }
+    
+    tmpPlotFN <- function(x) {
+        p1 <- tmpDFPlot %>%
+            filter(name==x) %>%
+            ggplot(aes(x=.data[[if(isTRUE(isMonthly)) "month" else "year"]], y=n)) + 
+            geom_line(aes(group=value, color=value), lwd=2) + 
+            labs(x=NULL, 
+                 y=NULL, 
+                 title=paste0(titleStarter, " average for ", tmpMapNames[x], " ", titleEnder)
+            ) + 
+            scale_color_discrete(NULL) + 
+            theme(legend.position = "bottom")
+        return(p1)
+    }
+    
+    # Update to be more flexible
+    grid::grid.newpage()
+    p1 <- gridExtra::arrangeGrob(tmpPlotFN("wc"), tmpPlotFN("winddir"), nrow=1)
+    
+    if(isTRUE(printPlot)) grid::grid.draw(p1)
+    if(isTRUE(returnPlot)) p1
+    
+}
+
+
+# Create box plots
+omCreateBoxPlot <- function(df, 
+                            keyVar, 
+                            chgLag=NULL,
+                            ymin=NA, 
+                            ymax=NA, 
+                            mapDesc=c("windspeed_10m_max"="Maximum wind speed (kph)", 
+                                      "precipitation_hours"="Precipitation (hours)", 
+                                      "precipitation_sum"="Precipitation (mm)", 
+                                      "temperature_2m_max"="Maximum Temperature (C)", 
+                                      "temperature_2m_min"="Minimum Temperature (C)"
+                            ),
+                            keyVarDesc=if(keyVar %in% names(mapDesc)) mapDesc[keyVar] else "Key Variable",
+                            titleLoc="",
+                            titleEnder=paste0("(", titleLoc, if(str_length(titleLoc)>0) " ", "1960-2023)")
+                            ) {
+    
+    p1 <- df %>%
+        mutate(month=factor(month(date), levels=1:12, labels=month.abb), year=year(date)) %>%
+        select(all_of(c("month", keyVar)))
+    
+    if(!is.null(chgLag)) 
+        p1 <- p1 %>%
+            mutate(across(all_of(keyVar), .fns=function(x) x - lag(x, chgLag))) %>%
+            filter(if_all(all_of(keyVar), .fns=function(x) !is.na(x)))
+    
+    p1 <- p1 %>%
+        ggplot(aes(x=month, y=.data[[keyVar]])) + 
+        geom_boxplot(fill="lightblue") + 
+        labs(x=NULL, 
+             y=keyVarDesc, 
+             title=paste0(if(is.null(chgLag)) "" else "Change in ", keyVarDesc, " by month ", titleEnder)
+        )
+    if(!is.na(ymin) | !is.na(ymax)) p1 <- p1 + lims(y=c(ymin, ymax))
+    print(p1)
+    
+}
+
+
+# Create ACF and PACF for key variables
+omACFPACF <- function(df, keyVar, bigLag=1000, smallLag=50, smallACF=FALSE, smallPACF=TRUE) {
+    
+    # Big lag for ACF
+    acfTemp <- acf(df %>% pull(keyVar), lag.max=bigLag, main=paste0("ACF: ", keyVar))
+    
+    # Peaks for ACF
+    cat("\nACF peaks\n")
+    as.vector(acfTemp$acf) %>% findPeaks(width=21) %>% which() %>% print()
+    
+    # Troughs for ACF
+    cat("\nACF troughs\n")
+    as.vector(acfTemp$acf) %>% findPeaks(width=21, FUN=min) %>% which() %>% print()
+    
+    # Small lag for ACF (if requested)
+    if(isTRUE(smallACF)) acfTemp <- acf(df %>% pull(keyVar), lag.max=smallLag, main=paste0("ACF: ", keyVar))
+    
+    # Big lag for PACF
+    pacfTemp <- pacf(df %>% pull(keyVar), lag.max=bigLag, main=paste0("PACF: ", keyVar))
+    
+    # Small lag for PACF (if requested)
+    if(isTRUE(smallPACF)) pacfTemp <- pacf(df %>% pull(keyVar), lag.max=smallLag, main=paste0("PACF: ", keyVar))
+    
+}
+
+
+# Daily mean and standard deviation
+omDailyMeanSD <- function(df, 
+                          rollVars, 
+                          rollK,                             
+                          mapDesc=c("windspeed_10m_max"="windMax", 
+                                    "precipitation_hours"="precipHours", 
+                                    "precipitation_sum"="precipSum", 
+                                    "temperature_2m_max"="tempMax", 
+                                    "temperature_2m_min"="tempMin"
+                          ), 
+                          addSuffix=TRUE, 
+                          makeSEM=FALSE, 
+                          printPlot=TRUE, 
+                          returnPlot=!isTRUE(printPlot)
+                          ) {
+    
+    if(isTRUE(addSuffix)) for(x in names(mapDesc)) mapDesc[x] <- paste0(mapDesc[x], "_r", rollK)
+    
+    # Calculate means
+    df_r21 <- df %>% mutate(doy=pmin(yday(date), 365))
+    
+    for(x in rollVars) {
+        df_r21 <- df_r21 %>% 
+            helperRollingAgg(origVar=x, newName=unname(mapDesc[x]), k=rollK)
+    }
+    
+    df_r21 <- df_r21 %>% select(all_of(c("date", "doy", unname(mapDesc[rollVars]))))
+    
+    # Calculate standard deviations
+    df_r21_sd <- df %>%
+        mutate(doy=pmin(yday(date), 365)) %>% 
+        group_by(doy) %>%
+        mutate(across(.cols=all_of(rollVars), .fns=sd)) %>%
+        ungroup()
+    
+    for(x in rollVars) { 
+        df_r21_sd <- df_r21_sd %>% 
+            helperRollingAgg(origVar=x, newName=unname(mapDesc[x]), k=rollK)
+    }
+    
+    df_r21_sd <- df_r21_sd %>% select(all_of(c("date", "doy", unname(mapDesc[rollVars]))))
+    
+    
+    # Create plot of means and standard deviations or standard errors of the mean
+    if(isTRUE(makeSEM)) divBy <- sqrt(length(unique(year(df_r21$date)))-1)
+    else divBy <- 1
+    
+    p1 <- df_r21 %>%
+        bind_rows(df_r21_sd, .id="src") %>%
+        na.omit() %>%
+        mutate(musig=c("1"="Mean", "2"="SD")[src]) %>%
+        group_by(doy, musig) %>%
+        summarize(across(where(is.numeric), .fns=mean), .groups="drop") %>%
+        pivot_longer(cols=-c(doy, musig)) %>%
+        pivot_wider(id_cols=c(doy, name), names_from="musig") %>%
+        ggplot(aes(x=doy)) + 
+        geom_line(aes(y=Mean, group=name, color=name), lwd=2) + 
+        geom_ribbon(aes(ymin=Mean-SD/divBy, ymax=Mean+SD/divBy, fill=name), alpha=0.5) +
+        facet_wrap(~name, scales="free_y") +
+        labs(x="Day of Year", 
+             y=paste0("Rolling ", 
+                      rollK, 
+                      "-day mean +/- 1 ", 
+                      if(isTRUE(makeSEM)) "SEM (approx)" else "sd"
+             ), 
+             title=paste0("Rolling ", 
+                          rollK, 
+                          "-day mean +/- 1 rolling ", 
+                          rollK, 
+                          "-day ", 
+                          if(isTRUE(makeSEM)) "SEM (approx)" else "sd"
+             )
+        ) + 
+        theme(legend.position="none")
+    
+    if(isTRUE(printPlot)) print(p1)
+    if(isTRUE(returnPlot)) return(p1)
+    
+}
+
+
+# Run all steps for creating OM daily data
+omRunAllSteps <- function(dfDaily=NULL, 
+                          dlData=FALSE, 
+                          abbCity=NULL, 
+                          tzCity=NULL, 
+                          useNameCity="New city", 
+                          dbNameCity=useNameCity, 
+                          returnDF=FALSE,
+                          runStats=TRUE, 
+                          mainStatVars=c("temperature_2m_max", "windspeed_10m_max", "precipitation_sum"), 
+                          xtraStatVars=c("temperature_2m_min", "precipitation_hours"),
+                          minZeroVars=c("windspeed_10m_max", "precipitation_sum", "precipitation_hours")
+                          ) {
+    
+    # 1. Download data (if requested)
+    if(isTRUE(dlData)) helperNewCityDailyDownload(cityName=dbNameCity, tz=tzCity, abb=abbCity)
+    
+    # 2. Load and process data (if not passed)
+    if(is.null(dfDaily)) dfDaily <- createDailyDF(abb=abbCity)
+    
+    # Stop processing if requested
+    if(!isTRUE(runStats)) {
+        if(isTRUE(returnDF)) {
+            return(dfDaily)
+        } else {
+            return(NULL)
+        }
+    }
+    
+    # 3. Plot means for continuous variables
+    plotContVarMean(dfDaily, isMonthly=TRUE, titleLoc=useNameCity)
+    plotContVarMean(dfDaily, isMonthly=FALSE, titleLoc=useNameCity)
+    
+    # 4. Plot means for categorical variables
+    plotCatVarMean(dfDaily, isMonthly=TRUE, titleLoc=useNameCity)
+    plotCatVarMean(dfDaily, isMonthly=FALSE, titleLoc=useNameCity)
+    
+    # 5. Create boxplots for select variables
+    purrr::walk(.x=c(mainStatVars, xtraStatVars), 
+                .f=function(x) omCreateBoxPlot(dfDaily, 
+                                               keyVar=x, 
+                                               ymin=if(x %in% minZeroVars) 0 else NA, 
+                                               titleLoc=useNameCity
+                )
+    )
+    
+    # 6. Analyze ACF/PACF for select variables
+    purrr::walk(.x=mainStatVars, 
+                .f=function(x) omACFPACF(dfDaily, keyVar=x, smallACF=TRUE)
+    )
+    
+    # 7. Create boxplots for select variables (with lag-1, daily difference)
+    purrr::walk(.x=mainStatVars, 
+                .f=function(x) omCreateBoxPlot(dfDaily, keyVar=x, chgLag=1, titleLoc=useNameCity)
+    )
+    
+    # 8. Create daily mean +/- 1 SD and/or SEM for select variables
+    omDailyMeanSD(dfDaily, rollK=21, rollVars=mainStatVars)
+    omDailyMeanSD(dfDaily, rollK=21, rollVars=mainStatVars, makeSEM=TRUE)
+    
+    # Return file if requested
+    if(isTRUE(returnDF)) return(dfDaily)
+    
+}
+
+
+# Create plots for continuous variables across cities
+omMultiCityCont <- function(df, varName, varDesc, divBy) {
+    
+    p1 <- df %>%
+        select(all_of(c("date", varName, "cityName"))) %>%
+        bind_rows(mutate(., cityName="Overall")) %>%
+        group_by(cityName, date) %>%
+        summarize(across(where(is.numeric), .fns=mean), .groups="drop") %>%
+        arrange(cityName, date) %>%
+        mutate(doy=pmin(yday(date), 365)) %>%
+        group_by(cityName) %>%
+        helperRollingAgg(origVar=varName, newName="mu_r21", k=21) %>%
+        group_by(cityName, doy) %>%
+        mutate(sd=sd(get(varName))) %>%
+        group_by(cityName) %>%
+        helperRollingAgg(origVar="sd", newName="sd_r21", k=21) %>%
+        ungroup() %>%
+        select(cityName, doy, mu_r21, sd_r21) %>%
+        pivot_longer(cols=-c(cityName, doy)) %>%
+        na.omit() %>%
+        group_by(cityName, doy, name) %>%
+        summarize(across(where(is.numeric), .fns=mean), .groups="drop") %>%
+        pivot_wider(id_cols=c(cityName, doy), names_from="name") %>%
+        ggplot(aes(x=doy)) + 
+        geom_line(data=~filter(., cityName!="Overall"), 
+                  aes(y=mu_r21, group=cityName, color=cityName), 
+                  lwd=2
+        ) + 
+        geom_ribbon(data=~filter(., cityName!="Overall"), 
+                    aes(ymin=mu_r21-sd_r21/divBy, ymax=mu_r21+sd_r21/divBy, fill=cityName), 
+                    alpha=0.5
+        ) +
+        labs(x="Day of Year", 
+             y=paste0("Rolling ", 21, "-day mean +/- 1 ", if(isTRUE(TRUE)) "SEM (approx)" else "sd"), 
+             title=paste0("Rolling ", 
+                          21, 
+                          "-day mean +/- 1 rolling ", 
+                          21, 
+                          "-day ", 
+                          if(isTRUE(TRUE)) "SEM (approx)" else "sd", "\n", varDesc)
+        ) + 
+        scale_color_discrete(NULL) + 
+        scale_fill_discrete(NULL) + 
+        geom_line(data=~filter(., cityName=="Overall"), aes(y=mu_r21, group=cityName), lwd=1, lty=2)
+    
+    p1
+    
+}
+
+
