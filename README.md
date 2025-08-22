@@ -4074,7 +4074,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteo_Functions_202411_v001.R created
 * Generic_Added_Utility_Functions_202105_v001.R functions updated  
 * SimpleOneVar_Functions_202411_v001.R created
-* OpenMeteo_Functions_202411_v001.R updated
+* Generic_Analysis_Functions_202411_v001.R updated
 * OpenMeteo_NextBest_202411_v001.R created
 * OpenMeteo_Functions_202411_v001.R updated
 
@@ -4416,5 +4416,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v005 runs random forest to predict month based on numeric and factorial variables
 * OpenMeteoEDA_202306_v005 runs random forest to predict temperature based on numeric and factorial variables
 * OpenMeteo_Functions_202411_v001.R updated with functions written in OpenMeteoEDA_202306_v005
-
+* Generic_Analysis_Functions_202411_v001.R updated
 
