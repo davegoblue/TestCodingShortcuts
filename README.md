@@ -4418,4 +4418,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteo_Functions_202411_v001.R updated with functions written in OpenMeteoEDA_202306_v005
 * Generic_Analysis_Functions_202411_v001.R updated with functions written in OpenMeteoEDA_202306_v005
 * OpenMeteoEDA_202306_v006 created from _v005
+* OpenMeteoEDA_202306_v005 sources key functions
 
