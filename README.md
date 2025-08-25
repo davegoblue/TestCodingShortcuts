@@ -4420,3 +4420,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 created from _v005
 * OpenMeteoEDA_202306_v006 sources key functions
 
+### Expansions week of 25-AUG-2025  
+* OpenMeteoEDA_202306_v006 copies mapping tables
+
