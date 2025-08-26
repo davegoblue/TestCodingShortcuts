@@ -4422,5 +4422,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 25-AUG-2025  
 * OpenMeteoEDA_202306_v006 copies mapping tables
-* OpenMeteoEDA_202306_v006 loads existing dataset
+* OpenMeteoEDA_202306_v006 loads existing hourly dataset
 
