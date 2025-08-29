@@ -4425,4 +4425,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 loads existing hourly dataset
 * OpenMeteoEDA_202306_v006 creates daily dataset from existing files
 * OpenMeteoEDA_202306_v006 aligns city names between daily and hourly data
+* OpenMeteoEDA_202306_v006 compares maximum temperature between daily and hourly data
 
