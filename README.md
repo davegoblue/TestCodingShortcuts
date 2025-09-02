@@ -4431,4 +4431,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 01-SEP-2025  
 * OpenMeteoEDA_202306_v006 continues exploring differences in maximum temperature between daily and hourly data
+* OpenMeteoEDA_202306_v006 explores time zone impact on differences in maximum temperature between daily and hourly data
 
