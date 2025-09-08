@@ -4438,3 +4438,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 tmpDailyVsHourly() updated for greater flexibility
 * OpenMeteoEDA_202306_v006 tmpDailyVsHourly() tested on maximum temperature
 
+### Expansions week of 08-SEP-2025  
+* OpenMeteoEDA_202306_v006 tmpDailyVsHourly() tested on apparent temperature
+
