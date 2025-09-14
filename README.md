@@ -4445,4 +4445,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores dewpoint estimates from hourly data
 * OpenMeteoEDA_202306_v006 calculates dewpoint mean, max, min from hourly data
 * OpenMeteoEDA_202306_v006 explores average dewpoint by city and year
+* OpenMeteoEDA_202306_v006 explores average dewpoint by city and month
 
