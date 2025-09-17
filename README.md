@@ -4450,4 +4450,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 15-SEP-2025  
 * OpenMeteoEDA_202306_v006 explores average dewpoint by city and day of year
 * OpenMeteoEDA_202306_v006 merges dewpoint into daily data
+* OpenMeteoEDA_202306_v006 explores apparent temperature vs. temperature
 
