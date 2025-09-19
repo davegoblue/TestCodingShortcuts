@@ -4452,4 +4452,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 merges dewpoint into daily data
 * OpenMeteoEDA_202306_v006 explores apparent temperature vs. temperature
 * OpenMeteoEDA_202306_v006 explores apparent temperature vs. dewpoint
+* OpenMeteoEDA_202306_v006 explores temperature vs. dewpoint
 
