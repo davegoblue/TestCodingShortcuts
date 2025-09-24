@@ -4459,4 +4459,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 22-SEP-2025  
 * OpenMeteoEDA_202306_v006 runs linear model for apparent temperature vs. temperature and dewpoint
 * OpenMeteoEDA_202306_v006 runs linear model for apparent temperature vs. city, temperature, and dewpoint
+* OpenMeteoEDA_202306_v006 explores dewpoint extremes by city and month
 
