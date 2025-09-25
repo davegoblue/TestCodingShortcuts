@@ -4460,4 +4460,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 runs linear model for apparent temperature vs. temperature and dewpoint
 * OpenMeteoEDA_202306_v006 runs linear model for apparent temperature vs. city, temperature, and dewpoint
 * OpenMeteoEDA_202306_v006 explores dewpoint extremes by city and month
+* OpenMeteoEDA_202306_v006 cumulative days per year with high dewpoint by city
 
