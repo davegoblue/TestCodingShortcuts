@@ -4462,4 +4462,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores dewpoint extremes by city and month
 * OpenMeteoEDA_202306_v006 cumulative days per year with high dewpoint by city
 * OpenMeteoEDA_202306_v006 cumulative days per year with low dewpoint by city
+* OpenMeteoEDA_202306_v006 days per month with high dewpoint by city
 
