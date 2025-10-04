@@ -4471,4 +4471,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores ACF for dewpoint for a single city
 * OpenMeteoEDA_202306_v006 calculates ACF for dewpoint for each city
 * OpenMeteoEDA_202306_v006 creates tibble of ACF for dewpoint for each city
+* OpenMeteoEDA_202306_v006 plots ACF for dewpoint for each city
 
