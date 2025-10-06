@@ -4474,3 +4474,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots ACF for dewpoint for each city
 * OpenMeteoEDA_202306_v006 explores PACF for dewpoint for a single city
 
+### Expansions week of 06-OCT-2025  
+* OpenMeteoEDA_202306_v006 calculates PACF for dewpoint for each city
+
