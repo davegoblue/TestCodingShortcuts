@@ -4480,4 +4480,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots PACF for dewpoint for each city
 * OpenMeteoEDA_202306_v006 runs ARIMA(0, 0, 0) for dewpoint by city
 * OpenMeteoEDA_202306_v006 runs ARIMA(1, 0, 0) for dewpoint by city
+* OpenMeteoEDA_202306_v006 corrects date sorting for ARIMA(1, 0, 0) for dewpoint by city
 
