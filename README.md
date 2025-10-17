@@ -4488,4 +4488,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 runs ARIMA(2, 0, 0) for dewpoint by city
 * OpenMeteoEDA_202306_v006 runs auto.arima() for dewpoint for a single city
 * OpenMeteoEDA_202306_v006 runs auto.arima() for dewpoint for all cities
+* OpenMeteoEDA_202306_v006 pulls optimal p, d, q for dewpoint for all cities
 
