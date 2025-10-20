@@ -4492,3 +4492,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores sigma**2 FOR optimal p, d, q for dewpoint for all cities
 * OpenMeteoEDA_202306_v006 caluclates long-term rolling 21-day mean dewpoint by day of year and city
 
+### Expansions week of 20-OCT-2025  
+* OpenMeteoEDA_202306_v006 calculates daily dewpoint vs. long-term rolling 21-day mean dewpoint by day of year and city
+
