@@ -4499,4 +4499,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 runs ARIMA(0, 0, 1) for daily dewpoint vs. long-term rolling 21-day mean dewpoint by day of year and city
 * OpenMeteoEDA_202306_v006 runs ARIMA(1, 0, 1) for daily dewpoint vs. long-term rolling 21-day mean dewpoint by day of year and city
 * OpenMeteoEDA_202306_v006 runs ARIMA(2, 0, 0) for daily dewpoint vs. long-term rolling 21-day mean dewpoint by day of year and city
+* OpenMeteoEDA_202306_v006 compiles sigma-squared for ARIMA models for a single city
+
 
