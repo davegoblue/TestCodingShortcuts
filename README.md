@@ -4506,5 +4506,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots sigma-squared for ARIMA models for all cities
 * OpenMeteoEDA_202306_v006 runs auto.arima() for daily dewpoint vs. long-term rolling 21-day mean dewpoint by day of year and city
 * OpenMeteoEDA_202306_v006 pulls auto.arima() parameters for daily dewpoint vs. long-term rolling 21-day mean dewpoint by day of year and city
-* OpenMeteoEDA_202306_v006 plots auto.arima() parameters for daily dewpoint vs. long-term rolling 21-day mean dewpoint by day of year and city
+* OpenMeteoEDA_202306_v006 plots parameters for daily dewpoint vs. long-term rolling 21-day mean dewpoint by day of year and city
+* OpenMeteoEDA_202306_v006 plots parameters for daily dewpoint, baseline and vs. long-term rolling 21-day mean dewpoint by day of year and city
 
