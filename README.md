@@ -4514,4 +4514,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 calculates daily temperature vs. long-term rolling 21-day mean temperature by day of year and city
 * OpenMeteoEDA_202306_v006 runs ARIMA(0, 0, 0) for daily temperature vs. long-term rolling 21-day mean temperature by day of year and city
 * OpenMeteoEDA_202306_v006 plots current vs. next daily temperature vs. long-term rolling 21-day mean temperature by day of year and city
+* OpenMeteoEDA_202306_v006 runs ARIMA(1, 0, 0) for daily temperature vs. long-term rolling 21-day mean temperature by day of year and city
 
