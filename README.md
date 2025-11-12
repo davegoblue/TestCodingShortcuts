@@ -4522,4 +4522,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 10-NOV-2025  
 * OpenMeteoEDA_202306_v006 compiles sigma-squared for ARIMA models for all cities
 * OpenMeteoEDA_202306_v006 plots sigma-squared for ARIMA models for all cities
+* OpenMeteoEDA_202306_v006 runs auto.arima() for daily temperature vs. long-term rolling 21-day mean temperature by day of year and city
 
