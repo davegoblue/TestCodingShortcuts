@@ -4525,4 +4525,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 runs auto.arima() for daily temperature vs. long-term rolling 21-day mean temperature by day of year and city
 * OpenMeteoEDA_202306_v006 pulls auto.arima() parameters for daily temperature vs. long-term rolling 21-day mean temperature by day of year and city
 * OpenMeteoEDA_202306_v006 plots sigma-squared by model for daily temperature vs. long-term rolling 21-day mean temperature by day of year and city
+* OpenMeteoEDA_202306_v006 plots sigma-squared by model for daily temperature, baseline and vs. long-term rolling 21-day mean temperature by day of year and city
 
