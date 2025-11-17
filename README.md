@@ -4528,3 +4528,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots sigma-squared by model for daily temperature, baseline and vs. long-term rolling 21-day mean temperature by day of year and city
 * OpenMeteoEDA_202306_v006 calculates daily maximum wind speed vs. long-term rolling 21-day mean of maximum wind speed by day of year and city
 
+### Expansions week of 17-NOV-2025  
+* OpenMeteoEDA_202306_v006 plots current vs. next daily maximum wind speed vs. long-term rolling 21-day mean of maximum wind speed by day of year and city
+
