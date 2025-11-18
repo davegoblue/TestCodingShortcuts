@@ -4530,4 +4530,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 17-NOV-2025  
 * OpenMeteoEDA_202306_v006 plots current vs. next daily maximum wind speed vs. long-term rolling 21-day mean of maximum wind speed by day of year and city
+* OpenMeteoEDA_202306_v006 runs ARIMA(0, 0, 0) for daily maximum wind speed vs. long-term rolling 21-day mean of maximum wind speed by day of year and city
 
