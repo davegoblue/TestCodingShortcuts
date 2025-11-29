@@ -4543,4 +4543,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 pulls auto.arima() parameters for daily maximum wind speed vs. long-term rolling 21-day mean of maximum wind speed by day of year and city
 * OpenMeteoEDA_202306_v006 plots sigma-squared by model for daily maximum wind speed vs. long-term rolling 21-day mean of maximum wind speed by day of year and city
 * OpenMeteoEDA_202306_v006 plots sigma-squared by model for daily maximum wind speed, baseline and vs. long-term rolling 21-day mean of maximum wind speed by day of year and city
+* OpenMeteoEDA_202306_v006 calculates daily precipitation vs. long-term rolling 21-day mean precipitation by day of year and city
 
