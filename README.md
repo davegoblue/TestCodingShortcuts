@@ -4550,4 +4550,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 runs ARIMA(0, 0, 0) for daily precipitation vs. long-term rolling 21-day mean of daily precipitation by day of year and city
 * OpenMeteoEDA_202306_v006 runs ARIMA(1, 0, 0) for daily precipitation vs. long-term rolling 21-day mean of daily precipitation by day of year and city
 * OpenMeteoEDA_202306_v006 runs ARIMA(0, 0, 1) for daily precipitation vs. long-term rolling 21-day mean of daily precipitation by day of year and city
+* OpenMeteoEDA_202306_v006 runs ARIMA(1, 0, 1) for daily precipitation vs. long-term rolling 21-day mean of daily precipitation by day of year and city
 
