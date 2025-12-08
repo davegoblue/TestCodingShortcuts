@@ -4555,3 +4555,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 compiles sigma-squared for ARIMA models for all cities
 * OpenMeteoEDA_202306_v006 plots sigma-squared for ARIMA models for all cities
 
+### Expansions week of 08-DEC-2025  
+* OpenMeteoEDA_202306_v006 runs auto.arima() for daily precipitation vs. long-term rolling 21-day mean precipitation by day of year and city
+
