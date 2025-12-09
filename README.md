@@ -4557,4 +4557,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 08-DEC-2025  
 * OpenMeteoEDA_202306_v006 runs auto.arima() for daily precipitation vs. long-term rolling 21-day mean precipitation by day of year and city
+* OpenMeteoEDA_202306_v006 pulls auto.arima() parameters for daily precipitation vs. long-term rolling 21-day mean precipitation by day of year and city
 
