@@ -4561,4 +4561,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots sigma-squared by model for daily precipitation vs. long-term rolling 21-day mean of precipitation by day of year and city
 * OpenMeteoEDA_202306_v006 plots sigma-squared by model for daily precipitation, baseline and vs. long-term rolling 21-day mean of precipitation by day of year and city
 * OpenMeteoEDA_202306_v006 calculates daily shortwave radiation vs. long-term rolling 21-day mean shortwave radiation by day of year and city
+* OpenMeteoEDA_202306_v006 plots current vs. next daily shortwave radiation vs. long-term rolling 21-day mean of shortwave radiation by day of year and city
 
