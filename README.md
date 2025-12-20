@@ -4569,4 +4569,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 runs ARIMA(0, 0, 1) for daily shortwave radiationb vs. long-term rolling 21-day mean of daily shortwave radiation by day of year and city
 * OpenMeteoEDA_202306_v006 runs ARIMA(1, 0, 1) for daily shortwave radiationb vs. long-term rolling 21-day mean of daily shortwave radiation by day of year and city
 * OpenMeteoEDA_202306_v006 compiles sigma-squared for ARIMA models for all cities
+* OpenMeteoEDA_202306_v006 plots sigma-squared for ARIMA models for all cities
 
