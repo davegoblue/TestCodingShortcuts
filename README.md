@@ -4578,4 +4578,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots sigma-squared by model for daily shortwave radiation vs. long-term rolling 21-day mean of shortwave radiation by day of year and city
 * OpenMeteoEDA_202306_v006 plots sigma-squared by model for daily shortwave radiation, baseline and vs. long-term rolling 21-day mean of shortwave radiation by day of year and city
 * OpenMeteoEDA_202306_v006 creates tibble of ACF for shortwave radiation for each city
+* OpenMeteoEDA_202306_v006 plots ACF for shortwave radiation for each city
 
