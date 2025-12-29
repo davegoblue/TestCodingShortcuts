@@ -4582,3 +4582,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 creates tibble of PACF for shortwave radiation for each city
 * OpenMeteoEDA_202306_v006 plots PACF for shortwave radiation for each city
 
+### Expansions week of 29-DEC-2025  
+* OpenMeteoEDA_202306_v006 creates and plots ACF for seasonally adjusted shortwave radiation for each city
+
