@@ -4588,4 +4588,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 creates and plots ACF for seasonally adjusted temperature for each city
 * OpenMeteoEDA_202306_v006 creates and plots PACF for seasonally adjusted temperature for each city
 * OpenMeteoEDA_202306_v006 makeACFPlot() written  
+* OpenMeteoEDA_202306_v006 makeACFPlot() updated  
 
