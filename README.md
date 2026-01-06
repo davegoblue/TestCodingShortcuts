@@ -4593,4 +4593,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 06-JAN-2026  
 * OpenMeteoEDA_202306_v006 relative ACF for mean temperature by city plotted  
+* OpenMeteoEDA_202306_v006 relative PACF for mean temperature by city plotted  
 
