@@ -4591,7 +4591,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 makeACFPlot() updated  
 * OpenMeteoEDA_202306_v006 makeACFPlot() tested  
 
-### Expansions week of 06-JAN-2026  
+### Expansions week of 05-JAN-2026  
 * OpenMeteoEDA_202306_v006 relative ACF for mean temperature by city plotted  
 * OpenMeteoEDA_202306_v006 relative PACF for mean temperature by city plotted  
 * OpenMeteoEDA_202306_v006 relative ACF for mean dewpoint by city plotted  
@@ -4599,4 +4599,7 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 relative ACF for mean maximum wind speed by city plotted  
 * OpenMeteoEDA_202306_v006 relative PACF for mean maximum wind speed by city plotted  
 * OpenMeteoEDA_202306_v006 further explores mean maximum wind speed  
+
+### Expansions week of 12-JAN-2026  
+* OpenMeteoEDA_202306_v006 further explores mean maximum wind speed by cty and year  
 
