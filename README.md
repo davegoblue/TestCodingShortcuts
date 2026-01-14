@@ -4603,4 +4603,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 12-JAN-2026  
 * OpenMeteoEDA_202306_v006 further explores mean maximum wind speed by city and year  
 * OpenMeteoEDA_202306_v006 further explores mean maximum wind speed by month and year for a single city
+* OpenMeteoEDA_202306_v006 further explores mean maximum wind speed by month and year for a second city
 
