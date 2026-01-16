@@ -4605,4 +4605,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 further explores mean maximum wind speed by month and year for a single city
 * OpenMeteoEDA_202306_v006 further explores mean maximum wind speed by month and year for a second city
 * OpenMeteoEDA_202306_v006 explores differences in mean maximum wind speed by month for pre/post-2017  
+* OpenMeteoEDA_202306_v006 adds error bars to differences in mean maximum wind speed by month for pre/post-2017  
 
