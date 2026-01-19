@@ -4609,3 +4609,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores mean maximum wind speed by year, faceted by month, for a single city
 * OpenMeteoEDA_202306_v006 explores mean maximum wind speed by year, faceted by month, for a second city
 
+### Expansions week of 19-JAN-2026  
+* OpenMeteoEDA_202306_v006 further explores mean temperature by city and year  
+
