@@ -4612,4 +4612,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 19-JAN-2026  
 * OpenMeteoEDA_202306_v006 further explores mean temperature by city and year  
 * OpenMeteoEDA_202306_v006 tmpMetricByYear() written    
+* OpenMeteoEDA_202306_v006 tmpMetricByYear() tested on temperature  
 
