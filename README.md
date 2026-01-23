@@ -4614,4 +4614,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 tmpMetricByYear() written    
 * OpenMeteoEDA_202306_v006 tmpMetricByYear() tested on temperature  
 * OpenMeteoEDA_202306_v006 tmpMetricByYear() tested on wind  
+* OpenMeteoEDA_202306_v006 tmpMetricByYear() tested on dewpoint  
 
