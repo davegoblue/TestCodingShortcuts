@@ -4621,4 +4621,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 26-JAN-2026  
 * OpenMeteoEDA_202306_v006 tmpMetricByMonthYear() tested on temperature  
+* OpenMeteoEDA_202306_v006 tmpMetricByMonthYear() tested on wind  
 
