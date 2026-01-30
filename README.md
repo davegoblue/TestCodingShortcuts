@@ -4624,4 +4624,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 tmpMetricByMonthYear() tested on wind  
 * OpenMeteoEDA_202306_v006 tmpMetricByMonthYear() tested on dewpoint  
 * OpenMeteoEDA_202306_v006 tmpMetricByMonthYear() tested on precipitation  
+* OpenMeteoEDA_202306_v006 tmpMetricByMonthYear() tested on shortwave radiation  
 
