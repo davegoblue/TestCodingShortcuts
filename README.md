@@ -4625,4 +4625,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 tmpMetricByMonthYear() tested on dewpoint  
 * OpenMeteoEDA_202306_v006 tmpMetricByMonthYear() tested on precipitation  
 * OpenMeteoEDA_202306_v006 tmpMetricByMonthYear() tested on shortwave radiation  
+* OpenMeteoEDA_202306_v006 explores random forest for snowfall  
 
