@@ -4630,4 +4630,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 02-FEB-2026  
 * OpenMeteoEDA_202306_v006 explores random forest, trained on a single city, for precipitation  
+* OpenMeteoEDA_202306_v006 explores random forest, trained on a second city, for precipitation  
 
