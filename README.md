@@ -4633,4 +4633,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores random forest, trained on a second city, for precipitation  
 * OpenMeteoEDA_202306_v006 explores random forest to predict city  
 * OpenMeteoEDA_202306_v006 explores random forest with additional variables to predict city  
+* OpenMeteoEDA_202306_v006 further explores random forest with additional variables to predict city  
 
