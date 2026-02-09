@@ -4637,3 +4637,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores random forest to predict cold vs. warm city  
 * OpenMeteoEDA_202306_v006 explores random forest to predict grouped cold vs. individual warm city  
 
+### Expansions week of 09-FEB-2026  
+* OpenMeteoEDA_202306_v006 explores random forest to predict cold cities  
+
