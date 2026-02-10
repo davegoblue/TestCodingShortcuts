@@ -4367,3 +4367,59 @@ rfTestCity$tstPred %>%
 
 ```
 
+The random forest model is updated to estimate non-Boston/Chicago/NYC:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Use only 50% as training data
+set.seed(26020914)
+idxTrain_v1 <- sample(1:nrow(allCityDaily), round(0.5*nrow(allCityDaily)), replace=FALSE)
+tgtVar=c("fct_city")
+predVars=c("temperature_2m_max", 
+           "apparent_temperature_max", 
+           "temperature_2m_min",
+           "apparent_temperature_min", 
+           "windspeed_10m_max", 
+           "precipitation_sum",
+           "precipitation_hours",
+           "shortwave_radiation_sum", 
+           "et0_fao_evapotranspiration",
+           "snowfall_sum", 
+           "fct_mon"
+           )
+cityGroup <- c("Chicago IL", "Boston MA", "New York NY")
+                        
+rfTestCity <- runFullRF(dfTrain=allCityDaily[idxTrain_v1, ] %>% 
+                            filter(year(date)>2010, year(date)<2023, !(cityName %in% cityGroup)) %>%
+                            mutate(fct_city=factor(cityName), 
+                                   fct_mon=factor(month.abb[month(date)], levels=month.abb)
+                                   ) %>%
+                            select(all_of(c(tgtVar, predVars))),
+                        dfTest=allCityDaily[-idxTrain_v1, ] %>% 
+                            filter(year(date)>2010, year(date)<2023, !(cityName %in% cityGroup)) %>%
+                            mutate(fct_city=factor(cityName), 
+                                   fct_mon=factor(month.abb[month(date)], levels=month.abb)
+                                   ),
+                        yVar=tgtVar, 
+                        xVars=predVars,
+                        isContVar=FALSE,
+                        rndTo=-1L,
+                        returnData=TRUE
+                        )
+
+rfTestCity$tstPred %>%
+    count(fct_city, pred) %>%
+    group_by(fct_city) %>%
+    mutate(pct=n/sum(n)) %>%
+    ungroup() %>%
+    ggplot(aes(x=pred, y=fct_city)) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(n, "\n", 100*round(pct, 3), "%")), size=2.5) +
+    scale_fill_continuous("% Pred", low="white", high="lightgreen", limits=c(0, 1)) + 
+    labs(x="Predicted", 
+         y="Actual", 
+         title="Predictions by actual city", 
+         caption="Denominator is actual city"
+         )
+
+```
+
