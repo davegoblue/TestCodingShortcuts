@@ -4193,6 +4193,8 @@ rfTestCity$tstPred %>%
          caption="Denominator is actual city"
          )
 
+rfTestCitySaved <- rfTestCity
+
 ```
 
 The random forest model is updated to estimate Boston/Chicago/NYC vs. others:  
@@ -4553,7 +4555,8 @@ All cities are predicted through the two-phase process:
 
 rfWarmCold$tstPred %>%
     mutate(coldPred=predict(rfColdCity$rf, data=.)$predictions, 
-           warmPred=predict(rfWarmCity$rf, data=.)$predictions
+           warmPred=predict(rfWarmCity$rf, data=.)$predictions, 
+           basePred=predict(rfTestCity$rf, data=.)$predictions
            ) %>%
     count(fct_city, pred, coldPred, warmPred) %>%
     mutate(actual=ifelse(fct_city %in% cityGroup, "Cold", "Warm"), 
@@ -4573,3 +4576,34 @@ rfWarmCold$tstPred %>%
 
 ```
 
+Accuracy is compared by modeling process:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+rfWarmCold$tstPred %>%
+    mutate(coldPred=predict(rfColdCity$rf, data=.)$predictions, 
+           warmPred=predict(rfWarmCity$rf, data=.)$predictions, 
+           basePred=predict(rfTestCitySaved$rf, data=.)$predictions
+           ) %>%
+    count(fct_city, pred, coldPred, warmPred, basePred) %>%
+    mutate(actual=ifelse(fct_city %in% cityGroup, "Cold", "Warm"), 
+           label=paste0(as.character(fct_city), "\n", actual), 
+           predFinal=ifelse(pred=="Cold", as.character(coldPred), as.character(warmPred))
+           ) %>%
+    group_by(fct_city, actual, label, predFinal, basePred) %>%
+    summarize(n=sum(n), .groups="drop") %>%
+    group_by(fct_city) %>%
+    mutate(pct=n/sum(n)) %>%
+    ungroup() %>%
+    mutate(initialRight=(fct_city==basePred), twoStageRight=(fct_city==predFinal)) %>%
+    group_by(fct_city) %>%
+    summarize(iniAcc=sum(pct*initialRight), twoAcc=sum(pct*twoStageRight)) %>%
+    pivot_longer(cols=-c(fct_city)) %>%
+    ggplot(aes(x=fct_reorder(fct_city, value), y=value)) + 
+    geom_line(aes(group=name, color=c("iniAcc"="All at once", "twoAcc"="Two-stage")[name])) +
+    labs(x="Actual city", y="Accuracy", title="Accuracy by model") + 
+    lims(y=c(0, 1)) + 
+    scale_color_discrete(name="Model")
+
+```
+
+The initial model seems to project to test data much better than suggested by its own accuracy statistucs. Further exploration may be merited
