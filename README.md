@@ -4646,3 +4646,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 predicts cities individually using two-stage process  
 * OpenMeteoEDA_202306_v006 compares predictions by model  
 
+### Expansions week of 16-FEB-2026  
+* OpenMeteoEDA_202306_v006 re-runs models using same seed and test data  
+
