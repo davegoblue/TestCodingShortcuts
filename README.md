@@ -4648,4 +4648,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 16-FEB-2026  
 * OpenMeteoEDA_202306_v006 re-runs models using same seed and test data  
+* OpenMeteoEDA_202306_v006 compares models using same seed and test data  
 
