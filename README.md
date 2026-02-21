@@ -4652,4 +4652,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 compares model predictions on test and train data  
 * OpenMeteoEDA_202306_v006 explores random forest to predict month  
 * OpenMeteoEDA_202306_v006 calculates accuracy of month predictions by city  
+* OpenMeteoEDA_202306_v006 plots accuracy by city and month  
 
