@@ -4655,3 +4655,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots accuracy by city and month  
 * OpenMeteoEDA_202306_v006 explores accuracy by city and month  
 
+### Expansions week of 23-FEB-2026  
+* OpenMeteoEDA_202306_v006 explores accuracy for a single city by month  
+
