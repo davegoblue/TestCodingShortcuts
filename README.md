@@ -4657,4 +4657,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 23-FEB-2026  
 * OpenMeteoEDA_202306_v006 explores accuracy for a single city by month  
+* OpenMeteoEDA_202306_v006 explores accuracy for a second city by month  
 
