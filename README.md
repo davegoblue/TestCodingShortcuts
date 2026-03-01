@@ -4662,4 +4662,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores second-highest inaccuracies for predicting month  
 * OpenMeteoEDA_202306_v006 explores third-highest inaccuracies for predicting month  
 * OpenMeteoEDA_202306_v006 explores accuracy for predicting season  
+* OpenMeteoEDA_202306_v006 further explores accuracy for predicting season  
 
