@@ -4669,4 +4669,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores season predictions for a lower accuracy city  
 * OpenMeteoEDA_202306_v006 explores season predictions for a higher accuracy city  
 * OpenMeteoEDA_202306_v006 explores season predictions for all cities  
+* OpenMeteoEDA_202306_v006 explores season predictions using different season definitions  
 
