@@ -4678,4 +4678,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 calculates accuracy of season predictions by city  
 * OpenMeteoEDA_202306_v006 explores accuracy for a single city by season  
 * OpenMeteoEDA_202306_v006 explores accuracy for a second city by season  
+* OpenMeteoEDA_202306_v006 explores highest inaccuracies for predicting season  
 
