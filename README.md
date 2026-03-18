@@ -4685,4 +4685,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 16-MAR-2026  
 * OpenMeteoEDA_202306_v006 plots accuracy by city and month for predicting season  
 * OpenMeteoEDA_202306_v006 plots season predictions by city and month  
+* OpenMeteoEDA_202306_v006 explores random forest to predict season for a single city  
 
