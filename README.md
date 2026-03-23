@@ -4691,3 +4691,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 further explores accuracy for cities not in the training data  
 * OpenMeteoEDA_202306_v006 continues exploring accuracy for cities not in the training data  
 
+### Expansions week of 23-MAR-2026  
+* OpenMeteoEDA_202306_v006 explores random forest to predict season for a second city  
+
