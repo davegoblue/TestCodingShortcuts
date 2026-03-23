@@ -5579,3 +5579,70 @@ rfTestSeasonChiProject$tstPred %>%
 
 Misclassification is particularly common with warmer cities. Cooler months in a warmer city are often classified as Summer in a model trained only on Chicago IL
 
+A random forest model is created to estimate season for a second city:  
+```{r, fig.height=9, fig.width=9, cache=TRUE}
+
+# Use standard season definitions and create mapping file
+lstSeason <- c("Spring", "Summer", "Fall", "Winter")
+tblSeason <- tibble::tibble(mon=factor(month.abb), 
+                            season=factor(lstSeason[c(4, 4, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4)], 
+                                          levels=lstSeason
+                                          )
+                            )
+seasonMap <- c(tblSeason$season)
+names(seasonMap) <- c(tblSeason$mon)
+seasonMap
+
+# Use only 50% as training data
+set.seed(26032215)
+idxTrain_v3 <- sample(1:nrow(allCityDaily), round(0.5*nrow(allCityDaily)), replace=FALSE)
+tgtVar=c("fct_season")
+predVars=c("temperature_2m_max", 
+           "apparent_temperature_max", 
+           "temperature_2m_min",
+           "apparent_temperature_min", 
+           "windspeed_10m_max", 
+           "precipitation_sum",
+           "precipitation_hours",
+           "shortwave_radiation_sum", 
+           "et0_fao_evapotranspiration",
+           "snowfall_sum"
+           )
+                        
+rfTestSeasonMia <- runFullRF(dfTrain=allCityDaily[idxTrain_v3, ] %>% 
+                                 filter(year(date)>2010, year(date)<2023, cityName=="Miami FL") %>%
+                                 mutate(fct_city=factor(cityName), 
+                                        fct_mon=factor(month.abb[month(date)], levels=month.abb), 
+                                        fct_season=seasonMap[fct_mon]
+                                        ) %>%
+                                 select(all_of(c(tgtVar, predVars))),
+                             dfTest=allCityDaily[-idxTrain_v3, ] %>% 
+                                 filter(year(date)>2010, year(date)<2023, cityName=="Miami FL") %>%
+                                 mutate(fct_city=factor(cityName), 
+                                        fct_mon=factor(month.abb[month(date)], levels=month.abb), 
+                                        fct_season=seasonMap[fct_mon]
+                                        ),
+                             yVar=tgtVar, 
+                             xVars=predVars,
+                             isContVar=FALSE,
+                             rndTo=-1L,
+                             returnData=TRUE
+                             )
+
+rfTestSeasonMia$tstPred %>%
+    count(fct_season, pred) %>%
+    group_by(fct_season) %>%
+    mutate(pct=n/sum(n)) %>%
+    ungroup() %>%
+    ggplot(aes(x=pred, y=fct_season)) + 
+    geom_tile(aes(fill=pct)) + 
+    geom_text(aes(label=paste0(n, "\n", 100*round(pct, 3), "%")), size=2.5) +
+    scale_fill_continuous("% Pred", low="white", high="lightgreen", limits=c(0, 1)) + 
+    labs(x="Predicted", 
+         y="Actual", 
+         title="Predictions by actual season", 
+         caption="Denominator is actual season"
+         )
+
+```
+
