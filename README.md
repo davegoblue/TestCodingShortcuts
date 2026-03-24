@@ -4693,4 +4693,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 23-MAR-2026  
 * OpenMeteoEDA_202306_v006 explores random forest to predict season for a second city  
+* OpenMeteoEDA_202306_v006 projects second random forest to cities not in the training data  
 
