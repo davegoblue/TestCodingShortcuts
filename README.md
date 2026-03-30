@@ -4700,3 +4700,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores accuracy by source and prediction  
 * OpenMeteoEDA_202306_v006 combines predictions by source  
 
+### Expansions week of 30-MAR-2026  
+* OpenMeteoEDA_202306_v006 explores random forest to predict season for a third city  
+
