@@ -4704,4 +4704,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores random forest to predict season for a third city  
 * OpenMeteoEDA_202306_v006 projects third random forest to cities not in the training data  
 * OpenMeteoEDA_202306_v006 explores accuracy for cities not in the training data  
+* OpenMeteoEDA_202306_v006 further explores accuracy for cities not in the training data  
 
