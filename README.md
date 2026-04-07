@@ -4711,4 +4711,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 06-APR-2026  
 * OpenMeteoEDA_202306_v006 projects fourth random forest to cities not in the training data  
+* OpenMeteoEDA_202306_v006 explores accuracy for cities not in the training data  
 
