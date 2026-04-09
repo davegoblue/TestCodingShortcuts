@@ -4713,4 +4713,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 projects fourth random forest to cities not in the training data  
 * OpenMeteoEDA_202306_v006 explores accuracy for cities not in the training data  
 * OpenMeteoEDA_202306_v006 further explores accuracy for cities not in the training data  
+* OpenMeteoEDA_202306_v006 continues exploring accuracy for cities not in the training data  
 
