@@ -4722,4 +4722,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 creates tibble for negative predictive power  
 * OpenMeteoEDA_202306_v006 explores negative predictive power  
 * OpenMeteoEDA_202306_v006 explores negative predictive power for a single city  
+* OpenMeteoEDA_202306_v006 updates associated plots  
 
