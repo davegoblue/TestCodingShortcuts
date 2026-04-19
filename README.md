@@ -4725,4 +4725,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 updates associated plots  
 * OpenMeteoEDA_202306_v006 explores precision-recall for a single city  
 * OpenMeteoEDA_202306_v006 explores precision-recall for all cities  
+* OpenMeteoEDA_202306_v006 explores F1 score for all cities  
 
