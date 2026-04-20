@@ -4727,3 +4727,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores precision-recall for all cities  
 * OpenMeteoEDA_202306_v006 explores F1 score for all cities  
 
+### Expansions week of 20-APR-2026  
+* OpenMeteoEDA_202306_v006 explores accuracy by source, month, and prediction  
+
