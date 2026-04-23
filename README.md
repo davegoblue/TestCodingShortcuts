@@ -4731,4 +4731,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores accuracy by source, month, and prediction  
 * OpenMeteoEDA_202306_v006 creates tibble for accuracy by source, month, and prediction  
 * OpenMeteoEDA_202306_v006 explores season accuracy by month for a single city  
+* OpenMeteoEDA_202306_v006 explores season accuracy by month for all cities  
 
