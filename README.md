@@ -4733,4 +4733,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores season accuracy by month for a single city  
 * OpenMeteoEDA_202306_v006 explores season accuracy by month for all cities  
 * OpenMeteoEDA_202306_v006 plots season accuracy by month for all cities  
+* OpenMeteoEDA_202306_v006 creates initial tibble for kmeans  
 
