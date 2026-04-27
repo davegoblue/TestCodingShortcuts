@@ -4736,3 +4736,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 creates initial tibble for kmeans  
 * OpenMeteoEDA_202306_v006 standardizes predictors for kmeans  
 
+### Expansions week of 27-APR-2026  
+* OpenMeteoEDA_202306_v006 plots correlation heatmap for predictors  
+
