@@ -4740,4 +4740,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots correlation heatmap for predictors  
 * OpenMeteoEDA_202306_v006 runs hierarchical clustering on a subset  
 * OpenMeteoEDA_202306_v006 explores segments with cutree(k=2)  
+* OpenMeteoEDA_202306_v006 explores segments with cutree(k=3)  
 
