@@ -4748,4 +4748,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 04-MAY-2026  
 * OpenMeteoEDA_202306_v006 explores segments with cutree(k=7)  
 * OpenMeteoEDA_202306_v006 explores city-season by segment with cutree(k=3)  
+* OpenMeteoEDA_202306_v006 adds labels to plot  
 
