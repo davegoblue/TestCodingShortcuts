@@ -4757,4 +4757,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 11-MAY-2026  
 * OpenMeteoEDA_202306_v006 explores city-season by segment with cutree(k=7)  
 * OpenMeteoEDA_202306_v006 explores temperature by segment with cutree(k=7)  
+* OpenMeteoEDA_202306_v006 explores precipitation by segment with cutree(k=7)  
 
