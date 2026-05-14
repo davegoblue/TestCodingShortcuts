@@ -4758,4 +4758,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores city-season by segment with cutree(k=7)  
 * OpenMeteoEDA_202306_v006 explores temperature by segment with cutree(k=7)  
 * OpenMeteoEDA_202306_v006 explores precipitation by segment with cutree(k=7)  
+* OpenMeteoEDA_202306_v006 explores solar metrics by segment with cutree(k=7)  
 
