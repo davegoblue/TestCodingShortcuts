@@ -4771,3 +4771,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 tmpDistElement() tested on randomized non-training data  
 * OpenMeteoEDA_202306_v006 attaches segment of closest data point to randomized non-training data  
 
+### Expansions week of 25-MAY-2026  
+* OpenMeteoEDA_202306_v006 combines train and test data  
+
