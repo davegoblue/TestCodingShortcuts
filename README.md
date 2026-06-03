@@ -4783,4 +4783,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 01-JUN-2026  
 * OpenMeteoEDA_202306_v006 runs kmeans(centers=4)  
 * OpenMeteoEDA_202306_v006 runs kmeans(centers=5)  
+* OpenMeteoEDA_202306_v006 runs kmeans(centers=6)  
 
