@@ -4787,4 +4787,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 runs kmeans(centers=7)  
 * OpenMeteoEDA_202306_v006 tests assignKMeans(k=2)  
 * OpenMeteoEDA_202306_v006 tests assignKMeans(k=3)  
+* OpenMeteoEDA_202306_v006 tests assignKMeans(k=4)  
 
