@@ -4794,4 +4794,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 tests assignKMeans(k=6)  
 * OpenMeteoEDA_202306_v006 tests assignKMeans(k=7)  
 * OpenMeteoEDA_202306_v006 corrects calculations and plots for assignKMeans(k=3)  
+* OpenMeteoEDA_202306_v006 corrects calculations and plots for assignKMeans(k=4)  
 
