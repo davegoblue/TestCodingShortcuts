@@ -4800,4 +4800,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 15-JUN-2026  
 * OpenMeteoEDA_202306_v006 corrects calculations and plots for assignKMeans(k=7)  
+* OpenMeteoEDA_202306_v006 creates tibble for distance to closest cluster (k=2 thru k=7)  
 
