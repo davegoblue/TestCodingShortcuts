@@ -4807,3 +4807,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores percentiles by centroid (k=2)  
 * OpenMeteoEDA_202306_v006 explores percentiles by centroid (k=3)  
 
+### Expansions week of 22-JUN-2026  
+* OpenMeteoEDA_202306_v006 explores percentiles by centroid (k=4)  
+
