@@ -4814,4 +4814,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores percentiles by centroid (k=7)  
 * OpenMeteoEDA_202306_v006 boxplot for percentiles by cluster (k=2)  
 * OpenMeteoEDA_202306_v006 boxplot for percentiles by cluster (k=3)  
+* OpenMeteoEDA_202306_v006 boxplot for percentiles by cluster (k=4)  
+
 
