@@ -4816,4 +4816,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 boxplot for percentiles by cluster (k=3)  
 * OpenMeteoEDA_202306_v006 boxplot for percentiles by cluster (k=4)  
 
+### Expansions week of 29-JUN-2026  
+* OpenMeteoEDA_202306_v006 boxplot for percentiles by cluster (k=5)  
 
