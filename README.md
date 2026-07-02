@@ -4820,4 +4820,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 boxplot for percentiles by cluster (k=5)  
 * OpenMeteoEDA_202306_v006 boxplot for percentiles by cluster (k=6)  
 * OpenMeteoEDA_202306_v006 boxplot for percentiles by cluster (k=7)  
+* OpenMeteoEDA_202306_v006 explores cumulative precipitation by year for a single city  
 
