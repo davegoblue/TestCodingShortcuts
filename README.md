@@ -4828,4 +4828,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 06-JUL-2026  
 * OpenMeteoEDA_202306_v006 explores cumulative precipitation by year for a third city  
 * OpenMeteoEDA_202306_v006 explores percent of cumulative precipitation by year for a third city  
+* OpenMeteoEDA_202306_v006 explores cumulative precipitation by year - mean +/- 1 SD by day of year
 
