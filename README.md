@@ -4834,3 +4834,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores cumulative precipitation for all cities by year - mean, max, min by day of year
 * OpenMeteoEDA_202306_v006 explores precipitation events and volumes by threshhold for a single city  
 
+### Expansions week of 13-JUL-2026  
+* OpenMeteoEDA_202306_v006 plots precipitation events and volumes by threshold for a single city  
+
