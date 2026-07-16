@@ -4838,4 +4838,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots precipitation events and volumes by threshold for a single city  
 * OpenMeteoEDA_202306_v006 plots precipitation events and volumes by threshold for a second city  
 * OpenMeteoEDA_202306_v006 plots precipitation events and volumes by threshold for a third city  
+* OpenMeteoEDA_202306_v006 plots precipitation events and volumes by threshold faceted for three cities  
 
