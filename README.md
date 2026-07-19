@@ -4841,4 +4841,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots precipitation events and volumes by threshold faceted for three cities  
 * OpenMeteoEDA_202306_v006 plots precipitation events and volumes by threshold faceted for four cities  
 * OpenMeteoEDA_202306_v006 plots density of precipitation per day  
+* OpenMeteoEDA_202306_v006 plots density (excluding zero) of precipitation per day  
 
