@@ -4843,3 +4843,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots density of precipitation per day  
 * OpenMeteoEDA_202306_v006 plots density (excluding zero) of precipitation per day  
 
+### Expansions week of 20-JUL-2026  
+* OpenMeteoEDA_202306_v006 explores cumulative heating degree days for all cities by year - mean, max, min by day of year  
+
