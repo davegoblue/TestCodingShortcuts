@@ -4845,4 +4845,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 20-JUL-2026  
 * OpenMeteoEDA_202306_v006 explores cumulative heating degree days for all cities by year - mean, max, min by day of year  
+* OpenMeteoEDA_202306_v006 explores cumulative cooling degree days for all cities by year - mean, max, min by day of year  
 
