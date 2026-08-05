@@ -4864,4 +4864,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 03-AUG-2026  
 * OpenMeteoEDA_202306_v006 explores degree days density vs. overall for a fourth city by month  
 * OpenMeteoEDA_202306_v006 explores degree days histogram for 7 cities combined by month  
+* OpenMeteoEDA_202306_v006 explores degree days histogram for 12 months combined by city  
 
