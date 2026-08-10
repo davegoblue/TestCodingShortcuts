@@ -4870,3 +4870,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores cumulative net degree days by year for a third city  
 * OpenMeteoEDA_202306_v006 explores cumulative net degree days by day of year for a single city  
 
+### Expansions week of 10-AUG-2026  
+* OpenMeteoEDA_202306_v006 explores cumulative net degree days by day of year for a second city  
+
