@@ -4877,4 +4877,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores averages for cumulative net degree days by day of year for a second city  
 * OpenMeteoEDA_202306_v006 explores averages for cumulative net degree days by day of year for a third city  
 * OpenMeteoEDA_202306_v006 explores averages for cumulative net degree days by day of year for all cities  
+* OpenMeteoEDA_202306_v006 explores hourly precipitation for a single city  
 
