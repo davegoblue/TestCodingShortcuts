@@ -4882,4 +4882,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 17-AUG-2026  
 * OpenMeteoEDA_202306_v006 explores hourly precipitation for a second city  
 * OpenMeteoEDA_202306_v006 explores hourly precipitation for a third city  
+* OpenMeteoEDA_202306_v006 plots hourly precipitation histogram for a single city  
 
