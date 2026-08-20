@@ -4883,4 +4883,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores hourly precipitation for a second city  
 * OpenMeteoEDA_202306_v006 explores hourly precipitation for a third city  
 * OpenMeteoEDA_202306_v006 plots hourly precipitation histogram for a single city  
+* OpenMeteoEDA_202306_v006 plots hourly precipitation histogram for a second city  
 
