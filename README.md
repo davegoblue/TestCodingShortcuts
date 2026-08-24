@@ -4888,3 +4888,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots hourly precipitation histogram for all cities  
 * OpenMeteoEDA_202306_v006 plots maximum hourly precipitation by day histogram for a single city  
 
+### Expansions week of 24-AUG-2026  
+* OpenMeteoEDA_202306_v006 plots maximum hourly precipitation by day histogram for a second city  
+
