@@ -4918,5 +4918,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 14-SEP-2026  
 * OpenMeteoEDA_202306_v006 boxplot for daily hours vs. maximum hourly precipitation for a single city  
 * OpenMeteoEDA_202306_v006 boxplot for daily hours vs. maximum hourly precipitation for a second city  
+* OpenMeteoEDA_202306_v006 boxplot for daily hours vs. maximum hourly precipitation for a third city  
 
 
