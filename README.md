@@ -4921,4 +4921,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 boxplot for daily hours vs. maximum hourly precipitation for a third city  
 * OpenMeteoEDA_202306_v006 boxplot for daily hours vs. maximum hourly precipitation for all cities  
 * OpenMeteoEDA_202306_v006 plots maximum hourly va. total daily precipitation for a single city  
+* OpenMeteoEDA_202306_v006 plots maximum hourly va. total daily precipitation for a second city  
 
