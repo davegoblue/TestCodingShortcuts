@@ -4924,3 +4924,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots maximum hourly va. total daily precipitation for a second city  
 * OpenMeteoEDA_202306_v006 plots maximum hourly va. total daily precipitation for a third city  
 
+### Expansions week of 21-SEP-2026  
+* OpenMeteoEDA_202306_v006 updates maximum hourly va. total daily precipitation for a single city  
+
