@@ -4945,4 +4945,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 05-OCT-2026  
 * OpenMeteoEDA_202306_v006 plots total daily precipitation vs. hours of precipitation for a fourth city  
 * OpenMeteoEDA_202306_v006 plots total daily precipitation vs. hours of precipitation for all cities  
+* OpenMeteoEDA_202306_v006 explores maximum daily precipitation buckets by month for a single city  
 
