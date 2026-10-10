@@ -4948,4 +4948,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores maximum daily precipitation buckets by month for a single city  
 * OpenMeteoEDA_202306_v006 explores maximum daily precipitation buckets by month for a second city  
 * OpenMeteoEDA_202306_v006 explores maximum daily precipitation buckets by month for a third city  
+* OpenMeteoEDA_202306_v006 explores maximum daily precipitation buckets by month for all cities  
 
