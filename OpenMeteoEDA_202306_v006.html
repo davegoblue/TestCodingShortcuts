@@ -13337,6 +13337,64 @@ cityNames</code></pre>
 ## Los Angeles CA 389.4924 77  2.772824e-43
 ## Miami FL       935.1258 77 1.472430e-147
 ## New York NY    153.8000 77  4.772094e-07</code></pre>
+<p>Maximum hourly precipitation by day is explored for all cities using
+chi-squared (updated buckets):</p>
+<pre class="r"><code>cityNames &lt;- allCityHourly %&gt;% pull(cityName) %&gt;% unique() %&gt;% sort()
+cityNames</code></pre>
+<pre><code>## [1] &quot;Boston MA&quot;      &quot;Chicago IL&quot;     &quot;Houston TX&quot;     &quot;Las Vegas NV&quot;  
+## [5] &quot;Los Angeles CA&quot; &quot;Miami FL&quot;       &quot;New York NY&quot;</code></pre>
+<pre class="r"><code>cityChiSQList &lt;- lapply(cityNames, 
+                        FUN=function(x) {
+                            allCityHourly %&gt;%
+                                filter(year(date)&gt;=2010, year(date)&lt;2023, cityName==x) %&gt;%
+                                mutate(precip=case_when(precipitation&gt;=25.4/4~&quot;0.25+&quot;,
+                                                        precipitation&gt;=25.4/10~&quot;0.10-0.24&quot;, 
+                                                        precipitation&gt;=25.4/20~&quot;0.05-0.09&quot;,
+                                                        precipitation&gt;=25.4/50~&quot;0.02-0.04&quot;, 
+                                                        precipitation&gt;0~&quot;0.01&quot;, 
+                                                        precipitation==0~&quot;0.00&quot;, 
+                                                        TRUE~&quot;Error&quot;
+                                                        ), 
+                                       fct_mon=factor(month.abb[month(date)], levels=month.abb)
+                                       ) %&gt;%
+                                group_by(date, fct_mon) %&gt;% 
+                                summarize(maxP=max(precip), 
+                                          hrsP=sum(precipitation&gt;0), 
+                                          totP=sum(precipitation)/25.4, 
+                                          .groups=&quot;drop&quot;
+                                          ) %&gt;%
+                                group_by(fct_mon, maxP) %&gt;%
+                                summarize(n=n(), .groups=&quot;drop&quot;) %&gt;%
+                                select(fct_mon, maxP, n) %&gt;%
+                                pivot_wider(id_cols=&quot;fct_mon&quot;, 
+                                            names_from=&quot;maxP&quot;, 
+                                            values_from=&quot;n&quot;, 
+                                            values_fill=0
+                                            ) %&gt;%
+                                select(-fct_mon) %&gt;%
+                                as.matrix() %&gt;%
+                                chisq.test()
+                            }
+                        )</code></pre>
+<pre><code>## Warning in chisq.test(.): Chi-squared approximation may be incorrect
+## Warning in chisq.test(.): Chi-squared approximation may be incorrect
+## Warning in chisq.test(.): Chi-squared approximation may be incorrect</code></pre>
+<pre class="r"><code>names(cityChiSQList) &lt;- cityNames
+
+sapply(cityChiSQList, 
+       FUN=function(x) c(&quot;chisq&quot;=unname(x$statistic), &quot;df&quot;=unname(x$parameter), &quot;p&quot;=unname(x$p.value))
+       ) %&gt;%
+    t()</code></pre>
+<pre><code>##                   chisq df             p
+## Boston MA      105.6573 55  4.804196e-05
+## Chicago IL     260.9941 55  1.470672e-28
+## Houston TX     261.4647 55  1.218624e-28
+## Las Vegas NV   176.4206 55  1.202291e-14
+## Los Angeles CA 355.5542 55  1.460203e-45
+## Miami FL       919.3087 55 4.320371e-157
+## New York NY    137.3304 55  5.484055e-09</code></pre>
+<p>Removing low EV buckets does not materially change meaning of
+p-values (differences by month in each city)</p>
 </div>
 
 
