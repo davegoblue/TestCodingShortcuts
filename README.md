@@ -4954,4 +4954,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 12-OCT-2026  
 * OpenMeteoEDA_202306_v006 explores updated maximum daily precipitation buckets by month for all cities  
 * OpenMeteoEDA_202306_v006 explores maximum daily precipitation buckets by year for a single city  
+* OpenMeteoEDA_202306_v006 explores maximum daily precipitation buckets by year for a second city  
 
