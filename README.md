@@ -4978,3 +4978,6 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 updates plots of contribution to chi-squared for a sixth city  
 * OpenMeteoEDA_202306_v006 updates plots of contribution to chi-squared for a seventh city  
 
+### Expansions week of 02-NOV-2026  
+* OpenMeteoEDA_202306_v006 plots contribution to chi-squared (month x bucket) for a single city  
+
