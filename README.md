@@ -4991,4 +4991,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots contribution to chi-squared (year x bucket) for a fourth city  
 * OpenMeteoEDA_202306_v006 plots contribution to chi-squared (year x bucket) for a fifth city  
 * OpenMeteoEDA_202306_v006 plots contribution to chi-squared (year x bucket) for a sixth city  
+* OpenMeteoEDA_202306_v006 plots contribution to chi-squared (year x bucket) for a seventh city  
 
