@@ -4998,4 +4998,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 ### Expansions week of 16-NOV-2026  
 * OpenMeteoEDA_202306_v006 plots maximum daily precipitation buckets by year for a sixth city  
 * OpenMeteoEDA_202306_v006 plots maximum daily precipitation buckets by year for a seventh city  
+* OpenMeteoEDA_202306_v006 explores frequency of maximum hourly precipitation (0.5+ inch)
 
