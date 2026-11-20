@@ -5000,4 +5000,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 plots maximum daily precipitation buckets by year for a seventh city  
 * OpenMeteoEDA_202306_v006 explores frequency of maximum hourly precipitation (0.50+ inch)
 * OpenMeteoEDA_202306_v006 explores frequency of maximum hourly precipitation (0.30-0.49 inch)
+* OpenMeteoEDA_202306_v006 explores frequency of maximum hourly precipitation (0.20-0.29 inch)
 
