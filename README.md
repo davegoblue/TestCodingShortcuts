@@ -5006,4 +5006,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 
 ### Expansions week of 23-NOV-2026  
 * OpenMeteoEDA_202306_v006 explores frequency of maximum hourly precipitation (0.02-0.04 inch)
+* OpenMeteoEDA_202306_v006 explores frequency of maximum hourly precipitation (0.01 inch)
 
