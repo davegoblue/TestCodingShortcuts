@@ -5008,4 +5008,5 @@ All simple things to do, but knowing these will advance my capabilities in R
 * OpenMeteoEDA_202306_v006 explores frequency of maximum hourly precipitation (0.02-0.04 inch)
 * OpenMeteoEDA_202306_v006 explores frequency of maximum hourly precipitation (0.01 inch)
 * OpenMeteoEDA_202306_v006 explores frequency of maximum hourly precipitation (0.00 inch)
+* OpenMeteoEDA_202306_v006 explores linear model for maximum precipitation bucket change for a single city  
 
